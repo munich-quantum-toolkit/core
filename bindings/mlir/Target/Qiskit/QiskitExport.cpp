@@ -696,6 +696,26 @@ static void invertGate(ExportedInstruction& instruction) {
 collectUnitaryInstruction(mlir::Operation& operation,
                           const llvm::DenseMap<mlir::Value, uint32_t>& qubits,
                           ExportedParameters& parameters) {
+  if (auto call = llvm::dyn_cast<mlir::func::CallOp>(operation)) {
+    if (call.getNumResults() != 0) {
+      throw std::runtime_error("Qiskit gate calls cannot return values");
+    }
+    ExportedInstruction result{
+        .kind = ExportedInstruction::Kind::CustomGate,
+        .customGate = call.getCallee().str(),
+    };
+    for (auto operand : call.getOperands()) {
+      if (operand.getType().isF64()) {
+        result.parameters.push_back(exportParameter(operand, parameters));
+      } else if (mlir::isa<mlir::qc::QubitType>(operand.getType())) {
+        result.qubits.push_back(qubits.at(operand));
+      } else {
+        throw std::runtime_error(
+            "Qiskit gate calls require f64 parameters and qubits");
+      }
+    }
+    return result;
+  }
   if (auto call = llvm::dyn_cast<mlir::qc::CallOp>(operation)) {
     ExportedInstruction result{
         .kind = ExportedInstruction::Kind::CustomGate,
@@ -2435,12 +2455,13 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
           !state.expressionOperations.contains(&operation) &&
           !state.parameters.contains(operation.getResult(0)) &&
           !(isParameterExpressionOperation(operation) &&
-            llvm::all_of(operation.getResult(0).getUsers(),
-                         [](mlir::Operation* user) {
-                           return isParameterExpressionOperation(*user) ||
-                                  llvm::isa<mlir::qc::UnitaryOpInterface,
-                                            mlir::qc::GPhaseOp>(user);
-                         }))) {
+            llvm::all_of(
+                operation.getResult(0).getUsers(), [](mlir::Operation* user) {
+                  return isParameterExpressionOperation(*user) ||
+                         llvm::isa<mlir::qc::UnitaryOpInterface,
+                                   mlir::qc::GPhaseOp, mlir::func::CallOp>(
+                             user);
+                }))) {
         materialize(operation.getResult(0), operation, circuit, state);
         state.expressionDepths[operation.getResult(0)] = 0U;
         continue;
@@ -2619,7 +2640,8 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         });
         continue;
       }
-      if (llvm::isa<mlir::qc::UnitaryOpInterface>(operation)) {
+      if (llvm::isa<mlir::qc::UnitaryOpInterface, mlir::func::CallOp>(
+              operation)) {
         circuit.instructions.push_back(collectUnitaryInstruction(
             operation, state.qubits, state.parameters));
         continue;
@@ -2795,7 +2817,10 @@ collectGateFunctions(mlir::ModuleOp moduleOp, mlir::func::FuncOp entryPoint) {
                begin(graph.lookupNode(&entryPoint.getBody()));
        !component.isAtEnd(); ++component) {
     auto* node = component->front();
-    if (node->isExternal() || component.hasCycle()) {
+    if (node->isExternal()) {
+      continue;
+    }
+    if (component.hasCycle()) {
       throw std::runtime_error(
           "Qiskit custom Gates require defined, non-recursive functions");
     }
@@ -2892,6 +2917,16 @@ exportCircuitImpl(mlir::QCProgram program,
     throw std::runtime_error(
         "QC to Qiskit export requires a single-block entry function");
   }
+  if (payload == nullptr || payload->format().id != "qpy") {
+    bool externalCall = false;
+    moduleOp.walk([&](mlir::func::CallOp call) {
+      auto callee = moduleOp.lookupSymbol<mlir::func::FuncOp>(call.getCallee());
+      externalCall |= !callee || callee.isExternal();
+    });
+    if (externalCall) {
+      throw std::runtime_error("Opaque native calls require QPY serialization");
+    }
+  }
   const auto gateFunctions = collectGateFunctions(moduleOp, function);
   std::vector<ExportedGateDefinition> gateDefinitions;
   gateDefinitions.reserve(gateFunctions.size());
@@ -2924,6 +2959,29 @@ exportCircuitImpl(mlir::QCProgram program,
                                                   state.numClbits, "classical");
 
   auto translation = selectTranslation();
+  for (auto external : moduleOp.getOps<mlir::func::FuncOp>()) {
+    if (!external.isExternal()) {
+      continue;
+    }
+    size_t numParameters = 0;
+    while (numParameters < external.getNumArguments() &&
+           external.getArgumentTypes()[numParameters].isF64()) {
+      ++numParameters;
+    }
+    if (external.getNumResults() != 0 ||
+        !llvm::all_of(external.getArgumentTypes().drop_front(numParameters),
+                      [](mlir::Type type) {
+                        return mlir::isa<mlir::qc::QubitType>(type);
+                      })) {
+      throw std::runtime_error(
+          "Qiskit external gates require f64 parameters followed by qubits");
+    }
+    auto sourceName = external->getAttrOfType<mlir::StringAttr>(
+        mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
+    translation->registerNativeGate(external.getName().str(),
+                                    sourceName ? sourceName.str()
+                                               : external.getName().str());
+  }
   for (const auto& definition : gateDefinitions) {
     validateCircuit(definition.circuit, *translation, payload);
   }

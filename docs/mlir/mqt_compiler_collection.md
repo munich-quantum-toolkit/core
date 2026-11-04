@@ -189,24 +189,25 @@ input's program family:
 | `JeffProgram` or `.jeff` file                     | `JeffProgram`          |
 | `OpenQASMProgram`, OpenQASM text, or `.qasm` file | `OpenQASMProgram`      |
 
-A Qiskit `BackendV2` or `Target` defaults to a `QuantumCircuit`. A QDMI device
-or registered device ID defaults to a `CompiledProgram` containing a supported
-execution payload.
+A QDMI backend, device, registered device ID or `TargetEnvironment` defaults to
+a `CompiledProgram` containing its selected execution payload. Other Qiskit
+backends and targets default to a `QuantumCircuit`.
 
 An explicit `output` selects the representation independently of the input
 family and target:
 
-| Purpose                                  | Output format                                          | Result type       |
-| ---------------------------------------- | ------------------------------------------------------ | ----------------- |
-| Inspect frontend translation             | `OutputFormat.QC_IMPORT`                               | `QCProgram`       |
-| Inspect QCO immediately after conversion | `OutputFormat.QCO`                                     | `QCOProgram`      |
-| Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
-| Obtain the optimized circuit             | `OutputFormat.QC`                                      | `QCProgram`       |
-| Obtain a Qiskit circuit                  | `OutputFormat.QISKIT`                                  | `QuantumCircuit`  |
-| Emit an optimized OpenQASM program       | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
-| Emit IQM JSON for a target               | `OutputFormat.IQM_JSON`                                | `IQMJSONProgram`  |
-| Convert to the jeff dialect              | `OutputFormat.JEFF`                                    | `JeffProgram`     |
-| Generate QIR                             | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
+| Purpose                                      | Output format                                          | Result type       |
+| -------------------------------------------- | ------------------------------------------------------ | ----------------- |
+| Inspect frontend translation                 | `OutputFormat.QC_IMPORT`                               | `QCProgram`       |
+| Inspect QCO immediately after conversion     | `OutputFormat.QCO`                                     | `QCOProgram`      |
+| Inspect QCO after optimization               | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
+| Obtain the optimized circuit                 | `OutputFormat.QC`                                      | `QCProgram`       |
+| Obtain a Qiskit circuit                      | `OutputFormat.QISKIT`                                  | `QuantumCircuit`  |
+| Serialize a Qiskit-compatible binary circuit | `OutputFormat.QPY`                                     | `bytes`           |
+| Emit an optimized OpenQASM program           | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
+| Emit IQM JSON for a target                   | `OutputFormat.IQM_JSON`                                | `IQMJSONProgram`  |
+| Convert to the jeff dialect                  | `OutputFormat.JEFF`                                    | `JeffProgram`     |
+| Generate QIR                                 | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
 
 The raw `QC_IMPORT` and `QCO` checkpoints stop before target compilation and
 cannot be combined with `target`. A QDMI target with no explicit `output`

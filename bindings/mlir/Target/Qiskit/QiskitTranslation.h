@@ -458,6 +458,8 @@ public:
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>
   createCircuit(uint32_t looseQubits, uint32_t looseClbits,
                 const mlir::CompilerTarget* target = nullptr) const = 0;
+  virtual void registerNativeGate(std::string_view symbol,
+                                  std::string_view name) = 0;
   virtual void
   registerCustomGate(std::string_view symbol, std::string_view name,
                      const std::vector<std::string>& formalParameters,

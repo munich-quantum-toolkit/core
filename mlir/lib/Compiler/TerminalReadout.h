@@ -14,7 +14,9 @@
 
 #include "mlir/IR/BuiltinOps.h"
 
-#include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/Error.h"
+
+#include <optional>
 
 namespace mlir {
 
@@ -27,9 +29,11 @@ void scheduleTerminalReadout(ModuleOp moduleOp);
 ///
 /// Requires static qubits and straight-line terminal CBit register outputs. Raw
 /// slots follow ascending site IDs. Unmeasured output bits must initialize to
-/// zero. Gates may follow measurements of other qubits. Returns failure without
-/// diagnostics or mutation when the program is not a static terminal readout.
-[[nodiscard]] FailureOr<ResultLayout>
+/// zero. Independent native calls precede readout after normalization. Native
+/// calls reusing measured qubits or lacking a terminal-readout schedule return
+/// an error. Other unsupported programs return no layout without diagnostics
+/// or mutation.
+[[nodiscard]] llvm::Expected<std::optional<ResultLayout>>
 normalizeTerminalReadout(ModuleOp moduleOp);
 
 } // namespace mlir

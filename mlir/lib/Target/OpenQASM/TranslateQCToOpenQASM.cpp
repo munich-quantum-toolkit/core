@@ -157,8 +157,10 @@ namespace {
 
 class OpenQASMEmitter {
 public:
-  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false)
-      : version2_(version2), moduleOp(moduleOp) {}
+  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false,
+                           const TargetEnvironment* environment = nullptr)
+      : version2_(version2), moduleOp(moduleOp),
+        preparedEnvironment(environment) {}
 
   [[nodiscard]] static bool hasGateSignature(func::FuncOp function) {
     if (function.getNumResults() != 0) {
@@ -309,6 +311,7 @@ private:
   uint64_t deviceWidth_ = 0;
   DenseMap<Operation*, cbit::StoreOp> measurementStores;
   ModuleOp moduleOp;
+  const TargetEnvironment* preparedEnvironment;
   func::FuncOp function;
   raw_indented_ostream* output = nullptr;
   DenseMap<Value, Resource> resources;
@@ -812,8 +815,10 @@ private:
   }
 
   [[nodiscard]] LogicalResult preflight() {
-    if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
-      const TargetEnvironmentAnalysis environment(moduleOp);
+    if (preparedEnvironment != nullptr ||
+        moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+      const TargetEnvironmentAnalysis environment(moduleOp,
+                                                  preparedEnvironment);
       if (!environment) {
         return fail(moduleOp, environment.error());
       }
@@ -2938,7 +2943,6 @@ private:
       return failure();
     }
     const auto conditionName = uniqueName("cond", nextScalar);
-    hasNonOutputGlobals_ |= controlDepth_ == 0;
     *output << "bool " << conditionName << " = " << *condition << ";\n";
     if (failed(assignEdge(whileOp.getResults(), conditionOp.getArgs(),
                           conditionOp))) {
@@ -3687,29 +3691,35 @@ private:
 } // namespace
 
 LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                     llvm::raw_ostream& output) {
+                                     llvm::raw_ostream& output,
+                                     const TargetEnvironment* environment) {
   if (failed(verify(*moduleOp))) {
     return failure();
   }
-  return OpenQASMEmitter(*moduleOp).emit(output);
+  return OpenQASMEmitter(*moduleOp, false, environment).emit(output);
 }
 
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {
+FailureOr<std::string>
+translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
+                       const TargetEnvironment* environment) {
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream))) {
+  if (failed(
+          translateQCToOpenQASM3(std::move(moduleOp), stream, environment))) {
     return failure();
   }
   return source;
 }
 
-FailureOr<std::string> translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp) {
+FailureOr<std::string>
+translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp,
+                       const TargetEnvironment* environment) {
   if (failed(verify(*moduleOp))) {
     return failure();
   }
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(OpenQASMEmitter(*moduleOp, true).emit(stream))) {
+  if (failed(OpenQASMEmitter(*moduleOp, true, environment).emit(stream))) {
     return failure();
   }
   return source;

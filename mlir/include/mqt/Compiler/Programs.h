@@ -309,13 +309,15 @@ public:
   /// Legalize classical memory and control flow for the source format without
   /// optimizing quantum operations. The program is consumed even when export
   /// fails; call copy() first to preserve it.
-  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM3() &&;
+  [[nodiscard]] FailureOr<OpenQASMProgram>
+  intoOpenQASM3(const TargetEnvironment* environment = nullptr) &&;
 
   /// Consume this program and emit OpenQASM 2.
   ///
   /// Normalize and discard program-wide phase. Keep device indices and gate
   /// calls; reject unsupported control flow, assignments, and modifiers.
-  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM2() &&;
+  [[nodiscard]] FailureOr<OpenQASMProgram>
+  intoOpenQASM2(const TargetEnvironment* environment = nullptr) &&;
 
   /// Consume this program and convert it to QCO.
   [[nodiscard]] FailureOr<QCOProgram> intoQCO() &&;
@@ -329,7 +331,9 @@ public:
   /// Adaptive conversion retains loops. Calls with quantum-register arguments
   /// must be inlined.
   /// Use runDefaultPipeline for compilation before export.
-  [[nodiscard]] FailureOr<QIRProgram> intoQIR(QIRProfile profile) &&;
+  [[nodiscard]] FailureOr<QIRProgram>
+  intoQIR(QIRProfile profile,
+          const TargetEnvironment* environment = nullptr) &&;
 
   /// Consume this program and serialize PRX/CZ gates and readout as IQM JSON.
   ///

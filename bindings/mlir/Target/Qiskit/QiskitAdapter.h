@@ -2291,7 +2291,11 @@ private:
 
 using PythonParameterGroups = llvm::StringMap<nb::object>;
 using PythonSymbols = llvm::StringMap<nb::object>;
-using NativeGateRegistry = llvm::StringMap<nb::object>;
+struct OutputGate {
+  nb::object operation;
+  std::string nativeName;
+};
+using NativeGateRegistry = llvm::StringMap<OutputGate>;
 
 struct OutputParameters {
   PythonSymbols symbols;
@@ -2536,7 +2540,40 @@ public:
       throw std::runtime_error("Qiskit custom Gate '" + std::string(name) +
                                "' has no registered definition");
     }
-    const nb::object formalParameters = gate->second.attr("params");
+    if (!gate->second.nativeName.empty()) {
+      if (target_ == nullptr || !gateModifiers.empty()) {
+        throw std::runtime_error(
+            "Qiskit native gates require an explicit target and no modifiers");
+      }
+      std::vector<mlir::CompilerTarget::SiteId> sites(qubits.begin(),
+                                                      qubits.end());
+      std::vector<std::optional<double>> values;
+      values.reserve(parameters.size());
+      for (const auto& parameter : parameters) {
+        const auto* number = parameter.getNumber();
+        values.push_back(number != nullptr ? std::optional{number->value}
+                                           : std::nullopt);
+      }
+      const auto selected = target_->findOperation(
+          gate->second.nativeName, qubits.size(), values, sites);
+      if (selected.capability == nullptr) {
+        throw std::runtime_error("external gate is not native for the target");
+      }
+      if (const auto* standard =
+              versionGate(selected.capability->canonicalName())) {
+        addGate(standard->translation, qubits, parameters);
+        return;
+      }
+      nb::list actualParameters;
+      for (const auto& parameter : parameters) {
+        actualParameters.append(pythonParameter(parameter));
+      }
+      auto operation = circuitModule.attr("Gate")(
+          selected.capability->name().str(), qubits.size(), actualParameters);
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      return;
+    }
+    const nb::object formalParameters = gate->second.operation.attr("params");
     if (nb::len(formalParameters) != parameters.size()) {
       throw std::runtime_error("Qiskit custom Gate '" + std::string(name) +
                                "' has incompatible parameters");
@@ -2546,7 +2583,7 @@ public:
       parameterMap[formalParameters[index]] =
           pythonParameter(parameters[index]);
     }
-    nb::object operation = gate->second;
+    nb::object operation = gate->second.operation;
     if (!parameters.empty()) {
       operation =
           pythonAttribute(operation.attr("definition"), "to_gate",
@@ -3335,6 +3372,9 @@ public:
   createCircuit(const uint32_t looseQubits, const uint32_t looseClbits,
                 const mlir::CompilerTarget* target) const override {
     if (target != nullptr &&
+        std::ranges::none_of(
+            *gates_,
+            [](const auto& gate) { return !gate.second.nativeName.empty(); }) &&
         std::ranges::none_of(target->operations(), [](const auto& operation) {
           return operation.name() != operation.canonicalName();
         })) {
@@ -3342,6 +3382,11 @@ public:
     }
     return std::make_unique<NativeCircuitWriter>(looseQubits, looseClbits,
                                                  parameters_, gates_, target);
+  }
+
+  void registerNativeGate(std::string_view symbol,
+                          std::string_view name) override {
+    gates_->try_emplace(symbol, OutputGate{.nativeName = std::string(name)});
   }
 
   void registerCustomGate(std::string_view symbol, std::string_view name,
@@ -3369,7 +3414,8 @@ public:
                     .attr("Gate")(nb::str(name.data(), name.size()),
                                   circuit.attr("num_qubits"), parameters);
     gate.attr("definition") = circuit;
-    gates_->try_emplace(symbol, std::move(gate));
+    gates_->try_emplace(
+        symbol, OutputGate{.operation = std::move(gate), .nativeName = {}});
   }
 
 private:

@@ -19,7 +19,6 @@ __lazy_modules__ = {
     "mqt.core.mlir",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
-    "mqt.core.plugins.qiskit.serializers",
     "mqt.core.qdmi",
     "mqt.core.qdmi.builtin_driver",
     "numbers",
@@ -62,21 +61,19 @@ from qiskit.transpiler import InstructionProperties, Target
 
 from mqt.core.mlir import (
     CompiledProgram,
-    CompilerTarget,
-    PayloadSpecification,
     TargetEnvironment,
     _operation_parameter_constraints,
+    compile_program,
+    serialize_program,
 )
 from mqt.core.plugins.qiskit.exceptions import (
     CircuitValidationError,
     TranslationError,
     UnsupportedDeviceError,
-    UnsupportedFormatError,
     UnsupportedOperationError,
 )
 from mqt.core.plugins.qiskit.job import QDMIJob
-from mqt.core.plugins.qiskit.serializers import preferred_program_formats, program_serializer
-from mqt.core.qdmi import CustomProperty, ProgramFormat, is_binary_program_format
+from mqt.core.qdmi import CustomProperty
 from mqt.core.qdmi import Device as QDMIDevice
 from mqt.core.qdmi.builtin_driver import open_device
 
@@ -87,6 +84,7 @@ if TYPE_CHECKING:
     from qiskit.circuit import Instruction
     from qiskit.circuit.parameterexpression import ParameterValueType
 
+    from mqt.core.mlir import CompilationOptions
     from mqt.core.plugins.qiskit.provider import QDMIProvider
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
 
@@ -146,30 +144,6 @@ def _build_gate_mappings_for_backend(
             operation_to_gate[name] = gate
 
     return qiskit_to_qdmi, operation_to_gate
-
-
-def _check_payload_type(program: str | bytes | CompiledProgram, fmt: ProgramFormat) -> None:
-    """Check that a serialized program has the payload type its format requires.
-
-    Args:
-        program: The program a serializer returned.
-        fmt: The program format the serializer produces.
-
-    Raises:
-        TranslationError: If the payload type does not match the format.
-    """
-    if isinstance(program, CompiledProgram):
-        if program.program_format != fmt:
-            msg = f"The serializer for {fmt.name} returned a {program.program_format.name} program."
-            raise TranslationError(msg)
-        program = program.payload
-    expected = bytes if is_binary_program_format(fmt) else str
-    if not isinstance(program, expected):
-        msg = (
-            f"The program serializer for {fmt.name} returned {type(program).__name__}, "
-            f"but {fmt.name} requires {expected.__name__}"
-        )
-        raise TranslationError(msg)
 
 
 class QDMIBackend(BackendV2):
@@ -258,7 +232,7 @@ class QDMIBackend(BackendV2):
             device_id: Stable ID for the opened device, if known.
 
         Raises:
-            UnsupportedDeviceError: If the device cannot be represented in Qiskit's Target model.
+            UnsupportedDeviceError: If the device cannot supply an executable Qiskit backend.
         """
         if not self.is_convertible(device):
             msg = f"Device '{device.name()}' cannot be represented in Qiskit's Target model"
@@ -275,7 +249,10 @@ class QDMIBackend(BackendV2):
         self.last_job: QDMIJob | None = None
 
         self._target = self._build_target()
-        self._serialization_environments: dict[ProgramFormat, TargetEnvironment] = {}
+        try:
+            self._environment = TargetEnvironment.from_device(device)
+        except ValueError as exc:
+            raise UnsupportedDeviceError(str(exc)) from exc
 
     @classmethod
     def from_device_id(
@@ -392,14 +369,6 @@ class QDMIBackend(BackendV2):
             Number of qubits to expose in the Target.
         """
         return self._native_width
-
-    def serialization_environment(self, program_format: ProgramFormat) -> TargetEnvironment:
-        """Return the cached native serialization contract for a format."""
-        if program_format not in self._serialization_environments:
-            self._serialization_environments[program_format] = TargetEnvironment(
-                CompilerTarget.from_device(self.device), PayloadSpecification.from_program_format(program_format)
-            )
-        return self._serialization_environments[program_format]
 
     def _build_target(self) -> Target:
         """Construct a Qiskit Target from device capabilities.
@@ -718,72 +687,36 @@ class QDMIBackend(BackendV2):
         """
         return circuit
 
-    def _serialize_circuit(
-        self, circuit: QuantumCircuit, supported_program_formats: Iterable[ProgramFormat]
-    ) -> tuple[str | bytes | CompiledProgram, ProgramFormat]:
-        """Serialize a :class:`~qiskit.circuit.QuantumCircuit` into a program the device accepts.
-
-        The method walks the formats the device supports in the order of
-        :data:`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE`
-        and uses the first one that has a registered serializer. See
-        :mod:`mqt.core.plugins.qiskit.serializers` for how a package registers a
-        serializer.
-
-        Args:
-            circuit: The circuit to serialize.
-            supported_program_formats: The program formats the device accepts.
+    def compile(
+        self,
+        circuits: QuantumCircuit | Sequence[QuantumCircuit],
+        *,
+        options: CompilationOptions | None = None,
+    ) -> CompiledProgram | list[CompiledProgram]:
+        """Compile circuits for this backend's native payload and result layout.
 
         Returns:
-            The program and its format. A program can retain its compiler result
-            layout, or be plain text or bytes when outputs already match.
-
-        Raises:
-            CircuitValidationError: If native circuit validation fails.
-            UnsupportedFormatError: If the device reports no program format that
-                has a serializer.
-            UnsupportedOperationError: If the circuit contains an operation the
-                chosen format cannot express.
-            TranslationError: If serialization fails.
+            One compiled program, or an ordered list for a sequence.
         """
-        formats = list(supported_program_formats)
-        if not formats:
-            msg = "The device reports no supported program formats"
-            raise UnsupportedFormatError(msg)
-
-        for fmt in preferred_program_formats(formats):
-            serializer = program_serializer(fmt)
-            if serializer is None:
-                continue
-            try:
-                program = serializer(circuit, self)
-            except (CircuitValidationError, UnsupportedOperationError):
-                # A circuit the chosen format cannot express must fail loudly
-                # rather than arrive at the device in a weaker format.
-                raise
-            except Exception as exc:
-                msg = f"Failed to serialize the circuit to {fmt.name}: {exc}"
-                raise TranslationError(msg) from exc
-            _check_payload_type(program, fmt)
-            return program, fmt
-
-        msg = f"No program serializer for any format the device supports: {[fmt.name for fmt in formats]}"
-        raise UnsupportedFormatError(msg)
+        if options is None:
+            return compile_program(circuits, target=self._environment)
+        return compile_program(circuits, target=self._environment, options=options)
 
     def run(
         self,
-        run_input: QuantumCircuit | Sequence[QuantumCircuit],
+        run_input: QuantumCircuit | CompiledProgram | Sequence[QuantumCircuit | CompiledProgram],
         parameter_values: Sequence[ParametersType] | None = None,
         **options: Any,  # ruff:ignore[any-type]
     ) -> QDMIJob:
         """Submit native circuits without running compilation or routing.
 
-        Call :func:`~mqt.core.mlir.compile_program` with this backend as the
-        target before submission when a circuit needs compilation. Serialization
+        Use ``backend.run(backend.compile(circuit))`` when compilation is needed.
+        Compiled payloads are submitted unchanged. Serialization
         can normalize terminal measurements and retain their output mapping;
         it does not change the compiled quantum operations or placement.
 
         Args:
-            run_input: A single quantum circuit or a sequence of quantum circuits to execute.
+            run_input: Native circuits or compiled programs, individually or in a sequence.
             parameter_values: Optional parameter values to bind to the circuits. If provided, must be a sequence
                 with one entry per circuit. Each entry can be either a dictionary mapping parameters to values,
                 or a sequence of values in the order of circuit.parameters.
@@ -799,6 +732,7 @@ class QDMIBackend(BackendV2):
                 parameter_values length mismatch).
             UnsupportedOperationError: If a circuit contains unsupported operations.
             JobSubmissionError: If job submission to the device fails.
+            TranslationError: If native payload serialization fails.
 
         Examples:
             Run a single circuit with parameter values:
@@ -821,7 +755,7 @@ class QDMIBackend(BackendV2):
             >>> job = backend.run([qc1, qc2], parameter_values=[{theta: 0.5}, {theta: 1.5}])
         """  # ruff:ignore[docstring-extraneous-exception] The validation helper raises operation errors.
         self.last_job = None
-        circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
+        circuits = [run_input] if isinstance(run_input, (QuantumCircuit, CompiledProgram)) else run_input
 
         if not circuits:
             msg = "No circuits provided to run. At least one circuit is required."
@@ -863,10 +797,19 @@ class QDMIBackend(BackendV2):
         job_parameters = self._job_parameters({
             name: value for name, value in effective_options.items() if name not in {"shots", "memory", "max_retries"}
         })
-        prepared_circuits: list[QuantumCircuit] = []
+        prepared_programs: list[CompiledProgram] = []
         # Prepare every circuit before submitting any job, so validation cannot leave a partial batch.
 
         for idx, circuit in enumerate(circuits):
+            if isinstance(circuit, CompiledProgram):
+                if parameter_values is not None and parameter_values[idx] is not None:
+                    msg = "Parameter bindings do not apply to compiled programs."
+                    raise CircuitValidationError(msg)
+                prepared_programs.append(circuit)
+                continue
+            if not isinstance(circuit, QuantumCircuit):
+                msg = "run accepts QuantumCircuit or CompiledProgram inputs."
+                raise CircuitValidationError(msg)
             bound_circuit = circuit
             if parameter_values is not None:
                 try:
@@ -891,11 +834,15 @@ class QDMIBackend(BackendV2):
 
             self.validate_circuit(bound_circuit, native=True)
 
-            prepared_circuits.append(bound_circuit)
+            try:
+                prepared_programs.append(serialize_program(bound_circuit, target=self._environment))
+            except Exception as exc:
+                msg = f"Failed to serialize circuit {idx}: {exc}"
+                raise TranslationError(msg) from exc
 
         job = QDMIJob(
             self,
-            prepared_circuits,
+            prepared_programs,
             shots=shots,
             memory=memory,
             max_retries=max_retries,

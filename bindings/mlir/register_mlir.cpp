@@ -408,6 +408,7 @@ enum class OutputFormat : uint8_t {
   IQMJSON = static_cast<uint8_t>(mlir::ProgramFormat::IQMJSON),
   OpenQASM2 = static_cast<uint8_t>(mlir::ProgramFormat::OpenQASM2),
   Qiskit,
+  QPY,
 };
 struct ImportedProgram {
   mlir::CompilerInput program;
@@ -643,6 +644,9 @@ payloadForOutput(OutputFormat output) {
         static_cast<mlir::ProgramFormat>(output)));
   case OutputFormat::Qiskit:
     return bindings::qiskit::payloadSpecification();
+  case OutputFormat::QPY:
+    return unwrap(
+        mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QPY));
   default:
     // Intermediate representations have no execution transport constraints.
     return unwrap(mlir::PayloadSpecification::create(
@@ -654,6 +658,41 @@ payloadForOutput(OutputFormat output) {
             {.id = mlir::ProgramCapability::MULTIWAY_BRANCHING.str()},
         }));
   }
+}
+
+[[nodiscard]] static nb::object writeQPY(nb::handle circuit) {
+  auto buffer = nb::module_::import_("io").attr("BytesIO")();
+  nb::module_::import_("qiskit.qpy")
+      .attr("dump")(circuit, buffer, "version"_a = 17);
+  return buffer.attr("getvalue")();
+}
+
+[[nodiscard]] static nb::object compiledResult(mlir::CompiledProgram compiled,
+                                               nb::handle program,
+                                               nb::handle target) {
+  auto result = nb::cast(std::move(compiled));
+  if (nb::hasattr(program, "cregs")) {
+    nb::dict header;
+    header["name"] = program.attr("name");
+    header["memory_slots"] = program.attr("num_clbits");
+    header["metadata"] =
+        nb::module_::import_("copy").attr("deepcopy")(program.attr("metadata"));
+    nb::list registers;
+    for (auto reg : program.attr("cregs")) {
+      nb::list item;
+      item.append(reg.attr("name"));
+      item.append(reg.attr("size"));
+      registers.append(item);
+    }
+    header["creg_sizes"] = registers;
+    result.attr("_qiskit_header") = header;
+  }
+  if (nb::isinstance<mlir::TargetEnvironment>(target)) {
+    result.attr("_environment") = target;
+  } else if (nb::hasattr(target, "_environment")) {
+    result.attr("_environment") = target.attr("_environment");
+  }
+  return result;
 }
 
 /// Compile one program with an already resolved target and output default.
@@ -670,7 +709,7 @@ payloadForOutput(OutputFormat output) {
       return unwrap(mlir::CompiledProgram::compile(
           std::move(input.program), *targetEnvironment, options));
     }();
-    return nb::cast(std::move(compiled));
+    return compiledResult(std::move(compiled), program, target);
   }
 
   const auto selected = output.value_or(input.format);
@@ -716,9 +755,10 @@ payloadForOutput(OutputFormat output) {
         },
         input.program);
   }
-  const auto nativeOutput = selected == OutputFormat::Qiskit
-                                ? mlir::ProgramFormat::QC
-                                : static_cast<mlir::ProgramFormat>(selected);
+  const auto nativeOutput =
+      (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY)
+          ? mlir::ProgramFormat::QC
+          : static_cast<mlir::ProgramFormat>(selected);
   auto compiled = [&] {
     const nb::gil_scoped_release release;
     auto result =
@@ -733,7 +773,7 @@ payloadForOutput(OutputFormat output) {
     }
     return std::move(*result);
   }();
-  if (selected == OutputFormat::Qiskit) {
+  if (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
     auto result =
         outputEnvironment
@@ -743,6 +783,9 @@ payloadForOutput(OutputFormat output) {
       result.attr("name") = program.attr("name");
       result.attr("metadata") = nb::module_::import_("copy").attr("deepcopy")(
           program.attr("metadata"));
+    }
+    if (selected == OutputFormat::QPY) {
+      return writeQPY(result);
     }
     return result;
   }
@@ -808,6 +851,11 @@ payloadForOutput(OutputFormat output) {
     targetEnvironment = unwrap(mlir::targetEnvironmentFromDevice(device));
   } else if (environmentTarget) {
     targetEnvironment = nb::cast<const mlir::TargetEnvironment&>(target);
+  } else if (!target.is_none() && nb::hasattr(target, "_environment") &&
+             nb::isinstance<mlir::TargetEnvironment>(
+                 target.attr("_environment"))) {
+    targetEnvironment =
+        nb::cast<const mlir::TargetEnvironment&>(target.attr("_environment"));
   } else if (!target.is_none() && !compilerTarget) {
     targetEnvironment.emplace(
         bindings::qiskit::importTarget(target, nb::none(), std::nullopt),
@@ -830,20 +878,24 @@ payloadForOutput(OutputFormat output) {
   return results.commit();
 }
 
-[[nodiscard]] static mlir::CompiledProgram
-serializeProgram(const nb::handle program, const nb::handle target) {
+[[nodiscard]] static nb::object serializeProgram(const nb::handle program,
+                                                 const nb::handle target) {
   auto native = nb::isinstance<mlir::QCProgram>(program)
                     ? nb::cast<const mlir::QCProgram&>(program).copy()
                     : bindings::qiskit::importCircuit(program, true);
-  if (nb::isinstance<mlir::TargetEnvironment>(target)) {
-    const auto& environment = nb::cast<const mlir::TargetEnvironment&>(target);
+  auto compiled = [&] {
+    if (nb::isinstance<mlir::TargetEnvironment>(target)) {
+      const auto& environment =
+          nb::cast<const mlir::TargetEnvironment&>(target);
+      const nb::gil_scoped_release release;
+      return unwrap(
+          mlir::CompiledProgram::serialize(std::move(native), environment));
+    }
+    const auto device = resolveDevice(target);
     const nb::gil_scoped_release release;
-    return unwrap(
-        mlir::CompiledProgram::serialize(std::move(native), environment));
-  }
-  const auto device = resolveDevice(target);
-  const nb::gil_scoped_release release;
-  return unwrap(mlir::CompiledProgram::serialize(std::move(native), device));
+    return unwrap(mlir::CompiledProgram::serialize(std::move(native), device));
+  }();
+  return compiledResult(std::move(compiled), program, target);
 }
 
 [[nodiscard]] static qdmi::Job
@@ -1164,10 +1216,29 @@ generateBenchmark(const Benchmark& benchmark) {
   return std::move(*generated);
 }
 
+[[nodiscard]] static llvm::Expected<std::string>
+exportQPY(mlir::QCProgram program, const mlir::TargetEnvironment& environment) {
+  const nb::gil_scoped_acquire acquire;
+  try {
+    auto circuit =
+        bindings::qiskit::exportCircuit(std::move(program), environment);
+    auto data = nb::cast<nb::bytes>(writeQPY(circuit));
+    return std::string(data.c_str(), data.size());
+  } catch (const std::exception& error) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument), error.what());
+  }
+}
+
 // NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
 void registerMLIR(nb::module_& m) {
 
   m.doc() = "MQT Core MLIR compiler bindings.";
+  if (!nb::module_::import_("importlib.util")
+           .attr("find_spec")("qiskit")
+           .is_none()) {
+    mlir::setQPYExporter(&exportQPY);
+  }
 
   nb::module_::import_("typing");
   const auto inputTypes = std::make_shared<PythonInputTypes>();
@@ -1200,7 +1271,8 @@ void registerMLIR(nb::module_& m) {
       .value("QIR_BASE", OutputFormat::QIRBase, "QIR for the Base Profile.")
       .value("QIR_ADAPTIVE", OutputFormat::QIRAdaptive,
              "QIR for the Adaptive Profile.")
-      .value("QISKIT", OutputFormat::Qiskit, "A Qiskit QuantumCircuit.");
+      .value("QISKIT", OutputFormat::Qiskit, "A Qiskit QuantumCircuit.")
+      .value("QPY", OutputFormat::QPY, "A QPY 17 binary circuit.");
 
   nb::enum_<mlir::PayloadEncoding>(m, "PayloadEncoding",
                                    "Payload representation encoding.")
@@ -2722,7 +2794,20 @@ and error contracts.)pb");
           "Decode one MSB-first binary sample to logical output order.");
 
   nb::class_<mlir::CompiledProgram>(
-      m, "CompiledProgram", "A compiled program ready for QDMI submission.")
+      m, "CompiledProgram", nb::dynamic_attr(),
+      "A compiled program ready for QDMI submission.")
+      .def_prop_ro("result_width", &mlir::CompiledProgram::resultWidth,
+                   "Logical bit width, or None for non-bit outputs.")
+      .def(
+          "_validate_environment",
+          [](const mlir::CompiledProgram& self,
+             const mlir::TargetEnvironment& environment) {
+            if (auto error = mlir::validateTargetCompatibility(
+                    self.environment(), environment)) {
+              throw nb::value_error(llvm::toString(std::move(error)).c_str());
+            }
+          },
+          "environment"_a, "Check destination compatibility before submission.")
       .def_prop_ro(
           "result_layout", &mlir::CompiledProgram::resultLayout,
           "Logical output reconstruction, or None for an identity layout.")
@@ -2765,7 +2850,7 @@ inputs. Elements must share one supported input kind; subclasses are accepted.
 Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
 An explicit ``output`` selects each result's representation. Without it, a
-Qiskit target selects QuantumCircuit and a QDMI device or target environment selects
+Qiskit target selects QuantumCircuit and a QDMI backend, device or target environment selects
 :class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
 retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
 QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and

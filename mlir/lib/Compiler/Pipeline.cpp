@@ -95,7 +95,8 @@ LogicalResult QCProgram::normalizeGlobalPhases() {
   return mqt::normalizeGlobalPhases(mod());
 }
 
-FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
+FailureOr<OpenQASMProgram>
+QCProgram::intoOpenQASM3(const TargetEnvironment* environment) && {
   auto storage = std::move(*this).releaseStorage();
   if (failed(runWithPassManager(
           *storage.mod,
@@ -106,7 +107,7 @@ FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
           "failed to prepare QC for OpenQASM export"))) {
     return failure();
   }
-  auto source = qc::translateQCToOpenQASM3(std::move(storage.mod));
+  auto source = qc::translateQCToOpenQASM3(std::move(storage.mod), environment);
   if (failed(source)) {
     return failure();
   }
@@ -141,27 +142,32 @@ QCProgram::intoIQMJSON(const CompilerTarget& target) && {
   return std::move(std::get<IQMJSONProgram>(*exported));
 }
 
-FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM2() && {
+FailureOr<OpenQASMProgram>
+QCProgram::intoOpenQASM2(const TargetEnvironment* environment) && {
   auto storage = std::move(*this).releaseStorage();
-  auto source = qc::translateQCToOpenQASM2(std::move(storage.mod));
+  auto source = qc::translateQCToOpenQASM2(std::move(storage.mod), environment);
   if (failed(source)) {
     return failure();
   }
   return OpenQASMProgram(std::move(*source));
 }
 
-FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
+FailureOr<QIRProgram>
+QCProgram::intoQIR(QIRProfile profile,
+                   const TargetEnvironment* environment) && {
   auto storage = std::move(*this).releaseStorage();
   auto moduleOp = *storage.mod;
   if (failed(runWithPassManager(
           moduleOp,
-          [profile](OpPassManager& pm) {
+          [profile, environment](OpPassManager& pm) {
             pm.addPass(mqt::createLowerQuantumModifiers());
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(mqt::createPromoteClassicalMemory());
-              pm.addPass(createQCToQIRAdaptive());
+              pm.addPass(environment ? createQCToQIRAdaptive(*environment)
+                                     : createQCToQIRAdaptive());
             } else {
-              pm.addPass(createQCToQIRBase());
+              pm.addPass(environment ? createQCToQIRBase(*environment)
+                                     : createQCToQIRBase());
             }
           },
           "failed to convert QC to QIR"))) {
@@ -476,8 +482,8 @@ FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
       return failure();
     }
     auto source = output == ProgramFormat::OpenQASM2
-                      ? std::move(qc).intoOpenQASM2()
-                      : std::move(qc).intoOpenQASM3();
+                      ? std::move(qc).intoOpenQASM2(environment)
+                      : std::move(qc).intoOpenQASM3(environment);
     if (failed(source)) {
       return failure();
     }
@@ -506,7 +512,7 @@ FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
           "failed to prepare compiled QC for QIR", options))) {
     return failure();
   }
-  auto qir = std::move(qc).intoQIR(profile);
+  auto qir = std::move(qc).intoQIR(profile, environment);
   if (failed(qir) || failed(qir->cleanup())) {
     return failure();
   }

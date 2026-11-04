@@ -37,6 +37,12 @@ class Operation;
 
 namespace mlir {
 
+/// Optional QPY exporter installed by the Python bindings.
+/// The callback owns its output and must acquire the Python GIL itself.
+using QPYExporter = llvm::Expected<std::string> (*)(QCProgram,
+                                                    const TargetEnvironment&);
+void setQPYExporter(QPYExporter exporter);
+
 /// One alternative in the temporary operation-parameter metadata contract.
 struct OperationParameterConstraints {
   std::vector<std::optional<double>> fixed;
@@ -83,7 +89,7 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 
 /// Snapshot the device and select its executable payload before compilation.
 ///
-/// Preference: Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, Base QIR
+/// Preference: Adaptive QIR (binary, text), QPY, OpenQASM 3, IQM JSON, Base QIR
 /// (binary, text), OpenQASM 2.
 [[nodiscard]] llvm::Expected<TargetEnvironment> targetEnvironmentFromDevice(
     const qdmi::Device& device,
@@ -128,6 +134,11 @@ public:
     return resultLayout_;
   }
 
+  /// Total logical binary output width, absent for non-bit output types.
+  [[nodiscard]] std::optional<size_t> resultWidth() const noexcept {
+    return resultWidth_;
+  }
+
   [[nodiscard]] const TargetEnvironment& environment() const noexcept {
     return environment_;
   }
@@ -140,11 +151,13 @@ public:
 private:
   CompiledProgram(TargetEnvironment environment, std::string payload,
                   QDMI_Program_Format format,
-                  std::optional<ResultLayout> resultLayout = std::nullopt);
+                  std::optional<ResultLayout> resultLayout,
+                  std::optional<size_t> resultWidth);
   TargetEnvironment environment_;
   std::string payload_;
   QDMI_Program_Format format_;
   std::optional<ResultLayout> resultLayout_;
+  std::optional<size_t> resultWidth_;
 };
 
 /// Compile for a QDMI device.

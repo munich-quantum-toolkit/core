@@ -3651,6 +3651,32 @@ TEST(OpenQASM3EmissionTest,
   }
 }
 
+TEST(OpenQASM3EmissionTest, ReusesMeasurementBeforeLaterOverwrite) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %false = arith.constant false
+      %q = qc.alloc : !qc.qubit
+      %bits = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %measured = qc.measure %q : !qc.qubit -> i1
+      cbit.store %measured, %bits[%zero] : !cbit.reg<1>
+      scf.if %measured { qc.x %q : !qc.qubit }
+      cbit.store %false, %bits[%zero] : !cbit.reg<1>
+      qc.dealloc %q : !qc.qubit
+      return %bits : !cbit.reg<1>
+    }
+  })mlir";
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(
+      qc::findMeasurementStores(moduleOp->lookupSymbol<func::FuncOp>("main"))
+          .empty());
+  auto emitted = qc::translateQCToOpenQASM3(std::move(moduleOp));
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_EQ(emitted->find("output "), std::string::npos) << *emitted;
+}
+
 } // namespace
 
 } // namespace mqt::test::openqasm3_emission

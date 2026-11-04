@@ -12,14 +12,15 @@ from __future__ import annotations
 
 import pytest
 
-from mqt.core.mlir import CompilerTarget
-from mqt.core.qdmi import Device
+from mqt.core.mlir import CompilerTarget, PayloadSpecification, TargetEnvironment
+from mqt.core.qdmi import Device, ProgramFormat
 
 
 @pytest.fixture
 def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     """Snapshot Python device doubles; genuine devices use the native adapter."""
     native_snapshot = CompilerTarget.from_device
+    native_environment = TargetEnvironment.from_device
 
     def snapshot(device: Device) -> CompilerTarget:
         if isinstance(device, Device):
@@ -52,3 +53,31 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(CompilerTarget, "from_device", snapshot)
+
+    def environment(device: Device, *, program_format: ProgramFormat | None = None) -> TargetEnvironment:
+        if isinstance(device, Device):
+            return native_environment(device, program_format=program_format)
+        formats = device.supported_program_formats()
+        chosen = program_format or next(
+            (
+                fmt
+                for fmt in (
+                    ProgramFormat.QIR_ADAPTIVE_MODULE,
+                    ProgramFormat.QIR_ADAPTIVE_STRING,
+                    ProgramFormat.QPY,
+                    ProgramFormat.QASM3,
+                    ProgramFormat.IQM_JSON,
+                    ProgramFormat.QIR_BASE_MODULE,
+                    ProgramFormat.QIR_BASE_STRING,
+                    ProgramFormat.QASM2,
+                )
+                if fmt in formats
+            ),
+            None,
+        )
+        if chosen is None:
+            msg = "Device reports no supported program formats"
+            raise ValueError(msg)
+        return TargetEnvironment(snapshot(device), PayloadSpecification.from_program_format(chosen))
+
+    monkeypatch.setattr(TargetEnvironment, "from_device", environment)

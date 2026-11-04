@@ -1999,7 +1999,9 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
     auto instruction = circuit.instruction(index, gateState.native);
     if (gateState.native && instruction.kind == OperationKind::Gate &&
         !instruction.qubits.empty()) {
-      if (instruction.standardGate && !instruction.modifiers.empty()) {
+      // Keep the distinct native CU/CU3 signatures instead of decomposing them.
+      if (instruction.standardGate && instruction.name != "cu" &&
+          instruction.name != "cu3") {
         emitGate(builder, instruction, allQubits, qubitMap, localParameters,
                  globalParameters);
         continue;

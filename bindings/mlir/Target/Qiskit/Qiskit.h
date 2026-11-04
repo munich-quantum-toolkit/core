@@ -27,8 +27,8 @@ namespace nb = nanobind;
 /// Import a Qiskit QuantumCircuit into an independently owned QC program.
 ///
 /// Ordinary import translates gate definitions and allocates program qubits.
-/// Native import fixes circuit indices to device qubits and preserves gate
-/// names and operands as opaque calls, without reading their definitions.
+/// Native import fixes circuit indices to device qubits and uses standard QC
+/// operations or opaque native calls, without reading gate definitions.
 /// The caller validates device support and placements. A complete transpiler
 /// layout is retained as metadata; it does not remap circuit indices.
 ///

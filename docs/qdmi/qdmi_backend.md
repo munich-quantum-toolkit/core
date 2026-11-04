@@ -24,7 +24,6 @@ uv pip install "mqt-core[qiskit]"
 
 ```{code-cell} ipython3
 from qiskit import QuantumCircuit
-from mqt.core.mlir import compile_program
 from mqt.core.plugins.qiskit import QDMIBackend
 
 backend = QDMIBackend.from_device_id("mqt.ddsim.default")
@@ -32,7 +31,7 @@ qc = QuantumCircuit(2)
 qc.h(0)
 qc.cx(0, 1)
 qc.measure_all()
-native = compile_program(qc, target=backend)
+native = backend.compile(qc)
 job = backend.run(native, shots=1024, memory=True)
 result = job.result()
 print(f"Bell counts: {result.get_counts()}")
@@ -105,8 +104,8 @@ shots.
 Results use Qiskit's classical-bit order (`clbits[0]` on the right), preserving
 leading zeros and correlations across registers. Classical registers must
 partition `circuit.clbits` in register order; loose, aliased, and reordered bits
-are rejected. Provider serializers can retain a compiler result layout for
-physical-to-logical readout conversion; see
+are rejected. Compiled programs retain a result layout for physical-to-logical
+readout conversion; see
 [terminal readout](../mlir/target_compilation.md#terminal-readout-and-results).
 
 ### Recovering a failed batch
@@ -183,46 +182,23 @@ measurements are rejected. For bound OpenQASM or existing compiler programs,
 with a sequence of mappings from Pauli strings to real coefficients. Labels span
 all program wires; the rightmost character acts on wire zero.
 
-## Program Serializers
+## Compiled programs
 
-Built-in serializers support OpenQASM 2/3, QPY, IQM JSON, and Base/Adaptive QIR.
-They import native gate calls and physical sites without compilation. Their
-supported subsets follow the compiler's
-[Qiskit translation contract](../mlir/qiskit.md#circuit-translation-contract)
-and format exporters. QPY uses Qiskit's native writer and version 17; the
-receiver must support it. QDMI does not negotiate QPY versions.
+The backend keeps one device environment and uses Core's format selection.
+`backend.compile(circuit)` returns a {py:class}`~mqt.core.mlir.CompiledProgram`;
+`backend.run(backend.compile(circuit))` compiles and submits it. A sequence
+returns an ordered list of programs. The lower-level
+{py:func}`~mqt.core.mlir.compile_program` also accepts `target=backend`.
 
-A serializer takes `(circuit, backend)` and returns `str` for text formats,
-`bytes` for binary formats, or a {py:class}`~mqt.core.mlir.CompiledProgram` when
-result mapping is needed. {py:func}`~mqt.core.mlir.serialize_program` builds the
-latter without compiling and normalizes static terminal measurements. Provider
-packages own service-specific syntax. `run()` validates native operations,
-parameters, and placements before calling any serializer.
+`run()` also accepts native `QuantumCircuit` inputs. It validates their gates,
+parameters and placements, then uses {py:func}`~mqt.core.mlir.serialize_program`
+without synthesis or routing. Compiled programs retain their exact payload and
+result layout. Programs from another environment are checked for compatibility
+before any job in the batch is submitted.
 
-Register a package serializer through its entry point:
-
-```toml
-[project.entry-points."mqt.core.qiskit.program_serializers"]
-CUSTOM1 = "my_device.serializers:serialize_program"
-```
-
-Or call
-{py:func}`~mqt.core.plugins.qiskit.serializers.register_program_serializer`.
-Explicit registration takes precedence over package entry points, which take
-precedence over built-in fallbacks. `replace=True` replaces an existing
-registration; unregistering a format also disables its fallback.
-
-Formats are tried in this order:
-
-```text
-IQM_JSON, CUSTOM1 ... CUSTOM5, QPY, QASM3,
-QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
-QIR_BASE_MODULE, QIR_BASE_STRING, QASM2
-```
-
-The backend checks payload types. Prepared payloads, result maps, and circuit
-headers survive retries without reserialization. Persist all three if adding
-cross-process recovery; a remote job ID alone cannot recover frontend outputs.
+Payloads, result layouts and copied circuit headers survive retries without
+reserialization. Persist all three for cross-process recovery; a remote job ID
+alone cannot recover frontend outputs.
 
 ### Device-specific execution options
 

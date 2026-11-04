@@ -494,6 +494,16 @@ TEST(CompilerQDMIAdapterTest,
   }
   EXPECT_TRUE(
       llvm::errorToBool(mlir::targetEnvironmentFromDevice(device).takeError()));
+  formats = {QDMI_PROGRAM_FORMAT_QPY, QDMI_PROGRAM_FORMAT_QASM3};
+  const auto fallback =
+      llvm::cantFail(mlir::targetEnvironmentFromDevice(device));
+  EXPECT_EQ(fallback.payloadSpecification().format().id, "openqasm");
+  auto missingQPY =
+      mlir::targetEnvironmentFromDevice(device, QDMI_PROGRAM_FORMAT_QPY);
+  ASSERT_FALSE(missingQPY);
+  EXPECT_NE(
+      llvm::toString(missingQPY.takeError()).find("Python Qiskit bindings"),
+      std::string::npos);
   formats = {QDMI_PROGRAM_FORMAT_QASM3};
   EXPECT_TRUE(
       llvm::errorToBool(mlir::targetEnvironmentFromDevice(
@@ -1930,9 +1940,9 @@ TEST(CompilerQDMIAdapterTest, SerializesNativeIQMMoveWithReadoutLayout) {
             qc.r(%one, %zero) %q : !qc.qubit
             func.call @move(%{0}, %{1}) : (!qc.qubit, !qc.qubit) -> ()
             qc.ctrl(%b) targets(%t = %r) {{ qc.z %t : !qc.qubit qc.yield } : {{!qc.qubit}, {{!qc.qubit}
+            %m1 = qc.measure %b : !qc.qubit -> i1
             func.call @move(%{0}, %{1}) : (!qc.qubit, !qc.qubit) -> ()
             %m0 = qc.measure %q : !qc.qubit -> i1
-            %m1 = qc.measure %b : !qc.qubit -> i1
             cbit.store %m0, %c[%i1] : !cbit.reg<2>
             cbit.store %m1, %c[%i0] : !cbit.reg<2>
             return %c : !cbit.reg<2>
@@ -1957,9 +1967,65 @@ TEST(CompilerQDMIAdapterTest, SerializesNativeIQMMoveWithReadoutLayout) {
     const auto json = llvm::cantFail(llvm::json::parse(compiled->payload()));
     const auto& instructions = *json.getAsObject()->getArray("instructions");
     ASSERT_EQ(instructions.size(), 6);
+    bool measured = false;
+    for (const auto& instruction : instructions) {
+      const auto name = instruction.getAsObject()->getString("name");
+      measured |= name == "measure";
+      if (name == "move") {
+        EXPECT_FALSE(measured);
+      }
+    }
     EXPECT_EQ(instructions[1].getAsObject()->getString("name"), "move");
     EXPECT_EQ(*instructions[1].getAsObject()->getArray("locus"),
               (llvm::json::Array{"QB1", "CR1"}));
     EXPECT_EQ(instructions[2].getAsObject()->getString("name"), "cz");
   }
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsNativeCallsOnMeasuredQubits) {
+  auto program = llvm::cantFail(mlir::QCProgram::fromMLIRString(R"mlir(module {
+    func.func private @x(!qc.qubit)
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %q = qc.static 0 : !qc.qubit
+      %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %m = qc.measure %q : !qc.qubit -> i1
+      cbit.store %m, %c[%zero] : !cbit.reg<1>
+      func.call @x(%q) : (!qc.qubit) -> ()
+      return %c : !cbit.reg<1>
+    }
+  })mlir"));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto compiled = mlir::CompiledProgram::serialize(std::move(program), device,
+                                                   QDMI_PROGRAM_FORMAT_QASM3);
+  ASSERT_FALSE(static_cast<bool>(compiled));
+  EXPECT_NE(llvm::toString(compiled.takeError()).find("measured qubit"),
+            std::string::npos);
+}
+
+TEST(CompilerQDMIAdapterTest, RejectsUnschedulableNativeCallsAfterReadout) {
+  auto program = llvm::cantFail(mlir::QCProgram::fromMLIRString(R"mlir(module {
+    func.func private @x(!qc.qubit)
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %q = qc.static 0 : !qc.qubit
+      %other = qc.static 1 : !qc.qubit
+      %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %m = qc.measure %q : !qc.qubit -> i1
+      cbit.store %m, %c[%zero] : !cbit.reg<1>
+      scf.if %m {
+        func.call @x(%other) : (!qc.qubit) -> ()
+      }
+      return %c : !cbit.reg<1>
+    }
+  })mlir"));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  auto compiled = mlir::CompiledProgram::serialize(std::move(program), device,
+                                                   QDMI_PROGRAM_FORMAT_QASM3);
+  ASSERT_FALSE(static_cast<bool>(compiled));
+  EXPECT_NE(
+      llvm::toString(compiled.takeError()).find("static terminal readout"),
+      std::string::npos);
 }

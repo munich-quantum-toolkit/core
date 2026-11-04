@@ -11,6 +11,7 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
@@ -34,10 +35,12 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/VersionTuple.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -471,7 +474,11 @@ snapshotOperations(const std::vector<qdmi::Operation>& operations,
       return metadata.takeError();
     }
     auto constraints = parseOperationParameterConstraints(
-        metadataText(*metadata), *numParameters);
+        *metadata
+            ? StringRef(reinterpret_cast<const char*>((*metadata)->data()),
+                        (*metadata)->size())
+            : StringRef(),
+        *numParameters);
     if (!constraints) {
       return constraints.takeError();
     }
@@ -640,9 +647,14 @@ Expected<std::vector<std::string>> registeredQDMIDeviceIds() {
   return session->getDeviceIds();
 }
 
+static std::atomic<QPYExporter> qpyExporter = nullptr;
+
+void setQPYExporter(QPYExporter exporter) { qpyExporter = exporter; }
+
 constexpr std::array PROGRAM_FORMAT_PREFERENCE{
     QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
     QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+    QDMI_PROGRAM_FORMAT_QPY,
     QDMI_PROGRAM_FORMAT_QASM3,
     QDMI_PROGRAM_FORMAT_IQMJSON,
     QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
@@ -711,6 +723,12 @@ static bool supportsCapability(const ProgramCapability& compiled,
 
 static Expected<QDMI_Program_Format>
 qdmiFormatForPayload(const PayloadSpecification& payload) {
+  if (payload.format().id == "qpy" &&
+      payload.format().encoding == PayloadEncoding::Binary &&
+      payload.versionRange() &&
+      payload.versionRange()->contains(llvm::VersionTuple(17))) {
+    return QDMI_PROGRAM_FORMAT_QPY;
+  }
   auto output = payload.compilerOutput();
   if (!output) {
     return output.takeError();
@@ -740,6 +758,18 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
                             ? PayloadEncoding::Binary
                             : PayloadEncoding::Text;
   switch (format) {
+  case QDMI_PROGRAM_FORMAT_QPY:
+    if (!qpyExporter) {
+      return createStringError(
+          std::make_error_code(std::errc::not_supported),
+          "QPY output requires the Python Qiskit bindings");
+    }
+    return PayloadSpecification::create(
+        {.id = "qpy", .version = "17", .encoding = PayloadEncoding::Binary},
+        {{.id = ProgramCapability::FORWARD_BRANCHING.str()},
+         {.id = ProgramCapability::COUNTED_ITERATION.str()},
+         {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
+         {.id = ProgramCapability::MULTIWAY_BRANCHING.str()}});
   case QDMI_PROGRAM_FORMAT_IQMJSON:
     return PayloadSpecification::forProgramFormat(ProgramFormat::IQMJSON,
                                                   encoding);
@@ -780,7 +810,8 @@ snapshotTargetEnvironment(const qdmi::Device& device,
   }
   if (!format) {
     for (const auto candidate : PROGRAM_FORMAT_PREFERENCE) {
-      if (llvm::is_contained(supported, candidate)) {
+      if ((candidate != QDMI_PROGRAM_FORMAT_QPY || qpyExporter) &&
+          llvm::is_contained(supported, candidate)) {
         format = candidate;
         break;
       }
@@ -862,9 +893,11 @@ Error validateTargetCompatibility(const TargetEnvironment& compiled,
 CompiledProgram::CompiledProgram(TargetEnvironment environment,
                                  std::string payload,
                                  QDMI_Program_Format format,
-                                 std::optional<ResultLayout> resultLayout)
+                                 std::optional<ResultLayout> resultLayout,
+                                 std::optional<size_t> resultWidth)
     : environment_(std::move(environment)), payload_(std::move(payload)),
-      format_(format), resultLayout_(std::move(resultLayout)) {}
+      format_(format), resultLayout_(std::move(resultLayout)),
+      resultWidth_(resultWidth) {}
 
 static Expected<std::string> serializeQIR(QIRProgram program,
                                           QDMI_Program_Format format) {
@@ -923,12 +956,43 @@ CompiledProgram::serialize(QCProgram program,
     IRRewriter rewriter(context.get());
     mqt::dropGlobalPhases(program.module(), rewriter);
   }
-  std::optional<ResultLayout> layout;
-  if (auto normalized = normalizeTerminalReadout(program.module());
-      succeeded(normalized) && !normalized->isIdentity()) {
-    layout = std::move(*normalized);
+  std::optional<size_t> resultWidth = 0;
+  if (auto entry = mqt::getEntryPoint(program.module())) {
+    for (auto type : entry.getResultTypes()) {
+      if (auto reg = dyn_cast<cbit::RegisterType>(type)) {
+        *resultWidth += reg.getWidth();
+      } else if (type.isInteger(1)) {
+        ++*resultWidth;
+      } else {
+        resultWidth.reset();
+        break;
+      }
+    }
+  } else {
+    resultWidth.reset();
   }
-  attachTargetEnvironment(program.module(), environment);
+  std::optional<ResultLayout> layout;
+  auto normalized = normalizeTerminalReadout(program.module());
+  if (!normalized) {
+    return normalized.takeError();
+  }
+  if (*normalized && !(*normalized)->isIdentity()) {
+    layout = std::move(**normalized);
+  }
+  if (*format == QDMI_PROGRAM_FORMAT_QPY) {
+    const auto exporter = qpyExporter.load();
+    if (exporter == nullptr) {
+      return createStringError(
+          std::make_error_code(std::errc::not_supported),
+          "QPY output requires the Python Qiskit bindings");
+    }
+    auto payload = exporter(std::move(program), environment);
+    if (!payload) {
+      return payload.takeError();
+    }
+    return CompiledProgram(environment, std::move(*payload), *format,
+                           std::move(layout), resultWidth);
+  }
   auto output = environment.payloadSpecification().compilerOutput();
   if (!output) {
     return output.takeError();
@@ -952,7 +1016,7 @@ CompiledProgram::serialize(QCProgram program,
     return payload.takeError();
   }
   return CompiledProgram(environment, std::move(*payload), *format,
-                         std::move(layout));
+                         std::move(layout), resultWidth);
 }
 
 Expected<CompiledProgram>

@@ -21,6 +21,7 @@ from numpy.typing import NDArray
 
 import mqt.core.dd
 import mqt.core.qdmi
+from mqt.core.plugins.qiskit.backend import QDMIBackend
 from mqt.core.qdmi import Device
 
 _CompilerInput: TypeAlias = (
@@ -99,6 +100,9 @@ class OutputFormat(enum.Enum):
 
     QISKIT = 10
     """A Qiskit QuantumCircuit."""
+
+    QPY = 11
+    """A QPY 17 binary circuit."""
 
 class PayloadEncoding(enum.Enum):
     """Payload representation encoding."""
@@ -1518,6 +1522,13 @@ class CompiledProgram:
     """A compiled program ready for QDMI submission."""
 
     @property
+    def result_width(self) -> int | None:
+        """Logical bit width, or None for non-bit outputs."""
+
+    def _validate_environment(self, environment: TargetEnvironment) -> None:
+        """Check destination compatibility before submission."""
+
+    @property
     def result_layout(self) -> ResultLayout | None:
         """Logical output reconstruction, or None for an identity layout."""
 
@@ -1606,7 +1617,31 @@ def compile_program(
     program: _CompilerInput,
     *,
     target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QPY],
+    **kwargs: Unpack[_CompileOptions],
+) -> bytes: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget | None = None,
     output: Literal[OutputFormat.QISKIT],
+    **kwargs: Unpack[_CompileOptions],
+) -> qiskit.circuit.QuantumCircuit: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: QDMIBackend,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> CompiledProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: qiskit.transpiler.Target,
+    output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> qiskit.circuit.QuantumCircuit: ...
 @overload
@@ -1616,7 +1651,7 @@ def compile_program(
     target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
-) -> qiskit.circuit.QuantumCircuit: ...
+) -> qiskit.circuit.QuantumCircuit | CompiledProgram: ...
 @overload
 def compile_program(
     program: _CompilerInput,
@@ -1718,7 +1753,31 @@ def compile_program(
     program: Sequence[_CompilerInputT],
     *,
     target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QPY],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[bytes]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
     output: Literal[OutputFormat.QISKIT],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[qiskit.circuit.QuantumCircuit]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: QDMIBackend,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[CompiledProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: qiskit.transpiler.Target,
+    output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[qiskit.circuit.QuantumCircuit]: ...
 @overload
@@ -1728,7 +1787,7 @@ def compile_program(
     target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
-) -> list[qiskit.circuit.QuantumCircuit]: ...
+) -> list[qiskit.circuit.QuantumCircuit] | list[CompiledProgram]: ...
 @overload
 def compile_program(
     program: Sequence[_CompilerInputT],
@@ -1768,7 +1827,7 @@ def compile_program(
     Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
     An explicit ``output`` selects each result's representation. Without it, a
-    Qiskit target selects QuantumCircuit and a QDMI device or target environment selects
+    Qiskit target selects QuantumCircuit and a QDMI backend, device or target environment selects
     :class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
     retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
     QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and

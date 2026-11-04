@@ -155,11 +155,13 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
 
 FailureOr<std::optional<PayloadSpecification>>
 prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
-                 function_ref<LogicalResult(OpPassManager&)> runPipeline) {
-  if (!moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+                 function_ref<LogicalResult(OpPassManager&)> runPipeline,
+                 const TargetEnvironment* preparedEnvironment) {
+  if (preparedEnvironment == nullptr &&
+      !moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
     return std::optional<PayloadSpecification>{};
   }
-  const TargetEnvironmentAnalysis environment(moduleOp);
+  const TargetEnvironmentAnalysis environment(moduleOp, preparedEnvironment);
   if (!environment) {
     moduleOp.emitError(environment.error());
     return failure();
@@ -858,11 +860,12 @@ nameOpaqueQIRGates(ModuleOp moduleOp,
   return success();
 }
 
-LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
-                                      bool allowComputedOutputs,
-                                      bool deferMeasurementStores) {
+LogicalResult
+prepareClassicalResults(Operation* moduleOp, LoweringState& state,
+                        bool allowComputedOutputs, bool deferMeasurementStores,
+                        const TargetEnvironment* preparedEnvironment) {
   auto funcOp = mqt::getEntryPoint(cast<ModuleOp>(moduleOp));
-  const TargetEnvironmentAnalysis environment(moduleOp);
+  const TargetEnvironmentAnalysis environment(moduleOp, preparedEnvironment);
   if (environment &&
       environment.environment().target().nativeOperationsKind() ==
           CompilerTarget::NativeOperations::Kind::Explicit) {

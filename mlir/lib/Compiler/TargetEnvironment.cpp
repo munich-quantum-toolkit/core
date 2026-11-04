@@ -422,10 +422,13 @@ void attachTargetEnvironment(ModuleOp moduleOp,
   moduleOp->setAttr(mqt::TargetEnvAttr::name, environment.materialize(context));
 }
 
-TargetEnvironmentAnalysis::TargetEnvironmentAnalysis(Operation* operation)
+TargetEnvironmentAnalysis::TargetEnvironmentAnalysis(
+    Operation* operation, const TargetEnvironment* environment)
     : moduleOp_(cast<ModuleOp>(operation)),
       attribute_(moduleOp_->getAttrOfType<mqt::TargetEnvAttr>(
-          mqt::TargetEnvAttr::name)) {}
+          mqt::TargetEnvAttr::name)),
+      environment_(environment != nullptr ? std::optional(*environment)
+                                          : std::nullopt) {}
 
 void TargetEnvironmentAnalysis::initialize(
     const TargetEnvironment& environment) {

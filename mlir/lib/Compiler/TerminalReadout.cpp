@@ -20,8 +20,10 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/SymbolTable.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -139,12 +141,24 @@ analyzeTerminalReadout(ModuleOp moduleOp) {
     } else if (isa<arith::ConstantOp, qc::BarrierOp>(operation)) {
       continue;
     } else if (auto call = dyn_cast<func::CallOp>(operation)) {
-      // Calls can hide static sites or retain classical registers we rewrite.
-      if (!measuredSites.empty() || call.getNumResults() != 0 ||
+      auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+          call, call.getCalleeAttr());
+      // Defined functions can hide sites or classical references. Native
+      // declarations act only on their explicit qubit operands.
+      if (!callee || !callee.isExternal() || call.getNumResults() != 0 ||
           !llvm::all_of(call.getOperandTypes(), [](Type type) {
             return type.isF64() || isa<qc::QubitType>(type);
           })) {
         return failure();
+      }
+      for (auto operand : call.getOperands()) {
+        if (!isa<qc::QubitType>(operand.getType())) {
+          continue;
+        }
+        auto qubit = operand.getDefiningOp<qc::StaticOp>();
+        if (!qubit || measuredSites.contains(qubit.getIndex())) {
+          return failure();
+        }
       }
     } else if (isa<qc::UnitaryOpInterface, qc::ResetOp>(operation)) {
       for (auto operand : operation.getOperands()) {
@@ -198,10 +212,48 @@ void scheduleTerminalReadout(ModuleOp moduleOp) {
   }
 }
 
-FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp) {
+llvm::Expected<std::optional<ResultLayout>>
+normalizeTerminalReadout(ModuleOp moduleOp) {
+  llvm::DenseSet<Value> measuredQubits;
+  llvm::DenseSet<uint64_t> measuredIndices;
+  bool nativeAfterMeasurement = false;
+  auto entry = mqt::getEntryPoint(moduleOp);
+  if (!entry) {
+    return std::nullopt;
+  }
+  const auto nativeReuse = entry.walk([&](Operation* operation) {
+    if (auto measurement = dyn_cast<qc::MeasureOp>(operation)) {
+      measuredQubits.insert(measurement.getQubit());
+      if (auto site = measurement.getQubit().getDefiningOp<qc::StaticOp>()) {
+        measuredIndices.insert(site.getIndex());
+      }
+    } else if (auto call = dyn_cast<func::CallOp>(operation)) {
+      auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+          call, call.getCalleeAttr());
+      if (callee && callee.isExternal()) {
+        nativeAfterMeasurement |= !measuredQubits.empty();
+        for (auto operand : call.getOperands()) {
+          auto site = operand.getDefiningOp<qc::StaticOp>();
+          if (measuredQubits.contains(operand) ||
+              (site && measuredIndices.contains(site.getIndex()))) {
+            return WalkResult::interrupt();
+          }
+        }
+      }
+    }
+    return WalkResult::advance();
+  });
+  if (nativeReuse.wasInterrupted()) {
+    return llvm::createStringError(
+        "native calls cannot reuse a measured qubit");
+  }
   auto plan = analyzeTerminalReadout(moduleOp);
   if (failed(plan)) {
-    return failure();
+    if (nativeAfterMeasurement) {
+      return llvm::createStringError(
+          "native calls after measurements require static terminal readout");
+    }
+    return std::nullopt;
   }
   auto& [function, returnOp, measuredSites, oldReadout, layout] = *plan;
   OpBuilder builder(returnOp);

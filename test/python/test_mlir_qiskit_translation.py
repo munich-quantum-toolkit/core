@@ -4921,7 +4921,7 @@ def test_qiskit_native_export_preserves_sites_gate_names_and_phase() -> None:
     circuit.sxdg(3)
     source = QCProgram.from_qiskit(circuit, native=True).to_openqasm3().source
     assert "cx $2, $0;" in source
-    assert "sxdg $3;" in source
+    assert "inv @ sx $3;" in source
     np.testing.assert_allclose(simulate(source), Statevector(circuit).data, atol=1e-12)
 
 
@@ -5103,3 +5103,40 @@ assert seen[0].category is UntestedVersionWarning
 assert '2.99.0' in str(seen[0].message)
 """
     subprocess.run([sys.executable, "-c", script], check=True)  # ruff:ignore[subprocess-without-shell-equals-true] Fixed script in an isolated interpreter.
+
+
+def test_qpy_compilation_and_native_readout() -> None:
+    """QPY preserves dynamic control flow and native logical readout."""
+    circuit = QuantumCircuit(2, 2)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], True)):
+        circuit.x(1)
+    circuit.measure(1, 1)
+    payload = compile_program(circuit, output=OutputFormat.QPY)
+    assert isinstance(payload, bytes)
+    assert qpy.get_qpy_version(BytesIO(payload)) == 17
+    restored = qpy.load(BytesIO(payload))[0]
+    assert restored.count_ops() == circuit.count_ops()
+
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("x", 1, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    environment = TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY))
+    native = QuantumCircuit(2, 3)
+    native.metadata = {"labels": ["original"]}
+    native.x(0)
+    native.measure([0, 1], [2, 0])
+    program = serialize_program(native, target=environment)
+    assert program.program_format == ProgramFormat.QPY
+    assert program.result_width == 3
+    assert program.result_layout is not None
+    assert program.result_layout.decode_bits("01") == "100"
+    assert isinstance(program.payload, bytes)
+    restored = qpy.load(BytesIO(program.payload))[0]
+    assert restored.count_ops() == {"x": 1, "measure": 2}

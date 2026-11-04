@@ -8,8 +8,6 @@ The format is based on a mixture of [Keep a Changelog] and [Common Changelog].
 This project adheres to [Semantic Versioning], with the exception that minor
 releases may include breaking changes.
 
-## Unreleased
-
 ## [4.1.1] - 2026-10-13
 
 ### Fixed

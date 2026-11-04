@@ -60,6 +60,7 @@ canReuseMeasurementBit(MeasureOp measure, cbit::StoreOp destination,
   const bool localRegister = local->second;
   SmallVector<Operation*> pending(measure.getResult().getUsers());
   llvm::SmallPtrSet<Operation*, 16> visited;
+  Operation* lastUser = measure;
   while (!pending.empty()) {
     auto* user = pending.pop_back_val();
     if (!visited.insert(user).second) {
@@ -69,11 +70,14 @@ canReuseMeasurementBit(MeasureOp measure, cbit::StoreOp destination,
         user->hasTrait<OpTrait::IsTerminator>()) {
       return false;
     }
+    if (lastUser->isBeforeInBlock(user)) {
+      lastUser = user;
+    }
     for (auto result : user->getResults()) {
       llvm::append_range(pending, result.getUsers());
     }
   }
-  for (auto* op = measure->getNextNode(); op != nullptr;
+  for (auto* op = measure->getNextNode(); op != lastUser->getNextNode();
        op = op->getNextNode()) {
     const auto result = op->walk<WalkOrder::PreOrder>([&](Operation*
                                                               candidate) {

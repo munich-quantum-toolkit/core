@@ -1,8 +1,8 @@
 # Qiskit compatibility
 
 Install `mqt-core[qiskit]` for Qiskit `>=2.5,<3`. The
-{doc}`QDMI backend <../qdmi/qdmi_backend>` executes circuits through
-device-specific serializers. The
+{doc}`QDMI backend <../qdmi/qdmi_backend>` executes circuits through compiled
+payloads and retained result layouts. The
 {doc}`MQT Compiler Collection <mqt_compiler_collection>` imports and exports
 circuits through its versioned native adapter.
 
