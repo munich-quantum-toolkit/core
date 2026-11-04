@@ -17,6 +17,7 @@
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
 #include "qdmi/QDMI.hpp"
 
 #include "Diagnostics.h"
@@ -950,7 +951,10 @@ CompiledProgram::serialize(QCProgram program,
   }
   const auto context = program.context();
   CompilerDiagnostics diagnostics(context.get());
-  if (failed(program.cleanup())) {
+  // Native cleanup preserves physical site IDs and their recorded layout.
+  if (failed(runWithPassManager(program.module(), populateQCCleanupPipeline,
+                                "failed to clean up native QC", options,
+                                true))) {
     return diagnostics.takeError(
         std::make_error_code(std::errc::invalid_argument));
   }

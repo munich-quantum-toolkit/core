@@ -12,6 +12,7 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -517,13 +518,26 @@ TEST(CompilerQDMIAdapterTest,
     const auto resetExporter =
         llvm::make_scope_exit([] { mlir::setQPYExporter(nullptr); });
     mlir::setQPYExporter(
-        +[](mlir::QCProgram,
+        +[](mlir::QCProgram program,
             const mlir::TargetEnvironment&) -> llvm::Expected<std::string> {
+          const auto expectedLayout =
+              mlir::mqt::QubitLayout{
+                  .initial = {0},
+                  .inputCount = 1,
+              }
+                  .toAttr(program.module().getContext());
+          EXPECT_EQ(program.module()->getAttr("mqt.layout"), expectedLayout);
           return std::string("fake QPY payload");
         });
     formats = {QDMI_PROGRAM_FORMAT_QASM3, QDMI_PROGRAM_FORMAT_QPY};
     auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
         "OPENQASM 3; include \"stdgates.inc\"; x $0;"));
+    program.module()->setAttr("mqt.layout",
+                              mlir::mqt::QubitLayout{
+                                  .initial = {0},
+                                  .inputCount = 1,
+                              }
+                                  .toAttr(program.module().getContext()));
     auto compiled =
         mlir::CompiledProgram::serialize(std::move(program), device);
     MQT_ASSERT_SUCCESS(compiled);
