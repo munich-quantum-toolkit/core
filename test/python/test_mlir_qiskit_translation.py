@@ -5041,11 +5041,8 @@ def test_qiskit_target_retains_disabled_site_holes_and_source_header() -> None:
     payload = artifact.payload
     assert isinstance(payload, str)
     raw_counts = sample(payload, shots=8)
-    counts = (
-        {artifact.result_layout.decode_bits(bits): count for bits, count in raw_counts.items()}
-        if artifact.result_layout is not None
-        else raw_counts
-    )
+    assert artifact.result_layout is not None
+    counts = {artifact.result_layout.decode_bits(bits): count for bits, count in raw_counts.items()}
     assert counts == {"1001": 8}
 
 

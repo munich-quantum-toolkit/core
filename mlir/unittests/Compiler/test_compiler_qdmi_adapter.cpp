@@ -11,7 +11,11 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/IR/QCInterfaces.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 #include "qdmi/QDMI.hpp"
 
@@ -38,6 +42,7 @@
 #include <cassert>
 #include <cstring>
 #include <initializer_list>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <numeric>
@@ -1630,6 +1635,36 @@ TEST(CompilerQDMIAdapterTest, RejectsNonNativeSerialization) {
     EXPECT_FALSE(static_cast<bool>(compiled));
     llvm::consumeError(compiled.takeError());
   }
+}
+
+TEST(CompilerQDMIAdapterTest, SchedulesReadoutWithoutChangingClassicalResults) {
+  using namespace mlir;
+  auto input = QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; bit[2] a; bit[1] b; "
+      "a[0] = measure $2; x $1; a[1] = measure $1; x $0; b[0] = measure $0;");
+  MQT_ASSERT_SUCCESS(input);
+  auto output =
+      runDefaultPipeline(CompilerInput(std::move(*input)), ProgramFormat::QC);
+  MQT_ASSERT_SUCCESS(output);
+  auto& compiled = std::get<QCProgram>(*output);
+  auto function = mlir::mqt::getEntryPoint(compiled.module());
+  ASSERT_EQ(function.getNumResults(), 2U);
+  bool measured = false;
+  for (auto& operation : function.getBody().front()) {
+    if (isa<mlir::qc::MeasureOp>(operation)) {
+      measured = true;
+    } else if (isa<mlir::qc::UnitaryOpInterface, mlir::qc::ResetOp>(
+                   operation)) {
+      EXPECT_FALSE(measured);
+    }
+  }
+  EXPECT_TRUE(measured);
+  auto restored = compiled.copy().intoQCO();
+  ASSERT_TRUE(succeeded(restored));
+  auto counts =
+      qco::sample(mlir::mqt::getEntryPoint(restored->module()), 4, 42);
+  ASSERT_TRUE(succeeded(counts));
+  EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"110", 4}}));
 }
 
 TEST(CompilerQDMIAdapterTest, TerminalReadoutAllowsIndependentGates) {

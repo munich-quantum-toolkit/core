@@ -15,7 +15,7 @@
 namespace mlir {
 /// Prepare and export native QC using the selected output format.
 [[nodiscard]] FailureOr<CompilerProgram>
-exportQCProgram(QCProgram program, ProgramFormat output,
+exportQCProgram(QCProgram qc, ProgramFormat output,
                 const TargetEnvironment* environment,
                 const CompilationOptions& options = {});
 

@@ -29,6 +29,7 @@
 
 #include "Diagnostics.h"
 #include "Export.h"
+#include "TerminalReadout.h"
 
 #include "capnp/common.h"
 #include "jeff/Translation/Deserialize.hpp"
@@ -449,6 +450,12 @@ LogicalResult QIRProgram::writeBitcode(const std::filesystem::path& path) && {
 FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
                                            const TargetEnvironment* environment,
                                            const CompilationOptions& options) {
+  if (output == ProgramFormat::QC) {
+    // Keep verified independent gates ahead of readout before native frontends
+    // replace them with opaque calls. Preserve resources and routing metadata.
+    scheduleTerminalReadout(qc.module());
+    return CompilerProgram(std::move(qc));
+  }
   if (output == ProgramFormat::OpenQASM3 ||
       output == ProgramFormat::OpenQASM2) {
     if (failed(runWithPassManager(qc.module(), populateQCExportPipeline,
@@ -612,10 +619,6 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
   auto qc = std::move(*qco).intoQC();
   if (failed(qc)) {
     return failure();
-  }
-  if (output == ProgramFormat::QC) {
-    // Export cleanup can change resources and invalidate routing metadata.
-    return CompilerProgram(std::move(*qc));
   }
   return exportQCProgram(std::move(*qc), output, environment, options);
 }

@@ -18,6 +18,11 @@
 
 namespace mlir {
 
+/// Move static terminal measurements and stores after independent gates.
+/// Preserve classical destinations, results, and layout metadata. Leave
+/// programs unchanged when terminal-readout analysis fails.
+void scheduleTerminalReadout(ModuleOp moduleOp);
+
 /// Replace terminal measurements and classical stores with dense raw readout.
 ///
 /// Requires static qubits and straight-line terminal CBit register outputs. Raw

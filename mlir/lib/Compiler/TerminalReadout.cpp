@@ -33,6 +33,7 @@
 #include <optional>
 #include <string>
 #include <system_error>
+#include <utility>
 #include <vector>
 
 namespace mlir {
@@ -65,7 +66,20 @@ ResultLayout::decodeBits(llvm::StringRef raw) const {
   return result;
 }
 
-FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp) {
+namespace {
+
+struct TerminalReadoutPlan {
+  func::FuncOp function;
+  func::ReturnOp returnOp;
+  std::map<size_t, Value> measuredSites;
+  SmallVector<Operation*> oldReadout;
+  ResultLayout layout;
+};
+
+} // namespace
+
+static FailureOr<TerminalReadoutPlan>
+analyzeTerminalReadout(ModuleOp moduleOp) {
   auto function = mqt::getEntryPoint(moduleOp);
   if (!function || !llvm::hasSingleElement(function.getBody())) {
     return failure();
@@ -163,6 +177,33 @@ FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp) {
     return failure();
   }
 
+  return TerminalReadoutPlan{
+      function,
+      returnOp,
+      std::move(measuredSites),
+      std::move(oldReadout),
+      std::move(layout),
+  };
+}
+
+void scheduleTerminalReadout(ModuleOp moduleOp) {
+  auto plan = analyzeTerminalReadout(moduleOp);
+  if (failed(plan)) {
+    return;
+  }
+  for (auto* operation : plan->oldReadout) {
+    if (isa<qc::MeasureOp, cbit::StoreOp>(operation)) {
+      operation->moveBefore(plan->returnOp);
+    }
+  }
+}
+
+FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp) {
+  auto plan = analyzeTerminalReadout(moduleOp);
+  if (failed(plan)) {
+    return failure();
+  }
+  auto& [function, returnOp, measuredSites, oldReadout, layout] = *plan;
   OpBuilder builder(returnOp);
   auto raw = cbit::AllocOp::create(
       builder, returnOp.getLoc(),
@@ -193,7 +234,7 @@ FailureOr<ResultLayout> normalizeTerminalReadout(ModuleOp moduleOp) {
   for (auto* operation : llvm::reverse(oldReadout)) {
     operation->erase();
   }
-  return layout;
+  return std::move(layout);
 }
 
 } // namespace mlir
