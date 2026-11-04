@@ -15,7 +15,8 @@ import os
 import re
 import struct
 from pathlib import Path
-from typing import TYPE_CHECKING, get_type_hints
+from typing import TYPE_CHECKING, cast, get_type_hints
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -24,6 +25,7 @@ from qiskit.circuit import ClassicalRegister, Clbit, Parameter, QuantumRegister
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
+from test_mock_backend import MockQDMIDevice
 
 from mqt.core.mlir import (
     CompiledProgram,
@@ -39,7 +41,7 @@ from mqt.core.plugins.qiskit import (
     TranslationError,
     UnsupportedOperationError,
 )
-from mqt.core.qdmi import ProgramFormat, open_device
+from mqt.core.qdmi import Job, ProgramFormat, open_device
 from mqt.core.qdmi.builtin_driver import open_device as open_default_device
 from mqt.core.typing import QDMISessionParameters
 
@@ -689,3 +691,57 @@ def test_native_submission_preserves_folded_unitary_sequence(
         ]
         assert angles == [0.0, 1e-16]
         assert "@__quantum__qis__x__body(ptr inttoptr (i64 1 to ptr))" in payloads[0]
+
+
+def test_resonator_compilation_uses_native_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A native star snapshot compiles and submits with permuted result decoding."""
+    config = {
+        "schema-version": 1,
+        "name": "Offline star",
+        "numQubits": 3,
+        "durationUnit": {"unit": "ns", "scaleFactor": 1},
+        "qubitProperties": {
+            "defaults": {},
+            "overrides": [{"qubit": 0, "name": "CR"}, {"qubit": 1, "name": "QB1"}, {"qubit": 2, "name": "QB2"}],
+        },
+        "couplings": [[1, 0], [2, 0], [0, 1], [0, 2]],
+        "operations": [
+            {"name": "r", "numParameters": 2, "numQubits": 1, "sites": [[1], [2]]},
+            {"name": "measure", "numParameters": 0, "numQubits": 1, "sites": [[1], [2]]},
+            {"name": "cz", "numParameters": 0, "numQubits": 2, "sites": [[0, 1], [0, 2]]},
+            {"name": "move", "numParameters": 0, "numQubits": 2, "sites": [[1, 0], [2, 0]]},
+        ],
+    }
+    device = open_default_device("mqt.sc.default", device_config=json.dumps(config))
+    environment = TargetEnvironment(
+        CompilerTarget.from_device(device), PayloadSpecification.from_program_format(ProgramFormat.IQM_JSON)
+    )
+    transport = MockQDMIDevice(num_qubits=3, operations=["r", "cz", "measure"])
+    monkeypatch.setattr(TargetEnvironment, "from_device", lambda *_args, **_kwargs: environment)
+    submitted = []
+
+    def submit(payload: str, program_format: ProgramFormat, num_shots: int) -> MagicMock:
+        assert program_format == ProgramFormat.IQM_JSON
+        submitted.append(payload)
+        job = MagicMock()
+        job.id = "offline-star"
+        job.num_shots = num_shots
+        job.check.return_value = Job.Status.DONE
+        job.get_program_status.return_value = None
+        job.get_counts.return_value = {"01": num_shots}
+        return job
+
+    monkeypatch.setattr(transport, "submit_job", submit)
+    backend = QDMIBackend(cast("QDMIDevice", transport))
+    circuit = QuantumCircuit(2, 2)
+    circuit.h(0)
+    circuit.h(1)
+    circuit.cz(0, 1)
+    circuit.measure([0, 1], [1, 0])
+    compiled = backend.compile(circuit)
+    assert isinstance(compiled, CompiledProgram)
+    result = backend.run(compiled, shots=3).result()
+    assert submitted == [compiled.payload]
+    assert result.get_counts() == {"10": 3}
+    instructions = json.loads(submitted[0])["instructions"]
+    assert sum(instruction["name"] == "move" for instruction in instructions) == 2

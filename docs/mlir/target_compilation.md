@@ -53,6 +53,23 @@ topology, and payload capabilities. IQM JSON also checks site names. Changes to
 calibration values alone do not invalidate a compiled program. Raw payloads can
 be submitted with `device.submit_job`.
 
+Target compilation places qubits only on sites with a supported single-qubit
+gate and measurement. With explicit couplings, it uses their largest connected
+component, including connections through resonators. Targets with ordered
+`move(qubit, resonator)` placements can route CZ gates through idle resonators.
+Core emits closed `move; cz; move` sandwiches before readout. Use
+`compile_program(circuit, target=device)` with `submit_program`,
+`backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.
+Qiskit `transpile` does not support these targets. Native circuits that already
+contain MOVE use `serialize_program` instead. QCO and Jeff compiler checkpoints
+retain virtual CZs; MOVE insertion happens when producing QC and executable
+payloads. The `mqt-cc` target pass pipeline does not provide this placement
+reduction or MOVE insertion.
+
+IQM execution requires its default
+[full MOVE frame tracking](https://docs.iqm.tech/iqm-client/api/iqm.iqm_client.models.CircuitCompilationOptions.html)
+to correct MOVE frames.
+
 ### Choose a format
 
 ```{code-cell} ipython3
@@ -193,8 +210,9 @@ See {doc}`QCO` for routing and synthesis details.
 
 {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` translates to native
 gates while preserving static site IDs. Dynamic qubits require all-to-all
-connectivity. The method checks target support and topology; it mutates the
-program, including on failure, so copy first when needed.
+connectivity. This method does not place qubits or require measurement support.
+It checks target support and topology; it mutates the program, including on
+failure, so copy first when needed.
 
 ### Payload control flow
 

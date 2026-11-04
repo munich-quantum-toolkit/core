@@ -13,6 +13,7 @@
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
@@ -1370,6 +1371,45 @@ size_t CompilerTarget::numSites() const noexcept {
 
 ArrayRef<CompilerTarget::Site> CompilerTarget::sites() const noexcept {
   return storage_->sites;
+}
+
+std::vector<SiteId> CompilerTarget::placeableSites() const {
+  if (nativeOperationsKind() == NativeOperations::Kind::Unrestricted) {
+    return {siteIds().begin(), siteIds().end()};
+  }
+  llvm::DenseSet<SiteId> unary;
+  llvm::DenseSet<SiteId> measured;
+  for (const auto& op : operations()) {
+    const auto name = op.canonicalName();
+    if (!op.arity().accepts(1) || name == "reset" || name == "barrier") {
+      continue;
+    }
+    if (name != "measure") {
+      const auto* gate = qc::lookupStandardGateByOperationSymbol(name);
+      if (gate == nullptr || gate->controlCount != 0 ||
+          gate->targetCount != 1 ||
+          gate->parameterCount != op.numParameters()) {
+        continue;
+      }
+    }
+    auto& supported = name == "measure" ? measured : unary;
+    if (op.siteTuples().empty()) {
+      supported.insert(siteIds().begin(), siteIds().end());
+    } else {
+      for (const auto& tuple : op.siteTuples()) {
+        if (tuple.sites().size() == 1) {
+          supported.insert(tuple.sites().front());
+        }
+      }
+    }
+  }
+  std::vector<SiteId> result;
+  for (const auto site : siteIds()) {
+    if (unary.contains(site) && measured.contains(site)) {
+      result.push_back(site);
+    }
+  }
+  return result;
 }
 
 ArrayRef<SiteId> CompilerTarget::siteIds() const noexcept {

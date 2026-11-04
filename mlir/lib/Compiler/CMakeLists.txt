@@ -16,6 +16,7 @@ add_mlir_library(
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
   LINK_LIBS
   PRIVATE
+  MLIRQCTranslationSupport
   MLIRJeffTranslation
   PUBLIC
   MLIRIR

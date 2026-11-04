@@ -929,6 +929,7 @@ def test_target_compiles_single_qubit_gates_without_entangler(num_sites: int) ->
         num_sites,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("sx", 1, 0),
             CompilerTarget.OperationCapability("x", 1, 0),
             CompilerTarget.OperationCapability("rz", 1, 1),
@@ -990,6 +991,7 @@ def test_fixed_rotation_compilation_preserves_phase(
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability(
                 rotation,
                 1,
@@ -1031,6 +1033,7 @@ def test_fixed_rx_gate_merges_symbolic_rz(shape: str) -> None:
         num_qubits,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[np.pi / 2]),
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("gphase", 0, 1),
@@ -1084,6 +1087,7 @@ def test_long_symbolic_rz_run_exports_and_binds(length: int, method: str) -> Non
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("sx", 1, 0),
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("cz", 2, 0),
@@ -1205,6 +1209,7 @@ def test_runtime_pauli_rotations_compile_and_export(gate: str, native_entangler:
         2,
         connectivity=CompilerTarget.Connectivity([(0, 1)]),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[-np.pi / 2]),
             CompilerTarget.OperationCapability(
@@ -1404,6 +1409,7 @@ def test_symbolic_su2_compiles_and_binds_after_export(num_qubits: int, basis: st
         num_qubits,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             *(
                 [CompilerTarget.OperationCapability("u", 1, 3)]
                 if basis == "u"
@@ -1499,6 +1505,7 @@ def test_target_fusion_preserves_native_gates_and_symbolic_exports(shape: str, m
         source.rx(angles[2], 0)
         if shape == "native_xyx":
             native.update(rx=1, ry=1)
+    native["measure"] = 0
     target = CompilerTarget(
         1,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
@@ -1557,6 +1564,7 @@ def test_fixed_r_and_rzz_compilation_preserves_full_unitary() -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi, None]),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi / 2, None]),
@@ -1643,6 +1651,7 @@ def test_target_synthesis_resynthesizes_two_qubit_blocks() -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("u", 1, 3),
             CompilerTarget.OperationCapability("cz", 2, 0),
             CompilerTarget.OperationCapability("gphase", 0, 1),
@@ -2406,6 +2415,7 @@ def test_fixed_r_short_gate_sequences(angle: float) -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi, None]),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi / 2, None]),
             CompilerTarget.OperationCapability("rz", 1, 1),
@@ -2439,6 +2449,7 @@ def test_compiled_native_r_jeff_round_trip(name: str) -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi, None]),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi / 2, None]),
             CompilerTarget.OperationCapability("rz", 1, 1),
