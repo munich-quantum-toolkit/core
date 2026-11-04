@@ -165,7 +165,7 @@ class QDMIDevice(Device):
         if not supported.contains(installed, prereleases=True):
             msg = f"Catalyst {installed} has an unsupported device ABI; requires {supported}."
             raise ConfigurationError(msg)
-        if Version(installed) > Version("0.15.0") and not QDMIDevice._warned_catalyst_version:
+        if Version(installed).release[:2] > (0, 15) and not QDMIDevice._warned_catalyst_version:
             warnings.warn(
                 f"pennylane-catalyst {installed} is newer than the tested device interface 0.15.0. "
                 "MQT Core will try it, but an interface change can crash the process. "

@@ -34,7 +34,7 @@ if TYPE_CHECKING:
     from pennylane.typing import Result, ResultBatch
 
 
-@pytest.mark.parametrize("installed", ["0.14.1", "1.0.0"])
+@pytest.mark.parametrize("installed", ["0.14.1", "0.15.0rc1", "1.0.0rc1", "1.0.0"])
 def test_rejects_incompatible_catalyst_abi(monkeypatch: pytest.MonkeyPatch, installed: str) -> None:
     """Reject unsupported runtimes before they can call an incompatible C++ vtable."""
     monkeypatch.setattr("mqt.core.plugins.pennylane.device.version", lambda _name: installed)
@@ -239,9 +239,20 @@ def test_openqasm2_execution(*, compiled: bool) -> None:
     np.testing.assert_array_equal(execute(), np.tile([1, 0], (16, 1)))
 
 
-def test_warns_once_for_new_catalyst_abi(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_catalyst_patch_does_not_warn(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Patch releases share the tested minor interface and have a header canary."""
+    monkeypatch.setattr("mqt.core.plugins.pennylane.device.version", lambda _name: "0.15.1")
+    monkeypatch.setattr(QDMIDevice, "_warned_catalyst_version", False)
+    with warnings.catch_warnings(record=True) as recorded:
+        warnings.simplefilter("always")
+        QDMIDevice.get_c_interface()
+    assert not recorded
+
+
+@pytest.mark.parametrize("installed", ["0.16.0", "0.16.0.dev1"])
+def test_warns_once_for_new_catalyst_abi(monkeypatch: pytest.MonkeyPatch, installed: str) -> None:
     """Newer compatible-major runtimes warn before attempting their interface."""
-    monkeypatch.setattr("mqt.core.plugins.pennylane.device.version", lambda _name: "0.16.0")
+    monkeypatch.setattr("mqt.core.plugins.pennylane.device.version", lambda _name: installed)
     monkeypatch.setattr(QDMIDevice, "_warned_catalyst_version", False)
     with pytest.warns(UntestedVersionWarning, match="interface change can crash"):
         assert QDMIDevice.get_c_interface()[0] == "MQTQDMI"

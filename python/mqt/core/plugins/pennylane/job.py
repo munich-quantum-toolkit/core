@@ -102,24 +102,25 @@ class PennyLaneJob:
         """Ordered snapshots of inputs, submission attempts, results, and failures."""
         return self._batch.entries
 
-    def _submit(self, index: int) -> Job:
-        program, shots, _ = self._prepared[index]
+    def _program(self, index: int) -> CompiledProgram:
+        program = self._prepared[index][0]
         assert program is not None
-        return self._device._context.submit(program, shots)  # ruff:ignore[private-member-access] Retained session and target snapshot.
+        return program
+
+    def _submit(self, index: int) -> Job:
+        _, shots, _ = self._prepared[index]
+        return self._device._context.submit(self._program(index), shots)  # ruff:ignore[private-member-access] Retained session and target snapshot.
 
     def _submit_programs(self, indices: Sequence[int]) -> Job | None:
         _, shots, _ = self._prepared[indices[0]]
-        programs = [self._prepared[index][0] for index in indices]
-        assert all(program is not None for program in programs)
         return self._device._context.try_submit(  # ruff:ignore[private-member-access] Retained session and target snapshot.
-            cast("list[CompiledProgram]", programs), shots
+            [self._program(index) for index in indices], shots
         )
 
     def _samples(self, index: int, job: Job, program_index: int) -> np.ndarray:
         """Return a shot-by-wire sample array in the device's logical wire order."""
-        program, shots, width = self._prepared[index]
-        assert program is not None
-        return samples(job, width, shots, program_index, program.result_layout)
+        _, shots, width = self._prepared[index]
+        return samples(job, width, shots, program_index, self._program(index).result_layout)
 
     def _record_submission(self, indices: Sequence[int]) -> None:
         self._device._submitted_jobs += 1  # ruff:ignore[private-member-access] Update the device's read-only total.

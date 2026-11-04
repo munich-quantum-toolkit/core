@@ -9,7 +9,6 @@
 
 # /// script
 # requires-python = ">=3.11"
-# dependencies = ["packaging>=24"]
 # ///
 
 """Check the newest released Catalyst headers against the vendored device ABI."""
@@ -20,25 +19,24 @@ import hashlib
 import json
 import logging
 import sys
+import urllib.error
 import urllib.request
 from pathlib import Path
-
-from packaging.version import Version
 
 LOGGER = logging.getLogger(__name__)
 VENDOR = Path(__file__).resolve().parents[1] / "vendor" / "catalyst"
 
 
-def main() -> int:
-    """Report changed ABI headers.
+def _check_headers() -> int:
+    """Compare the released and vendored device headers.
 
     Returns:
-        One when headers changed, otherwise zero.
+        Zero for unchanged headers or one for drift.
     """
-    snapshot = max(VENDOR.iterdir(), key=lambda path: Version(path.name))
+    snapshot = max(VENDOR.iterdir(), key=lambda path: tuple(map(int, path.name.split("."))))
     provenance = json.loads((snapshot / "PROVENANCE.json").read_text())
     with urllib.request.urlopen("https://pypi.org/pypi/pennylane-catalyst/json", timeout=30) as response:
-        release = Version(json.load(response)["info"]["version"])
+        release = json.load(response)["info"]["version"]
     source = provenance["source"]
     repository = source["repository"].removeprefix("https://github.com/")
     changed = []
@@ -55,6 +53,19 @@ def main() -> int:
         return 1
     LOGGER.info("Catalyst %s matches the vendored %s device interface.", release, snapshot.name)
     return 0
+
+
+def main() -> int:
+    """Check the ABI and distinguish download failures from header drift.
+
+    Returns:
+        Zero for unchanged headers, one for drift, or two for a download failure.
+    """
+    try:
+        return _check_headers()
+    except (urllib.error.URLError, TimeoutError) as error:
+        LOGGER.log(logging.ERROR, "Could not check Catalyst ABI: %s", error)
+        return 2
 
 
 if __name__ == "__main__":

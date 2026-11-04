@@ -14,21 +14,39 @@ import importlib.util
 import json
 from io import BytesIO
 from pathlib import Path
+from typing import TYPE_CHECKING
+from urllib.error import URLError
 
 import pytest
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 pytestmark = pytest.mark.catalyst_abi
 
 
-@pytest.mark.parametrize("changed", [None, "include/QuantumDevice.hpp"])
-def test_header_drift(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, changed: str | None) -> None:
-    """The canary accepts identical headers and names an altered ABI header."""
+@pytest.fixture
+def canary() -> ModuleType:
+    """Load the standalone ABI checker.
+
+    Returns:
+        The standalone script module.
+    """
     root = Path(__file__).parents[2]
     spec = importlib.util.spec_from_file_location("catalyst_abi_check", root / "scripts/catalyst_abi_check.py")
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("changed", [None, "include/QuantumDevice.hpp"])
+def test_header_drift(
+    canary: ModuleType, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, changed: str | None
+) -> None:
+    """The canary accepts identical headers and names an altered ABI header."""
+    root = Path(__file__).parents[2]
     snapshot = root / "vendor/catalyst/0.15.0"
 
     def download(url: str, *, timeout: int) -> BytesIO:
@@ -41,7 +59,24 @@ def test_header_drift(monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCapture
         content = (snapshot / name).read_text(encoding="utf-8").encode("utf-8")
         return BytesIO(b"changed header" if name == changed else content)
 
-    monkeypatch.setattr(module.urllib.request, "urlopen", download)
-    assert module.main() == int(changed is not None)
+    monkeypatch.setattr(canary.urllib.request, "urlopen", download)
+    assert canary.main() == int(changed is not None)
     if changed:
         assert changed in caplog.text
+
+
+@pytest.mark.parametrize("metadata", [False, True])
+@pytest.mark.parametrize("error", [URLError("unavailable"), TimeoutError("timed out")])
+def test_download_failure(
+    canary: ModuleType, monkeypatch: pytest.MonkeyPatch, error: Exception, *, metadata: bool
+) -> None:
+    """Infrastructure failures have their own exit code instead of reporting drift."""
+
+    def download(url: str, *, timeout: int) -> BytesIO:
+        assert timeout == 30
+        if not metadata and url == "https://pypi.org/pypi/pennylane-catalyst/json":
+            return BytesIO(json.dumps({"info": {"version": "0.16.0"}}).encode())
+        raise error
+
+    monkeypatch.setattr(canary.urllib.request, "urlopen", download)
+    assert canary.main() == 2
