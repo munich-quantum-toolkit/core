@@ -45,3 +45,10 @@ target_compile_definitions(
     MQT_CORE_CLI_INPUT="${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm"
     MQT_CORE_CLI_LAYOUT_INPUT="${CMAKE_CURRENT_SOURCE_DIR}/layout.qc.mlir")
 add_dependencies(mqt-core-mlir-unittests-compiler mqt-core)
+
+add_test(
+  NAME mqt-core-execution-test
+  COMMAND
+    ${CMAKE_COMMAND} "-DMQT_CORE_CLI=$<TARGET_FILE:mqt-core>"
+    "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/execution-$<CONFIG>" -P
+    "${CMAKE_CURRENT_SOURCE_DIR}/verify_execution.cmake")
