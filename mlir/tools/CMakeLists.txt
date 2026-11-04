@@ -6,13 +6,19 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-cc NativeCompilerMain.cpp mqt-cc/mqt-cc.cpp ../bench/MQTCoreBench.cpp
-               ../../src/qdmi/devices/dd/WorkerMain.cpp ../../src/qdmi/devices/dd/WorkerProtocol.cpp)
-add_executable(MQT::mqt-cc ALIAS mqt-cc)
-target_include_directories(mqt-cc PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
-mqt_mlir_target_use_project_options(mqt-cc)
+add_executable(
+  mqt-core
+  NativeMain.cpp
+  simulate/Simulate.cpp
+  compile/Compile.cpp
+  ../bench/MQTCoreBench.cpp
+  ../../src/qdmi/devices/dd/WorkerMain.cpp
+  ../../src/qdmi/devices/dd/WorkerProtocol.cpp)
+add_executable(MQT::mqt-core ALIAS mqt-core)
+target_include_directories(mqt-core PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+mqt_mlir_target_use_project_options(mqt-core)
 target_link_libraries(
-  mqt-cc
+  mqt-core
   PRIVATE
     MQT::ProjectWarnings
     MQT::CoreBenchGenerate
@@ -31,14 +37,23 @@ target_link_libraries(
     MQT::CoreQIRRuntime
     MLIRQCODDFunctionality
     MQTCompilerPrograms)
-mlir_check_all_link_libraries(mqt-cc)
+file(RELATIVE_PATH include_relative "${CMAKE_INSTALL_FULL_BINDIR}"
+     "${CMAKE_INSTALL_FULL_INCLUDEDIR}/mqt-core")
+file(RELATIVE_PATH cmake_relative "${CMAKE_INSTALL_FULL_BINDIR}"
+     "${CMAKE_INSTALL_FULL_DATADIR}/cmake")
+target_compile_definitions(
+  mqt-core
+  PRIVATE
+    MQT_CORE_VERSION_STRING="${MQT_CORE_VERSION_STRING}"
+    MQT_CORE_INCLUDE_RELATIVE="${include_relative}" MQT_CORE_CMAKE_RELATIVE="${cmake_relative}")
+mlir_check_all_link_libraries(mqt-core)
 set_target_properties(
-  mqt-cc
+  mqt-core
   PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
-add_dependencies(mqt-cc ${MQT_CORE_TARGET_NAME}-qdmi-driver)
+add_dependencies(mqt-core ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 if(MQT_CORE_INSTALL)
   install(
-    TARGETS mqt-cc
+    TARGETS mqt-core
     EXPORT mqt-core-runtime-targets
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
 endif()

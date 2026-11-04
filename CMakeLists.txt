@@ -159,7 +159,7 @@ if(BUILD_MQT_CORE_DOCUMENTATION)
 endif()
 
 if(BUILD_MQT_CORE_BINDINGS)
-  add_custom_target(mqt-core-wheel DEPENDS mqt-core-bindings mqt-cc)
+  add_custom_target(mqt-core-wheel DEPENDS mqt-core-bindings mqt-core)
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)

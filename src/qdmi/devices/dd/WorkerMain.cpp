@@ -39,7 +39,6 @@
 #include <memory>
 #include <optional>
 #include <random>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -373,15 +372,9 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
 }
 } // namespace
 
-int mqtCoreRunSimulator(int argc, char** argv) {
+int mqtCoreRunWorker(const char* socketPath) {
   llvm::sys::DisableSystemDialogsOnCrash();
-  if (argc != 2 || llvm::StringRef(std::span(argv, 2)[1]) == "--help") {
-    llvm::outs() << "Usage: mqt-cc simulate <socket>\n"
-                    "Run the DDSIM service over a QDMI worker socket.\n";
-    return argc == 2 ? 0 : 1;
-  }
-  auto connection =
-      raw_socket_stream::createConnectedUnix(std::span(argv, 2)[1]);
+  auto connection = raw_socket_stream::createConnectedUnix(socketPath);
   if (!connection) {
     llvm::consumeError(connection.takeError());
     return 1;

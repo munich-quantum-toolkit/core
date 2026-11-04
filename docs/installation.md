@@ -80,12 +80,53 @@ Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.4
 SDK. Linux wheels target manylinux_2_28 and use Clang 22 with LLD and ThinLTO;
 macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
 Windows wheels use MSVC with IPO, except for DLLs that require automatic symbol
-exports. Wheels include the QDMI driver and device bundles and the `mqt-cc`
+exports. Wheels include the QDMI driver and device bundles and the `mqt-core`
 executable with `compile`, `bench`, and `simulate` subcommands. Their CMake
-package exposes the QDMI C interfaces and the `MQT::mqt-cc` executable target.
+package exposes the QDMI C interfaces and the `MQT::mqt-core` executable target.
 Native CMake consumers require a matching LLVM SDK; see {doc}`cpp_api`. C++
 development libraries and headers are available from source installations; the
 DD library is static.
+
+### Command-line tools
+
+Run MQT Core in an isolated tool environment with
+[uv](https://docs.astral.sh/uv/guides/tools/):
+
+```sh
+uvx mqt-core bench list
+uvx mqt-core bench describe ghz
+uvx mqt-core compile input.qasm --qdmi-device=mqt.ddsim.default -o output.bc
+uvx mqt-core simulate output.bc --shots 1024
+```
+
+`uvx` installs and caches the package and runs its `mqt-core` entry point. For a
+persistent command, use `uv tool install mqt-core` or `pipx install mqt-core`. A
+regular package installation also provides `mqt-core` and `python -m mqt.core`,
+with the same arguments:
+
+```sh
+mqt-core --help
+mqt-core compile --help
+mqt-core bench --help
+mqt-core simulate --help
+mqt-core --version
+mqt-core --include-dir
+mqt-core --cmake-dir
+```
+
+The path options report directories in the installed package and fail if those
+directories are missing. `--include-dir` selects the native headers and
+`--cmake-dir` locates the CMake package root, including bundled dependencies,
+for `find_package(mqt-core)`.
+
+`simulate` accepts OpenQASM files (`.qasm`) and Base or Adaptive QIR in LLVM
+text or bitcode form (`.ll` or `.bc`). It runs DDSIM in a separate worker
+process and prints counts JSON to standard output. Use `--shots` to set the
+number of samples (default: 1024) and `--seed` for reproducible sampling. QIR
+must contain one entry point with a Base or Adaptive profile. Use
+`mqt-core simulate circuit.qasm` to compile and simulate OpenQASM directly. See
+the [benchmark workflow](benchmarks.md#run-the-command-line-workflow) for
+generation, compilation, simulation, and evaluation.
 
 ### Building from source
 

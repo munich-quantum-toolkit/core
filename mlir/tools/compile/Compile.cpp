@@ -27,6 +27,7 @@
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 #include "mqt/Target/QIR/Export.h"
+#include "qdmi/QDMI.hpp"
 
 #include "NativeCommands.h"
 
@@ -278,8 +279,8 @@ writeOutput(OwningOpRef<ModuleOp> mod, StringRef filename,
     llvm::raw_string_ostream stream(qirOutput);
     const auto result =
         *qirEncoding == PayloadEncoding::Text
-            ? qir::translateQIRToLLVMIR(std::move(mod), stream)
-            : qir::translateQIRToBitcode(std::move(mod), stream);
+            ? mlir::qir::translateQIRToLLVMIR(std::move(mod), stream)
+            : mlir::qir::translateQIRToBitcode(std::move(mod), stream);
     if (failed(result)) {
       return failure();
     }
@@ -365,7 +366,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
 
   llvm::cl::opt<std::string> payloadSpecification(
       "payload-spec",
-      llvm::cl::desc("Selected payload as a typed #mqt.payload_spec attribute"),
+      llvm::cl::desc("Payload as #mqt.payload_spec (default: selected from the "
+                     "QDMI device)"),
       llvm::cl::value_desc("attribute"), llvm::cl::init(""));
 
   llvm::cl::opt<std::string> explicitTarget(
@@ -465,7 +467,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
           qdmiListDevices && hasTarget,
           "--qdmi-list-devices cannot be combined with target compilation.")
           .failed() ||
-      reportQDMIErrorIf(hasTarget == payloadSpecification.empty(),
+      reportQDMIErrorIf((hasExplicitTarget && payloadSpecification.empty()) ||
+                            (!hasTarget && !payloadSpecification.empty()),
                         "--qdmi-device or --target and --payload-spec must be "
                         "provided together.")
           .failed() ||
@@ -511,6 +514,7 @@ int mqtCoreRunCompiler(int argc, char** argv) {
   }
 
   std::optional<CompilerTarget> compilerTarget;
+  std::optional<PayloadSpecification> selectedPayload;
   if (hasTarget) {
     if (reportQDMIErrorIf(
             passPipeline.getNumOccurrences() != 0,
@@ -526,7 +530,21 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     }
   }
   if (!qdmiDevice.empty()) {
-    auto target = compilerTargetFromDeviceId(qdmiDevice.getValue());
+    auto target = [&]() -> llvm::Expected<CompilerTarget> {
+      if (!payloadSpecification.empty()) {
+        return compilerTargetFromDeviceId(qdmiDevice.getValue());
+      }
+      auto device = qdmi::Session::openDevice(qdmiDevice.getValue());
+      if (!device) {
+        return device.takeError();
+      }
+      auto environment = targetEnvironmentFromDevice(*device);
+      if (!environment) {
+        return environment.takeError();
+      }
+      selectedPayload = environment->payloadSpecification();
+      return environment->target();
+    }();
     if (!target) {
       llvm::errs() << "Failed to create compiler target from QDMI device '"
                    << qdmiDevice << "': " << llvm::toString(target.takeError())
@@ -566,7 +584,6 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     compilerTarget.emplace(std::move(*target));
   }
 
-  std::optional<PayloadSpecification> selectedPayload;
   if (!payloadSpecification.empty()) {
     const auto attribute = parseAttribute(payloadSpecification, context.get());
     const auto payloadAttr =
@@ -823,11 +840,12 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     }
   } else if (*parsedOutputFormat == OutputFormat::IQMJSON) {
     llvm::LLVMContext llvmContext;
-    auto llvmModule = qir::translateQIRToLLVM(*program.mod, llvmContext);
+    auto llvmModule = mlir::qir::translateQIRToLLVM(*program.mod, llvmContext);
     if (!llvmModule) {
       return 1;
     }
-    auto source = qir::exportIQMJSON(*llvmModule, targetEnvironment->target());
+    auto source =
+        mlir::qir::exportIQMJSON(*llvmModule, targetEnvironment->target());
     if (!source) {
       llvm::errs() << llvm::toString(source.takeError()) << '\n';
       return 1;

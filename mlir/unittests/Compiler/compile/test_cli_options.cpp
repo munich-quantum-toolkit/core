@@ -57,25 +57,19 @@ TEST(CompilerCLI, ValidatesMappingOptionArguments) {
                .hasDevice = true,
                .diagnostic = "--mapping-trials must be greater than zero",
            },
-           InvalidOptions{
-               .argument = "--mapping-iterations=0",
-               .hasDevice = true,
-               .diagnostic = "--qdmi-device or --target and --payload-spec "
-                             "must be provided together",
-           },
        }) {
     SCOPED_TRACE(test.argument.str());
     SCOPED_TRACE(test.hasDevice);
     llvm::SmallString<128> stderrPath;
-    ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-cc-options", "err",
+    ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-core-options", "err",
                                                     stderrPath));
     const llvm::FileRemover cleanup(stderrPath);
-    llvm::SmallVector<llvm::StringRef> args{MQT_CORE_MQT_CC, test.argument};
+    llvm::SmallVector<llvm::StringRef> args{MQT_CORE_CLI, test.argument};
     if (test.hasDevice) {
       args.push_back("--qdmi-device=mqt.ddsim.default");
     }
     EXPECT_EQ(llvm::sys::ExecuteAndWait(
-                  MQT_CORE_MQT_CC, args, std::nullopt,
+                  MQT_CORE_CLI, args, std::nullopt,
                   {std::nullopt, std::nullopt, stderrPath.str()}, 10),
               1);
     auto diagnostics = llvm::MemoryBuffer::getFile(stderrPath);
@@ -160,16 +154,16 @@ TEST(CompilerCLI, ValidatesExplicitTarget) {
        }) {
     SCOPED_TRACE(test.diagnostic.str());
     llvm::SmallString<128> stderrPath;
-    ASSERT_FALSE(
-        llvm::sys::fs::createTemporaryFile("mqt-cc-target", "err", stderrPath));
+    ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-core-target", "err",
+                                                    stderrPath));
     const llvm::FileRemover cleanup(stderrPath);
     llvm::SmallVector<llvm::StringRef> args{
-        MQT_CORE_MQT_CC,
-        MQT_CORE_MQT_CC_INPUT,
+        MQT_CORE_CLI,
+        MQT_CORE_CLI_INPUT,
     };
     args.append(test.arguments);
     EXPECT_EQ(llvm::sys::ExecuteAndWait(
-                  MQT_CORE_MQT_CC, args, std::nullopt,
+                  MQT_CORE_CLI, args, std::nullopt,
                   {std::nullopt, std::nullopt, stderrPath.str()}, 10),
               1);
     auto diagnostics = llvm::MemoryBuffer::getFile(stderrPath);
@@ -181,8 +175,8 @@ TEST(CompilerCLI, ValidatesExplicitTarget) {
 
 TEST(CompilerCLI, CompilesForExplicitTarget) {
   llvm::SmallString<128> outputPath;
-  ASSERT_FALSE(
-      llvm::sys::fs::createTemporaryFile("mqt-cc-target", "mlir", outputPath));
+  ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-core-target", "mlir",
+                                                  outputPath));
   const llvm::FileRemover cleanup(outputPath);
   const llvm::StringRef target =
       "--target=#mqt.compilation_target<sites = [<id = 0>, <id = 1>], "
@@ -193,15 +187,15 @@ TEST(CompilerCLI, CompilesForExplicitTarget) {
       "version = \"3.1.0\", profile = \"\", encoding = text>, capabilities = "
       "[], optional_capabilities_known = false>";
   llvm::SmallVector<llvm::StringRef> args{
-      MQT_CORE_MQT_CC,
-      MQT_CORE_MQT_CC_INPUT,
+      MQT_CORE_CLI,
+      MQT_CORE_CLI_INPUT,
       "--emit=qco-optimized",
       "--mapping-trials=1",
       target,
       payload,
   };
   ASSERT_EQ(llvm::sys::ExecuteAndWait(
-                MQT_CORE_MQT_CC, args, std::nullopt,
+                MQT_CORE_CLI, args, std::nullopt,
                 {std::nullopt, outputPath.str(), std::nullopt}, 10),
             0);
   auto output = llvm::MemoryBuffer::getFile(outputPath);
@@ -210,15 +204,15 @@ TEST(CompilerCLI, CompilesForExplicitTarget) {
   EXPECT_TRUE((*output)->getBuffer().contains("mqt.layout"));
 
   args = {
-      MQT_CORE_MQT_CC,
-      MQT_CORE_MQT_CC_INPUT,
+      MQT_CORE_CLI,
+      MQT_CORE_CLI_INPUT,
       target,
       "--payload-spec=#mqt.payload_spec<format = <id = \"qir\", "
       "version = \"2.1\", profile = \"adaptive\", encoding = text>, "
       "capabilities = [], optional_capabilities_known = false>",
   };
   EXPECT_EQ(llvm::sys::ExecuteAndWait(
-                MQT_CORE_MQT_CC, args, std::nullopt,
+                MQT_CORE_CLI, args, std::nullopt,
                 {std::nullopt, std::nullopt, outputPath.str()}, 10),
             1);
   auto diagnostics = llvm::MemoryBuffer::getFile(outputPath);
@@ -231,12 +225,12 @@ TEST(CompilerCLI, SeedOverridesCustomPassWithoutDevice) {
   std::string expected;
   for (bool useGlobalSeed : {false, true}) {
     llvm::SmallString<128> outputPath;
-    ASSERT_FALSE(
-        llvm::sys::fs::createTemporaryFile("mqt-cc-seed", "mlir", outputPath));
+    ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-core-seed", "mlir",
+                                                    outputPath));
     const llvm::FileRemover cleanup(outputPath);
     llvm::SmallVector<llvm::StringRef> args{
-        MQT_CORE_MQT_CC,
-        MQT_CORE_MQT_CC_INPUT,
+        MQT_CORE_CLI,
+        MQT_CORE_CLI_INPUT,
         "--emit=qco-optimized",
         "-o",
         outputPath,
@@ -248,8 +242,7 @@ TEST(CompilerCLI, SeedOverridesCustomPassWithoutDevice) {
       args.push_back("--seed=7");
     }
     ASSERT_EQ(
-        llvm::sys::ExecuteAndWait(MQT_CORE_MQT_CC, args, std::nullopt, {}, 10),
-        0);
+        llvm::sys::ExecuteAndWait(MQT_CORE_CLI, args, std::nullopt, {}, 10), 0);
     auto output = llvm::MemoryBuffer::getFile(outputPath);
     ASSERT_TRUE(output);
     if (useGlobalSeed) {
@@ -262,16 +255,16 @@ TEST(CompilerCLI, SeedOverridesCustomPassWithoutDevice) {
 
 TEST(CompilerCLI, PreservesLayoutAtImportCheckpoint) {
   llvm::SmallString<128> outputPath;
-  ASSERT_FALSE(
-      llvm::sys::fs::createTemporaryFile("mqt-cc-layout", "mlir", outputPath));
+  ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-core-layout", "mlir",
+                                                  outputPath));
   const llvm::FileRemover cleanup(outputPath);
   llvm::SmallVector<llvm::StringRef> args{
-      MQT_CORE_MQT_CC,
-      MQT_CORE_MQT_CC_LAYOUT_INPUT,
+      MQT_CORE_CLI,
+      MQT_CORE_CLI_LAYOUT_INPUT,
       "--emit=qc-import",
   };
   ASSERT_EQ(llvm::sys::ExecuteAndWait(
-                MQT_CORE_MQT_CC, args, std::nullopt,
+                MQT_CORE_CLI, args, std::nullopt,
                 {std::nullopt, outputPath.str(), std::nullopt}, 10),
             0);
   auto output = llvm::MemoryBuffer::getFile(outputPath);
@@ -281,7 +274,7 @@ TEST(CompilerCLI, PreservesLayoutAtImportCheckpoint) {
 
 TEST(CompilerCLI, EmitsTargetedIQMJSONAndPreservesOutputOnFailure) {
   llvm::SmallString<128> outputPath;
-  ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-cc-iqm-target", "json",
+  ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-core-iqm-target", "json",
                                                   outputPath));
   const llvm::FileRemover cleanup(outputPath);
   const llvm::StringRef target =
@@ -300,11 +293,10 @@ TEST(CompilerCLI, EmitsTargetedIQMJSONAndPreservesOutputOnFailure) {
       "version = \"\", profile = \"\", encoding = text>, capabilities = "
       "[], optional_capabilities_known = true>";
   llvm::SmallVector<llvm::StringRef> args{
-      MQT_CORE_MQT_CC, MQT_CORE_MQT_CC_INPUT, target, payload, "-o", outputPath,
+      MQT_CORE_CLI, MQT_CORE_CLI_INPUT, target, payload, "-o", outputPath,
   };
-  ASSERT_EQ(
-      llvm::sys::ExecuteAndWait(MQT_CORE_MQT_CC, args, std::nullopt, {}, 10),
-      0);
+  ASSERT_EQ(llvm::sys::ExecuteAndWait(MQT_CORE_CLI, args, std::nullopt, {}, 10),
+            0);
   auto output = llvm::MemoryBuffer::getFile(outputPath);
   ASSERT_TRUE(output);
   const auto circuit =
@@ -320,9 +312,8 @@ TEST(CompilerCLI, EmitsTargetedIQMJSONAndPreservesOutputOnFailure) {
   args[2] = "--target=#mqt.compilation_target<sites = [<id = 5>, <id = 17>], "
             "connectivity = all_to_all, couplings = [], native_operations = "
             "unrestricted, operations = []>";
-  EXPECT_EQ(
-      llvm::sys::ExecuteAndWait(MQT_CORE_MQT_CC, args, std::nullopt, {}, 10),
-      1);
+  EXPECT_EQ(llvm::sys::ExecuteAndWait(MQT_CORE_CLI, args, std::nullopt, {}, 10),
+            1);
   auto preserved = llvm::MemoryBuffer::getFile(outputPath);
   ASSERT_TRUE(preserved);
   EXPECT_EQ((*preserved)->getBuffer(), (*output)->getBuffer());

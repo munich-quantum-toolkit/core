@@ -13,3 +13,4 @@
 int mqtCoreRunCompiler(int argc, char** argv);
 int mqtCoreRunBench(int argc, char** argv);
 int mqtCoreRunSimulator(int argc, char** argv);
+int mqtCoreRunWorker(const char* socketPath);

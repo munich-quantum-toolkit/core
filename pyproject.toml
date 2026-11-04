@@ -118,8 +118,7 @@ Discussions = "https://github.com/munich-quantum-toolkit/core/discussions"
 PyPI = "https://pypi.org/project/mqt-core/"
 
 [project.scripts]
-mqt-cc = "mqt.core._commands:compiler"
-mqt-core-cli = "mqt.core.__main__:main"
+mqt-core = "mqt.core.__main__:main"
 
 [project.entry-points."pennylane.plugins"]
 "mqt.ddsim.default" = "mqt.core.plugins.pennylane:DDSIMDevice"
@@ -352,7 +351,6 @@ docstring-code-format = true
   "E402", # Allow imports to appear anywhere in Jupyter notebooks
   "I002", # Allow missing `from __future__ import annotations` import
 ]
-"python/mqt/core/__main__.py" = [ "T201" ]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"

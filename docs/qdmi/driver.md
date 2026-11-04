@@ -108,7 +108,8 @@ handle.
 ## Building the Bundled Devices
 
 All builds include the DDSIM QDMI device and require LLVM/MLIR. DDSIM uses
-`mqt-cc simulate` in a separate process for OpenQASM and QIR programs.
+`mqt-core simulate --worker-socket <socket>` in a separate process for OpenQASM
+and QIR programs.
 
 The superconducting device is controlled by
 {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`. It is enabled by default in standalone

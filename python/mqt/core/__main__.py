@@ -6,51 +6,29 @@
 #
 # Licensed under the MIT License
 
-"""Command line interface for mqt-core."""
+"""Launch the native MQT Core command."""
 
 from __future__ import annotations
 
-__lazy_modules__ = {"argparse", "mqt.core._commands", "mqt.core._version"}
+__lazy_modules__ = {"importlib.metadata", "pathlib", "subprocess", "typing"}
 
-import argparse
+import os
+import subprocess
 import sys
+from importlib.metadata import distribution
+from pathlib import Path
+from typing import NoReturn
 
-from mqt.core._commands import cmake_dir, include_dir
-from mqt.core._version import version as __version__
 
-
-def main() -> None:
-    """Entry point for the mqt-core command line interface.
-
-    This function is called when running the `mqt-core-cli` script.
-
-    .. code-block:: bash
-
-        mqt-core-cli [--version] [--include_dir] [--cmake_dir]
-
-    It provides the following command line options:
-
-    - :code:`--version`: Print the version and exit.
-    - :code:`--include_dir`: Print the path to the mqt-core native include directory.
-    - :code:`--cmake_dir`: Print the path to the mqt-core CMake module directory.
-
-    """
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--version", action="version", version=__version__, help="Print version and exit.")
-
-    parser.add_argument(
-        "--include_dir", action="store_true", help="Print the path to the mqt-core native include directory."
-    )
-    parser.add_argument(
-        "--cmake_dir", action="store_true", help="Print the path to the mqt-core CMake module directory."
-    )
-    args = parser.parse_args()
-    if not sys.argv[1:]:
-        parser.print_help()
-    if args.include_dir:
-        print(include_dir().resolve())
-    if args.cmake_dir:
-        print(cmake_dir().resolve())
+def main() -> NoReturn:
+    """Run the bundled MQT compiler, benchmark, or simulator command."""
+    suffix = ".exe" if sys.platform == "win32" else ""
+    executable = Path(str(distribution("mqt-core").locate_file(f"mqt/core/bin/mqt-core{suffix}")))
+    arguments = [str(executable), *sys.argv[1:]]
+    if sys.platform == "win32":
+        # Windows exec exits the launcher without waiting for the native tool.
+        sys.exit(subprocess.run(arguments, check=False).returncode)  # ruff: ignore[subprocess-without-shell-equals-true]
+    os.execv(executable, arguments)  # ruff: ignore[start-process-with-no-shell]
 
 
 if __name__ == "__main__":

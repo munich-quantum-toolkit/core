@@ -59,4 +59,4 @@ gtest_discover_tests(
   PROPERTIES LABELS mqt-mlir-unittests
   DISCOVERY_TIMEOUT 60)
 
-add_subdirectory(mqt-cc)
+add_subdirectory(compile)

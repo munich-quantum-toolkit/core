@@ -12,7 +12,7 @@ is generated from the same source revision as this guide.
 
 ## Use the wheel's native runtime
 
-The Python wheel supplies the QDMI driver, device bundles, and the `mqt-cc`
+The Python wheel supplies the QDMI driver, device bundles, and the `mqt-core`
 executable. Its CMake package exposes the QDMI C interfaces; C++ DD, QDMI
 client, and benchmark libraries require a source installation.
 
@@ -89,17 +89,17 @@ With the wheel installed in the active environment and an LLVM SDK matching the
 major and minor version used to build MQT Core, run:
 
 ```console
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(mqt-core-cli --cmake_dir)"
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(mqt-core --cmake-dir)"
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
 The application prints `DDSIM result: 1`.
 
-CMake provides the `MQT::mqt-cc` imported executable target. Use
-`mqt-cc compile` and `mqt-cc bench` in custom commands or from the command line.
-DDSIM launches `mqt-cc simulate <socket>` as a separate process using its
-internal worker protocol.
+CMake provides the `MQT::mqt-core` imported executable target. Use
+`mqt-core compile` and `mqt-core bench` in custom commands or from the command
+line. DDSIM launches `mqt-core simulate --worker-socket <socket>` as a separate
+process using its internal worker protocol.
 
 ```{code-cell} ipython3
 :tags: [remove-cell]

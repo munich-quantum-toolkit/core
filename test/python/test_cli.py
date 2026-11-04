@@ -10,12 +10,13 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 import sys
-from importlib.metadata import PackageNotFoundError
+from importlib.metadata import distribution
 from pathlib import Path
 from subprocess import check_output
 from typing import TYPE_CHECKING
-from unittest.mock import patch
 
 import pytest
 
@@ -25,51 +26,52 @@ from mqt.core.mlir import CompilerTarget, QCProgram
 if TYPE_CHECKING:
     from pytest_console_scripts import ScriptRunner
 
+pytestmark = pytest.mark.script_launch_mode("subprocess")
+
 
 @pytest.mark.parametrize("arguments", [[], ["--help"]])
 def test_cli_help(script_runner: ScriptRunner, arguments: list[str]) -> None:
     """Show available options with no arguments or explicit help."""
-    ret = script_runner.run(["mqt-core-cli", *arguments])
+    ret = script_runner.run(["mqt-core", *arguments])
     assert ret.success
-    assert "mqt-core-cli" in ret.stdout
+    assert "mqt-core" in ret.stdout
     assert "--version" in ret.stdout
-    assert "--include_dir" in ret.stdout
-    assert "--cmake_dir" in ret.stdout
+    assert "--include-dir" in ret.stdout
+    assert "--cmake-dir" in ret.stdout
 
 
 def test_cli_version(script_runner: ScriptRunner) -> None:
     """Test running the CLI with the --version argument."""
-    ret = script_runner.run(["mqt-core-cli", "--version"])
+    ret = script_runner.run(["mqt-core", "--version"])
     assert ret.success
     assert mqt_core_version in ret.stdout
 
 
-def test_cli_include_dir(script_runner: ScriptRunner) -> None:
-    """Test running the CLI with the --include_dir argument."""
-    ret = script_runner.run(["mqt-core-cli", "--include_dir"])
+@pytest.mark.parametrize(
+    ("option", "marker"), [("include-dir", "mqt_ddsim_qdmi"), ("cmake-dir", "mqt-core/mqt-core-config.cmake")]
+)
+def test_cli_installation_dir(script_runner: ScriptRunner, option: str, marker: str) -> None:
+    """Locate the installed headers and CMake package."""
+    ret = script_runner.run(["mqt-core", f"--{option}"])
     assert ret.success
-    include_dir = Path(ret.stdout.strip())
-    assert include_dir.is_dir()
+    assert (Path(ret.stdout.strip()) / marker).exists()
 
 
-@pytest.mark.parametrize(("option", "kind"), [("include_dir", "include"), ("cmake_dir", "CMake")])
-def test_cli_path_not_installed(script_runner: ScriptRunner, option: str, kind: str) -> None:
-    """Report the missing distribution when querying installation paths."""
-    with patch("mqt.core._commands.distribution") as mock:
-        mock.side_effect = PackageNotFoundError("mqt-core")
-        ret = script_runner.run(["mqt-core-cli", f"--{option}"])
-        assert not ret.success
-        assert f"mqt-core not installed, installation required to access the {kind} files." in ret.stderr
-
-
-@pytest.mark.parametrize(("option", "kind"), [("include_dir", "include"), ("cmake_dir", "CMake")])
-def test_cli_path_not_found(script_runner: ScriptRunner, option: str, kind: str) -> None:
-    """Report a missing directory in an installed distribution."""
-    with patch("mqt.core._commands.distribution") as mock:
-        mock.return_value.locate_file.return_value = "dir-not-found"
-        ret = script_runner.run(["mqt-core-cli", f"--{option}"])
-        assert not ret.success
-        assert f"mqt-core {kind} files not found." in ret.stderr
+def test_cli_relocated_installation(script_runner: ScriptRunner, tmp_path: Path) -> None:
+    """Resolve installation paths after moving the package, and diagnose missing files."""
+    package = Path(str(distribution("mqt-core").locate_file("mqt/core")))
+    relocated = tmp_path / "relocated package"
+    shutil.copytree(package, relocated)
+    executable = relocated / "bin" / ("mqt-core.exe" if sys.platform == "win32" else "mqt-core")
+    for option, relative in [("include-dir", "include/mqt-core"), ("cmake-dir", "share/cmake")]:
+        path = relocated / relative
+        result = script_runner.run([str(executable), f"--{option}"])
+        assert result.success
+        assert Path(result.stdout.strip()) == path
+        shutil.rmtree(path)
+        result = script_runner.run([str(executable), f"--{option}"])
+        assert result.returncode == 1
+        assert "Installation directory not found:" in result.stderr
 
 
 def test_cli_execute_module() -> None:
@@ -78,18 +80,16 @@ def test_cli_execute_module() -> None:
     assert mqt_core_version in output.decode()
 
 
-@pytest.mark.script_launch_mode("subprocess")
 @pytest.mark.parametrize("subcommand", [[], ["compile"]])
 def test_compiler_cli(script_runner: ScriptRunner, tmp_path: Path, subcommand: list[str]) -> None:
     """Compile OpenQASM with the compiler bundled in the wheel."""
     source = tmp_path / "bell.qasm"
     source.write_text('OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; h q[0]; cx q[0], q[1];')
-    ret = script_runner.run(["mqt-cc", *subcommand, str(source), "--emit=qco"])
+    ret = script_runner.run(["mqt-core", *subcommand, str(source), "--emit=qco"])
     assert ret.success
     assert "qco.h" in ret.stdout
 
 
-@pytest.mark.script_launch_mode("subprocess")
 def test_compiler_cli_serialized_target(script_runner: ScriptRunner, tmp_path: Path) -> None:
     """Compile with a Python target serialized into a CLI argument."""
     target = CompilerTarget(
@@ -101,7 +101,7 @@ def test_compiler_cli_serialized_target(script_runner: ScriptRunner, tmp_path: P
     source = tmp_path / "bell.qasm"
     source.write_text('OPENQASM 3.1; include "stdgates.inc"; qubit[2] q; h q[0]; cx q[0], q[1];')
     ret = script_runner.run([
-        "mqt-cc",
+        "mqt-core",
         str(source),
         f"--target={target}",
         (
@@ -115,10 +115,9 @@ def test_compiler_cli_serialized_target(script_runner: ScriptRunner, tmp_path: P
     assert QCProgram.from_openqasm_str(ret.stdout).is_valid
 
 
-@pytest.mark.script_launch_mode("subprocess")
 def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     """Run the bundled benchmark driver through its console script."""
-    ret = script_runner.run(["mqt-cc", "bench", "list"])
+    ret = script_runner.run(["mqt-core", "bench", "list"])
     assert ret.success
     assert '"modular-multiplier"' in ret.stdout
     assert '"ghz"' in ret.stdout
@@ -130,10 +129,49 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     assert '"teleportation"' in ret.stdout
 
 
-@pytest.mark.script_launch_mode("subprocess")
 def test_native_tool_entry_point(script_runner: ScriptRunner) -> None:
     """Report help and propagate native argument errors through the installed command."""
-    ret = script_runner.run(["mqt-cc", "--help"])
+    ret = script_runner.run(["mqt-core", "--help"])
     assert ret.success
     assert ret.stdout
-    assert not script_runner.run(["mqt-cc", "--mqt-invalid-test-option"]).success
+    assert not script_runner.run(["mqt-core", "--mqt-invalid-test-option"]).success
+
+
+@pytest.mark.parametrize(
+    "input_format", ["openqasm2", "openqasm3", "qir-base.ll", "qir-base.bc", "qir-adaptive.ll", "qir-adaptive.bc"]
+)
+def test_simulate_cli(script_runner: ScriptRunner, tmp_path: Path, input_format: str) -> None:
+    """Sample OpenQASM and both QIR profiles through the isolated DDSIM worker."""
+    source = tmp_path / "bell.qasm"
+    if input_format == "openqasm2":
+        source.write_text(
+            'OPENQASM 2.0; include "qelib1.inc"; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q -> c;'
+        )
+    else:
+        source.write_text(
+            'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;'
+        )
+    if input_format.startswith("qir"):
+        profile, extension = input_format.split(".")
+        output = tmp_path / f"bell.{extension}"
+        result = script_runner.run(["mqt-core", "compile", str(source), f"--emit={profile}", "-o", str(output)])
+        assert result.success
+        source = output
+    arguments = ["mqt-core", "simulate", str(source), "--shots=128", "--seed=42"]
+    result = script_runner.run(arguments)
+    assert result.success
+    counts = json.loads(result.stdout)["counts"]
+    assert set(counts) == {"00", "11"}
+    assert sum(counts.values()) == 128
+    assert script_runner.run(arguments).stdout == result.stdout
+
+
+@pytest.mark.parametrize("source_text", ["not LLVM IR", 'define void @main() "entry_point" { ret void }'])
+def test_simulate_cli_errors(script_runner: ScriptRunner, tmp_path: Path, source_text: str) -> None:
+    """Report invalid shots and invalid input with a failing exit status."""
+    source = tmp_path / "invalid.ll"
+    source.write_text(source_text)
+    for arguments in [["--shots=0"], []]:
+        result = script_runner.run(["mqt-core", "simulate", str(source), *arguments])
+        assert not result.success
+        assert result.stderr

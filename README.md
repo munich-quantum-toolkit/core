@@ -45,6 +45,24 @@ virtual environment:
 uv pip install mqt.core
 ```
 
+Explore the benchmark catalog without setting up a project environment:
+
+```console
+uvx mqt-core bench list
+```
+
+Compile and simulate a circuit with the same tool:
+
+```console
+uvx mqt-core compile input.qasm --qdmi-device=mqt.ddsim.default -o circuit.bc
+uvx mqt-core simulate circuit.bc --shots 1024
+```
+
+OpenQASM files can also run directly with `uvx mqt-core simulate input.qasm`.
+See the
+[command-line guide](https://mqt.readthedocs.io/projects/core/en/stable/installation.html#command-line-tools)
+for installation paths and command options.
+
 For other installation options, follow the
 [source-build instructions](https://mqt.readthedocs.io/projects/core/en/stable/installation.html).
 Then choose a starting point:

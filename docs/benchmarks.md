@@ -30,12 +30,12 @@ read.
 import json
 import subprocess
 
-catalog = subprocess.run(["mqt-cc", "bench", "list"], check=True, capture_output=True, text=True)
+catalog = subprocess.run(["mqt-core", "bench", "list"], check=True, capture_output=True, text=True)
 print(json.dumps(json.loads(catalog.stdout), indent=2))
 ```
 
 ```{code-cell} ipython3
-description = subprocess.run(["mqt-cc", "bench", "describe", "qft"], check=True, capture_output=True, text=True)
+description = subprocess.run(["mqt-core", "bench", "describe", "qft"], check=True, capture_output=True, text=True)
 print(json.dumps(json.loads(description.stdout), indent=2))
 ```
 
@@ -171,15 +171,11 @@ output_directory = root / "generated"
 instance_specification_path.write_text(
     benchmark.instance_specification_json, encoding="utf-8"
 )
-counts_path.write_text(
-    json.dumps({"schema_version": 1, "counts": {"000": 5, "100": 5}}),
-    encoding="utf-8",
-)
 ```
 
 ```{code-cell} ipython3
 generation = subprocess.run(
-    ["mqt-cc", "bench", "generate", "--instance-specification", str(instance_specification_path),
+    ["mqt-core", "bench", "generate", "--instance-specification", str(instance_specification_path),
      "--format", "qc", "--output", str(output_directory)],
     check=True, capture_output=True, text=True,
 )
@@ -194,13 +190,31 @@ print("Program:", program_path.name)
 print("Manifest:", manifest_path.name)
 ```
 
+Compile the generated program for DDSIM, then simulate its Adaptive QIR payload.
+Simulation prints counts JSON that the evaluator accepts directly.
+
+```{code-cell} ipython3
+compiled_path = root / "circuit.bc"
+subprocess.run(
+    ["mqt-core", "compile", str(program_path),
+     "--qdmi-device=mqt.ddsim.default", "-o", str(compiled_path)],
+    check=True, capture_output=True, text=True,
+)
+simulation = subprocess.run(
+    ["mqt-core", "simulate", str(compiled_path), "--shots", "1024", "--seed", "42"],
+    check=True, capture_output=True, text=True,
+)
+counts_path.write_text(simulation.stdout, encoding="utf-8")
+print(simulation.stdout)
+```
+
 ```{code-cell} ipython3
 evaluation_result = subprocess.run(
-    ["mqt-cc", "bench", "evaluate", "--manifest", str(manifest_path), "--counts", str(counts_path)],
+    ["mqt-core", "bench", "evaluate", "--manifest", str(manifest_path), "--counts", str(counts_path)],
     check=True, capture_output=True, text=True,
 )
 metrics = json.loads(evaluation_result.stdout)["metrics"]
-assert metrics["total_variation_distance"] == 0
+assert metrics["total_variation_distance"] < 0.1
 print(json.dumps(metrics, indent=2))
 ```
 

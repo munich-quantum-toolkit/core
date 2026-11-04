@@ -36,12 +36,12 @@ strings by the `OPENQASM` header. For versionless source, construct a
 `QCProgram` with `from_openqasm_str` first. The explicit constructors and
 `.qasm` file imports accept versionless input directly.
 
-`mqt-cc` recognizes `.qasm` files automatically. Use `--input-format=openqasm`
-when the filename does not identify the format:
+`mqt-core compile` recognizes `.qasm` files automatically. Use
+`--input-format=openqasm` when the filename does not identify the format:
 
 ```console
-mqt-cc program.qasm
-mqt-cc --input-format=openqasm program.txt
+mqt-core compile program.qasm
+mqt-core compile --input-format=openqasm program.txt
 ```
 
 The generated entry function is named `main`, or `mqt.entry` when a source gate
@@ -359,8 +359,8 @@ optimized.write("optimized.qasm")
 The command-line driver writes to standard output unless `-o` is given:
 
 ```console
-mqt-cc input.qasm --emit=openqasm3
-mqt-cc input.qasm --emit=openqasm3 -o optimized.qasm
+mqt-core compile input.qasm --emit=openqasm3
+mqt-core compile input.qasm --emit=openqasm3 -o optimized.qasm
 ```
 
 The compiler-pipeline path performs target compilation when requested, runs the

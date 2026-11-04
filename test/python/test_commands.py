@@ -24,17 +24,17 @@ import pytest
 def test_native_command(monkeypatch: pytest.MonkeyPatch, platform: str) -> None:
     """Forward arguments intact and preserve a failing native tool's exit code."""
     monkeypatch.setattr(sys, "platform", platform)
-    monkeypatch.setattr(sys, "argv", ["mqt-cc", "bench", "input with spaces.qasm", "--help"])
+    monkeypatch.setattr(sys, "argv", ["mqt-core", "bench", "input with spaces.qasm", "--help"])
     execute = Mock(side_effect=SystemExit(7))
     run = Mock(return_value=Mock(returncode=7))
     monkeypatch.setattr(os, "execv", execute)
     monkeypatch.setattr(subprocess, "run", run)
 
     with pytest.raises(SystemExit) as error:
-        distribution("mqt-core").entry_points["mqt-cc"].load()()
+        distribution("mqt-core").entry_points["mqt-core"].load()()
     assert error.value.code == 7
     suffix = ".exe" if platform == "win32" else ""
-    executable = Path(str(distribution("mqt-core").locate_file(f"mqt/core/bin/mqt-cc{suffix}")))
+    executable = Path(str(distribution("mqt-core").locate_file(f"mqt/core/bin/mqt-core{suffix}")))
     arguments = [str(executable), "bench", "input with spaces.qasm", "--help"]
     if platform == "win32":
         run.assert_called_once_with(arguments, check=False)

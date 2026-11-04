@@ -135,9 +135,9 @@ bool Worker::start() {
       return false;
     }
     std::string error;
-    process_ = llvm::sys::ExecuteNoWait(executable,
-                                        {executable, "simulate", socketPath},
-                                        std::nullopt, {}, 0, &error);
+    process_ = llvm::sys::ExecuteNoWait(
+        executable, {executable, "simulate", "--worker-socket", socketPath},
+        std::nullopt, {}, 0, &error);
     if (process_.Pid == 0) {
       qdmi::diagnostics::error("Cannot start DDSIM worker: {0}", error);
       return false;
