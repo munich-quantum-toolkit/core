@@ -1372,6 +1372,37 @@ ArrayRef<CompilerTarget::Site> CompilerTarget::sites() const noexcept {
   return storage_->sites;
 }
 
+std::vector<SiteId> CompilerTarget::placeableSites() const {
+  if (nativeOperationsKind() == NativeOperations::Kind::Unrestricted) {
+    return {siteIds().begin(), siteIds().end()};
+  }
+  llvm::DenseSet<SiteId> unary;
+  llvm::DenseSet<SiteId> measured;
+  for (const auto& op : operations()) {
+    const auto name = op.canonicalName();
+    if (!op.arity().accepts(1) || name == "reset" || name == "barrier") {
+      continue;
+    }
+    auto& supported = name == "measure" ? measured : unary;
+    if (op.siteTuples().empty()) {
+      supported.insert(siteIds().begin(), siteIds().end());
+    } else {
+      for (const auto& tuple : op.siteTuples()) {
+        if (tuple.sites().size() == 1) {
+          supported.insert(tuple.sites().front());
+        }
+      }
+    }
+  }
+  std::vector<SiteId> result;
+  for (const auto site : siteIds()) {
+    if (unary.contains(site) && measured.contains(site)) {
+      result.push_back(site);
+    }
+  }
+  return result;
+}
+
 ArrayRef<SiteId> CompilerTarget::siteIds() const noexcept {
   return storage_->siteIds;
 }

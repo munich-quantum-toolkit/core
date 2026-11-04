@@ -14,7 +14,8 @@ add_executable(
   test_compiler_target.cpp
   test_iqm_json_pipeline.cpp
   test_parameter_binding.cpp
-  test_program_inspection.cpp)
+  test_program_inspection.cpp
+  test_resonator_routing.cpp)
 set_target_properties(mqt-core-mlir-unittests-compiler PROPERTIES UNITY_BUILD OFF)
 target_include_directories(
   mqt-core-mlir-unittests-compiler

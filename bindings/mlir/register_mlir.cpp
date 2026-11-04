@@ -1866,6 +1866,8 @@ Raises:
           "The target name, if available.")
       .def_prop_ro("duration_unit", &mlir::CompilerTarget::durationUnit,
                    "The target timing unit, if available.")
+      .def_prop_ro("placeable_sites", &mlir::CompilerTarget::placeableSites,
+                   "Sites supporting a single-qubit gate and measurement.")
       .def_prop_ro("num_sites", &mlir::CompilerTarget::numSites,
                    "The number of target sites.")
       .def_prop_ro(

@@ -261,7 +261,9 @@ using NameAndCount = std::pair<llvm::StringRef, size_t>;
 makeCZTarget(std::initializer_list<NameAndCount> singleQubitGates) {
   using OperationCapability = CompilerTarget::OperationCapability;
   std::vector<OperationCapability> operations;
-  operations.reserve(singleQubitGates.size() + 1);
+  operations.reserve(singleQubitGates.size() + 2);
+  operations.emplace_back(
+      llvm::cantFail(OperationCapability::create("measure", 1, 0)));
   for (const auto& [name, numParameters] : singleQubitGates) {
     operations.emplace_back(llvm::cantFail(
         OperationCapability::create(name.str(), 1, numParameters)));
@@ -3680,7 +3682,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   ASSERT_TRUE(mlir::succeeded(unsupportedQCO));
   EXPECT_TRUE(mlir::failed(unsupportedQCO->compileForTarget(
       TargetEnvironment(makeSparseUCZTarget(false), payload))));
-  EXPECT_TRUE(
+  EXPECT_FALSE(
       unsupportedQCO->module()->hasAttr(mlir::mqt::TargetEnvAttr::name));
 }
 
@@ -4280,6 +4282,7 @@ TEST_F(CompilerPipelineTest, PayloadSpecializesDependentOuterLoops) {
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, CompilerTarget::Connectivity::fromCouplings({{0, 1}, {1, 2}}),
       CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("measure", 1, 0)),
           llvm::cantFail(Capability::create("u", 1, 3)),
           llvm::cantFail(Capability::create("cz", 2, 0)),
           llvm::cantFail(Capability::create("gphase", 0, 1)),
@@ -4467,6 +4470,8 @@ TEST_F(CompilerPipelineTest, StaticNativeThreeQubitGateSurvives) {
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, CompilerTarget::Connectivity::fromCouplings({{0, 1}, {1, 2}}),
       CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("measure", 1, 0)),
           native,
           llvm::cantFail(
               CompilerTarget::OperationCapability::create("u", 1, 3)),
@@ -4531,6 +4536,8 @@ TEST_F(CompilerPipelineTest, StaticNativeThreeQubitGateSurvives) {
   const auto allocatedTarget = llvm::cantFail(CompilerTarget::create(
       3, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("measure", 1, 0)),
           llvm::cantFail(CompilerTarget::OperationCapability::create(
               "rccx", 3, 0,
               {
@@ -4667,6 +4674,7 @@ TEST_F(CompilerPipelineTest,
   const auto target = llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
       CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("measure", 1, 0)),
           llvm::cantFail(Capability::create("u", 1, 3)),
           llvm::cantFail(Capability::create("cx", 2, 0)),
           llvm::cantFail(Capability::create("gphase", 0, 1)),
@@ -4714,12 +4722,13 @@ TEST_F(CompilerPipelineTest,
 
 TEST_F(CompilerPipelineTest, RuntimePauliApproximationExportsOpenQASM3) {
   using Capability = CompilerTarget::OperationCapability;
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
-                             CompilerTarget::NativeOperations::fromOperations({
-                                 llvm::cantFail(Capability::create("u", 1, 3)),
-                                 llvm::cantFail(Capability::create("cz", 2, 0)),
-                             })));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("measure", 1, 0)),
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("cz", 2, 0)),
+      })));
   constexpr auto source = R"mlir(module {
     func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
       %q0 = qco.static 0 : !qco.qubit
@@ -4860,9 +4869,8 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
       PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
   for (const auto& [target, expected] : {
            std::pair{targetWith(1, {u, measure}), "target site count"},
-           std::pair{targetWith(2, {u, localMeasure}),
-                     "target does not support operation"},
-           std::pair{targetWith(2, {u}), "target does not support operation"},
+           std::pair{targetWith(2, {u, localMeasure}), "target site count"},
+           std::pair{targetWith(2, {u}), "no placeable sites"},
        }) {
     auto qc = QCProgram::fromOpenQASMString(source);
     MQT_ASSERT_SUCCESS(qc);
@@ -5913,6 +5921,8 @@ TEST_F(CompilerPipelineTest, TargetPipelinesCompileControlledComposites) {
   const auto target = llvm::cantFail(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("measure", 1, 0)),
           llvm::cantFail(Capability::create("u", 1, 3)),
           llvm::cantFail(Capability::create("cz", 2, 0)),
           llvm::cantFail(Capability::create("gphase", 0, 1)),
@@ -6006,6 +6016,8 @@ TEST_F(CompilerPipelineTest, TargetPipelinesSimplifyCombinedControls) {
     const auto target = llvm::cantFail(CompilerTarget::create(
         3, CompilerTarget::Connectivity::allToAll(),
         CompilerTarget::NativeOperations::fromOperations({
+            llvm::cantFail(
+                CompilerTarget::OperationCapability::create("measure", 1, 0)),
             llvm::cantFail(Capability::create(equatorial ? "r" : "u", 1,
                                               equatorial ? 2 : 3)),
             llvm::cantFail(Capability::create("cz", 2, 0)),
@@ -6049,6 +6061,7 @@ TEST_F(CompilerPipelineTest, CombiningPreservesFixedAngleNativeControls) {
   const auto target = llvm::cantFail(CompilerTarget::create(
       3, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("measure", 1, 0)),
           llvm::cantFail(Capability::create("u", 1, 3)),
           llvm::cantFail(Capability::create("cz", 2, 0)),
           llvm::cantFail(
@@ -6083,14 +6096,16 @@ ctrl(2) @ rz(0.2) q[0], q[1], q[2];
 
 TEST_F(CompilerPipelineTest, TargetOpenQASMRetainsExportableControlledAngles) {
   using Capability = CompilerTarget::OperationCapability;
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
-                             CompilerTarget::NativeOperations::fromOperations({
-                                 llvm::cantFail(Capability::create("u", 1, 3)),
-                                 llvm::cantFail(Capability::create("cz", 2, 0)),
-                                 llvm::cantFail(Capability::create(
-                                     "u", Capability::Arity::variadic(2), 3)),
-                             })));
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("measure", 1, 0)),
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("cz", 2, 0)),
+          llvm::cantFail(
+              Capability::create("u", Capability::Arity::variadic(2), 3)),
+      })));
   const TargetEnvironment environment(
       target, llvm::cantFail(PayloadSpecification::create(
                   {.id = "openqasm", .version = "3.1.0", .profile = ""},
@@ -6148,6 +6163,7 @@ TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
   const auto target = llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(OperationCapability::create("measure", 1, 0)),
           llvm::cantFail(OperationCapability::create("u", 1, 3)),
           llvm::cantFail(OperationCapability::create("cz", 2, 0)),
           llvm::cantFail(OperationCapability::create("gphase", 0, 1)),
@@ -6204,6 +6220,9 @@ TEST_F(CompilerPipelineTest, TargetPipelinesRequireSynthesisBasis) {
 TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
   using NativeOperations = CompilerTarget::NativeOperations;
   using OperationCapability = CompilerTarget::OperationCapability;
+  const auto measure =
+      llvm::cantFail(OperationCapability::create("measure", 1, 0));
+  const auto x = llvm::cantFail(OperationCapability::create("x", 1, 0));
   const auto cx = llvm::cantFail(OperationCapability::create("cx", 2, 0));
   const auto dcx = llvm::cantFail(OperationCapability::create("dcx", 2, 0));
   const auto u = llvm::cantFail(OperationCapability::create("u", 1, 3));
@@ -6222,20 +6241,22 @@ TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
   const std::vector cases{
       Case{
           .name = "cx-only",
-          .target = makeTarget(NativeOperations::fromOperations({cx})),
+          .target =
+              makeTarget(NativeOperations::fromOperations({x, cx, measure})),
           .useDcx = false,
           .expectFusion = false,
       },
       Case{
           .name = "u-dcx",
-          .target = makeTarget(NativeOperations::fromOperations({u, dcx})),
+          .target =
+              makeTarget(NativeOperations::fromOperations({u, dcx, measure})),
           .useDcx = true,
           .expectFusion = false,
       },
       Case{
           .name = "u-cx",
-          .target =
-              makeTarget(NativeOperations::fromOperations({u, cx, gphase})),
+          .target = makeTarget(
+              NativeOperations::fromOperations({u, cx, gphase, measure})),
           .useDcx = false,
           .expectFusion = true,
       },
@@ -6308,6 +6329,7 @@ TEST_F(CompilerPipelineTest,
       CompilerTarget::Connectivity::fromCouplings(
           {{0, 1}, {1, 2}, {2, 3}, {3, 4}}),
       CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("measure", 1, 0)),
           llvm::cantFail(Capability::create("u", 1, 3)),
           llvm::cantFail(Capability::create("cz", 2, 0)),
           llvm::cantFail(Capability::create("gphase", 0, 1)),
@@ -6424,7 +6446,7 @@ TEST_F(CompilerPipelineTest, TargetCompilationInlinesReusableFunctions) {
   ASSERT_TRUE(mlir::succeeded(program));
 
   ASSERT_TRUE(mlir::succeeded(program->compileForTarget(TargetEnvironment(
-      makeSparseUCZTarget(false), makePayloadSpecification()))));
+      makeSparseUCZTarget(true), makePayloadSpecification()))));
   EXPECT_FALSE(program->module().lookupSymbol<func::FuncOp>("flip"));
   size_t calls = 0;
   program->module().walk([&](qco::CallOp) { ++calls; });
@@ -6468,7 +6490,7 @@ TEST_F(CompilerPipelineTest, TargetCompilationInlinesBorrowedRegisters) {
   ASSERT_TRUE(program->module().lookupSymbol<func::FuncOp>("flip"));
   auto reference = OwningOpRef<ModuleOp>(program->module().clone());
   ASSERT_TRUE(mlir::succeeded(program->compileForTarget(TargetEnvironment(
-      makeSparseUCZTarget(false), makePayloadSpecification()))));
+      makeSparseUCZTarget(true), makePayloadSpecification()))));
   EXPECT_FALSE(program->module().lookupSymbol<func::FuncOp>("flip"));
   EXPECT_TRUE(verify(program->module()).succeeded());
   EXPECT_TRUE(qco::verifyLinearity(program->module()).succeeded());
@@ -6550,6 +6572,7 @@ TEST_F(CompilerPipelineTest,
   MQT_ASSERT_SUCCESS(program);
   using OperationCapability = CompilerTarget::OperationCapability;
   std::vector operations{
+      llvm::cantFail(OperationCapability::create("measure", 1, 0)),
       llvm::cantFail(OperationCapability::create("u", 1, 3)),
       llvm::cantFail(OperationCapability::create("cz", 2, 0)),
   };
@@ -6677,6 +6700,7 @@ cx q[1], q[0];
   using OperationCapability = CompilerTarget::OperationCapability;
   using SiteId = CompilerTarget::SiteId;
   std::vector operations{
+      llvm::cantFail(OperationCapability::create("measure", 1, 0)),
       llvm::cantFail(OperationCapability::create("u", 1, 3)),
       llvm::cantFail(OperationCapability::create(
           "cx", 2, 0,
@@ -6771,6 +6795,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
     SCOPED_TRACE(testCase.name);
     using OperationCapability = CompilerTarget::OperationCapability;
     std::vector operations{
+        llvm::cantFail(OperationCapability::create("measure", 1, 0)),
         llvm::cantFail(OperationCapability::create("gphase", 0, 1)),
     };
     for (const auto& [name, parameters] : testCase.nativeGates) {
@@ -6850,6 +6875,7 @@ TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
   })mlir";
     using OperationCapability = CompilerTarget::OperationCapability;
     std::vector operations{
+        llvm::cantFail(OperationCapability::create("measure", 1, 0)),
         llvm::cantFail(OperationCapability::create("x", 1, 0)),
         llvm::cantFail(OperationCapability::create("sx", 1, 0)),
         llvm::cantFail(OperationCapability::create("rz", 1, 1)),
@@ -6908,6 +6934,7 @@ TEST_F(CompilerPipelineTest,
   const auto target = llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(OperationCapability::create("measure", 1, 0)),
           llvm::cantFail(OperationCapability::create("u", 1, 3)),
           llvm::cantFail(OperationCapability::create("gphase", 0, 1)),
           llvm::cantFail(OperationCapability::create("sqrt_iswap", 2, 0)),
