@@ -417,7 +417,9 @@ public:
   /// Return detailed sites in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<Site> sites() const noexcept;
 
-  /// Return sites supporting a single-qubit gate and measurement.
+  /// Return sites supporting a single-qubit gate.
+  ///
+  /// If the target supports measurement, require readout on these sites too.
   [[nodiscard]] std::vector<SiteId> placeableSites() const;
 
   /// Return target site identifiers in dense compiler-vertex order.

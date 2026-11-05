@@ -602,7 +602,10 @@ class CompilerTarget:
 
     @property
     def placeable_sites(self) -> list[int]:
-        """Sites supporting a compiler-targetable single-qubit gate and measurement."""
+        """Sites supporting a compiler-targetable single-qubit gate.
+
+        If the target supports measurement, these sites must also support readout.
+        """
 
     @property
     def num_sites(self) -> int:

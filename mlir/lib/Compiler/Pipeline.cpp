@@ -313,7 +313,7 @@ static Expected<CompilerTarget> placementTarget(const CompilerTarget& target) {
   if (placeable.empty()) {
     return createStringError(
         std::errc::invalid_argument,
-        "no site supports both a single-qubit gate and measure");
+        "no site supports the operations required for qubit placement");
   }
   if (placeable.size() == target.numSites()) {
     return target;
