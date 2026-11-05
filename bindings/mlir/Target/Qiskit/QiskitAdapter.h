@@ -2436,6 +2436,10 @@ public:
         }
       }
     }
+    const auto extraControls = gate == nullptr ? mapping.controls : 0;
+    if (extraControls != 0) {
+      gate = versionGate({mapping.gate, 0});
+    }
     if (gate == nullptr) {
       const auto& descriptor =
           mlir::qc::getStandardGateDescriptor(mapping.gate);
@@ -2444,7 +2448,7 @@ public:
                                descriptor.operationSymbol.str() + "' with " +
                                std::to_string(mapping.controls) + " controls");
     }
-    if (qk_gate_num_qubits(gate->native) != qubits.size() ||
+    if (qk_gate_num_qubits(gate->native) + extraControls != qubits.size() ||
         qk_gate_num_params(gate->native) != parameters.size()) {
       throw std::runtime_error("Qiskit gate '" + std::string(gate->name) +
                                "' has incompatible arity");
@@ -2476,7 +2480,8 @@ public:
       pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
       return;
     }
-    if (!nativeName.empty() && nativeName != gate->name) {
+    if (extraControls != 0 ||
+        (!nativeName.empty() && nativeName != gate->name)) {
       if (!standardGates_.is_valid()) {
         standardGates_ = nb::module_::import_("qiskit.circuit.library")
                              .attr("get_standard_gate_name_mapping")();
@@ -2489,7 +2494,12 @@ public:
         values.append(pythonParameter(parameter));
       }
       operation.attr("params") = values;
-      operation.attr("name") = nb::str(nativeName.data(), nativeName.size());
+      if (extraControls != 0) {
+        operation = operation.attr("control")(extraControls,
+                                              nb::arg("annotated") = false);
+      } else {
+        operation.attr("name") = nb::str(nativeName.data(), nativeName.size());
+      }
       pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
       return;
     }
@@ -3061,7 +3071,8 @@ public:
   }
   [[nodiscard]] bool
   supportsGate(const StandardGateMapping gate) const override {
-    return versionGate(gate) != nullptr;
+    return versionGate(gate) != nullptr ||
+           (gate.controls != 0 && versionGate({gate.gate, 0}) != nullptr);
   }
 
   static nb::object targetObject(nb::handle source) {

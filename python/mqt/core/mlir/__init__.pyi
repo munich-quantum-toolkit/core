@@ -602,7 +602,10 @@ class CompilerTarget:
 
     @property
     def placeable_sites(self) -> list[int]:
-        """Sites supporting a compiler-targetable single-qubit gate and measurement."""
+        """Sites supporting a compiler-targetable single-qubit gate.
+
+        If the target supports measurement, these sites must also support readout.
+        """
 
     @property
     def num_sites(self) -> int:
@@ -1127,8 +1130,9 @@ class QCOProgram(Program):
     def decompose_multi_controlled(self, *, min_qubits: int = 3) -> None:
         """Decompose gates that act on at least min_qubits qubits.
 
-        Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates. min_qubits must be
-        at least 3; default 3 means wider than two-qubit.
+        Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
+        at least 3. The pass borrows and restores ancilla qubits when this reduces the
+        estimated entangling cost. It allocates no additional qubits.
         """
 
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:

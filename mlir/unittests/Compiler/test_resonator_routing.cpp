@@ -274,6 +274,29 @@ TEST(ResonatorPlacement, PlacementRequiresGateAndMeasurement) {
   }
 }
 
+TEST(ResonatorPlacement, RejectsDisjointGateAndReadoutSites) {
+  using Capability = CompilerTarget::OperationCapability;
+  using Tuple = CompilerTarget::SiteTuple;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create(
+              "u", 1, 3, {llvm::cantFail(Tuple::create({0}))})),
+          llvm::cantFail(Capability::create(
+              "measure", 1, 0, {llvm::cantFail(Tuple::create({1}))})),
+      })));
+  const TargetEnvironment environment(
+      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  ProgramFormat::QIRAdaptive)));
+  auto output = runDefaultPipeline(CompilerInput(OpenQASMProgram(BELL_SOURCE)),
+                                   ProgramFormat::QIRAdaptive, environment);
+  ASSERT_FALSE(static_cast<bool>(output));
+  EXPECT_TRUE(
+      llvm::StringRef(llvm::toString(output.takeError()))
+          .contains(
+              "no site supports the operations required for qubit placement"));
+}
+
 TEST(ResonatorPlacement, KeepsLargestConnectedComponentAndDropsOversizedGates) {
   using Capability = CompilerTarget::OperationCapability;
   using Tuple = CompilerTarget::SiteTuple;
