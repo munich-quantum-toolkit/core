@@ -449,10 +449,11 @@ public:
   [[nodiscard]] virtual bool supportsGate(StandardGateMapping gate) const = 0;
   [[nodiscard]] virtual mlir::CompilerTarget
   importTarget(nb::handle target, nb::handle operationNames,
-               const std::optional<std::string>& name) const = 0;
+               const std::optional<std::string>& name, bool strict) const = 0;
   [[nodiscard]] virtual mlir::CompilerTarget::NativeOperations
-  importNativeOperations(nb::handle target,
-                         nb::handle operationNames) const = 0;
+  importNativeOperations(nb::handle target, nb::handle operationNames,
+                         bool strict,
+                         std::optional<size_t> nativeWidth) const = 0;
   [[nodiscard]] virtual mlir::PayloadSpecification
   payloadSpecification(nb::handle target) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>

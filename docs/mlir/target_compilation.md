@@ -44,6 +44,11 @@ backends and targets return a `QuantumCircuit`. An explicit `output` selects
 another representation. For a `CompilerTarget`, the default preserves the
 input's program family.
 
+Use `TargetEnvironment.from_qiskit(target, strict=True)` to reject applicable
+gates or constraints Core cannot represent. It imports control flow as payload
+capabilities. For native synthesis, pass `native_num_qubits` to use an
+all-to-all target of that width and skip gates that cannot fit.
+
 A list or tuple of one input kind returns results in input order. Typed MLIR
 inputs are consumed unless `copy=True`; source text and Qiskit circuits remain
 reusable. A failed batch compilation returns no results, but processed typed

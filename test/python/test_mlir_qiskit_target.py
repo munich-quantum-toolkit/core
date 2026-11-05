@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, assert_type, cast
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
-from qiskit.circuit import Gate, Measure, Parameter, Reset, library
+from qiskit.circuit import Barrier, Gate, Measure, Parameter, Reset, library
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import IfElseOp, WhileLoopOp
 from qiskit.circuit.library import (
@@ -412,6 +412,45 @@ def test_custom_names_and_operations() -> None:
             CompilerTarget.from_qiskit(source, operation_names=[name])
     with pytest.raises(ValueError, match="no native gate applicability"):
         CompilerTarget.from_qiskit(source, operation_names=["global_phase"])
+
+
+@pytest.mark.parametrize("native_num_qubits", [None, 2])
+def test_strict_qiskit_environment(native_num_qubits: int | None) -> None:
+    """Reject unsupported applicable constraints in either target mode."""
+    source = Target(num_qubits=2)
+    source.add_instruction(XGate())
+    source.add_instruction(CXGate())
+    source.add_instruction(RZGate(Parameter("theta")), angle_bounds=[(-1.0, 1.0)])
+
+    with pytest.warns(UserWarning, match=r"parameter constraints.*'rz'"):
+        TargetEnvironment.from_qiskit(source, native_num_qubits=native_num_qubits)
+    with pytest.raises(ValueError, match=r"parameter constraints.*'rz'"):
+        TargetEnvironment.from_qiskit(source, native_num_qubits=native_num_qubits, strict=True)
+
+
+def test_native_qiskit_environment_filters_gates_by_width() -> None:
+    """Build a width-specific basis while retaining Qiskit's control-flow support."""
+    source = Target(num_qubits=4)
+    source.add_instruction(XGate(), {(3,): None})
+    source.add_instruction(Gate("wide", 2, []))
+    source.add_instruction(Gate("unavailable", 1, []), {})
+    source.add_instruction(Barrier(1))
+    source.add_instruction(GlobalPhaseGate(0.5))
+    source.add_instruction(IfElseOp, name="if_else")
+
+    environment = TargetEnvironment.from_qiskit(source, native_num_qubits=1, strict=True)
+    assert environment.target.num_sites == 1
+    assert environment.target.connectivity_kind == CompilerTarget.ConnectivityKind.ALL_TO_ALL
+    assert {operation.name for operation in environment.target.operations} == {"x", "gphase"}
+    assert environment.target.supports_operation("x", 1, 0, [0])
+    assert environment.payload_specification.format.format_id == "qiskit"
+    assert any(
+        capability.capability_id == ProgramCapability.FORWARD_BRANCHING
+        for capability in environment.payload_specification.capabilities
+    )
+
+    with pytest.raises(ValueError, match=r"unsupported operation.*'wide'"):
+        TargetEnvironment.from_qiskit(source, native_num_qubits=2, strict=True)
 
 
 @pytest.mark.parametrize("symbolic", [False, True])

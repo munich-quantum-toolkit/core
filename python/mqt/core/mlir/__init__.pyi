@@ -661,6 +661,27 @@ class TargetEnvironment:
 
     def __init__(self, target: CompilerTarget, payload_specification: PayloadSpecification) -> None: ...
     @staticmethod
+    def from_qiskit(
+        source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
+        *,
+        native_num_qubits: int | None = None,
+        strict: bool = False,
+    ) -> TargetEnvironment:
+        """Snapshot a Qiskit target and its output capabilities.
+
+        Args:
+            source: Qiskit Target or BackendV2.
+            native_num_qubits: Use an all-to-all target of this positive width for
+                native synthesis. Ignore device placement and gates wider than this
+                width. None retains the device topology.
+            strict: Raise ValueError for an applicable gate or constraint that Core
+                cannot represent. By default, warn and omit unsupported gates.
+
+        Returns:
+            The compiler target and the Qiskit payload it supports.
+        """
+
+    @staticmethod
     def from_device(
         device: mqt.core.qdmi.Device | str, *, program_format: mqt.core.qdmi.ProgramFormat | None = None
     ) -> TargetEnvironment:

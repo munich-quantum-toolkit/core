@@ -873,8 +873,7 @@ compilePythonProgram(PythonInputTypes& types, const nb::handle program,
         nb::cast<const mlir::TargetEnvironment&>(target.attr("_environment"));
   } else if (!target.is_none() && !compilerTarget) {
     targetEnvironment.emplace(
-        bindings::qiskit::importTarget(target, nb::none(), std::nullopt),
-        bindings::qiskit::payloadSpecification(target));
+        bindings::qiskit::importTargetEnvironment(target, std::nullopt, false));
     output = output.value_or(OutputFormat::Qiskit);
   }
 
@@ -1939,6 +1938,25 @@ Args:
       "A compiler target and its selected payload specification.")
       .def(nb::init<mlir::CompilerTarget, mlir::PayloadSpecification>(),
            "target"_a, "payload_specification"_a)
+      .def_static(
+          "from_qiskit", &bindings::qiskit::importTargetEnvironment, "source"_a,
+          nb::kw_only(), "native_num_qubits"_a = nb::none(), "strict"_a = false,
+          nb::sig(
+              "def from_qiskit(source: qiskit.transpiler.Target | "
+              "qiskit.providers.BackendV2, *, native_num_qubits: int | None "
+              "= None, strict: bool = False) -> TargetEnvironment"),
+          R"pb(Snapshot a Qiskit target and its output capabilities.
+
+Args:
+    source: Qiskit Target or BackendV2.
+    native_num_qubits: Use an all-to-all target of this positive width for
+        native synthesis. Ignore device placement and gates wider than this
+        width. None retains the device topology.
+    strict: Raise ValueError for an applicable gate or constraint that Core
+        cannot represent. By default, warn and omit unsupported gates.
+
+Returns:
+    The compiler target and the Qiskit payload it supports.)pb")
       .def_static(
           "from_device",
           [](const nb::handle device,
