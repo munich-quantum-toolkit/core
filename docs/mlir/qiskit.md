@@ -275,8 +275,9 @@ Other powers require explicit modifier lowering or synthesis.
 A complete Qiskit `TranspileLayout` maps program qubits to device qubits and
 records routing. Import stores those numeric maps as `mqt.layout` on the program
 module; export constructs a Qiskit layout from them. Copies, MLIR serialization,
-and QC/QCO conversions preserve the metadata. Other compiler transformations
-clear it.
+and QC/QCO conversions preserve the metadata. Custom pass pipelines can retain
+it with `preserve_layout=True` when their passes preserve or update the layout;
+other transformations clear it.
 
 ```python
 program = QCProgram.from_qiskit(transpiled_circuit)

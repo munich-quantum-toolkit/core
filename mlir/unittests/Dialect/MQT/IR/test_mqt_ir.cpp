@@ -1247,4 +1247,37 @@ TEST_F(MQTIRTest, RejectsTargetEnvironmentOutsideModule) {
   )mlir"));
 }
 
+TEST_F(MQTIRTest, SavedTargetEnvironmentRequiresTypedModuleAttribute) {
+  auto moduleOp = parse(R"mlir(
+    module attributes {
+      mqt.target_compilation_original_env = #mqt.target_env<
+          compilation_target = #mqt.compilation_target<
+              sites = [<id = 0>], connectivity = all_to_all, couplings = [],
+              native_operations = unrestricted, operations = []>,
+          payload_specification = #mqt.payload_spec<
+              format = #mqt.payload_format<id = "qir",
+                  version = "2.1.0", profile = "base", encoding = binary>,
+              capabilities = [], optional_capabilities_known = false>>
+    } {
+      func.func @main() { return }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  const auto environment = (*moduleOp)->getAttrOfType<mqt::TargetEnvAttr>(
+      mqt::ORIGINAL_TARGET_ENV_ATTR);
+  ASSERT_TRUE(environment);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  auto reparsed = roundTrip(*moduleOp);
+  ASSERT_TRUE(reparsed);
+  EXPECT_EQ((*reparsed)->getAttr(mqt::ORIGINAL_TARGET_ENV_ATTR), environment);
+
+  (*moduleOp)->setAttr(mqt::ORIGINAL_TARGET_ENV_ATTR,
+                       StringAttr::get(context.get(), "invalid"));
+  EXPECT_TRUE(failed(verify(*moduleOp)));
+  (*moduleOp)->removeAttr(mqt::ORIGINAL_TARGET_ENV_ATTR);
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  function->setAttr(mqt::ORIGINAL_TARGET_ENV_ATTR, environment);
+  EXPECT_TRUE(failed(verify(*moduleOp)));
+}
+
 } // namespace

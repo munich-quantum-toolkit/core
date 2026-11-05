@@ -441,7 +441,8 @@ public:
   /// A supplied environment replaces the module's target environment after
   /// parsing succeeds and remains attached for subsequent passes. Otherwise,
   /// retain the existing environment. Set preservesLayout only when the passes
-  /// and target preserve wire identity and order; otherwise clear the layout.
+  /// keep wire and site identities or update the layout to reflect changes;
+  /// otherwise clear the layout.
   /// Execution failure can leave partial changes; copy the program to preserve
   /// the input.
   [[nodiscard]] LogicalResult

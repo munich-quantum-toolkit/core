@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/Transforms/UnrollModifiers.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
@@ -1481,13 +1482,25 @@ protected:
       return;
     }
 
+    const auto* target = target_ ? &*target_ : nullptr;
+    if (useTarget) {
+      const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+      if (!environment) {
+        getOperation().emitError()
+            << "expected a valid mqt.target_env: " << environment.error();
+        signalPassFailure();
+        return;
+      }
+      target = &environment.environment().target();
+    }
     bool hasStatic = false;
     getOperation().walk([&](StaticOp) { hasStatic = true; });
     const CompilerTarget* nativeTarget =
-        target_ && (target_->connectivityKind() ==
-                        CompilerTarget::Connectivity::Kind::AllToAll ||
-                    hasStatic)
-            ? &*target_
+        target != nullptr &&
+                (target->connectivityKind() ==
+                     CompilerTarget::Connectivity::Kind::AllToAll ||
+                 hasStatic)
+            ? target
             : nullptr;
 
     const bool traceStaticSites =

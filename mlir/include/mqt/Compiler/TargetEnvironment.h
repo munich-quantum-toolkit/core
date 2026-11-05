@@ -197,6 +197,8 @@ private:
 };
 
 /// Attach the canonical typed target environment to a module.
+///
+/// Abandons any execution-environment restoration saved by staged compilation.
 void attachTargetEnvironment(ModuleOp moduleOp,
                              const TargetEnvironment& environment);
 

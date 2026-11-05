@@ -11,8 +11,17 @@
 
 include "mlir/Pass/PassBase.td"
 
+class TargetAwareQCOOptimization<string argument>
+    : Pass<argument, "mlir::ModuleOp"> {
+  list<Option> targetOptions = [Option<"useTarget", "use-target", "bool",
+                                       "false",
+                                       "Use the attached target environment; "
+                                       "fail if it is missing or invalid.">];
+  let options = targetOptions;
+}
+
 def CombineControlledGates
-    : Pass<"combine-controlled-gates", "mlir::ModuleOp"> {
+    : TargetAwareQCOOptimization<"combine-controlled-gates"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Combine gates along the same ordered control and target wires";
   let description = [{
@@ -28,7 +37,9 @@ def CombineControlledGates
     groups and their bodies, including fixed-parameter operations. They retain
     native controlled U fusion, then unroll surviving composites before routing
     and native synthesis. Combining is a separate pass so canonicalization does
-    not recreate composite target operations.
+    not recreate composite target operations. Set `use-target=true` to use this
+    target-aware behavior with the attached `mqt.target_env`; the default
+    combines gates independently of target metadata.
   }];
 }
 
@@ -66,7 +77,7 @@ def MergeSingleQubitRotationGates
 }
 
 def FuseSingleQubitUnitaryRuns
-    : Pass<"fuse-single-qubit-unitary-runs", "mlir::ModuleOp"> {
+    : TargetAwareQCOOptimization<"fuse-single-qubit-unitary-runs"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect",
                            "::mlir::math::MathDialect",
@@ -97,10 +108,32 @@ def FuseSingleQubitUnitaryRuns
     most three gates (one in the `u` basis).
     These conversions need no quaternion extraction or conditional expressions.
     Other dynamic chains use runtime Euler-angle extraction.
+
+    With `use-target=true`, select the attached target's synthesis basis instead
+    of `basis` and preserve its supported operations. A target without a usable
+    synthesis basis leaves the input unchanged.
   }];
-  let options = [Option<
+  let options = targetOptions#[Option<
       "basis", "basis", "std::string", "\"zyz\"",
       "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r, gpi).">];
+}
+
+def FuseTwoQubitGates : TargetAwareQCOOptimization<"fuse-two-qubit-gates"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Fuse constant two-qubit runs before placement";
+  let description = [{
+    Resynthesize constant two-qubit runs, including interleaved single-qubit
+    gates, when both the IR gate count and the estimated native two-qubit count
+    decrease. Barriers, non-unitary operations, and unavailable matrices end a
+    run. Numerical decomposition failure leaves that run unchanged.
+
+    The default uses U and CZ gates independently of target metadata. Set
+    `use-target=true` to select the attached target's synthesis basis and
+    preserve its supported operations. A target without a usable two-qubit
+    synthesis basis leaves the input unchanged. This pass does not assign
+    physical sites; use `target-native-synthesis` for placed circuits.
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -193,6 +226,35 @@ def LegalizeControlFlow : PayloadControlFlowPass<"legalize-qco-control-flow"> {
 //===----------------------------------------------------------------------===//
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
+
+def PlacementPass : Pass<"place-qubits", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect"];
+  let summary = "Assign physical sites without routing";
+  let description = [{
+    Assign dynamically allocated qubits to sites of the attached target in
+    deterministic order. Already placed programs remain unchanged. This does
+    not enforce adjacency; use `place-and-route` for sparse topologies.
+
+    Input qubit labels prepared by `mqt-target-prepare` produce layout metadata.
+    Preserve any layout recorded by `elide-terminal-swaps` until this pass
+    consumes it. Supported tensor and control-flow forms follow the placement
+    requirements of target compilation.
+  }];
+}
+
+def ElideTerminalSwapsPass : Pass<"elide-terminal-swaps", "mlir::ModuleOp"> {
+  let summary = "Record terminal SWAPs in the layout before placement";
+  let description = [{
+    Remove terminal SWAPs from prepared straight-line programs and record the
+    resulting wire permutation. Accepts owned scalar qubits and flat, static
+    tensor unpack/pack chains. Other input forms remain unchanged.
+
+    Run after allocation cleanup, with source identities from
+    `mqt-target-prepare`. Preserve roots and the resulting `mqt.layout` until
+    placement consumes the permutation. Already placed layouts are unchanged.
+  }];
+}
 
 def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
@@ -598,7 +660,7 @@ def RemoveDeadGates : Pass<"remove-dead-gates", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def DecomposeMultiControlled
-    : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
+    : TargetAwareQCOOptimization<"decompose-multi-controlled"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
   let summary = "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and "
@@ -614,6 +676,11 @@ def DecomposeMultiControlled
     before decomposition, subject to the same width threshold. Nested inverse
     bodies are unrolled in reverse order; power bodies require a constant integer
     exponent and operations on disjoint wires.
+
+    With `use-target=true`, retain target-native operations on all-to-all
+    targets or already placed programs. Dynamic qubits on an explicit topology
+    still use target-independent decomposition before routing. The default
+    ignores attached target metadata.
 
     | Family | Width (qubits) | Decomposition |
     | ------ | -------------- | ------------- |
@@ -654,7 +721,7 @@ def DecomposeMultiControlled
     `min-qubits` keeps them; the greedy rewriter lowers further when the
     threshold allows.
   }];
-  let options = [Option<
+  let options = targetOptions#[Option<
       "minQubits", "min-qubits", "uint64_t", "3",
       "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and qco.rccx "
       "that act on at least this many qubits (must be at least 3; default 3 "

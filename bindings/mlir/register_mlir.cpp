@@ -2284,8 +2284,8 @@ The supplied target environment replaces the existing one after parsing succeeds
 and remains attached for subsequent passes. None retains the existing environment.
 Only the requested passes run; no default target compilation stages are added.
 Layout metadata is cleared unless ``preserve_layout=True``. Set this only when
-the passes and target preserve qubit identity and order. It retains existing
-metadata; it does not create or validate a mapping. Execution failure can leave
+the passes keep wire and site identities or update the layout to reflect changes.
+The flag itself does not create or validate a mapping. Execution failure can leave
 partial changes; use ``copy()`` to preserve the input.)pb")
       .def("merge_single_qubit_rotation_gates",
            &FallibleMemberAdapter<

@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -200,9 +201,20 @@ protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
 
+    const auto* target = target_ ? &*target_ : nullptr;
+    if (useTarget) {
+      const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+      if (!environment) {
+        moduleOp.emitError()
+            << "expected a valid mqt.target_env: " << environment.error();
+        signalPassFailure();
+        return;
+      }
+      target = &environment.environment().target();
+    }
     auto parsed = decomposition::parseSingleQubitBasis(basis);
-    if (target_) {
-      const auto nativeBasis = target_->synthesisBasis();
+    if (target != nullptr) {
+      const auto nativeBasis = target->synthesisBasis();
       if (!nativeBasis) {
         return;
       }
@@ -216,10 +228,10 @@ protected:
       return;
     }
 
-    const auto* target = target_ ? &*target_ : nullptr;
     decomposition::SingleQubitRunFusion fusion(
-        target_ ? *target_->synthesisBasis()
-                : CompilerTarget::SynthesisBasis{.singleQubit = *parsed},
+        target != nullptr
+            ? *target->synthesisBasis()
+            : CompilerTarget::SynthesisBasis{.singleQubit = *parsed},
         target);
     const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
         [&](Operation* operation) {

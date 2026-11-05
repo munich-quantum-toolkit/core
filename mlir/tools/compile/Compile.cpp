@@ -376,6 +376,7 @@ int mqtCoreRunCompiler(int argc, char** argv) {
       llvm::cl::value_desc("registry.json"), llvm::cl::init(""));
 
   registerMQTCompilerPasses();
+  registerTargetCompilationPasses();
   // Driver-owned conversion stages must also be available for replay.
   registerQCToQCO();
   registerQCOToQC();

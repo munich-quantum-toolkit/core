@@ -11,11 +11,32 @@
 #pragma once
 
 #include "mqt/Compiler/CompilationOptions.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+
+#include "mlir/IR/BuiltinOps.h"
+
+#include "llvm/Support/Error.h"
 
 namespace mlir {
 
-class TargetEnvironment;
 class OpPassManager;
+
+/// Select the routing environment used by target compilation.
+///
+/// Restricts placement to usable sites and includes virtual resonator
+/// couplings. Programs with no qubits retain the supplied environment.
+[[nodiscard]] llvm::Expected<TargetEnvironment>
+createTargetCompilationEnvironment(ModuleOp moduleOp,
+                                   const TargetEnvironment& environment);
+
+/// Register target preparation and finalization for textual pass pipelines.
+///
+/// Preparation uses the attached target environment, records source wire order,
+/// and performs structural cleanup. Finalization synthesizes and verifies
+/// native operations, then restores the execution environment saved by
+/// preparation. Explicitly attaching another environment abandons that
+/// restoration.
+void registerTargetCompilationPasses();
 
 /// Populate the canonical compiler-target pipeline.
 ///

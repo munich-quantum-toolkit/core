@@ -12,6 +12,8 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
@@ -681,6 +683,7 @@ TEST_F(MultiControlledDecompositionTest, RotationsRespectMinQubits) {
 }
 
 TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeRotations) {
+  context()->loadDialect<mlir::mqt::MQTDialect>();
   using OperationCapability = CompilerTarget::OperationCapability;
   const std::vector operations{
       llvm::cantFail(OperationCapability::create(
@@ -693,19 +696,32 @@ TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeRotations) {
   const auto target = llvm::cantFail(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations(operations)));
+  const TargetEnvironment environment(
+      target, llvm::cantFail(PayloadSpecification::create(
+                  PayloadFormat{.id = "mqt.test.payload"})));
   for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
-    auto moduleOp = buildMcrModule(context(), 3, axis, 0.73);
-    ASSERT_TRUE(moduleOp);
-    ASSERT_TRUE(succeeded(verify(moduleOp.get())));
-    ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
-    PassManager pm(context());
-    pm.addPass(createDecomposeMultiControlled(target));
-    ASSERT_TRUE(succeeded(pm.run(moduleOp.get())));
-    ASSERT_TRUE(succeeded(verify(moduleOp.get())));
-    ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
-    EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
-    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-    expectImplementsControlledGate(funcOp, 3, rotationMatrix(axis, 0.73), 1);
+    auto original = buildMcrModule(context(), 3, axis, 0.73);
+    ASSERT_TRUE(original);
+    for (const bool useEnvironment : {false, true}) {
+      SCOPED_TRACE(useEnvironment);
+      OwningOpRef<ModuleOp> moduleOp = original->clone();
+      if (useEnvironment) {
+        attachTargetEnvironment(*moduleOp, environment);
+      }
+      ASSERT_TRUE(succeeded(verify(moduleOp.get())));
+      ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
+      PassManager pm(context());
+      pm.addPass(useEnvironment
+                     ? createDecomposeMultiControlled(
+                           DecomposeMultiControlledOptions{.useTarget = true})
+                     : createDecomposeMultiControlled(target));
+      ASSERT_TRUE(succeeded(pm.run(moduleOp.get())));
+      ASSERT_TRUE(succeeded(verify(moduleOp.get())));
+      ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
+      EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
+      auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+      expectImplementsControlledGate(funcOp, 3, rotationMatrix(axis, 0.73), 1);
+    }
   }
 }
 

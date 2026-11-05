@@ -29,8 +29,8 @@ class PayloadSpecAttr;
 /// Run a pass pipeline on valid IR and verify its output.
 ///
 /// Also verify after each pass when assertions are enabled.
-/// Clear layout metadata unless the pipeline preserves resource
-/// identity and order and the caller sets preservesLayout.
+/// Clear layout metadata unless the caller sets preservesLayout and the
+/// pipeline retains wire and site identities or updates the layout accordingly.
 mlir::LogicalResult runWithPassManager(
     mlir::ModuleOp moduleOp,
     mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
@@ -39,8 +39,8 @@ mlir::LogicalResult runWithPassManager(
 
 /// Run passes with scoped compilation options and clear layout metadata.
 ///
-/// Set preservesLayout only when the pipeline preserves wire identity and
-/// order.
+/// Set preservesLayout only when the pipeline retains wire and site identities
+/// or updates the layout to reflect changes.
 mlir::LogicalResult
 runWithCompilationOptions(mlir::PassManager& pm, mlir::ModuleOp moduleOp,
                           const mlir::CompilationOptions& options,
@@ -74,7 +74,8 @@ void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
 ///
 /// Attach a supplied environment after parsing succeeds. Retain it after
 /// execution, including on failure. Clear layout metadata unless
-/// preservesLayout is set and the pipeline preserves wire identity and order.
+/// preservesLayout is set and the pipeline keeps wire and site identities or
+/// updates the layout to reflect changes.
 [[nodiscard]] mlir::LogicalResult
 runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
                 const mlir::CompilationOptions& options = {},

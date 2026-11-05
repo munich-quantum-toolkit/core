@@ -26,6 +26,14 @@
 #include <cstdint>
 #include <optional>
 
+namespace mlir::mqt {
+
+/// Saved execution environment while staged compilation uses a routing target.
+inline constexpr llvm::StringLiteral ORIGINAL_TARGET_ENV_ATTR =
+    "mqt.target_compilation_original_env";
+
+} // namespace mlir::mqt
+
 namespace mlir::mqt::detail {
 template <typename Element>
 [[nodiscard]] FailureOr<llvm::SmallVector<Element>>

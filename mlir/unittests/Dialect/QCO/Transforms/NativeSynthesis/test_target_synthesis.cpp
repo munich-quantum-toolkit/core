@@ -292,6 +292,31 @@ protected:
 
 } // namespace
 
+TEST_F(TargetSynthesisTest, TargetAwareOptimizationsRequireEnvironment) {
+  std::array passes{
+      mlir::qco::createCombineControlledGates(
+          mlir::qco::CombineControlledGatesOptions{.useTarget = true}),
+      mlir::qco::createDecomposeMultiControlled(
+          mlir::qco::DecomposeMultiControlledOptions{.useTarget = true}),
+      mlir::qco::createFuseSingleQubitUnitaryRuns(
+          mlir::qco::FuseSingleQubitUnitaryRunsOptions{.useTarget = true}),
+      mlir::qco::createFuseTwoQubitGates(
+          mlir::qco::FuseTwoQubitGatesOptions{.useTarget = true}),
+  };
+  auto moduleOp = build([](QCOProgramBuilder& builder) {
+    builder.h(builder.staticQubit(0));
+    return llvm::SmallVector<Value>{};
+  });
+  ASSERT_TRUE(moduleOp);
+  const auto before = printModule(*moduleOp);
+  for (auto& pass : passes) {
+    SCOPED_TRACE(pass->getArgument().str());
+    EXPECT_NE(expectFailure(*moduleOp, std::move(pass)).find("mqt.target_env"),
+              std::string::npos);
+    EXPECT_EQ(printModule(*moduleOp), before);
+  }
+}
+
 TEST(TargetSynthesisPassContract, FactoriesAreIndependentlyConstructible) {
   const auto target = valid(Target::create(2, Connectivity::allToAll(),
                                            NativeOperations::unrestricted()));
@@ -1631,18 +1656,30 @@ TEST_F(TargetSynthesisTest, PrePlacementFusionRequiresSmallerNativeCircuit) {
                                nativeSwap ? "swap" : "cx", 2, 0)),
                            valid(OperationCapability::create("rzz", 2, 1)),
                        })));
-    auto moduleOp = build([&](QCOProgramBuilder& builder) {
+    auto original = build([&](QCOProgramBuilder& builder) {
       auto [a, b] =
           builder.swap(builder.staticQubit(0), builder.staticQubit(1));
       std::tie(a, b) = nativeSwap ? builder.rzz(0.3, a, b) : builder.cx(a, b);
       return llvm::SmallVector<Value>{};
     });
-    const auto before = printModule(*moduleOp);
-    ASSERT_TRUE(mlir::succeeded(
-        runPass(*moduleOp, mlir::qco::createFuseTwoQubitGates(target))));
-    // Two native gates stay native; a SWAP plus CX also stays compact until
-    // placement, even though their individual native lowering costs more.
-    EXPECT_EQ(printModule(*moduleOp), before);
+    ASSERT_TRUE(original);
+    for (const bool useEnvironment : {false, true}) {
+      SCOPED_TRACE(useEnvironment);
+      OwningOpRef<ModuleOp> moduleOp = original->clone();
+      if (useEnvironment) {
+        attachTestEnvironment(*moduleOp, target);
+      }
+      const auto before = printModule(*moduleOp);
+      ASSERT_TRUE(mlir::succeeded(runPass(
+          *moduleOp,
+          useEnvironment
+              ? mlir::qco::createFuseTwoQubitGates(
+                    mlir::qco::FuseTwoQubitGatesOptions{.useTarget = true})
+              : mlir::qco::createFuseTwoQubitGates(target))));
+      // Two native gates stay native; a SWAP plus CX also stays compact until
+      // placement, even though their individual native lowering costs more.
+      EXPECT_EQ(printModule(*moduleOp), before);
+    }
   }
 }
 
@@ -2674,20 +2711,24 @@ TEST_F(TargetSynthesisTest, SingleQubitFusionPreservesNativeSymbolicRuns) {
                                                     context.get());
   ASSERT_TRUE(original);
   const auto target = makeUCxTarget();
-  for (const bool useTarget : {false, true}) {
-    SCOPED_TRACE(useTarget);
+  for (const llvm::StringRef mode : {"generic", "target", "environment"}) {
+    SCOPED_TRACE(mode.str());
     OwningOpRef<ModuleOp> moduleOp = original->clone();
+    attachTestEnvironment(*moduleOp, target);
+    const auto before = printModule(*moduleOp);
+    mlir::qco::FuseSingleQubitUnitaryRunsOptions options;
+    options.basis = "u";
+    options.useTarget = mode == "environment";
     ASSERT_TRUE(mlir::succeeded(
         runPass(*moduleOp,
-                useTarget ? mlir::qco::createFuseSingleQubitUnitaryRuns(target)
-                          : mlir::qco::createFuseSingleQubitUnitaryRuns(
-                                mlir::qco::FuseSingleQubitUnitaryRunsOptions{
-                                    .basis = "u"}))));
+                mode == "target"
+                    ? mlir::qco::createFuseSingleQubitUnitaryRuns(target)
+                    : mlir::qco::createFuseSingleQubitUnitaryRuns(options))));
     ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
     ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
-    EXPECT_EQ(countOps<UOp>(*moduleOp), useTarget ? 2U : 1U);
-    if (useTarget) {
-      EXPECT_EQ(printModule(*moduleOp), printModule(*original));
+    EXPECT_EQ(countOps<UOp>(*moduleOp), mode == "generic" ? 1U : 2U);
+    if (mode != "generic") {
+      EXPECT_EQ(printModule(*moduleOp), before);
     }
   }
 }
