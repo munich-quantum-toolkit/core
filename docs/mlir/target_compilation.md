@@ -60,10 +60,11 @@ internally and export as one-parameter OpenQASM pulses with their phase
 correction.
 
 Target compilation places qubits only on sites with a supported single-qubit
-gate and measurement. With explicit couplings, it uses their largest connected
-component, including connections through resonators. Targets with ordered
-`move(qubit, resonator)` placements can route CZ gates through idle resonators.
-Core emits closed `move; cz; move` sandwiches before readout. Use
+gate. If the target supports measurement, these sites must also support readout.
+With explicit couplings, it uses their largest connected component, including
+connections through resonators. Targets with ordered `move(qubit, resonator)`
+placements can route CZ gates through idle resonators. Core emits closed
+`move; cz; move` sandwiches before readout. Use
 `compile_program(circuit, target=device)` with `submit_program`,
 `backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.
 Qiskit `transpile` does not support these targets. Native circuits that already

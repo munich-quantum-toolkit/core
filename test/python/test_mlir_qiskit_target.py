@@ -124,6 +124,23 @@ def test_compile_program_qiskit_output(target_kind: str | None) -> None:
     assert np.allclose(Operator.from_circuit(compiled.assign_parameters({theta: 0.7})).data, Operator(expected).data)
 
 
+def test_compile_program_target_without_measurement() -> None:
+    """Allow unitary-only targets without accepting measurements on them."""
+    target = Target(num_qubits=1)
+    target.add_instruction(SXGate())
+    target.add_instruction(RZGate(Parameter("theta")))
+    circuit = QuantumCircuit(1)
+    circuit.h(0)
+
+    compiled = compile_program(circuit, target=target)
+    assert isinstance(compiled, QuantumCircuit)
+    np.testing.assert_allclose(Operator.from_circuit(compiled).data, Operator(circuit).data, atol=1e-12)
+
+    circuit.measure_all()
+    with pytest.raises(RuntimeError, match="measure"):
+        compile_program(circuit, target=target)
+
+
 @pytest.mark.parametrize(
     ("target_kind", "output", "result_type"),
     [

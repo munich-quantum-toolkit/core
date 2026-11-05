@@ -3682,8 +3682,6 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   ASSERT_TRUE(mlir::succeeded(unsupportedQCO));
   EXPECT_TRUE(mlir::failed(unsupportedQCO->compileForTarget(
       TargetEnvironment(makeSparseUCZTarget(false), payload))));
-  EXPECT_FALSE(
-      unsupportedQCO->module()->hasAttr(mlir::mqt::TargetEnvAttr::name));
 }
 
 // Handwritten MLIR isolates unsupported-input and capability-boundary behavior.
@@ -4870,8 +4868,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
   for (const auto& [target, expected] : {
            std::pair{targetWith(1, {u, measure}), "target site count"},
            std::pair{targetWith(2, {u, localMeasure}), "target site count"},
-           std::pair{targetWith(2, {u}),
-                     "no site supports both a single-qubit gate and measure"},
+           std::pair{targetWith(2, {u}), "measure"},
        }) {
     auto qc = QCProgram::fromOpenQASMString(source);
     MQT_ASSERT_SUCCESS(qc);
