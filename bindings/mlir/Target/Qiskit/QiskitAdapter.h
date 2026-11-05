@@ -3089,9 +3089,10 @@ public:
     return target;
   }
 
-  static mlir::CompilerTarget::NativeOperations readOperations(
-      nb::handle source, nb::handle operationNames, bool placements,
-      std::set<mlir::CompilerTarget::SiteId>* activeSites = nullptr) {
+  static mlir::CompilerTarget::NativeOperations
+  readOperations(nb::handle source, nb::handle operationNames, bool strict,
+                 std::set<mlir::CompilerTarget::SiteId>* activeSites,
+                 std::optional<size_t> nativeWidth = std::nullopt) {
     using Target = mlir::CompilerTarget;
     auto target = targetObject(source);
     const auto circuit = nb::module_::import_("qiskit.circuit");
@@ -3125,6 +3126,10 @@ public:
       }
       const auto instruction =
           target.attr("operation_from_name")(operationName);
+      if (nativeWidth && !instruction.is_type() &&
+          nb::cast<size_t>(instruction.attr("num_qubits")) > *nativeWidth) {
+        continue;
+      }
       auto qargs = target.attr("qargs_for_operation_name")(operationName);
       const auto instructionType =
           instruction.is_type() ? nb::handle(instruction) : instruction.type();
@@ -3242,7 +3247,7 @@ public:
         auto message = "Cannot represent " + reason;
         message += " for ";
         message += quotedName;
-        if (!operationNames.is_none()) {
+        if (strict || !operationNames.is_none()) {
           throw nb::value_error(message.c_str());
         }
         message += "; omitting it from the compiler target";
@@ -3257,7 +3262,7 @@ public:
 
       const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
       std::vector<Target::SiteTuple> siteTuples;
-      if (placements && !qargs.is_none()) {
+      if (activeSites != nullptr && !qargs.is_none()) {
         std::vector<std::vector<Target::SiteId>> sites;
         for (auto tuple : nb::borrow<nb::iterable>(qargs)) {
           sites.push_back(nb::cast<std::vector<Target::SiteId>>(tuple));
@@ -3284,9 +3289,10 @@ public:
   }
 
   [[nodiscard]] mlir::CompilerTarget::NativeOperations
-  importNativeOperations(nb::handle source,
-                         nb::handle operationNames) const override {
-    return readOperations(source, operationNames, false);
+  importNativeOperations(nb::handle source, nb::handle operationNames,
+                         bool strict,
+                         std::optional<size_t> nativeWidth) const override {
+    return readOperations(source, operationNames, strict, nullptr, nativeWidth);
   }
 
   [[nodiscard]] mlir::PayloadSpecification
@@ -3326,7 +3332,8 @@ public:
 
   [[nodiscard]] mlir::CompilerTarget
   importTarget(nb::handle source, nb::handle operationNames,
-               const std::optional<std::string>& name) const override {
+               const std::optional<std::string>& name,
+               bool strict) const override {
     using Target = mlir::CompilerTarget;
     auto target = targetObject(source);
     auto targetName = name;
@@ -3340,7 +3347,7 @@ public:
     }
     std::set<Target::SiteId> activeSites;
     const auto nativeOperations =
-        readOperations(target, operationNames, true, &activeSites);
+        readOperations(target, operationNames, strict, &activeSites);
     std::vector<Target::Site> sites;
     sites.reserve(activeSites.size());
     for (const auto site : activeSites) {
