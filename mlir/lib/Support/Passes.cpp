@@ -10,6 +10,7 @@
 
 #include "mqt/Support/Passes.h"
 
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
@@ -163,7 +164,9 @@ void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
 }
 
 LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
-                              const CompilationOptions& options) {
+                              const CompilationOptions& options,
+                              const TargetEnvironment* environment,
+                              bool preservesLayout) {
   registerMQTCompilerPasses();
   PassManager pm(mod.getContext());
   std::string diagnostics;
@@ -172,7 +175,10 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
     return mod.emitError() << "failed to parse pass pipeline '" << pipeline
                            << "': " << diagnostics;
   }
-  return runWithCompilationOptions(pm, mod, options);
+  if (environment != nullptr) {
+    attachTargetEnvironment(mod, *environment);
+  }
+  return runWithCompilationOptions(pm, mod, options, preservesLayout);
 }
 
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,

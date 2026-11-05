@@ -2270,14 +2270,23 @@ cancel, fuse, or specialize gates.)pb")
       .def(
           "run_pass_pipeline",
           [](mlir::QCOProgram& program, const std::string& pipeline,
-             mlir::CompilationOptions options) {
-            requireValid(program);
-            withDiagnostics<nb::exception_type::runtime_error>(
-                program.context().get(), "Compiler action failed",
-                [&] { return program.runPassPipeline(pipeline, options); });
+             const mlir::TargetEnvironment* environment,
+             mlir::CompilationOptions options, bool preserveLayout) {
+            FallibleMemberAdapter<&mlir::QCOProgram::runPassPipeline>::call(
+                program, pipeline, options, environment, preserveLayout);
           },
-          "pipeline"_a, nb::kw_only(), "options"_a = mlir::CompilationOptions{},
-          "Run a textual MLIR pass pipeline in place.")
+          "pipeline"_a, nb::kw_only(), "target_environment"_a = nb::none(),
+          "options"_a = mlir::CompilationOptions{}, "preserve_layout"_a = false,
+          nb::call_guard<nb::gil_scoped_release>(),
+          R"pb(Run a textual MLIR pass pipeline in place.
+
+The supplied target environment replaces the existing one after parsing succeeds
+and remains attached for subsequent passes. None retains the existing environment.
+Only the requested passes run; no default target compilation stages are added.
+Layout metadata is cleared unless ``preserve_layout=True``. Set this only when
+the passes and target preserve qubit identity and order. It retains existing
+metadata; it does not create or validate a mapping. Execution failure can leave
+partial changes; use ``copy()`` to preserve the input.)pb")
       .def("merge_single_qubit_rotation_gates",
            &FallibleMemberAdapter<
                &mlir::QCOProgram::mergeSingleQubitRotationGates>::call,

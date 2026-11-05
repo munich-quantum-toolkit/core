@@ -5909,11 +5909,11 @@ x q;
   const auto target = llvm::cantFail(
       CompilerTarget::create(1, CompilerTarget::Connectivity::fromCouplings({}),
                              CompilerTarget::NativeOperations::unrestricted()));
-  attachTargetEnvironment(
-      qco->module(), TargetEnvironment(target, makePayloadSpecification()));
+  const TargetEnvironment environment(target, makePayloadSpecification());
   EXPECT_TRUE(mlir::succeeded(
       qco->runPassPipeline("place-and-route{ntrials=1},target-native-synthesis,"
-                           "verify-target-conformance")));
+                           "verify-target-conformance",
+                           {}, &environment)));
   EXPECT_NE(qco->str().find("qco.static"), std::string::npos);
 }
 
