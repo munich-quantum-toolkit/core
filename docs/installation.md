@@ -199,11 +199,9 @@ device compilation selects a supported payload.
 
 `--with=qiskit` installs the optional serializer directly. Installing
 `mqt-core[qiskit]` instead also applies Core's Qiskit dependency requirements.
-QPY export uses the native compiler's optimized QCO output and the same
-serializer as the Python compiler API. Targeted export uses the stored target
-environment for gate aliases, physical qubit addresses, and layout metadata. QPY
-submission does not require Qiskit on the client when the destination device
-accepts QPY directly.
+QPY output preserves target gate aliases, physical qubit addresses, and layout
+metadata. QPY submission does not require Qiskit on the client when the
+destination device accepts QPY directly.
 
 ### Building from source
 
