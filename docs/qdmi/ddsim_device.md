@@ -154,8 +154,12 @@ create a sampling thread terminate that worker. DDSIM starts a new worker for
 future submissions; it does not automatically retry the failed program. The
 worker executable is installed beside the device library and must move with it.
 
-A common explicit seed is applied independently to each program, matching
-separate submissions. QIR output capture is indexed by program, like shots,
+An explicit job seed defines deterministic, distinct program streams: program
+index `i` uses the unsigned 64-bit seed `job_seed + i`. The first program and
+single-program jobs retain the supplied seed. Stream selection depends on the
+program index, not worker scheduling; splitting or reordering a batch therefore
+changes its stream assignment. Without an explicit seed, each program obtains
+fresh system entropy. QIR output capture is indexed by program, like shots,
 counts, and state results. Worker reuse supports ordinary QDMI programs; it does
 not isolate arbitrary native process-global side effects between executions.
 
