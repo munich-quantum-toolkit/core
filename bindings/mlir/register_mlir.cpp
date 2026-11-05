@@ -43,6 +43,7 @@
 #include "qdmi/QDMI.hpp"
 
 #include "Array.hpp"
+#include "NativeCommands.h"
 #include "Result.hpp"
 #include "Target/PennyLane/PennyLane.h"
 #include "Target/Qiskit/Qiskit.h"
@@ -81,6 +82,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <cctype>
 #include <complex>
@@ -1258,11 +1260,11 @@ generateBenchmark(const Benchmark& benchmark) {
 }
 
 [[nodiscard]] static llvm::Expected<std::string>
-exportQPY(mlir::QCProgram program, const mlir::TargetEnvironment& environment) {
+exportQPYFile(mlir::QCProgram program,
+              const mlir::TargetEnvironment* environment) {
   const nb::gil_scoped_acquire acquire;
   try {
-    auto circuit =
-        bindings::qiskit::exportCircuit(std::move(program), environment);
+    auto circuit = qpyCircuit(std::move(program), environment);
     auto data = nb::cast<nb::bytes>(writeQPY(circuit));
     return std::string(data.c_str(), data.size());
   } catch (const std::exception& error) {
@@ -1271,15 +1273,22 @@ exportQPY(mlir::QCProgram program, const mlir::TargetEnvironment& environment) {
   }
 }
 
+[[nodiscard]] static llvm::Expected<std::string>
+exportQPY(mlir::QCProgram program, const mlir::TargetEnvironment& environment) {
+  return exportQPYFile(std::move(program), &environment);
+}
+
 // NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
 void registerMLIR(nb::module_& m) {
   m.doc() = "MQT Core MLIR compiler bindings.";
   const auto metadata = nb::module_::import_("importlib.metadata");
+  bool qpyAvailable = false;
   try {
     const auto version = metadata.attr("version")("qiskit");
     if (nb::isinstance<nb::str>(version) &&
         bindings::qiskit::supportsVersion(nb::cast<std::string>(version))) {
       mlir::setQPYExporter(&exportQPY);
+      qpyAvailable = true;
     }
   } catch (const nb::python_error& error) {
     if (!error.matches(metadata.attr("PackageNotFoundError"))) {
@@ -2996,13 +3005,31 @@ retains its payload and must match the destination contract. Job results are raw
 apply ``compiled.result_layout.decode_bits`` when a result layout is present.)pb");
 
   m.def(
-      "_export_qpy",
-      [](mlir::QCProgram& program) {
-        return writeQPY(qpyCircuit(copiedOrConsumed(program, false)));
+      "_run_compiler",
+      [qpyAvailable](std::vector<std::string> arguments) {
+        if (arguments.empty()) {
+          throw nb::value_error(
+              "Compiler arguments must include the command name");
+        }
+        // LLVM command-line state cannot be reused or called concurrently.
+        static std::atomic<bool> invoked = false;
+        if (invoked.exchange(true)) {
+          throw std::runtime_error(
+              "The compiler command can only run once per process");
+        }
+        std::vector<char*> argv;
+        argv.reserve(arguments.size() + 1);
+        for (auto& argument : arguments) {
+          argv.push_back(argument.data());
+        }
+        argv.push_back(nullptr);
+        const nb::gil_scoped_release release;
+        return mqtCoreRunCompiler(static_cast<int>(arguments.size()),
+                                  argv.data(),
+                                  qpyAvailable ? &exportQPYFile : nullptr);
       },
-      "program"_a, nb::sig("def _export_qpy(program: QCProgram) -> bytes"),
-      "Consume compiled QC and serialize QPY using its attached target "
-      "environment.");
+      "arguments"_a,
+      "Run the compiler command once. LLVM options can terminate the process.");
 
   bindings::pennylane::registerBindings(m);
 }

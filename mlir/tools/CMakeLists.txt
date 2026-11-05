@@ -6,14 +6,27 @@
 #
 # Licensed under the MIT License
 
-add_executable(
-  mqt-core
-  NativeMain.cpp
-  run/Run.cpp
-  compile/Compile.cpp
-  ../bench/MQTCoreBench.cpp
-  ../../src/qdmi/devices/dd/WorkerMain.cpp
-  ../../src/qdmi/devices/dd/WorkerProtocol.cpp)
+add_library(MQTCompilerDriver STATIC compile/Compile.cpp)
+set_target_properties(MQTCompilerDriver PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(MQTCompilerDriver PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+mqt_mlir_target_use_project_options(MQTCompilerDriver)
+target_link_libraries(
+  MQTCompilerDriver
+  PRIVATE MQT::ProjectWarnings
+  PUBLIC
+    MQTCompilerQDMIAdapter
+    MQTCompilerPipeline
+    MLIRParser
+    MLIRSupport
+    MLIRQCOpenQASMTranslation
+    MLIRJeffTranslation
+    MLIRJeffToQCO
+    MLIRBytecodeWriter
+    MLIRQIRTranslation
+    MQTCompilerPrograms)
+
+add_executable(mqt-core NativeMain.cpp run/Run.cpp ../bench/MQTCoreBench.cpp
+               ../../src/qdmi/devices/dd/WorkerMain.cpp ../../src/qdmi/devices/dd/WorkerProtocol.cpp)
 add_executable(MQT::mqt-core ALIAS mqt-core)
 target_include_directories(mqt-core PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 mqt_mlir_target_use_project_options(mqt-core)
@@ -22,6 +35,7 @@ target_link_libraries(
   PRIVATE
     MQT::ProjectWarnings
     MQT::CoreBenchGenerate
+    MQTCompilerDriver
     MQTCompilerQDMIAdapter
     MQTCompilerPipeline
     MLIRParser

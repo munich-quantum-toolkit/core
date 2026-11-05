@@ -1982,5 +1982,5 @@ def submit_program(
     apply ``compiled.result_layout.decode_bits`` when a result layout is present.
     """
 
-def _export_qpy(program: QCProgram) -> bytes:
-    """Consume compiled QC and serialize QPY using its attached target environment."""
+def _run_compiler(arguments: Sequence[str]) -> int:
+    """Run the compiler command once. LLVM options can terminate the process."""

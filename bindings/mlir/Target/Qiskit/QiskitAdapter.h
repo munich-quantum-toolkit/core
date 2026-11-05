@@ -2505,7 +2505,7 @@ public:
         auto alias =
             circuitModule.attr("Gate")(nativeName, qubits.size(), values);
         alias.attr("definition") = definition;
-        operation = alias;
+        operation = std::move(alias);
       }
       pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
       return;

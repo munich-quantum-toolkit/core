@@ -203,8 +203,8 @@ QPY output preserves target gate aliases, physical qubit addresses, and layout
 metadata. QPY submission does not require Qiskit on the client when the
 destination device accepts QPY directly.
 
-QPY export uses the native compiler's optimized QCO output and Qiskit's
-serializer. Native compilation options also apply to QPY output. Reoptimizing
+The Python command runs the shared native compiler and Qiskit's serializer in
+one process. Native compilation options also apply to QPY output. Reoptimizing
 previously mapped MLIR discards its existing layout metadata.
 
 ### Building from source

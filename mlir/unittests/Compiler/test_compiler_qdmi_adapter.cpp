@@ -514,8 +514,8 @@ TEST(CompilerQDMIAdapterTest,
            std::vector{QDMI_PROGRAM_FORMAT_QPY},
        }) {
     formats = supported;
-    const auto intermediate = llvm::cantFail(mlir::targetEnvironmentFromDevice(
-        device, std::nullopt, /*requireSerializer=*/false));
+    const auto intermediate =
+        llvm::cantFail(mlir::inspectTargetEnvironment(device));
     EXPECT_EQ(intermediate.payloadSpecification().format(), qpy.format());
     EXPECT_EQ(intermediate.payloadSpecification().capabilities(),
               qpy.capabilities());
@@ -568,6 +568,21 @@ TEST(CompilerQDMIAdapterTest,
     MQT_ASSERT_SUCCESS(compiled);
     EXPECT_EQ(compiled->programFormat(), QDMI_PROGRAM_FORMAT_QPY);
     EXPECT_EQ(compiled->payload(), "fake QPY payload");
+
+    mlir::setQPYExporter(nullptr);
+    const auto createJob = api->device_session_create_device_job;
+    const auto restoreCreateJob = llvm::make_scope_exit(
+        [&] { api->device_session_create_device_job = createJob; });
+    static thread_local bool submissionReached;
+    submissionReached = false;
+    api->device_session_create_device_job = [](QDMI_Device_Session,
+                                               QDMI_Device_Job*) -> int {
+      submissionReached = true;
+      return QDMI_ERROR_NOTSUPPORTED;
+    };
+    auto submission = mlir::trySubmitPrograms(device, {&*compiled});
+    EXPECT_TRUE(llvm::errorToBool(submission.takeError()));
+    EXPECT_TRUE(submissionReached);
   }
 
   const auto adaptive =

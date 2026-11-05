@@ -839,9 +839,9 @@ parsePayloadCapabilities(StringRef text, const PayloadSpecification& baseline) {
   return baseline.restrictCapabilities(*reported);
 }
 
-static Expected<TargetEnvironment> snapshotTargetEnvironment(
-    const qdmi::Device& device, std::optional<QDMI_Program_Format> format,
-    bool includeCalibration, bool requireSerializer = true) {
+static Expected<QDMI_Program_Format>
+selectExecutableFormat(const qdmi::Device& device,
+                       std::optional<QDMI_Program_Format> format) {
   auto supportedResult = device.getSupportedProgramFormats();
   if (!supportedResult) {
     return supportedResult.takeError();
@@ -854,7 +854,7 @@ static Expected<TargetEnvironment> snapshotTargetEnvironment(
   }
   if (!format) {
     for (const auto candidate : PROGRAM_FORMAT_PREFERENCE) {
-      if ((!requireSerializer || candidate != QDMI_PROGRAM_FORMAT_QPY ||
+      if ((candidate != QDMI_PROGRAM_FORMAT_QPY ||
            qpyExporter.load() != nullptr) &&
           llvm::is_contained(supported, candidate)) {
         format = candidate;
@@ -869,10 +869,32 @@ static Expected<TargetEnvironment> snapshotTargetEnvironment(
         "compiler; hardware-only models require an explicit compiler target "
         "and output");
   }
-  if (requireSerializer && *format == QDMI_PROGRAM_FORMAT_QPY &&
-      qpyExporter.load() == nullptr) {
+  if (*format == QDMI_PROGRAM_FORMAT_QPY && qpyExporter.load() == nullptr) {
     return createStringError(std::make_error_code(std::errc::not_supported),
                              "QPY output requires the Python Qiskit bindings");
+  }
+  return *format;
+}
+
+static Expected<TargetEnvironment>
+snapshotTargetEnvironment(const qdmi::Device& device,
+                          std::optional<QDMI_Program_Format> format,
+                          bool includeCalibration) {
+  auto supported = device.getSupportedProgramFormats();
+  if (!supported) {
+    return supported.takeError();
+  }
+  if (!format) {
+    for (const auto candidate : PROGRAM_FORMAT_PREFERENCE) {
+      if (llvm::is_contained(*supported, candidate)) {
+        format = candidate;
+        break;
+      }
+    }
+  }
+  if (!format || !llvm::is_contained(*supported, *format)) {
+    return createStringError(
+        "Device does not support the requested compiler payload");
   }
   auto payload = payloadSpecificationForProgramFormat(*format);
   if (!payload) {
@@ -897,9 +919,18 @@ static Expected<TargetEnvironment> snapshotTargetEnvironment(
 
 Expected<TargetEnvironment>
 targetEnvironmentFromDevice(const qdmi::Device& device,
-                            std::optional<QDMI_Program_Format> format,
-                            const bool requireSerializer) {
-  return snapshotTargetEnvironment(device, format, true, requireSerializer);
+                            std::optional<QDMI_Program_Format> format) {
+  auto selected = selectExecutableFormat(device, format);
+  if (!selected) {
+    return selected.takeError();
+  }
+  return snapshotTargetEnvironment(device, *selected, true);
+}
+
+Expected<TargetEnvironment>
+inspectTargetEnvironment(const qdmi::Device& device,
+                         std::optional<QDMI_Program_Format> format) {
+  return snapshotTargetEnvironment(device, format, true);
 }
 
 Error validateTargetCompatibility(const TargetEnvironment& compiled,
@@ -1090,7 +1121,11 @@ CompiledProgram::serialize(QCProgram program,
 Expected<CompiledProgram>
 CompiledProgram::serialize(QCProgram program, const qdmi::Device& device,
                            std::optional<QDMI_Program_Format> format) {
-  auto environment = snapshotTargetEnvironment(device, format, false);
+  auto selected = selectExecutableFormat(device, format);
+  if (!selected) {
+    return selected.takeError();
+  }
+  auto environment = snapshotTargetEnvironment(device, *selected, false);
   if (!environment) {
     return environment.takeError();
   }
