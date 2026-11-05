@@ -4462,6 +4462,39 @@ TEST_F(CompilerPipelineTest, StaticQubitsKeepTheirSitesOnExplicitTopology) {
   }
 }
 
+TEST_F(CompilerPipelineTest, BorrowingPreservesPreplacedExplicitTopology) {
+  std::vector<CompilerTarget::Coupling> couplings{{0, 6}};
+  for (size_t first = 0; first < 6; ++first) {
+    for (size_t second = first + 1; second < 6; ++second) {
+      couplings.emplace_back(first, second);
+    }
+  }
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      7, CompilerTarget::Connectivity::fromCouplings(couplings),
+      CompilerTarget::NativeOperations::fromOperations(
+          makeSparseUCZTarget(true).operations())));
+  const TargetEnvironment environment(target, makePayloadSpecification());
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
+        SmallVector<Value> data;
+        for (size_t site = 0; site < 6; ++site) {
+          data.push_back(builder.staticQubit(site));
+        }
+        auto helper = builder.h(builder.staticQubit(6));
+        builder.mcx(ValueRange(data).drop_back(), data.back());
+        // Keep the leaf-site helper live across the controlled gate.
+        return SmallVector<Value>{builder.measure(helper).second};
+      });
+  auto input = QCOProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(succeeded(input));
+  for (const bool borrowAncillas : {false, true}) {
+    SCOPED_TRACE(borrowAncillas);
+    auto program = input->copy();
+    EXPECT_TRUE(succeeded(program.compileForTarget(
+        environment, {.borrowAncillas = borrowAncillas})));
+  }
+}
+
 TEST_F(CompilerPipelineTest, StaticNativeThreeQubitGateSurvives) {
   const auto native =
       llvm::cantFail(CompilerTarget::OperationCapability::create(

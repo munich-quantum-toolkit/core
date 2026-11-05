@@ -157,9 +157,11 @@ bool isDecomposeMultiControlledConfigValid(const uint64_t minQubits) {
 }
 
 void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
-                                              const uint64_t minQubits) {
+                                              const uint64_t minQubits,
+                                              bool borrowAncillas) {
   qco::DecomposeMultiControlledOptions options;
   options.minQubits = minQubits;
+  options.borrowAncillas = borrowAncillas;
   pm.addPass(qco::createDecomposeMultiControlled(options));
 }
 
@@ -229,7 +231,8 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
+void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues,
+                                bool shrinkQTensor) {
   pm.addPass(mlir::mqt::createSimplifyClassicalControl());
   pm.addPass(mqt::createPromoteClassicalMemory());
   pm.addPass(mqt::createNormalizeGlobalPhases());
@@ -238,7 +241,9 @@ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
           .enableCSEBetweenIterations()
           .setUseTopDownTraversal()
           .setMaxIterations(GreedyRewriteConfig::kNoLimit)));
-  pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  if (shrinkQTensor) {
+    pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  }
   pm.addPass(createSymbolDCEPass());
   if (removeDeadValues) {
     pm.addPass(createRemoveDeadValuesPass());

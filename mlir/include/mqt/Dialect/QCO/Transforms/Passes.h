@@ -64,7 +64,8 @@ createFuseTwoQubitGates(const CompilerTarget& target);
 /// programs. Other operations use the target-independent decomposition.
 [[nodiscard]] std::unique_ptr<Pass>
 createDecomposeMultiControlled(const CompilerTarget& target,
-                               uint64_t minQubits = 3);
+                               uint64_t minQubits = 3,
+                               bool borrowAncillas = true);
 
 /// Normalize placed QCO, synthesize native gates, and verify target support.
 ///

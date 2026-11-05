@@ -92,6 +92,24 @@ def test_compiler_cli(script_runner: ScriptRunner, tmp_path: Path, subcommand: l
     assert "qco.h" in ret.stdout
 
 
+def test_compiler_cli_mcx_borrow_ancillas(script_runner: ScriptRunner, tmp_path: Path) -> None:
+    """Borrow helpers by default and preserve measurements with borrowing off."""
+    source = tmp_path / "mcx.qasm"
+    source.write_text(
+        'OPENQASM 3.0; include "stdgates.inc"; qubit[7] q; h q[0]; '
+        "ctrl(4) @ x q[0], q[1], q[2], q[3], q[4]; bit[7] c = measure q;"
+    )
+    counts = []
+    for flags in (["--no-borrow-ancillas"], []):
+        ret = script_runner.run(["mqt-core", "compile", str(source), "--decompose-multi-controlled", *flags])
+        assert ret.success
+        info = QCProgram.from_mlir_str(ret.stdout).inspect()
+        assert info.num_qubits == 7
+        assert info.gate_counts["measure"] == 7
+        counts.append(info.num_two_qubit_gates)
+    assert counts[1] < counts[0]
+
+
 def test_compiler_cli_serialized_target(script_runner: ScriptRunner, tmp_path: Path) -> None:
     """Compile with a Python target serialized into a CLI argument."""
     target = CompilerTarget(

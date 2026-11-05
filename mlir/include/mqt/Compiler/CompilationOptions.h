@@ -42,6 +42,12 @@ struct CompilationOptions {
   bool enableTiming = false;
   bool enableStatistics = false;
   MappingOptions mapping;
+  /// Borrow existing live helpers for multi-controlled gates when beneficial.
+  ///
+  /// False disables external borrowing; original controls remain available as
+  /// internal workspace. Helpers are restored; no new qubits are allocated.
+  /// Custom textual pipelines use the pass's borrow-ancillas option.
+  bool borrowAncillas = true;
 };
 
 } // namespace mlir

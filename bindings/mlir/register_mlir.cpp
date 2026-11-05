@@ -2018,14 +2018,20 @@ Zero disables node expansion. Container overhead, caches, and IR are extra.)pb")
                                        R"pb(Shared compiler controls.
 
 An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds.)pb")
-      .def(
-          nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions>(),
-          nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
-          "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{})
+      .def(nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions,
+                    bool>(),
+           nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
+           "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
+           "borrow_ancillas"_a = true)
       .def_rw("seed", &mlir::CompilationOptions::seed)
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
-      .def_rw("mapping", &mlir::CompilationOptions::mapping);
+      .def_rw("mapping", &mlir::CompilationOptions::mapping)
+      .def_rw("borrow_ancillas", &mlir::CompilationOptions::borrowAncillas,
+              R"pb(Borrow existing live helpers in built-in target pipelines.
+
+Set False to disable external borrowing. Textual pipelines use the pass's
+borrow-ancillas option.)pb");
 
   nb::class_<mlir::QuantumProgramInfo>(
       m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.
@@ -2314,11 +2320,13 @@ partial changes; use ``copy()`` to preserve the input.)pb")
       .def("decompose_multi_controlled",
            &FallibleMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
-           nb::kw_only(), "min_qubits"_a = 3,
+           nb::kw_only(), "min_qubits"_a = 3, "borrow_ancillas"_a = true,
            R"pb(Decompose gates that act on at least min_qubits qubits.
 
-Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates. min_qubits must be
-at least 3; default 3 means wider than two-qubit.)pb")
+Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
+at least 3. Live helpers can be borrowed when they reduce the estimated
+entangling count. They are restored without allocating new qubits.
+Set borrow_ancillas=False to disable external borrowing.)pb")
       .def(
           "compile_for_target",
           [](mlir::QCOProgram& program,

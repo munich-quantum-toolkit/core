@@ -351,6 +351,9 @@ int mqtCoreRunCompiler(int argc, char** argv) {
 
   llvm::cl::opt<uint64_t> compilationSeedOption(
       "seed", llvm::cl::desc("Override all compiler random seeds"));
+  llvm::cl::opt<bool> noBorrowAncillasOption(
+      "no-borrow-ancillas",
+      llvm::cl::desc("Disable borrowing existing live helpers"));
   llvm::cl::opt<size_t> mappingTrials(
       "mapping-trials", llvm::cl::desc("Positive native mapping trial count "
                                        "(default: max(8, logical CPUs))"));
@@ -418,6 +421,7 @@ int mqtCoreRunCompiler(int argc, char** argv) {
               .lookahead = mappingLookahead,
               .searchMemoryLimit = mappingSearchMemoryLimit,
           },
+      .borrowAncillas = !noBorrowAncillasOption,
   };
 
   const bool isolated = runIsolatedPipeline || runReproducer;
@@ -758,7 +762,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     if (failed(runPasses(
             [&](OpPassManager& pm) {
               populateTargetCompilationPipeline(pm, *targetEnvironment,
-                                                options.mapping);
+                                                options.mapping,
+                                                options.borrowAncillas);
               return success();
             },
             true)) ||
@@ -770,7 +775,11 @@ int mqtCoreRunCompiler(int argc, char** argv) {
                    *parsedOutputFormat == ProgramFormat::QIRAdaptive) {
                  pm.addPass(createInlinerPass());
                }
-               populateQCOCleanupPipeline(pm);
+               const bool borrowHelpers =
+                   enableDecomposeMultiControlled && options.borrowAncillas;
+               populateQCOCleanupPipeline(pm,
+                                          /*removeDeadValues=*/!borrowHelpers,
+                                          /*shrinkQTensor=*/!borrowHelpers);
                if (passPipeline.getNumOccurrences() != 0) {
                  if (failed(parseCustomPipeline(pm))) {
                    return failure();
@@ -778,7 +787,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
                } else {
                  if (enableDecomposeMultiControlled) {
                    populateDecomposeMultiControlledPipeline(
-                       pm, decomposeMultiControlledMinQubits.getValue());
+                       pm, decomposeMultiControlledMinQubits.getValue(),
+                       options.borrowAncillas);
                  }
                  populateDefaultQCOOptimizationPipeline(pm);
                }

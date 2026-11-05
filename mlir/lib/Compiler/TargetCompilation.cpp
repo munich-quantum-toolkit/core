@@ -20,6 +20,7 @@
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QTensor/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
@@ -196,16 +197,46 @@ private:
 
 } /* namespace */
 
+/// Borrow before placement while allocations still prove clean helper states.
+static void populateDecompositionAndPlacement(OpPassManager& pm,
+                                              const CompilerTarget& target,
+                                              bool borrowAncillas) {
+  const bool needsSites =
+      target.connectivityKind() ==
+          CompilerTarget::Connectivity::Kind::AllToAll &&
+      llvm::any_of(target.operations(), [](const auto& capability) {
+        return !capability.siteTuples().empty() &&
+               capability.arity().value() >= 3;
+      });
+  if (!needsSites) {
+    pm.addPass(qco::createDecomposeMultiControlled(target, 3, borrowAncillas));
+  }
+  if (borrowAncillas) {
+    // Shrink before early placement; unused slots must not consume capacity.
+    pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  }
+  pm.addPass(qco::createElideTerminalSwapsPass());
+  if (target.connectivityKind() ==
+      CompilerTarget::Connectivity::Kind::AllToAll) {
+    pm.addPass(qco::createPlacementPass());
+  }
+  if (needsSites) {
+    pm.addPass(qco::createDecomposeMultiControlled(target, 3, borrowAncillas));
+  }
+}
+
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
-                                       const MappingOptions& mapping) {
+                                       const MappingOptions& mapping,
+                                       bool borrowAncillas) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
                                                             mapping));
   const auto& target = environment.target();
   // The module cleanup below owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   // Fold tensor accesses before SCCP; defer liveness until after placement.
-  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
+  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false,
+                             /*shrinkQTensor=*/!borrowAncillas);
   pm.addPass(qco::createCombineControlledGates(target));
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
@@ -213,14 +244,10 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
   // Unrolling exposes static register indices and tensor slots.
-  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
+  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false,
+                             /*shrinkQTensor=*/!borrowAncillas);
   pm.addPass(qco::createLegalizeControlFlow());
-  pm.addPass(qco::createElideTerminalSwapsPass());
-  if (target.connectivityKind() ==
-      CompilerTarget::Connectivity::Kind::AllToAll) {
-    pm.addPass(qco::createPlacementPass());
-  }
-  pm.addPass(qco::createDecomposeMultiControlled(target));
+  populateDecompositionAndPlacement(pm, target, borrowAncillas);
   pm.addPass(qco::createFuseTwoQubitGates(target));
   // U fusion shrinks runs before routing. Other bases can expand symbolic
   // runs, so emit them once during native synthesis, after cleanup.
@@ -250,21 +277,21 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
-                                     const MappingOptions& mapping) {
+                                     const MappingOptions& mapping,
+                                     bool borrowAncillas) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
                                                             mapping));
   const auto& target = environment.target();
   // The module cleanup below owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   // Placement changes region results; run liveness once afterwards.
-  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false);
+  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false,
+                             /*shrinkQTensor=*/!borrowAncillas);
   pm.addPass(qco::createCombineControlledGates(target));
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());
-  pm.addPass(qco::createElideTerminalSwapsPass());
-  pm.addPass(qco::createPlacementPass());
-  pm.addPass(qco::createDecomposeMultiControlled(target));
+  populateDecompositionAndPlacement(pm, target, borrowAncillas);
   pm.addPass(qco::createFuseTwoQubitGates(target));
   if (const auto basis = target.synthesisBasis();
       basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {

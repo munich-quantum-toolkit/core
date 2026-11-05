@@ -641,6 +641,160 @@ def test_mapping_options_defaults() -> None:
     assert options.search_memory_limit == 256 * 1024 * 1024
 
 
+def test_mcx_borrow_ancillas_options() -> None:
+    """Borrow available helpers by default and expose a mutable opt-out."""
+    options = CompilationOptions()
+    assert options.borrow_ancillas is True
+    assert CompilationOptions(borrow_ancillas=False).borrow_ancillas is False
+    options.borrow_ancillas = False
+    assert options.borrow_ancillas is False
+    options.borrow_ancillas = True
+    assert options.borrow_ancillas is True
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize(
+    "method", ["compile_for_target", "synthesize_for_target", "decompose_multi_controlled", "run_pass_pipeline"]
+)
+def test_mc_borrow_ancillas_target_round_trip(method: str) -> None:
+    """Preserve a measured circuit with an entangled helper across each API."""
+    source = QuantumCircuit(7)
+    source.h(range(5))
+    source.ry(0.43, 5)
+    source.cx(0, 6)
+    source.append(library.XGate().control(5, annotated=False), range(6))
+    source.rz(0.29, 3)
+    expected = Operator(source).data[:, :64]
+    source.measure_all()
+    target = CompilerTarget(
+        7,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    counts = []
+    for borrow_ancillas in (False, True):
+        program = QCProgram.from_qiskit(source).to_qco()
+        if method in {"decompose_multi_controlled", "run_pass_pipeline"}:
+            if method == "decompose_multi_controlled":
+                if borrow_ancillas:
+                    program.decompose_multi_controlled()
+                else:
+                    program.decompose_multi_controlled(borrow_ancillas=False)
+            else:
+                option = f"{{borrow-ancillas={str(borrow_ancillas).lower()}}}"
+                program.run_pass_pipeline(f"decompose-multi-controlled{option}")
+            program.synthesize_for_target(
+                _test_target_environment(target), options=CompilationOptions(seed=7, borrow_ancillas=False)
+            )
+        else:
+            options = CompilationOptions(seed=7, borrow_ancillas=borrow_ancillas)
+            getattr(program, method)(_test_target_environment(target), options=options)
+        result = program.to_qiskit(target=target)
+        assert result.num_qubits == 7
+        assert result.count_ops()["measure"] == 7
+        result.remove_final_measurements()
+        # Top-level global phase may change; relative helper/data phases may not.
+        actual = Operator(result).data[:, :64]
+        phase = np.vdot(expected.ravel(), actual.ravel()) / 64
+        np.testing.assert_allclose(actual, phase * expected, atol=1e-10)
+        assert abs(abs(phase) - 1) < 1e-10
+        counts.append(result.count_ops()["cz"])
+    assert counts[1] < counts[0]
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
+@pytest.mark.parametrize("site_restricted", [False, True])
+def test_mc_borrow_ancillas_preserves_target_capacity(method: str, *, site_restricted: bool) -> None:
+    """Unused declared slots must remain removable on a smaller target."""
+    capacity = 7
+    source = QuantumCircuit(8)
+    source.h(range(5))
+    source.append(library.XGate().control(5, annotated=False), range(6))
+    operations = [
+        CompilerTarget.OperationCapability("u", 1, 3),
+        CompilerTarget.OperationCapability("cz", 2, 0),
+        CompilerTarget.OperationCapability("measure", 1, 0),
+    ]
+    if site_restricted:
+        operations.append(CompilerTarget.OperationCapability("rccx", 3, 0, site_tuples=[(0, 1, 2)]))
+    target = CompilerTarget(
+        capacity,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations(operations),
+    )
+    outputs = []
+    for borrow_ancillas in (False, True):
+        program = QCProgram.from_qiskit(source).to_qco()
+        getattr(program, method)(
+            _test_target_environment(target), options=CompilationOptions(seed=7, borrow_ancillas=borrow_ancillas)
+        )
+        outputs.append(program.to_qiskit(target=target))
+    assert outputs[0] == outputs[1]
+    assert outputs[1].num_qubits <= capacity
+
+
+@requires_qiskit_translation
+def test_mc_borrow_ancillas_default_falls_back_without_helpers() -> None:
+    """Default borrowing cannot use controls or the target as external helpers."""
+    source = QuantumCircuit(6)
+    source.h(range(5))
+    controlled = library.XGate().control(5, annotated=False)
+    wires = [5, 4, 3, 1, 0, 2]
+    source.ry(0.31, 2)
+    source.append(controlled, wires)
+    source.h(3)
+    source.rz(-0.27, 2)
+    source.append(controlled.inverse(), wires)
+    expected = Operator(source).data
+    source.measure_all()
+    outputs = []
+    for borrow_ancillas in (False, True):
+        program = QCProgram.from_qiskit(source).to_qco()
+        if borrow_ancillas:
+            program.decompose_multi_controlled()
+        else:
+            program.decompose_multi_controlled(borrow_ancillas=False)
+        outputs.append(program.to_qc().to_qiskit())
+    assert outputs[0] == outputs[1]
+    assert outputs[1].num_qubits == 6
+    assert outputs[1].count_ops()["measure"] == 6
+    outputs[1].remove_final_measurements()
+    # Standalone decomposition preserves exact phase, not only the |0> output.
+    np.testing.assert_allclose(Operator(outputs[1]).data, expected, atol=1e-10, rtol=0)
+
+
+@requires_qiskit_translation
+def test_mc_borrow_ancillas_wide_measured_roundtrip() -> None:
+    """Export a measured HP24 fallback through target synthesis."""
+    width = 24
+    source = QuantumCircuit(width)
+    source.h(0)
+    source.ry(0.31, width - 1)
+    source.append(library.XGate().control(width - 1, annotated=False), range(width - 1, -1, -1))
+    source.rz(-0.27, 0)
+    source.measure_all()
+    target = CompilerTarget(
+        width,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.synthesize_for_target(_test_target_environment(target), options=CompilationOptions(seed=7))
+    result = program.to_qiskit(target=target)
+    assert result.num_qubits == width
+    assert result.count_ops()["measure"] == width
+    assert result.count_ops()["cz"] > 0
+
+
 @pytest.mark.parametrize(
     ("method", "all_to_all"),
     [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],

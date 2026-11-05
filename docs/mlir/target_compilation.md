@@ -162,6 +162,13 @@ input, target, seed, and explicit trial count. Sampling uses a separate seed.
 For routing costs, search limits, and synthesis behavior, see the
 `place-and-route` pass in {doc}`QCO`.
 
+Controlled-gate decomposition can borrow existing live qubits and restores both
+their states and correlations. It allocates no extra qubits. Use
+`CompilationOptions(borrow_ancillas=False)` or
+`mqt-core compile --no-borrow-ancillas` to disable external borrowing. For
+eligible helpers and target restrictions, see `decompose-multi-controlled` in
+{doc}`QCO`.
+
 ### Define a target
 
 A {py:class}`~mqt.core.mlir.CompilerTarget` describes hardware without
