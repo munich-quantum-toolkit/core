@@ -188,18 +188,55 @@ mqt\.core\.mlir\.CompilerTarget\.from_device_id$:
         \doc
 
 mqt\.core\.mlir\.__prefix__$:
-    \from typing import TypeAlias, TypeVar, TypedDict, Unpack
+    \from typing import TypeAlias, TypedDict, Unpack
+    \from typing_extensions import TypeVar
     _CompilerInput: TypeAlias = str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
     _CompilerTarget: TypeAlias = CompilerTarget | TargetEnvironment | qiskit.providers.BackendV2 | qiskit.transpiler.Target | mqt.core.qdmi.Device | str
     _CompilerOutput: TypeAlias = qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | QIRProgram | IQMJSONProgram
     _ProgramT = TypeVar("_ProgramT", qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
     _CompilerInputT = TypeVar("_CompilerInputT", str, os.PathLike[str], qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
     _SourceT = TypeVar("_SourceT", str, os.PathLike[str])
+    _TargetResult: TypeAlias = _CompilerOutput | CompiledProgram
+    _TargetResultT_co = TypeVar("_TargetResultT_co", bound=_TargetResult, default=_TargetResult, covariant=True)
 
     class _CompileOptions(TypedDict, total=False, closed=True):
         copy: bool
         qco_pipeline: str
         options: CompilationOptions | None
+
+mqt\.core\.mlir\.PayloadSpecification\.__init__$:
+    def __new__(
+        cls,
+        payload_format: PayloadFormat,
+        capabilities: Sequence[ProgramCapability] = (),
+        optional_capabilities_known: bool = False,
+    ) -> PayloadSpecification[qiskit.circuit.QuantumCircuit | CompiledProgram]: ...
+
+mqt\.core\.mlir\.PayloadSpecification\.from_program_format$:
+    @staticmethod
+    def from_program_format(program_format: mqt.core.qdmi.ProgramFormat) -> PayloadSpecification[CompiledProgram]:
+        \doc
+
+mqt\.core\.mlir\.TargetEnvironment\.__init__$:
+    \from typing import overload
+    @overload
+    def __new__(cls, target: CompilerTarget, payload_specification: PayloadSpecification[qiskit.circuit.QuantumCircuit]) -> TargetEnvironment[qiskit.circuit.QuantumCircuit]: ...
+    @overload
+    def __new__(cls, target: CompilerTarget, payload_specification: PayloadSpecification) -> TargetEnvironment[_TargetResult]: ...
+
+mqt\.core\.mlir\.TargetEnvironment\.payload_specification$:
+    @property
+    def payload_specification(self) -> PayloadSpecification[_TargetResultT_co]:
+        \doc
+
+mqt\.core\.mlir\.CompiledProgram\.payload_specification$:
+    @property
+    def payload_specification(self) -> PayloadSpecification[CompiledProgram]:
+        \doc
+
+mqt\.core\.mlir\._pennylane\.Context\.environment$:
+    @property
+    def environment(self) -> mqt.core.mlir.TargetEnvironment[mqt.core.mlir.CompiledProgram]: ...
 
 mqt\.core\.mlir\.compile_program$:
     \import mqt.core.plugins.qiskit.backend
@@ -313,18 +350,18 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: _CompilerInput,
         *,
-        target: mqt.core.qdmi.Device | str,
+        target: TargetEnvironment[_TargetResultT_co],
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
-    ) -> CompiledProgram: ...
+    ) -> _TargetResultT_co: ...
     @overload
     def compile_program(
         program: _CompilerInput,
         *,
-        target: TargetEnvironment,
+        target: mqt.core.qdmi.Device | str,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
-    ) -> _CompilerOutput | CompiledProgram: ...
+    ) -> CompiledProgram: ...
     @overload
     def compile_program(
         program: _ProgramT,
@@ -458,18 +495,18 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: Sequence[_CompilerInputT],
         *,
-        target: mqt.core.qdmi.Device | str,
+        target: TargetEnvironment[_TargetResultT_co],
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
-    ) -> list[CompiledProgram]: ...
+    ) -> list[_TargetResultT_co]: ...
     @overload
     def compile_program(
         program: Sequence[_CompilerInputT],
         *,
-        target: TargetEnvironment,
+        target: mqt.core.qdmi.Device | str,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
-    ) -> list[_CompilerOutput] | list[CompiledProgram]: ...
+    ) -> list[CompiledProgram]: ...
     @overload
     def compile_program(
         program: Sequence[_ProgramT],

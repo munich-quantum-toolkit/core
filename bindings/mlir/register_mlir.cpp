@@ -874,8 +874,10 @@ compilePythonProgram(PythonInputTypes& types, const nb::handle program,
         nb::cast<const mlir::TargetEnvironment&>(target.attr("_environment"));
   } else if (!target.is_none() && !compilerTarget) {
     targetEnvironment.emplace(
-        bindings::qiskit::importTarget(target, nb::none(), std::nullopt),
-        bindings::qiskit::payloadSpecification(target));
+        bindings::qiskit::importTargetEnvironment(target, std::nullopt, false));
+  }
+  if (targetEnvironment &&
+      targetEnvironment->payloadSpecification().format().id == "qiskit") {
     output = output.value_or(OutputFormat::Qiskit);
   }
 
@@ -1348,8 +1350,10 @@ void registerMLIR(nb::module_& m) {
   programCapability.attr("MULTIWAY_BRANCHING") =
       mlir::ProgramCapability::MULTIWAY_BRANCHING.str();
 
-  nb::class_<mlir::PayloadSpecification>(m, "PayloadSpecification",
-                                         "Selected payload execution contract.")
+  nb::class_<mlir::PayloadSpecification>(
+      m, "PayloadSpecification", nb::is_generic(),
+      nb::sig("class PayloadSpecification(typing.Generic[_TargetResultT_co])"),
+      "Selected payload execution contract.")
       .def(
           "__init__",
           [](mlir::PayloadSpecification& self, mlir::PayloadFormat format,
@@ -1949,10 +1953,31 @@ Args:
         unrestricted support.)pb");
 
   nb::class_<mlir::TargetEnvironment>(
-      m, "TargetEnvironment",
+      m, "TargetEnvironment", nb::is_generic(),
+      nb::sig("class TargetEnvironment(typing.Generic[_TargetResultT_co])"),
       "A compiler target and its selected payload specification.")
       .def(nb::init<mlir::CompilerTarget, mlir::PayloadSpecification>(),
            "target"_a, "payload_specification"_a)
+      .def_static(
+          "from_qiskit", &bindings::qiskit::importTargetEnvironment, "source"_a,
+          nb::kw_only(), "native_num_qubits"_a = nb::none(), "strict"_a = false,
+          nb::sig(
+              "def from_qiskit(source: qiskit.transpiler.Target | "
+              "qiskit.providers.BackendV2, *, native_num_qubits: int | None "
+              "= None, strict: bool = False) -> "
+              "TargetEnvironment[qiskit.circuit.QuantumCircuit]"),
+          R"pb(Snapshot a Qiskit target and its output capabilities.
+
+Args:
+    source: Qiskit Target or BackendV2.
+    native_num_qubits: Use an all-to-all target of this positive width for
+        native synthesis. Ignore device placement and gates wider than this
+        width. None retains the device topology.
+    strict: Raise ValueError for an applicable gate or constraint that Core
+        cannot represent. By default, warn and omit unsupported gates.
+
+Returns:
+    The compiler target and the Qiskit payload it supports.)pb")
       .def_static(
           "from_device",
           [](const nb::handle device,
@@ -1965,7 +1990,7 @@ Args:
           "device"_a, nb::kw_only(), "program_format"_a = nb::none(),
           nb::sig("def from_device(device: mqt.core.qdmi.Device | str, *, "
                   "program_format: mqt.core.qdmi.ProgramFormat | None = None) "
-                  "-> TargetEnvironment"),
+                  "-> TargetEnvironment[CompiledProgram]"),
           "Snapshot a QDMI device and select its executable payload.")
       .def_prop_ro("target", &mlir::TargetEnvironment::target,
                    "The compiler target.")
@@ -2896,9 +2921,10 @@ inputs. Elements must share one supported input kind; subclasses are accepted.
 Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
 An explicit ``output`` selects each result's representation. Without it, a
-Qiskit target selects QuantumCircuit and a QDMI backend, device or device target
-environment selects :class:`CompiledProgram` for :func:`submit_program`.
-Otherwise, each input retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
+Qiskit target or Qiskit payload environment selects QuantumCircuit. A QDMI
+backend, device or other device target environment selects :class:`CompiledProgram`
+for :func:`submit_program`. Otherwise, each input retains its format family:
+OpenQASM source returns :class:`OpenQASMProgram`,
 QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
 QCO inputs return optimized QCO.
 

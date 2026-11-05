@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, assert_type, cast
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
-from qiskit.circuit import Gate, Measure, Parameter, Reset, library
+from qiskit.circuit import Barrier, Gate, Measure, Parameter, Reset, library
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import IfElseOp, WhileLoopOp
 from qiskit.circuit.library import (
@@ -49,7 +49,9 @@ from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
     CompilationOptions,
+    CompiledProgram,
     CompilerTarget,
+    IQMJSONProgram,
     JeffProgram,
     OpenQASMProgram,
     OutputFormat,
@@ -75,7 +77,7 @@ if not supports_qiskit_translation():
     pytest.skip("Qiskit version has no compiler translation adapter", allow_module_level=True)
 
 
-@pytest.mark.parametrize("target_kind", [None, "backend", "qiskit", "compiler"])
+@pytest.mark.parametrize("target_kind", [None, "backend", "qiskit", "compiler", "environment"])
 def test_compile_program_qiskit_output(target_kind: str | None) -> None:
     """Compile a symbolic circuit with phase, routing, and backend constraints."""
     theta = Parameter("theta")
@@ -96,10 +98,11 @@ def test_compile_program_qiskit_output(target_kind: str | None) -> None:
         backend = GenericBackendV2(
             5, basis_gates=["sx", "x", "rz", "cx"], coupling_map=[[0, 1], [1, 2], [2, 3], [3, 4]], seed=1
         )
-        target: GenericBackendV2 | Target | CompilerTarget = {
+        target: GenericBackendV2 | Target | CompilerTarget | TargetEnvironment = {
             "backend": backend,
             "qiskit": backend.target,
             "compiler": CompilerTarget.from_qiskit(backend),
+            "environment": TargetEnvironment.from_qiskit(backend, strict=True),
         }[target_kind]
         compiled = compile_program(circuit, target=target, options=CompilationOptions(seed=7))
         assert isinstance(compiled, QuantumCircuit)
@@ -148,6 +151,7 @@ def test_compile_program_target_without_measurement() -> None:
         ("backend", OutputFormat.QC, QCProgram),
         ("qiskit", OutputFormat.QCO_OPTIMIZED, QCOProgram),
         ("compiler", OutputFormat.JEFF, JeffProgram),
+        ("environment", OutputFormat.OPENQASM3, OpenQASMProgram),
         ("backend", OutputFormat.OPENQASM3, OpenQASMProgram),
         ("qiskit", OutputFormat.QIR_BASE, QIRProgram),
         ("compiler", OutputFormat.QIR_ADAPTIVE, QIRProgram),
@@ -163,9 +167,12 @@ def test_compile_program_explicit_output(target_kind: str, output: OutputFormat,
     elif target_kind == "device_id":
         target = "mqt.ddsim.default"
     else:
-        target = {"backend": backend, "qiskit": backend.target, "compiler": CompilerTarget.from_qiskit(backend)}[
-            target_kind
-        ]
+        target = {
+            "backend": backend,
+            "qiskit": backend.target,
+            "compiler": CompilerTarget.from_qiskit(backend),
+            "environment": TargetEnvironment.from_qiskit(backend, strict=True),
+        }[target_kind]
     circuit = QuantumCircuit(2, 2)
     circuit.x(0)
     circuit.cx(0, 1)
@@ -430,6 +437,82 @@ def test_custom_names_and_operations() -> None:
             CompilerTarget.from_qiskit(source, operation_names=[name])
     with pytest.raises(ValueError, match="no native gate applicability"):
         CompilerTarget.from_qiskit(source, operation_names=["global_phase"])
+
+
+def test_environment_result_types() -> None:
+    """Factory and reconstructed environments preserve their output types."""
+    source = GenericBackendV2(1, basis_gates=["u"], seed=1).target
+    circuit = QuantumCircuit(1)
+    circuit.x(0)
+    qiskit = TargetEnvironment.from_qiskit(source, strict=True)
+    reconstructed = TargetEnvironment(qiskit.target, qiskit.payload_specification)
+    assert_type(compile_program(circuit, target=reconstructed), QuantumCircuit)
+    assert_type(compile_program([circuit], target=reconstructed), list[QuantumCircuit])
+    assert_type(compile_program(circuit, target=qiskit, output=OutputFormat.QC), QCProgram)
+
+    payload = PayloadSpecification.from_program_format(ProgramFormat.QASM3)
+    device = TargetEnvironment(qiskit.target, payload)
+    assert isinstance(compile_program(circuit, target=device), CompiledProgram)
+    assert all(isinstance(result, CompiledProgram) for result in compile_program([circuit], target=device))
+    gate_set = CompilerTarget.for_gate_set(CompilerTarget.NativeOperations.unrestricted())
+    program_environment = TargetEnvironment[CompiledProgram](gate_set, payload)
+    program_result = assert_type(
+        compile_program(circuit, target=program_environment),
+        QuantumCircuit
+        | QCProgram
+        | QCOProgram
+        | JeffProgram
+        | OpenQASMProgram
+        | QIRProgram
+        | IQMJSONProgram
+        | CompiledProgram,
+    )
+    assert isinstance(program_result, QuantumCircuit)
+
+    raw = PayloadSpecification[CompiledProgram](PayloadFormat("qiskit", "2.6"))
+    assert_type(raw, PayloadSpecification[QuantumCircuit | CompiledProgram])
+    dynamic = TargetEnvironment(qiskit.target, raw)
+    result = compile_program(circuit, target=dynamic)
+    assert isinstance(result, QuantumCircuit)
+
+
+@pytest.mark.parametrize("native_num_qubits", [None, 2])
+def test_strict_qiskit_environment(native_num_qubits: int | None) -> None:
+    """Reject unsupported applicable constraints in either target mode."""
+    source = Target(num_qubits=2)
+    source.add_instruction(XGate())
+    source.add_instruction(CXGate())
+    source.add_instruction(RZGate(Parameter("theta")), angle_bounds=[(-1.0, 1.0)])
+
+    with pytest.warns(UserWarning, match=r"parameter constraints.*'rz'"):
+        TargetEnvironment.from_qiskit(source, native_num_qubits=native_num_qubits)
+    with pytest.raises(ValueError, match=r"parameter constraints.*'rz'"):
+        TargetEnvironment.from_qiskit(source, native_num_qubits=native_num_qubits, strict=True)
+
+
+def test_native_qiskit_environment_filters_gates_by_width() -> None:
+    """Build a width-specific basis while retaining Qiskit's control-flow support."""
+    source = Target(num_qubits=4)
+    source.add_instruction(XGate(), {(3,): None})
+    source.add_instruction(Gate("wide", 2, []))
+    source.add_instruction(Gate("unavailable", 1, []), {})
+    source.add_instruction(Barrier(1))
+    source.add_instruction(GlobalPhaseGate(0.5))
+    source.add_instruction(IfElseOp, name="if_else")
+
+    environment = TargetEnvironment.from_qiskit(source, native_num_qubits=1, strict=True)
+    assert environment.target.num_sites == 1
+    assert environment.target.connectivity_kind == CompilerTarget.ConnectivityKind.ALL_TO_ALL
+    assert {operation.name for operation in environment.target.operations} == {"x", "gphase"}
+    assert environment.target.supports_operation("x", 1, 0, [0])
+    assert environment.payload_specification.format.format_id == "qiskit"
+    assert any(
+        capability.capability_id == ProgramCapability.FORWARD_BRANCHING
+        for capability in environment.payload_specification.capabilities
+    )
+
+    with pytest.raises(ValueError, match=r"unsupported operation.*'wide'"):
+        TargetEnvironment.from_qiskit(source, native_num_qubits=2, strict=True)
 
 
 @pytest.mark.parametrize("symbolic", [False, True])

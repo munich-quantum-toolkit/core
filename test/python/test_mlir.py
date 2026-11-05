@@ -926,7 +926,7 @@ def test_compile_and_serialize_with_device_environment() -> None:
     device = open_builtin_device("mqt.ddsim.default", custom1="2")
     environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QASM3)
     compiled = compile_program(QASM_STRING, target=environment)
-    assert isinstance(compiled, CompiledProgram)
+    assert_type(compiled, CompiledProgram)
     assert compiled.program_format == ProgramFormat.QASM3
     native = compile_program(QASM_STRING, target=environment, output=OutputFormat.QC)
     serialized = serialize_program(native, target=environment)
@@ -954,8 +954,8 @@ def test_explicit_output_preserves_environment_payload_version() -> None:
     payload = PayloadSpecification(PayloadFormat("openqasm", ">=3.1,<4"))
     environment = TargetEnvironment(target, payload)
     compiled = compile_program(QASM_STRING, target=environment)
-    assert isinstance(compiled, CompiledProgram)
     explicit = compile_program(QASM_STRING, target=environment, output=OutputFormat.OPENQASM3)
+    assert isinstance(compiled, CompiledProgram)
     assert isinstance(compiled.payload, str)
     assert compiled.payload.startswith("OPENQASM 3.1;")
     assert explicit.source.startswith("OPENQASM 3.1;")
