@@ -491,6 +491,9 @@ static void insertResonatorMoves(ModuleOp module,
 
 LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
                                            const CompilationOptions& options) {
+  if (options.preserveLogicalOrder) {
+    return mod().emitError("logical wire order requires native synthesis");
+  }
   auto routing = inspect().numQubits == 0
                      ? Expected<CompilerTarget>(environment.target())
                      : placementTarget(environment.target());
@@ -514,13 +517,12 @@ LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
 
 LogicalResult
 QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
-                                const CompilationOptions& options,
-                                bool preserveLogicalOrder) {
+                                const CompilationOptions& options) {
   return runQCOTransformPasses(
       mod(),
       [&](OpPassManager& pm) {
         populateTargetSynthesisPipeline(pm, environment, options.mapping,
-                                        preserveLogicalOrder);
+                                        options.preserveLogicalOrder);
       },
       "failed to synthesize the QCO program for the target", options, true);
 }

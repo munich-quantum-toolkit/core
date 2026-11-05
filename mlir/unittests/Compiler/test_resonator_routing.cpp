@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Compiler/CompilationOptions.h"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
@@ -116,13 +117,16 @@ TEST(NativeSynthesis, PreservesLogicalWireOrder) {
     return TargetEnvironment(target, payload);
   };
   const auto environment = makeEnvironment(4);
-  ASSERT_TRUE(succeeded(program->synthesizeForTarget(environment, {}, true)));
+  CompilationOptions options;
+  options.preserveLogicalOrder = true;
+  ASSERT_TRUE(succeeded(program->synthesizeForTarget(environment, options)));
   EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
   ::mqt::test::expectFullUnitaryEqual(expected.module(), program->module(), 4);
 
   auto wider = expected.copy();
-  EXPECT_TRUE(failed(wider.synthesizeForTarget(makeEnvironment(5), {}, true)));
-  EXPECT_TRUE(failed(program->synthesizeForTarget(environment, {}, true)));
+  EXPECT_TRUE(failed(wider.synthesizeForTarget(makeEnvironment(5), options)));
+  EXPECT_TRUE(failed(program->synthesizeForTarget(environment, options)));
+  EXPECT_TRUE(failed(expected.compileForTarget(environment, options)));
 }
 
 } // namespace

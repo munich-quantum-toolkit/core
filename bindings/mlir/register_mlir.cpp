@@ -2018,14 +2018,19 @@ Zero disables node expansion. Container overhead, caches, and IR are extra.)pb")
                                        R"pb(Shared compiler controls.
 
 An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds.)pb")
-      .def(
-          nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions>(),
-          nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
-          "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{})
+      .def(nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions,
+                    bool>(),
+           nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
+           "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
+           "preserve_logical_order"_a = false)
       .def_rw("seed", &mlir::CompilationOptions::seed)
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
-      .def_rw("mapping", &mlir::CompilationOptions::mapping);
+      .def_rw("mapping", &mlir::CompilationOptions::mapping)
+      .def_rw("preserve_logical_order",
+              &mlir::CompilationOptions::preserveLogicalOrder,
+              "Keep source wire order and materialize permutations in native "
+              "synthesis.");
 
   nb::class_<mlir::QuantumProgramInfo>(
       m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.
@@ -2342,23 +2347,21 @@ RuntimeError with MLIR diagnostics.)pb")
           "synthesize_for_target",
           [](mlir::QCOProgram& program,
              const mlir::TargetEnvironment& environment,
-             mlir::CompilationOptions options, bool preserveLogicalOrder) {
+             mlir::CompilationOptions options) {
             requireValid(program);
             withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(), "Target synthesis failed", [&] {
-                  return program.synthesizeForTarget(environment, options,
-                                                     preserveLogicalOrder);
+                  return program.synthesizeForTarget(environment, options);
                 });
           },
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
-          "preserve_logical_order"_a = false,
           R"pb(Synthesize native operations without routing.
 
 Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep
 their device site IDs and must fit the target topology.
 
-Set ``preserve_logical_order=True`` for fixed-width dynamic input and an equally wide all-to-all target
+Pass ``CompilationOptions(preserve_logical_order=True)`` for fixed-width dynamic input and an equally wide all-to-all target
 with site IDs starting at zero in consecutive order. Synthesis keeps wire permutations in the circuit
 and omits layout metadata. Pass the target to ``to_qiskit()`` to include idle wires in the export.
 

@@ -42,6 +42,8 @@ struct CompilationOptions {
   bool enableTiming = false;
   bool enableStatistics = false;
   MappingOptions mapping;
+  /// Keep source wire order and materialize permutations in native synthesis.
+  bool preserveLogicalOrder = false;
 };
 
 } // namespace mlir

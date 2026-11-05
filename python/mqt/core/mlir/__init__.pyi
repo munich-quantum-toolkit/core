@@ -748,6 +748,7 @@ class CompilationOptions:
         enable_timing: bool = False,
         enable_statistics: bool = False,
         mapping: MappingOptions = ...,
+        preserve_logical_order: bool = False,
     ) -> None: ...
     @property
     def seed(self) -> int | None: ...
@@ -765,6 +766,12 @@ class CompilationOptions:
     def mapping(self) -> MappingOptions: ...
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
+    @property
+    def preserve_logical_order(self) -> bool:
+        """Keep source wire order and materialize permutations in native synthesis."""
+
+    @preserve_logical_order.setter
+    def preserve_logical_order(self, arg: bool, /) -> None: ...
 
 class QuantumProgramInfo:
     """Quantum resources and static IR statistics.
@@ -1132,18 +1139,14 @@ class QCOProgram(Program):
         """
 
     def synthesize_for_target(
-        self,
-        target_environment: TargetEnvironment,
-        *,
-        options: CompilationOptions = ...,
-        preserve_logical_order: bool = False,
+        self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...
     ) -> None:
         """Synthesize native operations without routing.
 
         Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep
         their device site IDs and must fit the target topology.
 
-        Set ``preserve_logical_order=True`` for fixed-width dynamic input and an equally wide all-to-all target
+        Pass ``CompilationOptions(preserve_logical_order=True)`` for fixed-width dynamic input and an equally wide all-to-all target
         with site IDs starting at zero in consecutive order. Synthesis keeps wire permutations in the circuit
         and omits layout metadata. Pass the target to ``to_qiskit()`` to include idle wires in the export.
 

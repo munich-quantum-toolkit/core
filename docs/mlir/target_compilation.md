@@ -268,10 +268,11 @@ gates while preserving static site IDs. Dynamic qubits require all-to-all
 connectivity. Synthesis checks target support and topology and mutates the
 program. Copy the program before synthesis to preserve it on failure.
 
-Use `preserve_logical_order=True` for a fixed-width circuit and an equally wide
-all-to-all target with consecutive site IDs starting at zero. Wire permutations
-remain in the circuit and the output carries no layout metadata. Pass the target
-to `to_qiskit()` to include idle wires in the exported circuit.
+Pass `CompilationOptions(preserve_logical_order=True)` to native synthesis for a
+fixed-width circuit and an equally wide all-to-all target with consecutive site
+IDs starting at zero. Wire permutations remain in the circuit and the output
+carries no layout metadata. Pass the target to `to_qiskit()` to include idle
+wires in the exported circuit.
 
 ### Payload control flow
 

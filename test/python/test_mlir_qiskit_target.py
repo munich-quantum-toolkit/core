@@ -972,7 +972,7 @@ def test_native_synthesis_preserves_logical_wire_order() -> None:
     environment = TargetEnvironment(compiler_target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
 
     program = QCProgram.from_qiskit(source).to_qco()
-    program.synthesize_for_target(environment, preserve_logical_order=True)
+    program.synthesize_for_target(environment, options=CompilationOptions(preserve_logical_order=True))
     result = program.to_qiskit(target=compiler_target)
 
     assert result.layout is None

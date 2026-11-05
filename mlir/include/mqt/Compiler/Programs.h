@@ -488,14 +488,13 @@ public:
   ///
   /// Dynamic qubits require all-to-all connectivity and receive layout metadata
   /// when possible. Static qubits keep their device site IDs and must fit the
-  /// target topology. When preserveLogicalOrder is set, require fixed-width
-  /// dynamic input and an equally wide target with consecutive site IDs from
-  /// zero. Keep wire permutations in the circuit and omit layout metadata.
-  /// Do not rely on the program contents if synthesis fails.
+  /// target topology. When options.preserveLogicalOrder is set, require
+  /// fixed-width dynamic input and an equally wide target with consecutive site
+  /// IDs from zero. Keep wire permutations in the circuit and omit layout
+  /// metadata. Do not rely on the program contents if synthesis fails.
   [[nodiscard]] LogicalResult
   synthesizeForTarget(const TargetEnvironment& environment,
-                      const CompilationOptions& options = {},
-                      bool preserveLogicalOrder = false);
+                      const CompilationOptions& options = {});
 
   /// Consume this program and convert it to QC.
   [[nodiscard]] FailureOr<QCProgram> intoQC() &&;
