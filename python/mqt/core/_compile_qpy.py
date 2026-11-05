@@ -109,9 +109,9 @@ def compile_qpy(arguments: list[str]) -> int | None:
             parser.error("--qdmi-config requires --qdmi-device")
         os.environ["MQT_CORE_QDMI_CONFIG_FILE"] = options.qdmi_config
 
-    pipeline = options.pass_pipeline
-    if pipeline is not None:
-        anchor, _, body = pipeline.strip().partition("(")
+    pipeline = "mqt-qco-default"
+    if options.pass_pipeline is not None:
+        anchor, _, body = options.pass_pipeline.strip().partition("(")
         if anchor.rstrip() != "builtin.module" or not body.endswith(")"):
             parser.error("--pass-pipeline must be anchored on builtin.module")
         pipeline = body[:-1]
@@ -130,16 +130,14 @@ def compile_qpy(arguments: list[str]) -> int | None:
 
     for manifest in options.qdmi_manifest:
         builtin_driver.add_manifest(manifest)
-    target = None
-    if options.target is not None:
-        target = mlir.CompilerTarget.from_mlir_str(options.target)
-    elif options.qdmi_device:
-        if options.payload_spec:
-            target = mlir.CompilerTarget.from_device(builtin_driver.open_device(options.qdmi_device))
-        else:
-            target = mlir.TargetEnvironment.from_device(options.qdmi_device)
-    if isinstance(target, mlir.CompilerTarget) and options.payload_spec:
-        target = mlir.TargetEnvironment(target, mlir.PayloadSpecification.from_mlir_str(options.payload_spec))
+    target = options.qdmi_device or None
+    if options.payload_spec:
+        compiler_target = (
+            mlir.CompilerTarget.from_mlir_str(options.target)
+            if options.target is not None
+            else mlir.CompilerTarget.from_device(builtin_driver.open_device(options.qdmi_device))
+        )
+        target = mlir.TargetEnvironment(compiler_target, mlir.PayloadSpecification.from_mlir_str(options.payload_spec))
 
     path = Path(options.input)
     input_format = options.input_format
@@ -163,7 +161,7 @@ def compile_qpy(arguments: list[str]) -> int | None:
             program,
             target=target,
             output=mlir.OutputFormat.QPY,
-            qco_pipeline=pipeline if pipeline is not None else "mqt-qco-default",
+            qco_pipeline=pipeline,
             options=mlir.CompilationOptions(
                 seed=options.seed,
                 mapping=mlir.MappingOptions(**mapping),
