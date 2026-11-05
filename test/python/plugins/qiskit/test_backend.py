@@ -15,7 +15,8 @@ import os
 import re
 import struct
 from pathlib import Path
-from typing import TYPE_CHECKING, get_type_hints
+from typing import TYPE_CHECKING, cast, get_type_hints
+from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
@@ -24,16 +25,23 @@ from qiskit.circuit import ClassicalRegister, Clbit, Parameter, QuantumRegister
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
+from test_mock_backend import MockQDMIDevice
 
-from mqt.core.mlir import sample
+from mqt.core.mlir import (
+    CompiledProgram,
+    CompilerTarget,
+    PayloadSpecification,
+    TargetEnvironment,
+    sample,
+    serialize_program,
+)
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
     TranslationError,
     UnsupportedOperationError,
-    program_serializer,
 )
-from mqt.core.qdmi import ProgramFormat, open_device
+from mqt.core.qdmi import Job, ProgramFormat, open_device
 from mqt.core.qdmi.builtin_driver import open_device as open_default_device
 from mqt.core.typing import QDMISessionParameters
 
@@ -382,7 +390,7 @@ def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> N
     assert sum(counts.values()) == 100
 
 
-def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBackend) -> None:
+def test_backend_qasm3_reconstructs_classical_bits(ddsim_backend: QDMIBackend) -> None:
     """Unwritten register and loose bits remain zero alongside a partial measurement."""
     qc = QuantumCircuit(1)
     qc.add_bits([Clbit()])
@@ -391,16 +399,14 @@ def test_backend_qasm3_zero_initializes_classical_bits(ddsim_backend: QDMIBacken
     qc.measure(0, 3)
     original = qc.copy()
 
-    serializer = program_serializer(ProgramFormat.QASM3)
-    assert serializer is not None
-    program = serializer(qc, ddsim_backend)
+    program = serialize_program(
+        qc, target=TargetEnvironment.from_device(ddsim_backend.device, program_format=ProgramFormat.QASM3)
+    )
 
-    assert isinstance(program, str)
-    outputs = re.findall(r"output bit\[(\d+)] (\w+);", program)
-    assert [int(width) for width, _ in outputs] == [1, 1, 3]
-    for width, name in outputs:
-        assert program.index(f'{name} = "{int(width) * "0"}";') < program.index("x $0;")
-    assert sample(program, shots=8) == {"01000": 8}
+    assert isinstance(program, CompiledProgram)
+    assert program.result_layout is not None
+    assert sample(program.payload, shots=8) == {"1": 8}
+    assert program.result_layout.decode_bits("1") == "01000"
     assert qc == original
 
 
@@ -415,16 +421,16 @@ def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDM
     assert sum(counts.values()) == 100
 
 
-@pytest.mark.parametrize(("unit", "seconds"), [("s", 1.0), ("ms", 1e-3), ("us", 1e-6), ("ns", 1e-9)])
-def test_sc_target_preserves_placements_and_physical_calibration(unit: str, seconds: float) -> None:
-    """SC metadata retains ordered placements and converts raw durations to seconds."""
+@pytest.mark.parametrize("unit", ["s", "ms", "us", "ns"])
+def test_sc_target_preserves_placements_and_physical_calibration(unit: str) -> None:
+    """Hardware-only model snapshots retain placements and raw calibration units."""
     config = {
         "schema-version": 1,
         "name": "Target calibration test",
         "numQubits": 4,
         "durationUnit": {"unit": unit, "scaleFactor": 0.5},
         "qubitProperties": {"defaults": {}, "overrides": []},
-        "couplings": [[0, 1]],
+        "couplings": [[0, 1], [1, 2], [2, 3]],
         "operations": [
             {"name": "x", "numParameters": 0, "numQubits": 1, "duration": 20, "fidelity": 0.99},
             {"name": "cx", "numParameters": 0, "numQubits": 2, "sites": [[0, 1]], "duration": 40},
@@ -432,16 +438,18 @@ def test_sc_target_preserves_placements_and_physical_calibration(unit: str, seco
             {"name": "measure", "numParameters": 0, "numQubits": 1},
         ],
     }
-    backend = QDMIBackend(open_default_device("mqt.sc.default", device_config=json.dumps(config)))
-    target = backend.target
-    assert target["x"][0,].duration == pytest.approx(10 * seconds)
-    assert target["x"][0,].error == pytest.approx(0.01)
-    assert target["cx"][0, 1].duration == pytest.approx(20 * seconds)
-    assert set(target["ccx"]) == {(0, 1, 2)}
-    assert target["ccx"][0, 1, 2].duration == pytest.approx(30 * seconds)
-    assert target["ccx"][0, 1, 2].error == pytest.approx(0.05)
-    assert not target.instruction_supported(operation_name="ccx", qargs=(1, 2, 3))
-    assert target["measure"][0,] is None
+    target = CompilerTarget.from_device(open_default_device("mqt.sc.default", device_config=json.dumps(config)))
+    operations = {operation.name: operation for operation in target.operations}
+    assert target.duration_unit is not None
+    assert target.duration_unit.unit == unit
+    assert target.duration_unit.scale_factor == pytest.approx(0.5)
+    assert operations["x"].duration == 20
+    assert operations["x"].fidelity == pytest.approx(0.99)
+    assert operations["cx"].duration == 40
+    assert [placement.sites for placement in operations["ccx"].site_tuples] == [[0, 1, 2]]
+    assert operations["ccx"].duration == 60
+    assert operations["ccx"].fidelity == pytest.approx(0.95)
+    assert operations["measure"].duration is None
 
 
 @pytest.mark.parametrize(
@@ -578,11 +586,13 @@ def test_backend_classical_assignments(ddsim_backend: QDMIBackend, *, compile_fi
         ProgramFormat.QIR_ADAPTIVE_MODULE,
     ],
 )
-def test_qir_serializers_execute_register_order(
+def test_qir_payloads_execute_register_order(
     ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
 ) -> None:
     """Both QIR encodings retain asymmetric output registers and bound angles."""
-    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (fmt,))
+    monkeypatch.setattr(
+        ddsim_backend, "_environment", TargetEnvironment.from_device(ddsim_backend.device, program_format=fmt)
+    )
     circuit = QuantumCircuit(QuantumRegister(3, "q"), ClassicalRegister(1, "a"), ClassicalRegister(2, "b"))
     angle = Parameter("theta")
     circuit.rx(angle, 2)
@@ -597,7 +607,9 @@ def test_qir_serializer_profile_controls_feedback(
     ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
 ) -> None:
     """Adaptive executes feedback; Base reports its restricted profile."""
-    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (fmt,))
+    monkeypatch.setattr(
+        ddsim_backend, "_environment", TargetEnvironment.from_device(ddsim_backend.device, program_format=fmt)
+    )
     circuit = QuantumCircuit(1, 2)
     circuit.x(0)
     circuit.measure(0, 0)
@@ -606,7 +618,7 @@ def test_qir_serializer_profile_controls_feedback(
         circuit.barrier(0)
     circuit.measure(0, 1)
     if fmt == ProgramFormat.QIR_BASE_STRING:
-        with pytest.raises(TranslationError, match="QIR_BASE_STRING"):
+        with pytest.raises(TranslationError, match=r"failed to legalize operation 'scf\.if'"):
             ddsim_backend.run(circuit, shots=8)
     else:
         assert ddsim_backend.run(circuit, shots=8).result().get_counts() == {"01": 8}
@@ -614,17 +626,20 @@ def test_qir_serializer_profile_controls_feedback(
 
 def test_iqm_serializer_uses_device_site_names() -> None:
     """The fallback resolves device names and preserves the native PRX angles."""
-    backend = QDMIBackend.from_device_id("mqt.sc.iqm.garnet")
+    device = open_device("mqt.sc.iqm.garnet")
     circuit = QuantumCircuit(1, 1, global_phase=0.7)
     circuit.r(0.731, -0.419, 0)
     circuit.barrier(0)
     circuit.measure(0, 0)
-    serializer = program_serializer(ProgramFormat.IQM_JSON)
-    assert serializer is not None
-    payload = serializer(circuit, backend)
-    assert isinstance(payload, str)
-    instructions = json.loads(payload)["instructions"]
-    site = backend.device.sites()[0].name()
+    payload = serialize_program(
+        circuit,
+        target=TargetEnvironment(
+            CompilerTarget.from_device(device), PayloadSpecification.from_program_format(ProgramFormat.IQM_JSON)
+        ),
+    )
+    assert isinstance(payload, CompiledProgram)
+    instructions = json.loads(payload.payload)["instructions"]
+    site = device.sites()[0].name()
     assert instructions == [
         {"name": "prx", "locus": [site], "args": {"angle": 0.731, "phase": -0.419}},
         {"name": "measure", "locus": [site], "args": {"key": "c_1_0_0"}},
@@ -636,18 +651,19 @@ def test_native_submission_preserves_folded_unitary_sequence(
     ddsim_backend: QDMIBackend, monkeypatch: pytest.MonkeyPatch, fmt: ProgramFormat
 ) -> None:
     """Inspect the payload actually handed to the local device, not just its ideal result."""
-    serializer = program_serializer(fmt)
-    assert serializer is not None
     payloads: list[str] = []
 
-    def capture(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
-        payload = serializer(circuit, backend)
-        assert isinstance(payload, str)
-        payloads.append(payload)
-        return payload
+    def capture(circuit: QuantumCircuit, *, target: TargetEnvironment) -> CompiledProgram:
+        program = serialize_program(circuit, target=target)
+        assert isinstance(program, CompiledProgram)
+        assert isinstance(program.payload, str)
+        payloads.append(program.payload)
+        return program
 
-    monkeypatch.setattr("mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE", (fmt,))
-    monkeypatch.setattr("mqt.core.plugins.qiskit.backend.program_serializer", lambda _: capture)
+    monkeypatch.setattr(
+        ddsim_backend, "_environment", TargetEnvironment.from_device(ddsim_backend.device, program_format=fmt)
+    )
+    monkeypatch.setattr("mqt.core.plugins.qiskit.backend.serialize_program", capture)
     circuit = QuantumCircuit(2, 2)
     circuit.h(0)
     circuit.h(0)
@@ -675,3 +691,57 @@ def test_native_submission_preserves_folded_unitary_sequence(
         ]
         assert angles == [0.0, 1e-16]
         assert "@__quantum__qis__x__body(ptr inttoptr (i64 1 to ptr))" in payloads[0]
+
+
+def test_resonator_compilation_uses_native_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A native star snapshot compiles and submits with permuted result decoding."""
+    config = {
+        "schema-version": 1,
+        "name": "Offline star",
+        "numQubits": 3,
+        "durationUnit": {"unit": "ns", "scaleFactor": 1},
+        "qubitProperties": {
+            "defaults": {},
+            "overrides": [{"qubit": 0, "name": "CR"}, {"qubit": 1, "name": "QB1"}, {"qubit": 2, "name": "QB2"}],
+        },
+        "couplings": [[1, 0], [2, 0], [0, 1], [0, 2]],
+        "operations": [
+            {"name": "r", "numParameters": 2, "numQubits": 1, "sites": [[1], [2]]},
+            {"name": "measure", "numParameters": 0, "numQubits": 1, "sites": [[1], [2]]},
+            {"name": "cz", "numParameters": 0, "numQubits": 2, "sites": [[0, 1], [0, 2]]},
+            {"name": "move", "numParameters": 0, "numQubits": 2, "sites": [[1, 0], [2, 0]]},
+        ],
+    }
+    device = open_default_device("mqt.sc.default", device_config=json.dumps(config))
+    environment = TargetEnvironment(
+        CompilerTarget.from_device(device), PayloadSpecification.from_program_format(ProgramFormat.IQM_JSON)
+    )
+    transport = MockQDMIDevice(num_qubits=3, operations=["r", "cz", "measure"])
+    monkeypatch.setattr(TargetEnvironment, "from_device", lambda *_args, **_kwargs: environment)
+    submitted = []
+
+    def submit(payload: str, program_format: ProgramFormat, num_shots: int) -> MagicMock:
+        assert program_format == ProgramFormat.IQM_JSON
+        submitted.append(payload)
+        job = MagicMock()
+        job.id = "offline-star"
+        job.num_shots = num_shots
+        job.check.return_value = Job.Status.DONE
+        job.get_program_status.return_value = None
+        job.get_counts.return_value = {"01": num_shots}
+        return job
+
+    monkeypatch.setattr(transport, "submit_job", submit)
+    backend = QDMIBackend(cast("QDMIDevice", transport))
+    circuit = QuantumCircuit(2, 2)
+    circuit.h(0)
+    circuit.h(1)
+    circuit.cz(0, 1)
+    circuit.measure([0, 1], [1, 0])
+    compiled = backend.compile(circuit)
+    assert isinstance(compiled, CompiledProgram)
+    result = backend.run(compiled, shots=3).result()
+    assert submitted == [compiled.payload]
+    assert result.get_counts() == {"10": 3}
+    instructions = json.loads(submitted[0])["instructions"]
+    assert sum(instruction["name"] == "move" for instruction in instructions) == 2

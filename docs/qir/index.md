@@ -160,8 +160,8 @@ For a program that has not yet been exported, `write_bitcode(path)` consumes it
 and writes bitcode directly. The command-line equivalents are:
 
 ```console
-mqt-cc bell.qasm --emit=qir-base -o bell.ll
-mqt-cc bell.qasm --emit=qir-adaptive -o bell.bc
+mqt-core compile bell.qasm --emit=qir-base -o bell.ll
+mqt-core compile bell.qasm --emit=qir-adaptive -o bell.bc
 ```
 
 ## Adaptive Profile and capability flags

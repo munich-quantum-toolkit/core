@@ -30,7 +30,7 @@ function(mqt_configure_qdmi_device target)
   set_target_properties(
     ${target}
     PROPERTIES
-      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}"
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
   target_compile_definitions(
     ${target}
@@ -179,6 +179,7 @@ function(mqt_copy_qdmi_runtime target)
     endif()
     get_target_property(imported ${library_target} IMPORTED)
     set(files "$<TARGET_FILE:${library}>")
+    set(runtime_targets)
     if(UNIX AND library_type STREQUAL "SHARED_LIBRARY")
       # Source installations may use a versioned SONAME in linked applications.
       list(APPEND files "$<TARGET_SONAME_FILE:${library}>")
@@ -207,6 +208,12 @@ function(mqt_copy_qdmi_runtime target)
         set(manifest "$<TARGET_FILE_DIR:${library}>/${manifest_name}")
       endif()
       list(APPEND files "${manifest}")
+      get_target_property(runtime_targets ${library_target} QDMI_RUNTIME_TARGETS)
+      if(runtime_targets)
+        foreach(runtime_target IN LISTS runtime_targets)
+          list(APPEND files "$<TARGET_FILE:${runtime_target}>")
+        endforeach()
+      endif()
       get_target_property(assets ${library_target} QDMI_RUNTIME_FILES)
       if(assets)
         foreach(asset IN LISTS assets)
@@ -214,16 +221,28 @@ function(mqt_copy_qdmi_runtime target)
         endforeach()
       endif()
     endif()
-    add_custom_target(
-      ${staging_target}
-      COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>"
-      COMMAND
-        ${CMAKE_COMMAND} -E copy_if_different "$<REMOVE_DUPLICATES:${files}>"
-        "$<TARGET_FILE_DIR:${target}>"
-      COMMAND_EXPAND_LISTS
-      VERBATIM)
+    set(script "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${staging_target}.cmake")
+    string(
+      CONFIGURE
+      [=[
+set(destination [==[$<TARGET_FILE_DIR:@target@>]==])
+set(files [==[$<REMOVE_DUPLICATES:@files@>]==])
+file(MAKE_DIRECTORY "${destination}")
+# Consumers and separate builds can copy into the same directory concurrently.
+file(LOCK "${destination}/.mqt-qdmi-copy.lock" GUARD PROCESS)
+foreach(runtime_file IN LISTS files)
+  cmake_path(GET runtime_file FILENAME filename)
+  file(COPY_FILE "${runtime_file}" "${destination}/${filename}" ONLY_IF_DIFFERENT)
+endforeach()
+]=]
+      script_content @ONLY)
+    file(GENERATE OUTPUT "${script}" CONTENT "${script_content}")
+    add_custom_target(${staging_target} COMMAND ${CMAKE_COMMAND} -P "${script}" VERBATIM)
     if(NOT imported)
       add_dependencies(${staging_target} ${library_target})
+    endif()
+    if(runtime_targets)
+      add_dependencies(${staging_target} ${runtime_targets})
     endif()
     add_dependencies(${target} ${staging_target})
   endforeach()

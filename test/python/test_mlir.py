@@ -48,10 +48,12 @@ from mqt.core.mlir import (
     build_functionality,
     compile_program,
     sample,
+    serialize_program,
     simulate,
     submit_program,
 )
 from mqt.core.qdmi import Device, ProgramFormat, open_device
+from mqt.core.qdmi.builtin_driver import open_device as open_builtin_device
 
 requires_qiskit_translation = pytest.mark.skipif(
     not supports_qiskit_translation(),
@@ -441,7 +443,8 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     optimized = compile_program(direct)
     assert_type(optimized, OpenQASMProgram)
     assert isinstance(optimized, OpenQASMProgram)
-    assert "output bit[2] c;" in optimized.source
+    assert "bit[2] c;" in optimized.source
+    assert "output " not in optimized.source
     assert set(sample(optimized, shots=32, seed=1)) == {"00", "11"}
 
     imported = compile_program(direct, output=OutputFormat.QC_IMPORT)
@@ -830,6 +833,45 @@ def test_compile_program_for_qdmi_target(garnet_target: CompilerTarget) -> None:
     assert "qco.ry" not in mapped.ir
 
 
+def test_compile_and_serialize_with_device_environment() -> None:
+    """Reuse one selected payload for compilation, serialization, and execution."""
+    device = open_builtin_device("mqt.ddsim.default", custom1="2")
+    environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QASM3)
+    compiled = compile_program(QASM_STRING, target=environment)
+    assert compiled.program_format == ProgramFormat.QASM3
+    native = compile_program(QASM_STRING, target=environment, output=OutputFormat.QC)
+    serialized = serialize_program(native, target=environment)
+    assert serialized.program_format == ProgramFormat.QASM3
+    for program in (compiled, serialized):
+        job = submit_program(program, target=device, num_shots=8)
+        assert job.wait()
+        assert sum(job.get_counts().values()) == 8
+
+    restricted = TargetEnvironment(environment.target, PayloadSpecification(environment.payload_specification.format))
+    restricted_program = compile_program(QASM_STRING, target=restricted)
+    job = submit_program(restricted_program, target=device, num_shots=8)
+    assert job.wait()
+    assert sum(job.get_counts().values()) == 8
+
+
+def test_explicit_output_preserves_environment_payload_version() -> None:
+    """The receiver's version constraint applies to explicit and implicit output."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    payload = PayloadSpecification(PayloadFormat("openqasm", ">=3.1,<4"))
+    environment = TargetEnvironment(target, payload)
+    compiled = compile_program(QASM_STRING, target=environment)
+    explicit = compile_program(QASM_STRING, target=environment, output=OutputFormat.OPENQASM3)
+    assert isinstance(compiled.payload, str)
+    assert compiled.payload.startswith("OPENQASM 3.1;")
+    assert explicit.source.startswith("OPENQASM 3.1;")
+    qc = compile_program(QASM_STRING, target=environment, output=OutputFormat.QC)
+    assert qc.to_openqasm3().source.startswith("OPENQASM 3.1;")
+
+
 @pytest.mark.parametrize("output", [OutputFormat.QC_IMPORT, OutputFormat.QCO])
 def test_compile_program_rejects_early_target_output_without_consuming_input(output: OutputFormat) -> None:
     """Reject stages before target compilation without consuming typed input."""
@@ -887,6 +929,7 @@ def test_target_compiles_single_qubit_gates_without_entangler(num_sites: int) ->
         num_sites,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("sx", 1, 0),
             CompilerTarget.OperationCapability("x", 1, 0),
             CompilerTarget.OperationCapability("rz", 1, 1),
@@ -948,6 +991,7 @@ def test_fixed_rotation_compilation_preserves_phase(
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability(
                 rotation,
                 1,
@@ -989,6 +1033,7 @@ def test_fixed_rx_gate_merges_symbolic_rz(shape: str) -> None:
         num_qubits,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[np.pi / 2]),
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("gphase", 0, 1),
@@ -1042,6 +1087,7 @@ def test_long_symbolic_rz_run_exports_and_binds(length: int, method: str) -> Non
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("sx", 1, 0),
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("cz", 2, 0),
@@ -1163,6 +1209,7 @@ def test_runtime_pauli_rotations_compile_and_export(gate: str, native_entangler:
         2,
         connectivity=CompilerTarget.Connectivity([(0, 1)]),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("rx", 1, 1, fixed_parameters=[-np.pi / 2]),
             CompilerTarget.OperationCapability(
@@ -1362,6 +1409,7 @@ def test_symbolic_su2_compiles_and_binds_after_export(num_qubits: int, basis: st
         num_qubits,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             *(
                 [CompilerTarget.OperationCapability("u", 1, 3)]
                 if basis == "u"
@@ -1457,6 +1505,7 @@ def test_target_fusion_preserves_native_gates_and_symbolic_exports(shape: str, m
         source.rx(angles[2], 0)
         if shape == "native_xyx":
             native.update(rx=1, ry=1)
+    native["measure"] = 0
     target = CompilerTarget(
         1,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
@@ -1515,6 +1564,7 @@ def test_fixed_r_and_rzz_compilation_preserves_full_unitary() -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("rz", 1, 1),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi, None]),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi / 2, None]),
@@ -1601,6 +1651,7 @@ def test_target_synthesis_resynthesizes_two_qubit_blocks() -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("u", 1, 3),
             CompilerTarget.OperationCapability("cz", 2, 0),
             CompilerTarget.OperationCapability("gphase", 0, 1),
@@ -2364,6 +2415,7 @@ def test_fixed_r_short_gate_sequences(angle: float) -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi, None]),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi / 2, None]),
             CompilerTarget.OperationCapability("rz", 1, 1),
@@ -2397,6 +2449,7 @@ def test_compiled_native_r_jeff_round_trip(name: str) -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi, None]),
             CompilerTarget.OperationCapability("r", 1, 2, fixed_parameters=[np.pi / 2, None]),
             CompilerTarget.OperationCapability("rz", 1, 1),
@@ -2457,3 +2510,15 @@ def test_sample_imported_native_cu3() -> None:
     source = 'OPENQASM 3; include "stdgates.inc"; const uint[8] zero=0; x $1; cu3(pi,0,zero) $1,$0; bit[2] c;'
     source += " c[0]=measure $0; c[1]=measure $1;"
     assert sample(source, shots=16, seed=71) == {"11": 16}
+
+
+def test_source_submission_requires_explicit_result_layout() -> None:
+    """Source-only submission cannot discard nonidentity classical destinations."""
+    source = "OPENQASM 3; qubit[2] q; bit[2] c; x q[0]; c[1] = measure q[0]; c[0] = measure q[1];"
+    with pytest.raises(ValueError, match="Compile explicitly and retain the result layout"):
+        submit_program(source, target="mqt.ddsim.default", num_shots=4)
+    compiled = compile_program(source, target="mqt.ddsim.default")
+    assert compiled.result_layout is not None
+    job = submit_program(compiled, target="mqt.ddsim.default", num_shots=4)
+    assert job.wait()
+    assert {compiled.result_layout.decode_bits(bits): count for bits, count in job.get_counts().items()} == {"10": 4}

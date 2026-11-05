@@ -1300,6 +1300,25 @@ TEST(CompilerTargetTest, FixedPauliSynthesisRequiresFreeRZ) {
   }
 }
 
+TEST(CompilerTargetTest, SnapshotsNativePulseSignatures) {
+  const auto gpi = valid(OperationCapability::create("gpi", 1, 1));
+  const auto gpi2 = valid(OperationCapability::create("gpi2", 1, 1));
+  EXPECT_EQ(gpi.canonicalName(), "r");
+  EXPECT_EQ(gpi.numParameters(), 2);
+  ASSERT_EQ(gpi.fixedParameters().size(), 2);
+  EXPECT_EQ(gpi.fixedParameters()[0], std::numbers::pi);
+  EXPECT_FALSE(gpi.fixedParameters()[1]);
+  ASSERT_EQ(gpi2.fixedParameters().size(), 2);
+  EXPECT_EQ(gpi2.fixedParameters()[0], std::numbers::pi / 2.);
+  EXPECT_FALSE(gpi2.fixedParameters()[1]);
+  const auto target =
+      valid(Target::create(1, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({gpi, gpi2})));
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_EQ(target.synthesisBasis()->singleQubit,
+            Target::SingleQubitBasis::GPI);
+}
+
 TEST(CompilerTargetTest, GPIBasisRequiresBothPulsesOnEverySite) {
   auto operations = std::vector<OperationCapability>{};
   for (const auto site : {0U, 1U}) {
@@ -1824,6 +1843,25 @@ TEST(PayloadSpecificationTest, NumericReceiverVersionRanges) {
     auto output = payload.compilerOutput();
     EXPECT_FALSE(output) << version;
     llvm::consumeError(output.takeError());
+  }
+}
+
+TEST(CompilerTargetTest, CanonicalizesNativeProviderAliases) {
+  for (const auto& [name, canonical] : {
+           std::pair{"phase", "p"},
+           std::pair{"cphase", "cp"},
+           std::pair{"cv", "csx"},
+           std::pair{"global_phase", "gphase"},
+           std::pair{"mcphase", "mcp"},
+           std::pair{"mcx_gray", "mcx"},
+           std::pair{"mcx_vchain", "mcx"},
+           std::pair{"mcx_recursive", "mcx"},
+       }) {
+    SCOPED_TRACE(name);
+    const auto operation = llvm::cantFail(
+        mlir::CompilerTarget::OperationCapability::create(name, 1, 0));
+    EXPECT_EQ(operation.canonicalName(), canonical);
+    EXPECT_EQ(operation.name(), name);
   }
 }
 

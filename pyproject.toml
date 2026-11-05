@@ -95,8 +95,15 @@ name = "Marcel Walter"
 email = "marcel@mq.sc"
 
 [project.optional-dependencies]
+catalyst = [
+  # Catalyst and its pinned JAX wheels support these platforms on CPython 3.11-3.14.
+  """\
+  pennylane-catalyst>=0.15,<1; python_version<'3.15' and ((sys_platform=='linux' and (platform_machine=='x86_64' or \
+  platform_machine=='aarch64')) or (sys_platform=='darwin' and platform_machine=='arm64'))\
+  """,
+]
 pennylane = [
-  "pennylane>=0.45.1,<0.46",
+  "pennylane>=0.45.1,<1",
 ]
 qiskit = [
   "qiskit>=2.5,<3",
@@ -111,9 +118,7 @@ Discussions = "https://github.com/munich-quantum-toolkit/core/discussions"
 PyPI = "https://pypi.org/project/mqt-core/"
 
 [project.scripts]
-mqt-cc = "mqt.core._commands:compiler"
-mqt-core-bench = "mqt.core._commands:benchmark"
-mqt-core-cli = "mqt.core.__main__:main"
+mqt-core = "mqt.core.__main__:main"
 
 [project.entry-points."pennylane.plugins"]
 "mqt.ddsim.default" = "mqt.core.plugins.pennylane:DDSIMDevice"
@@ -135,7 +140,7 @@ docs = [
   "myst-nb>=1.4",
   "ninja>=1.13",
   "openqasm-pygments>=0.2",
-  "pennylane>=0.45.1,<0.46",
+  "pennylane>=0.45.1,<1",
   "pygraphviz>=2",
   "qiskit[visualization]>=2.5,<3",
   "sphinx>=9",
@@ -152,6 +157,7 @@ build = [
   "scikit-build-core>=1.1",
   "vcs-versioning>=2.3",
 ]
+catalyst = [ "mqt-core[catalyst]" ]
 cpp-lint = [
   "cpp-linter==1.15.1",
   "nanobind~=3.1.0",
@@ -160,7 +166,7 @@ test-base = [
   "numpy>=2.1; python_version>='3.13'",
   "numpy>=2.3.2; python_version>='3.14'",
   "numpy>=2.5.2; python_version>='3.15'",
-  "pennylane>=0.45.1,<0.46",
+  "pennylane>=0.45.1,<1",
   "pygraphviz>=2.0.2",
   "pytest>=9.0.1",
   "pytest-console-scripts>=1.4.1",
@@ -345,7 +351,6 @@ docstring-code-format = true
   "E402", # Allow imports to appear anywhere in Jupyter notebooks
   "I002", # Allow missing `from __future__ import annotations` import
 ]
-"python/mqt/core/__main__.py" = [ "T201" ]
 
 [tool.ruff.lint.flake8-tidy-imports]
 ban-relative-imports = "all"
@@ -437,12 +442,13 @@ error-on-warning = true
 [tool.pytest]
 addopts = [
   "-ra",
-  "--numprocesses=auto",                      # Automatically use all available CPU cores for parallel testing
+  "--numprocesses=auto",                                      # Automatically use all available CPU cores for parallel testing
   "-m",
-  "not (linkcheck or slurm or qiskit_c_api)",
+  "not (linkcheck or slurm or qiskit_c_api or catalyst_abi)",
 ]
 filterwarnings = [
   "error",
+  "default:.* is newer than the .*tested:UserWarning",
   # Autograd 1.8 uses control flow that Python 3.14 reports while compiling the module.
   "ignore:'return' in a 'finally' block:SyntaxWarning",
 ]
@@ -451,6 +457,7 @@ markers = [
   "linkcheck: documentation link-checker tests (requires a source checkout)",
   "slurm: Slurm integration-script tests (requires a source checkout)",
   "qiskit_c_api: Qiskit C API adoption-script tests (requires a source checkout)",
+  "catalyst_abi: Catalyst ABI maintenance-script tests (requires a source checkout)",
 ]
 minversion = "9.0"
 strict = true

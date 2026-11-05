@@ -36,12 +36,12 @@ strings by the `OPENQASM` header. For versionless source, construct a
 `QCProgram` with `from_openqasm_str` first. The explicit constructors and
 `.qasm` file imports accept versionless input directly.
 
-`mqt-cc` recognizes `.qasm` files automatically. Use `--input-format=openqasm`
-when the filename does not identify the format:
+`mqt-core compile` recognizes `.qasm` files automatically. Use
+`--input-format=openqasm` when the filename does not identify the format:
 
 ```console
-mqt-cc program.qasm
-mqt-cc --input-format=openqasm program.txt
+mqt-core compile program.qasm
+mqt-core compile --input-format=openqasm program.txt
 ```
 
 The generated entry function is named `main`, or `mqt.entry` when a source gate
@@ -359,8 +359,8 @@ optimized.write("optimized.qasm")
 The command-line driver writes to standard output unless `-o` is given:
 
 ```console
-mqt-cc input.qasm --emit=openqasm3
-mqt-cc input.qasm --emit=openqasm3 -o optimized.qasm
+mqt-core compile input.qasm --emit=openqasm3
+mqt-core compile input.qasm --emit=openqasm3 -o optimized.qasm
 ```
 
 The compiler-pipeline path performs target compilation when requested, runs the
@@ -561,9 +561,11 @@ Output types follow a deliberately small canonical mapping:
 
 Outputs preserve function-result order, including mixed scalar and register
 results and constant-zero integers. Returning the same register more than once
-is diagnosed because OpenQASM outputs cannot preserve that aliasing. Programs
-without results keep generated classical temporaries in a local scope to avoid
-implicit outputs. Unused measurement results need no temporary.
+is diagnosed because OpenQASM outputs cannot preserve that aliasing.
+Declarations use plain `bit` unless a non-output classical temporary has global
+scope; then returned values use `output` qualifiers. Programs without results
+may expose global temporaries as implicit outputs. Unused measurement results
+need no temporary.
 
 Measurements write directly to a named register when their result has one store
 and that store can occur at the measurement without crossing a conflicting

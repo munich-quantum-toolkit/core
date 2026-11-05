@@ -18,6 +18,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/ADT/Twine.h"
@@ -273,28 +274,36 @@ private:
         stream.attributeArray("locus",
                               [&] { stream.value(siteNames_.at(*qubit)); });
         stream.attributeObject("args", [&] {
-          stream.attributeBegin("angle");
-          stream.rawValue(
-              [&](llvm::raw_ostream& out) { out << llvm::APFloat(*angle); });
-          stream.attributeEnd();
-          stream.attributeBegin("phase");
-          stream.rawValue(
-              [&](llvm::raw_ostream& out) { out << llvm::APFloat(*phase); });
-          stream.attributeEnd();
+          const auto attribute = [&](StringRef key, double value) {
+            stream.attributeBegin(key);
+            stream.rawValue([&](llvm::raw_ostream& out) {
+              llvm::SmallString<32> number;
+              llvm::APFloat(value).toString(number);
+              out << number;
+              if (!number.contains('.') && !number.contains('E') &&
+                  !number.contains('e')) {
+                out << ".0";
+              }
+            });
+            stream.attributeEnd();
+          };
+          attribute("angle", *angle);
+          attribute("phase", *phase);
         });
       });
       hasInstructions_ = true;
       return llvm::Error::success();
     }
-    if (name == QIR_CZ && arity == 2) {
+    if ((name == QIR_CZ || name == "__quantum__qis__move__body") &&
+        arity == 2) {
       const auto control = staticIndex(call.getArgOperand(0));
       const auto qubit = staticIndex(call.getArgOperand(1));
       if (!control || !qubit || *control == *qubit ||
           !siteNames_.contains(*control) || !siteNames_.contains(*qubit)) {
-        return fail("CZ requires two distinct target qubits");
+        return fail("CZ and MOVE require two distinct target sites");
       }
       stream.object([&] {
-        stream.attribute("name", "cz");
+        stream.attribute("name", name == QIR_CZ ? "cz" : "move");
         stream.attributeArray("locus", [&] {
           stream.value(siteNames_.at(*control));
           stream.value(siteNames_.at(*qubit));

@@ -107,7 +107,7 @@ Munich Quantum Toolkit
 MQT Compiler Collection
   **Preferred term:** MQT Compiler Collection. **Accepted aliases:** none.
   MQT Core's framework for compiling, optimizing, and exchanging quantum
-  programs through Python, C++, and the `mqt-cc` command-line driver.
+  programs through Python, C++, and the `mqt-core` command-line driver.
 
 MQV
 Munich Quantum Valley
@@ -168,7 +168,8 @@ Quantum Intermediate Representation
   **Preferred term:** Quantum Intermediate Representation. **Accepted
   abbreviation:** QIR. An
   [LLVM-based representation and runtime interface](https://www.qir-alliance.org/)
-  for exchanging and executing quantum programs.
+  for exchanging and executing quantum programs. Refer to its Base Profile and
+  Adaptive Profile as Base Profile QIR and Adaptive Profile QIR.
 
 TUM
 Technical University of Munich

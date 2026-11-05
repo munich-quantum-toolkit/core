@@ -364,6 +364,8 @@ public:
     std::optional<QuarterTurnGates> quarterTurnGates;
     /// Whether the Euler recipe can emit a half turn in one native gate.
     bool hasHalfTurn = true;
+    /// Emit Z rotations as phase gates with their compensating global phase.
+    bool phaseRotation = false;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;
@@ -414,6 +416,9 @@ public:
 
   /// Return detailed sites in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<Site> sites() const noexcept;
+
+  /// Return sites supporting a single-qubit gate and measurement.
+  [[nodiscard]] std::vector<SiteId> placeableSites() const;
 
   /// Return target site identifiers in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<SiteId> siteIds() const noexcept;

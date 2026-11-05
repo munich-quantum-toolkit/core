@@ -16,7 +16,7 @@ MLIR representations and passes:
 
 | Interface    | Entry point                                                         |
 | ------------ | ------------------------------------------------------------------- |
-| Command line | `mqt-cc`, with examples below                                       |
+| Command line | `mqt-core compile`, with examples below                             |
 | Python       | {py:mod}`mqt.core.mlir`                                             |
 | C++          | [Source-tree compiler API](target_compilation.md#c-source-tree-api) |
 
@@ -189,30 +189,31 @@ input's program family:
 | `JeffProgram` or `.jeff` file                     | `JeffProgram`          |
 | `OpenQASMProgram`, OpenQASM text, or `.qasm` file | `OpenQASMProgram`      |
 
-A Qiskit `BackendV2` or `Target` defaults to a `QuantumCircuit`. A QDMI device
-or registered device ID defaults to a `CompiledProgram` containing a supported
-execution payload.
+A QDMI backend, device, registered device ID or `TargetEnvironment` defaults to
+a `CompiledProgram` containing its selected execution payload. Other Qiskit
+backends and targets default to a `QuantumCircuit`.
 
 An explicit `output` selects the representation independently of the input
 family and target:
 
-| Purpose                                  | Output format                                          | Result type       |
-| ---------------------------------------- | ------------------------------------------------------ | ----------------- |
-| Inspect frontend translation             | `OutputFormat.QC_IMPORT`                               | `QCProgram`       |
-| Inspect QCO immediately after conversion | `OutputFormat.QCO`                                     | `QCOProgram`      |
-| Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
-| Obtain the optimized circuit             | `OutputFormat.QC`                                      | `QCProgram`       |
-| Obtain a Qiskit circuit                  | `OutputFormat.QISKIT`                                  | `QuantumCircuit`  |
-| Emit an optimized OpenQASM program       | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
-| Emit IQM JSON for a target               | `OutputFormat.IQM_JSON`                                | `IQMJSONProgram`  |
-| Convert to the jeff dialect              | `OutputFormat.JEFF`                                    | `JeffProgram`     |
-| Generate QIR                             | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
+| Purpose                                      | Output format                                          | Result type       |
+| -------------------------------------------- | ------------------------------------------------------ | ----------------- |
+| Inspect frontend translation                 | `OutputFormat.QC_IMPORT`                               | `QCProgram`       |
+| Inspect QCO immediately after conversion     | `OutputFormat.QCO`                                     | `QCOProgram`      |
+| Inspect QCO after optimization               | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
+| Obtain the optimized circuit                 | `OutputFormat.QC`                                      | `QCProgram`       |
+| Obtain a Qiskit circuit                      | `OutputFormat.QISKIT`                                  | `QuantumCircuit`  |
+| Serialize a Qiskit-compatible binary circuit | `OutputFormat.QPY`                                     | `bytes`           |
+| Emit an optimized OpenQASM program           | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
+| Emit IQM JSON for a target                   | `OutputFormat.IQM_JSON`                                | `IQMJSONProgram`  |
+| Convert to the jeff dialect                  | `OutputFormat.JEFF`                                    | `JeffProgram`     |
+| Generate QIR                                 | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
 
 The raw `QC_IMPORT` and `QCO` checkpoints stop before target compilation and
 cannot be combined with `target`. A QDMI target with no explicit `output`
 returns a `CompiledProgram` in an automatically selected native format. To
-select an exact execution format, use `submit_program(..., program_format=...)`.
-See {doc}`target_compilation` for payload selection and submission.
+select an exact execution format, use `TargetEnvironment.from_device`. See
+{doc}`target_compilation` for payload selection and submission.
 
 After rotation merging, the default pipeline groups controlled gates with the
 same ordered controls and targets. Canonicalization cancels named inverses and
@@ -341,7 +342,7 @@ print(final_qc.ir)
 
 Architecture-independent QCO transformations can also be composed with MLIR's
 textual pass-pipeline syntax. The same pass names and options are accepted by
-{code}`mqt-cc`:
+{code}`mqt-core compile`:
 
 ```{code-cell} ipython3
 custom = compile_program(
@@ -414,9 +415,9 @@ The same flows can be composed with the default optimization pipeline in the
 compiler driver:
 
 ```console
-mqt-cc input.qasm --emit=qco-optimized \
+mqt-core compile input.qasm --emit=qco-optimized \
   --pass-pipeline='builtin.module(reuse-qubits,mqt-qco-default)'
-mqt-cc input.qasm --emit=qco-optimized \
+mqt-core compile input.qasm --emit=qco-optimized \
   --pass-pipeline='builtin.module(mqt-qubit-reuse,mqt-qco-default)'
 ```
 
@@ -483,12 +484,12 @@ when another export or inspection must follow. The
 profiles, inspects capability flags, and executes the generated bytes with DDSIM
 through QDMI.
 
-The {code}`mqt-cc` compiler driver selects the QIR serialization from the output
-filename. Use {code}`.ll` for textual LLVM IR and {code}`.bc` for LLVM bitcode:
+MQT Core selects the QIR serialization from the output filename. Use {code}`.ll`
+for textual LLVM IR and {code}`.bc` for LLVM bitcode:
 
 ```console
-mqt-cc input.qasm --emit=qir-base -o output.ll
-mqt-cc input.qasm --emit=qir-adaptive -o output.bc
+mqt-core compile input.qasm --emit=qir-base -o output.ll
+mqt-core compile input.qasm --emit=qir-adaptive -o output.bc
 ```
 
 Writing QIR to standard output also produces textual LLVM IR. All other output

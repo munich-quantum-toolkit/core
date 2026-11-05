@@ -80,11 +80,129 @@ Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.4
 SDK. Linux wheels target manylinux_2_28 and use Clang 22 with LLD and ThinLTO;
 macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
 Windows wheels use MSVC with IPO, except for DLLs that require automatic symbol
-exports. Wheels include the QDMI driver and device bundles, `mqt-cc`, and
-`mqt-core-bench`. Their CMake package exposes the QDMI C interfaces and tool
-targets. Native CMake consumers require a matching LLVM SDK; see {doc}`cpp_api`.
+exports. Wheels include the QDMI driver and device bundles and the `mqt-core`
+executable with `compile`, `bench`, `simulate`, and `run` subcommands. Their
+CMake package exposes the QDMI C interfaces and the `MQT::mqt-core` executable
+target. Native CMake consumers require a matching LLVM SDK; see {doc}`cpp_api`.
 C++ development libraries and headers are available from source installations;
 the DD library is static.
+
+### Command-line tools
+
+Run MQT Core in an isolated tool environment with
+[uv](https://docs.astral.sh/uv/guides/tools/):
+
+```sh
+uvx mqt-core bench list
+uvx mqt-core bench describe ghz
+uvx mqt-core compile input.qasm --qdmi-device=mqt.ddsim.default -o output.bc
+uvx mqt-core simulate output.bc --shots 1024
+```
+
+`uvx` installs and caches the package and runs its `mqt-core` entry point. For a
+persistent command, use `uv tool install mqt-core` or `pipx install mqt-core`. A
+regular package installation also provides `mqt-core` and `python -m mqt.core`,
+with the same arguments:
+
+```sh
+mqt-core --help
+mqt-core compile --help
+mqt-core bench --help
+mqt-core simulate --help
+mqt-core run --help
+mqt-core --version
+mqt-core --include-dir
+mqt-core --cmake-dir
+```
+
+The path options report directories in the installed package and fail if those
+directories are missing. `--include-dir` selects the native headers and
+`--cmake-dir` locates the CMake package root, including bundled dependencies,
+for `find_package(mqt-core)`.
+
+`simulate` accepts OpenQASM (`.qasm`), QC MLIR (`.mlir`), and `jeff` (`.jeff`)
+files, plus Base or Adaptive QIR in LLVM text or bitcode form (`.ll` or `.bc`).
+It runs DDSIM in a separate worker process and prints counts JSON to standard
+output. Use `--shots` to set the number of samples (default: 1024) and `--seed`
+for reproducible sampling. QIR must contain one entry point with a Base or
+Adaptive profile. Use `mqt-core simulate circuit.qasm` to compile and simulate
+OpenQASM directly. See the
+[benchmark workflow](benchmarks.md#run-the-command-line-workflow) for
+generation, compilation, simulation, and evaluation.
+
+### Run on a QDMI device
+
+The Python command discovers manifests advertised by installed provider
+packages, using the same mechanism as the Python QDMI API. For example,
+`iqm-qdmi` registers `iqm.emerald`. List available IDs without opening device
+sessions:
+
+```sh
+uvx --with iqm-qdmi mqt-core compile --qdmi-list-devices
+```
+
+To compile and submit through one device session:
+
+```sh
+export IQM_TOKEN='<your token>'
+uvx --with iqm-qdmi mqt-core run circuit.qasm --qdmi-device=iqm.emerald --shots=1024
+```
+
+`run` compiles OpenQASM, QC MLIR, and `jeff` sources for the selected device. It
+submits QIR (`.ll`, `.bc`), IQM JSON (`.json`), and QPY (`.qpy`) files as
+serialized device programs. The device must support the submitted format.
+Results are printed as counts JSON. `simulate` uses the same execution path with
+DDSIM. `--seed` is specific to DDSIM.
+
+Source execution reconstructs logical readout using the compiler's result
+layout. Serialized payloads return raw device counts: a payload file does not
+retain that mapping. Run the source directly to preserve its logical output
+order and repeated measurements.
+
+To keep the compiled IQM circuit for inspection or repeated submission:
+
+```sh
+uvx --with iqm-qdmi mqt-core compile circuit.qasm --qdmi-device=iqm.emerald -o circuit.json
+uvx --with iqm-qdmi mqt-core run circuit.json --qdmi-device=iqm.emerald --shots=1024
+```
+
+The IQM provider reads `IQM_TOKEN` and supplies the device's supported formats
+and hardware information. The compiler selects IQM JSON for this device. Each
+command opens its own device session; the single `run` command shares one
+session between compilation and submission. These examples submit to the
+selected IQM device. For local execution, use `simulate` instead.
+
+For a persistent installation, use `uv tool install --with iqm-qdmi mqt-core`,
+then invoke `mqt-core` directly. Provider discovery also works with regular
+Python installations. A standalone native executable uses the configured
+[QDMI registry](qdmi/driver.md); Python package discovery belongs to the Python
+launcher.
+
+### Export jeff and QPY
+
+The native compiler can export `jeff`. The Python command can additionally
+export Qiskit's QPY format when Qiskit is installed:
+
+```sh
+uvx mqt-core compile circuit.qasm -o circuit.jeff
+uvx --with=qiskit mqt-core compile circuit.qasm -o circuit.qpy
+```
+
+When `--emit` is omitted, `.jeff`, `.qasm`, `.ll`, `.bc`, and `.qpy` select
+jeff, OpenQASM 3, textual QIR, QIR bitcode, and QPY respectively. Untargeted QIR
+defaults to the Adaptive profile; use `--emit=qir-base` to select Base. For a
+QDMI device, QIR uses Adaptive when supported and Base otherwise, with the
+encoding selected by the extension. `.json` selects IQM JSON and requires a
+suitable target. Explicit `--emit` or `--payload-spec` settings take precedence.
+Without a recognized extension, untargeted compilation defaults to QC MLIR and
+device compilation selects a supported payload.
+
+`--with=qiskit` installs the optional serializer directly. Installing
+`mqt-core[qiskit]` instead also applies Core's Qiskit dependency requirements.
+QPY export uses the native compiler's optimized QCO output and Qiskit's
+serializer; it does not embed Python in the native executable. QPY submission
+does not require Qiskit on the client when the destination device accepts QPY
+directly.
 
 ### Building from source
 

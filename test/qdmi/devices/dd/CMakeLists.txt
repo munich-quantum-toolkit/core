@@ -6,43 +6,40 @@
 #
 # Licensed under the MIT License
 
-if(TARGET MQT::CoreQDMI_DDSIM_Device)
-  # Set QDMI prefix again for the tests
-  set(QDMI_PREFIX "MQT_DDSIM")
-  generate_device_defs_executable(${QDMI_PREFIX} TARGET MQT::CoreQDMI_DDSIM_Device)
-  # Set test target name
-  set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-ddsim-device-test)
-  # Add the test executable
-  package_add_test(
-    ${TARGET_NAME}
-    MQT::CoreQDMI_DDSIM_Device
-    ${PROJECT_SOURCE_DIR}/src/qdmi/devices/dd/WorkerProtocol.cpp
-    worker_protocol_test.cpp
-    helpers/test_utils.cpp
-    device_properties_test.cpp
-    session_lifecycle_test.cpp
-    job_parameters_test.cpp
-    job_lifecycle_test.cpp
-    results_sampling_test.cpp
-    results_statevector_test.cpp
-    error_handling_test.cpp
-    concurrency_test.cpp
-    device_status_test.cpp)
-  # Add dependency to enforce implementation of all interface functions
-  add_dependencies(${TARGET_NAME} qdmi_test_mqt_ddsim_device_defs)
-  # Set the executable path and version information
-  target_compile_definitions(
-    ${TARGET_NAME}
-    PRIVATE
-      MQT_CORE_VERSION="${MQT_CORE_VERSION}" QIR_FILES_DIR="${PROJECT_SOURCE_DIR}/test/circuits")
-  target_include_directories(
-    ${TARGET_NAME}
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src/qdmi/devices/dd)
+# Set QDMI prefix again for the tests
+set(QDMI_PREFIX "MQT_DDSIM")
+generate_device_defs_executable(${QDMI_PREFIX} TARGET MQT::CoreQDMI_DDSIM_Device)
+# Set test target name
+set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-ddsim-device-test)
+# Add the test executable
+package_add_test(
+  ${TARGET_NAME}
+  MQT::CoreQDMI_DDSIM_Device
+  ${PROJECT_SOURCE_DIR}/src/qdmi/devices/dd/WorkerProtocol.cpp
+  worker_protocol_test.cpp
+  helpers/test_utils.cpp
+  device_properties_test.cpp
+  session_lifecycle_test.cpp
+  job_parameters_test.cpp
+  job_lifecycle_test.cpp
+  results_sampling_test.cpp
+  results_statevector_test.cpp
+  error_handling_test.cpp
+  concurrency_test.cpp
+  device_status_test.cpp)
+# Add dependency to enforce implementation of all interface functions
+add_dependencies(${TARGET_NAME} qdmi_test_mqt_ddsim_device_defs)
+# Set the executable path and version information
+target_compile_definitions(
+  ${TARGET_NAME}
+  PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}" QIR_FILES_DIR="${PROJECT_SOURCE_DIR}/test/circuits")
+target_include_directories(
+  ${TARGET_NAME}
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src/qdmi/devices/dd)
 
-  llvm_map_components_to_libnames(llvm_native_libs asmparser bitwriter core support)
-  target_link_libraries(${TARGET_NAME} PRIVATE ${llvm_native_libs})
+llvm_map_components_to_libnames(llvm_native_libs asmparser bitwriter core support)
+target_link_libraries(${TARGET_NAME} PRIVATE ${llvm_native_libs})
 
-  if(WIN32)
-    mqt_copy_qdmi_runtime(${TARGET_NAME} MQT::CoreQDMI_DDSIM_Device)
-  endif()
+if(WIN32)
+  mqt_copy_qdmi_runtime(${TARGET_NAME} MQT::CoreQDMI_DDSIM_Device)
 endif()

@@ -24,6 +24,8 @@ namespace mlir {
 class ConversionTarget;
 class ModuleOp;
 class Operation;
+class PayloadSpecification;
+class Value;
 class RewritePatternSet;
 class TargetEnvironmentAnalysis;
 namespace scf {
@@ -52,14 +54,28 @@ public:
   read(ModuleOp moduleOp, const TargetEnvironmentAnalysis& analysis,
        StringRef specification = {});
 
+  [[nodiscard]] static PayloadControlSupport
+  forPayload(const PayloadSpecification& payload);
+
   [[nodiscard]] bool supportsIndexedQubits() const { return indexedQubits_; }
 
+  /// Validate the condition and branch bodies against forward-branching limits.
+  [[nodiscard]] bool coversBranch(Operation* operation, Value condition,
+                                  uint64_t depth) const;
+  [[nodiscard]] bool coversBranch(Operation* operation, Value condition) const;
   [[nodiscard]] bool coversDepth(PayloadControlFeature feature,
                                  Operation* operation) const;
+  [[nodiscard]] bool coversDepth(PayloadControlFeature feature,
+                                 uint64_t depth) const;
   [[nodiscard]] bool
   coversIteration(PayloadControlFeature feature, Operation* operation,
                   const std::optional<llvm::APInt>& tripCount) const;
+  [[nodiscard]] bool
+  coversIteration(PayloadControlFeature feature, uint64_t depth,
+                  const std::optional<llvm::APInt>& tripCount) const;
   [[nodiscard]] bool coversMultiwayBranching(Operation* operation,
+                                             uint64_t caseCount) const;
+  [[nodiscard]] bool coversMultiwayBranching(uint64_t depth,
                                              uint64_t caseCount) const;
 
   /// Check expansion of a switch with at least one explicit case.
@@ -72,6 +88,9 @@ private:
     std::optional<uint64_t> maxNestingDepth;
     std::optional<uint64_t> maxIterationCount;
     std::optional<uint64_t> maxCaseCount;
+    std::optional<uint64_t> maxConditionWidth;
+    bool requiresRegisterEquality = false;
+    bool unitaryOnlyBranches = false;
   };
 
   [[nodiscard]] const CapabilityGroup& get(PayloadControlFeature feature) const;
@@ -90,6 +109,11 @@ private:
 /// Return the exact trip count of a loop with literal bounds and step.
 [[nodiscard]] std::optional<llvm::APInt>
 getExactConstantTripCount(scf::ForOp loop);
+
+/// Legalize native QC control flow against an in-memory payload contract.
+[[nodiscard]] LogicalResult
+legalizePayloadControlFlow(ModuleOp moduleOp,
+                           const PayloadSpecification& payload);
 
 /// Add payload legality rules and switch lowering for SCF control flow.
 ///

@@ -18,7 +18,6 @@ __lazy_modules__ = {
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
     "mqt.core.plugins.qiskit.provider",
-    "mqt.core.plugins.qiskit.serializers",
 }
 
 from importlib import import_module
@@ -46,32 +45,20 @@ if TYPE_CHECKING or HAS_QISKIT:
         JobSubmissionError,
         QDMIQiskitError,
         TranslationError,
-        UnsupportedFormatError,
         UnsupportedOperationError,
     )
     from mqt.core.plugins.qiskit.job import QDMIJob
     from mqt.core.plugins.qiskit.provider import QDMIProvider
-    from mqt.core.plugins.qiskit.serializers import (
-        ProgramSerializer,
-        program_serializer,
-        register_program_serializer,
-        unregister_program_serializer,
-    )
 
     __all__ += [
         "CircuitValidationError",
         "DDEstimator",
         "JobExecutionError",
         "JobSubmissionError",
-        "ProgramSerializer",
         "QDMIBackend",
         "QDMIJob",
         "QDMIProvider",
         "QDMIQiskitError",
         "TranslationError",
-        "UnsupportedFormatError",
         "UnsupportedOperationError",
-        "program_serializer",
-        "register_program_serializer",
-        "unregister_program_serializer",
     ]

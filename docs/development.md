@@ -337,11 +337,13 @@ retaining packaged devices. Executable examples use local DDSIM and require no
 credentials. Configuration recipes for external providers do not execute.
 
 Use `{code-cell}` blocks in pages with MyST-NB front matter. Keep required setup
-visible or collapsible with `hide-input`, display useful computed output, and
-assert the demonstrated semantics. Use checked subprocess calls for CLI
-examples. Ordinary code fences document configuration or interfaces without
-executing them. Give figures descriptive alternative text and preserve full
-contracts in linked references when they would interrupt a tutorial.
+visible or collapsible with `hide-input` and display useful computed output. Use
+assertions when they check a property that the displayed output does not make
+clear. Link API names to their references, including external APIs when
+intersphinx provides them. Use checked subprocess calls for CLI examples.
+Ordinary code fences document configuration or interfaces without executing
+them. Give figures descriptive alternative text and preserve full contracts in
+linked references when they would interrupt a tutorial.
 
 ## MLIR
 
@@ -510,8 +512,8 @@ Build the driver with the configured LLVM/MLIR installation:
 
 ```sh
 cmake --preset release
-cmake --build --preset release --target mqt-cc
-mqt_cc=build/release/mlir/tools/mqt-cc/mqt-cc
+cmake --build --preset release --target mqt-core
+mqt_core=build/release/bin/mqt-core
 ```
 
 Save this reduced example as `reduced.mlir`:
@@ -529,9 +531,9 @@ module {
 Run exactly the selected pipeline with `--run-pipeline`:
 
 ```sh
-"$mqt_cc" reduced.mlir --run-pipeline \
+"$mqt_core" compile reduced.mlir --run-pipeline \
   --pass-pipeline='builtin.module(canonicalize)'
-"$mqt_cc" reduced.mlir --run-pipeline \
+"$mqt_core" compile reduced.mlir --run-pipeline \
   --pass-pipeline='builtin.module(hadamard-lifting)' \
   --mlir-print-op-generic --mlir-print-ir-before-all \
   --mlir-print-ir-after-failure --mlir-disable-threading
@@ -579,12 +581,12 @@ module {
 Generate and replay its failing conversion pipeline:
 
 ```sh
-"$mqt_cc" unsupported.mlir --run-pipeline \
+"$mqt_core" compile unsupported.mlir --run-pipeline \
   --pass-pipeline='builtin.module(qc-to-qco)' \
   --mlir-print-ir-before-all --mlir-print-ir-after-failure \
   --mlir-disable-threading \
   --mlir-pass-pipeline-crash-reproducer=failure.mlir
-"$mqt_cc" failure.mlir --run-reproducer --mlir-print-ir-before-all
+"$mqt_core" compile failure.mlir --run-reproducer --mlir-print-ir-before-all
 ```
 
 Both commands fail with the unsupported unstructured-control-flow diagnostic.

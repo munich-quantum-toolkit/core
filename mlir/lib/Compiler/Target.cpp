@@ -13,6 +13,7 @@
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
@@ -30,6 +31,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/CheckedArithmetic.h"
 #include "llvm/Support/Error.h"
 
@@ -178,19 +180,27 @@ static std::optional<double> synthesisParameter(GateKind gate,
 }
 
 [[nodiscard]] static std::string canonicalOperationName(StringRef name) {
-  auto canonical = name.trim().lower();
-  if (canonical == "prx") {
-    canonical = "r";
-  } else if (canonical == "i") {
-    canonical = "id";
-  } else if (canonical == "u1") {
-    canonical = "p";
-  } else if (canonical == "u3") {
-    canonical = "u";
-  } else if (canonical == "cnot") {
-    canonical = "cx";
-  }
-  return canonical;
+  const auto canonical = name.trim().lower();
+  return llvm::StringSwitch<std::string>(canonical)
+      .Case("prx", "r")
+      .Case("i", "id")
+      .Cases({"u1", "phase", "phaseshift"}, "p")
+      .Case("u3", "u")
+      .Case("cnot", "cx")
+      .Cases({"cphase", "cphaseshift"}, "cp")
+      .Case("cv", "csx")
+      .Case("global_phase", "gphase")
+      .Case("mcphase", "mcp")
+      .Cases({"mcx_gray", "mcx_vchain", "mcx_recursive"}, "mcx")
+      .Case("si", "sdg")
+      .Case("ti", "tdg")
+      .Case("v", "sx")
+      .Case("vi", "sxdg")
+      .Case("xx", "rxx")
+      .Case("yy", "ryy")
+      .Case("zz", "rzz")
+      .Case("ccnot", "ccx")
+      .Default(canonical);
 }
 
 [[nodiscard]] static llvm::Error invalidTarget(const Twine& message) {
@@ -496,6 +506,22 @@ CompilerTarget::OperationCapability::create(
     if (!uniqueSiteCombinations.insert(siteTuple.sites()).second) {
       return invalidTarget(
           "Compiler target operation contains a duplicate site tuple");
+    }
+  }
+
+  // Native GPI pulses expose only the azimuth of a fixed-angle R rotation.
+  if (arity == Arity::fixed(1) && numParameters == 1 &&
+      (canonical == "gpi" || canonical == "gpi2")) {
+    const double angle =
+        canonical == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+    canonical = "r";
+    numParameters = 2;
+    if (fixedParameters.empty()) {
+      fixedParameters.emplace_back();
+    }
+    fixedParameters.insert(fixedParameters.begin(), angle);
+    if (!parameterBounds.empty()) {
+      parameterBounds.insert(parameterBounds.begin(), std::nullopt);
     }
   }
 
@@ -995,13 +1021,14 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
   std::optional<SingleQubitBasis> singleQubit;
   std::optional<QuarterTurnGates> quarterTurnGates;
   bool hasHalfTurn = true;
+  const bool hasRZ = supportsOnEverySite(GateKind::RZ);
+  const bool phaseRotation = !hasRZ && supportsEveryPlacement("p", 1, 1);
+  const bool hasZRotation = hasRZ || phaseRotation;
   if (supportsOnEverySite(GateKind::U)) {
     singleQubit = SingleQubitBasis::U;
-  } else if (supportsOnEverySite(GateKind::RX) &&
-             supportsOnEverySite(GateKind::RZ)) {
+  } else if (supportsOnEverySite(GateKind::RX) && hasZRotation) {
     singleQubit = SingleQubitBasis::ZXZ;
-  } else if (supportsOnEverySite(GateKind::SX) &&
-             supportsOnEverySite(GateKind::RZ)) {
+  } else if (supportsOnEverySite(GateKind::SX) && hasZRotation) {
     singleQubit = SingleQubitBasis::ZSXX;
     hasHalfTurn = supportsOnEverySite(GateKind::X);
   } else if (supportsOnEverySite(GateKind::R)) {
@@ -1009,10 +1036,9 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
   } else if (supportsOnEverySite(GateKind::RX) &&
              supportsOnEverySite(GateKind::RY)) {
     singleQubit = SingleQubitBasis::XYX;
-  } else if (supportsOnEverySite(GateKind::RY) &&
-             supportsOnEverySite(GateKind::RZ)) {
+  } else if (supportsOnEverySite(GateKind::RY) && hasZRotation) {
     singleQubit = SingleQubitBasis::ZYZ;
-  } else if (supportsOnEverySite(GateKind::RZ)) {
+  } else if (hasZRotation) {
     for (const auto gate : {GateKind::RX, GateKind::RY, GateKind::R}) {
       // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
       const auto specification = std::ranges::find(GATE_SPECIFICATIONS, gate,
@@ -1140,6 +1166,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
           entanglers.empty() ? std::nullopt : std::optional{entanglers.front()},
       .quarterTurnGates = quarterTurnGates,
       .hasHalfTurn = hasHalfTurn,
+      .phaseRotation = phaseRotation,
   };
 }
 
@@ -1370,6 +1397,45 @@ size_t CompilerTarget::numSites() const noexcept {
 
 ArrayRef<CompilerTarget::Site> CompilerTarget::sites() const noexcept {
   return storage_->sites;
+}
+
+std::vector<SiteId> CompilerTarget::placeableSites() const {
+  if (nativeOperationsKind() == NativeOperations::Kind::Unrestricted) {
+    return {siteIds().begin(), siteIds().end()};
+  }
+  llvm::DenseSet<SiteId> unary;
+  llvm::DenseSet<SiteId> measured;
+  for (const auto& op : operations()) {
+    const auto name = op.canonicalName();
+    if (!op.arity().accepts(1) || name == "reset" || name == "barrier") {
+      continue;
+    }
+    if (name != "measure") {
+      const auto* gate = qc::lookupStandardGateByOperationSymbol(name);
+      if (gate == nullptr || gate->controlCount != 0 ||
+          gate->targetCount != 1 ||
+          gate->parameterCount != op.numParameters()) {
+        continue;
+      }
+    }
+    auto& supported = name == "measure" ? measured : unary;
+    if (op.siteTuples().empty()) {
+      supported.insert(siteIds().begin(), siteIds().end());
+    } else {
+      for (const auto& tuple : op.siteTuples()) {
+        if (tuple.sites().size() == 1) {
+          supported.insert(tuple.sites().front());
+        }
+      }
+    }
+  }
+  std::vector<SiteId> result;
+  for (const auto site : siteIds()) {
+    if (unary.contains(site) && measured.contains(site)) {
+      result.push_back(site);
+    }
+  }
+  return result;
 }
 
 ArrayRef<SiteId> CompilerTarget::siteIds() const noexcept {

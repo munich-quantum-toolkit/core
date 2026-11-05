@@ -1672,6 +1672,9 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
   for (const auto basis : {ZYZ, ZXZ, XZX, XYX, U, ZSXX, R, GPI}) {
     bases.push_back({.singleQubit = basis});
   }
+  for (const auto basis : {ZYZ, ZXZ, XZX, ZSXX}) {
+    bases.push_back({.singleQubit = basis, .phaseRotation = true});
+  }
   for (const auto gate : {
            CompilerTarget::GateKind::RX,
            CompilerTarget::GateKind::RY,
@@ -1721,18 +1724,25 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
         }
       });
       EXPECT_TRUE(preservesAngle);
-      // Bound phases must remain within the gphase verifier's 1e4 limit.
-      for (const double angle : {
-               0.,
-               1.e-8,
-               -0.37,
-               std::numbers::pi,
-               -std::numbers::pi,
-               2. * std::numbers::pi,
-               1000.,
-               -1000.,
-               1e300,
-           }) {
+      SmallVector<double> angles{
+          0.,
+          1.e-8,
+          -0.37,
+          std::numbers::pi,
+          -std::numbers::pi,
+          2. * std::numbers::pi,
+          1000.,
+          -1000.,
+      };
+      angles.append({
+          1e300,
+          -1e300,
+          std::numeric_limits<double>::max(),
+          -std::numeric_limits<double>::max(),
+          std::nextafter(4. * std::numbers::pi, 0.),
+          std::nextafter(4. * std::numbers::pi, 100.),
+      });
+      for (const double angle : angles) {
         SCOPED_TRACE(angle);
         OwningOpRef bound = moduleOp->clone();
         auto boundFunction = bound->lookupSymbol<func::FuncOp>("main");

@@ -38,8 +38,6 @@ if TYPE_CHECKING or HAS_PENNYLANE:
         PennyLaneConfigurationError,
         PennyLaneExecutionError,
         PennyLaneTranslationError,
-        PennyLaneUnsupportedFormatError,
-        PennyLaneUnsupportedOperationError,
         PennyLaneValidationError,
         QDMIPluginError,
     )
@@ -51,8 +49,6 @@ if TYPE_CHECKING or HAS_PENNYLANE:
         "PennyLaneExecutionError",
         "PennyLaneJob",
         "PennyLaneTranslationError",
-        "PennyLaneUnsupportedFormatError",
-        "PennyLaneUnsupportedOperationError",
         "PennyLaneValidationError",
         "QDMIDevice",
         "QDMIPluginError",

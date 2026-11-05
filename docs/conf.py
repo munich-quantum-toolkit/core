@@ -179,7 +179,6 @@ nitpick_ignore_regex = [
     ("py:(class|obj)", r"_Result"),
     # Compiler signature aliases are private stub types, not runtime classes.
     ("py:class", r"_(CompilerInput|CompilerInputT|CompilerTarget|CompilerOutput|CompileOptions|ProgramT|SourceT)"),
-    ("py:class", r"mqt\.core\.plugins\.pennylane\.converter\._ConvertedProgram"),
     ("py:class", r"qiskit\.result\.models\.ExperimentResult"),
     (
         "py:class",
@@ -191,8 +190,9 @@ nitpick_ignore_regex = [
     ("py:class", r"pennylane\.transforms\.core\.CompilePipeline"),
     ("py:class", r"pennylane\.typing\.(Result|ResultBatch)"),
     ("py:class", r"qiskit\.primitives\.containers\.(Estimator|Sampler)PubLike"),
-    # PennyLane inherits this unqualified reference without exporting its target.
+    # PennyLane inherits these unqualified references without exporting their targets.
     ("py:class", r"DeviceCapabilities"),
+    ("py:attr", r"capabilities"),
 ]
 
 # ACM and SIAM reject automated requests after resolving their valid DOI links.

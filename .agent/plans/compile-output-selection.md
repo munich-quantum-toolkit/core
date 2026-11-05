@@ -10,13 +10,10 @@ preserves the input family without a target or with a hardware-only
 `CompilerTarget`; Qiskit targets select `QuantumCircuit`, and QDMI targets
 select a submission-ready `CompiledProgram`. `output` is the sole compiler
 format selector. Exact QDMI transport selection belongs to
-`submit_program(..., program_format=...)`; automatic precompilation retains the
-selected native payload for repeated submissions.
-
-Python does not offer exact-wire-format precompilation into `CompiledProgram`.
-Use automatic reusable precompilation, a typed export, or exact-format
-compile-and-submit. The native environment-based API retains offline payload
-compilation.
+`TargetEnvironment.from_device(..., program_format=...)`. Pass the environment
+to `compile_program` to retain an exact reusable payload and its result layout.
+The source-only `submit_program` convenience path accepts a format but refuses
+programs whose logical outputs require reconstruction.
 
 Source and path inputs return program objects. Raw QC import and QCO are
 pre-compilation checkpoints and cannot be combined with a target. jeff does not

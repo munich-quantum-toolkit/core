@@ -25,8 +25,18 @@ from qiskit.providers import JobError
 from qiskit.quantum_info import SparsePauliOp
 from test_mock_backend import MockQDMIDevice
 
-from mqt.core.plugins.qiskit import CircuitValidationError, JobExecutionError, JobSubmissionError, QDMIBackend, QDMIJob
+from mqt.core.mlir import CompilationOptions, CompiledProgram, TargetEnvironment, compile_program, serialize_program
+from mqt.core.plugins.qiskit import (
+    CircuitValidationError,
+    JobExecutionError,
+    JobSubmissionError,
+    QDMIBackend,
+    QDMIJob,
+    TranslationError,
+)
 from mqt.core.qdmi import Job, ProgramFormat
+
+pytestmark = pytest.mark.usefixtures("mock_device_snapshot")
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -75,6 +85,8 @@ def test_batch_order_and_repeated_reads(recording_backend: RecordingBackend, *, 
     """Submission precedes collection and repeated reads do not contact the provider."""
     backend, jobs, events = recording_backend
     circuits = [QuantumCircuit(2, 2, name=f"circuit-{index}") for index in range(3)]
+    for circuit in circuits:
+        circuit.measure(range(2), range(2))
     job = backend.run(circuits, shots=4, memory=memory)
     job.submit()
     assert events == ["formats", "submit", "submit", "submit"]
@@ -106,6 +118,7 @@ def test_memory_order_registers_and_correlations(
     qc = QuantumCircuit(3)
     qc.add_register(ClassicalRegister(1, "a"), ClassicalRegister(2, "b"))
     qc.metadata = {"experiment": "joint"}
+    qc.measure(range(3), range(3))
     samples = ["101", "000", "011", "100"]
     job = backend.run(qc, shots=4, memory=True)
     jobs[0].get_shots.side_effect = lambda _program_index=0: samples
@@ -150,6 +163,67 @@ def test_result_header_snapshot(recording_backend: RecordingBackend) -> None:
         "creg_sizes": [["c", 1]],
         "metadata": {"experiment": 1},
     }
+
+
+@pytest.mark.parametrize("memory", [False, True])
+def test_native_result_layouts(recording_backend: RecordingBackend, *, memory: bool) -> None:
+    """Restore permutations, zero holes, and subsets without losing shot correlations."""
+    backend, jobs, _ = recording_backend
+    circuit = QuantumCircuit(2, name="permuted")
+    circuit.add_register(ClassicalRegister(2, "zebra"), ClassicalRegister(2, "alpha"))
+    circuit.measure(0, 3)
+    circuit.measure(1, 0)
+    subset = QuantumCircuit(2, 2, name="subset")
+    subset.measure(1, 0)
+    prepared = [
+        serialize_program(
+            native,
+            target=backend._environment,  # ruff:ignore[private-member-access] Native serialization contract.
+        )
+        for native in (circuit, subset)
+    ]
+    job = backend.run(prepared, shots=4, memory=memory)
+    raw = ["00", "01", "10", "11"]
+    for handle, samples in zip(jobs, (raw, ["0", "0", "1", "1"]), strict=True):
+        handle.get_shots.side_effect = lambda _program_index=0, samples=samples: samples
+        handle.get_counts.side_effect = lambda _program_index=0, samples=samples: dict(Counter(samples))
+    result = job.result()
+    assert result.get_counts("permuted") == {"00 00": 1, "10 00": 1, "00 01": 1, "10 01": 1}
+    assert result.get_counts("subset") == {"00": 2, "01": 2}
+    if memory:
+        assert result.get_memory("permuted") == ["00 00", "10 00", "00 01", "10 01"]
+        assert result.get_memory("subset") == ["00", "00", "01", "01"]
+
+
+def test_result_layout_rejects_mismatched_circuit_width(recording_backend: RecordingBackend) -> None:
+    """Reject a serializer whose result layout belongs to a different circuit."""
+    backend, jobs, _ = recording_backend
+    native = QuantumCircuit(2, 2)
+    native.measure(1, 0)
+    program = serialize_program(
+        native,
+        target=backend._environment,  # ruff:ignore[private-member-access] Native serialization contract.
+    )
+    assert program.result_layout is not None
+    vars(program)["_qiskit_header"]["memory_slots"] = 1
+    with pytest.raises(JobError, match="classical width"):
+        backend.run(program, shots=1)
+    assert not jobs
+
+
+def test_result_layout_rejects_malformed_raw_samples(recording_backend: RecordingBackend) -> None:
+    """Raw-width validation happens before projection can hide malformed data."""
+    backend, jobs, _ = recording_backend
+    circuit = QuantumCircuit(2, 1)
+    circuit.measure(1, 0)
+    program = serialize_program(
+        circuit,
+        target=backend._environment,  # ruff:ignore[private-member-access] Native serialization contract.
+    )
+    job = backend.run(program, shots=1, memory=True)
+    jobs[0].get_shots.side_effect = lambda _program_index=0: ["00"]
+    with pytest.raises(JobExecutionError, match=r"(?i)(width|binary|bitstring)"):
+        job.result()
 
 
 @pytest.mark.parametrize("stage", ["wait", "check", "get_shots", "get_counts", "id"])
@@ -198,7 +272,7 @@ def test_malformed_memory_raises(recording_backend: RecordingBackend, samples: l
     backend, jobs, _ = recording_backend
     job = backend.run(QuantumCircuit(1, 1), shots=4, memory=True)
     jobs[0].get_shots.side_effect = lambda _program_index=0: samples
-    with pytest.raises(JobError, match="Invalid QDMI"):
+    with pytest.raises(JobError, match=r"Invalid QDMI|raw sample has an invalid width or digit"):
         job.result()
     jobs[0].cancel.assert_not_called()
 
@@ -209,7 +283,7 @@ def test_malformed_histogram_raises(recording_backend: RecordingBackend, counts:
     backend, jobs, _ = recording_backend
     job = backend.run(QuantumCircuit(1, 1), shots=4)
     jobs[0].get_counts.side_effect = lambda _program_index=0: counts
-    with pytest.raises(JobError, match="Invalid QDMI"):
+    with pytest.raises(JobError, match=r"Invalid QDMI|raw sample has an invalid width or digit"):
         job.result()
 
 
@@ -261,7 +335,7 @@ def test_preparation_interruption_clears_last_job(
     """An interrupted new run cannot expose a preceding batch as its recovery handle."""
     backend, jobs, _ = recording_backend
     previous = backend.run(QuantumCircuit(1, 1), shots=1)
-    monkeypatch.setattr(backend, "_serialize_circuit", MagicMock(side_effect=KeyboardInterrupt))
+    monkeypatch.setattr("mqt.core.plugins.qiskit.backend.serialize_program", MagicMock(side_effect=KeyboardInterrupt))
     with pytest.raises(KeyboardInterrupt):
         backend.run(QuantumCircuit(1, 1), shots=2)
     assert backend.last_job is None
@@ -310,7 +384,7 @@ def test_primitive_seed_is_not_silently_ignored(recording_backend: RecordingBack
 
 def test_counts_only_device() -> None:
     """A counts-only device supports Estimator but must not fake Sampler shots."""
-    backend = QDMIBackend(cast("Device", MockQDMIDevice(operations=["measure"])))
+    backend = QDMIBackend(cast("Device", MockQDMIDevice(operations=["measure", "x"])))
     qc = QuantumCircuit(1, 1)
     qc.measure(0, 0)
     assert sum(backend.run(qc, shots=4).result().get_counts().values()) == 4
@@ -366,8 +440,13 @@ def test_reject_nonpartitioned_classical_bits(recording_backend: RecordingBacken
     qc = QuantumCircuit(1)
     qc.add_bits([Clbit(), Clbit()])
     qc.add_register(ClassicalRegister(bits=qc.clbits[::-1], name="reversed"))
-    with pytest.raises(CircuitValidationError, match="partition"):
+    with pytest.raises(TranslationError, match="loose classical bits before contiguous registers"):
         backend.run(qc, memory=True)
+    loose = QuantumCircuit(1)
+    loose.add_bits([Clbit()])
+    compiled = backend.compile(loose)
+    with pytest.raises(JobError, match="partition"):
+        backend.run(compiled, memory=True)
     assert not jobs
 
 
@@ -455,7 +534,8 @@ def test_prepared_job_submits_once(recording_backend: RecordingBackend) -> None:
     """Construction prepares circuits; submission creates remote work once."""
     backend, jobs, events = recording_backend
     circuits = [QuantumCircuit(1, 1)] * 2
-    job = QDMIJob(backend, circuits, shots=4, memory=False)
+    programs = [serialize_program(circuit, target=backend._environment) for circuit in circuits]  # ruff:ignore[private-member-access] Constructor contract.
+    job = QDMIJob(backend, programs, shots=4, memory=False)
     assert not jobs
     job.submit()
     assert job.result().get_counts() == [{"0": 4}, {"0": 4}]
@@ -479,6 +559,8 @@ def test_native_program_group_preserves_circuit_results(
     monkeypatch.setattr(backend.device, "try_submit_job", native)
     monkeypatch.setattr(backend, "_job_parameters", lambda _options: {"custom1": "native-options"})
     circuits = [QuantumCircuit(2, 2, name=f"native-{index}") for index in range(3)]
+    for circuit in circuits:
+        circuit.measure(range(2), range(2))
     job = backend.run(circuits, shots=4, memory=memory)
     result = job.result()
     assert result.get_counts() == [{"00": 4}, {"01": 4}, {"10": 4}]
@@ -497,3 +579,145 @@ def test_native_program_group_preserves_circuit_results(
     shared.check.assert_called_once()
     assert job.status().name == "DONE"
     shared.check.assert_called_once()
+
+
+@pytest.mark.parametrize("sequence", [False, True])
+def test_compile_retains_source_header(recording_backend: RecordingBackend, *, sequence: bool) -> None:
+    """Compiled artifacts keep source metadata even when source objects change."""
+    backend, _, _ = recording_backend
+    circuit = QuantumCircuit(1, 1, name="original", metadata={"nested": {"value": 1}})
+    circuit.measure(0, 0)
+    prepared = backend.compile([circuit] if sequence else circuit)
+    assert isinstance(prepared, list if sequence else CompiledProgram)
+    circuit.name = "mutated"
+    circuit.metadata["nested"]["value"] = 2
+    result = backend.run(prepared, shots=0).result()
+    assert result.results is not None
+    assert result.results[0].header == {
+        "name": "original",
+        "memory_slots": 1,
+        "creg_sizes": [["c", 1]],
+        "metadata": {"nested": {"value": 1}},
+    }
+
+
+def test_compiled_environment_preflight(recording_backend: RecordingBackend) -> None:
+    """Accept equivalent snapshots and reject incompatible batches before dispatch."""
+    backend, jobs, _ = recording_backend
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    equivalent = serialize_program(circuit, target=TargetEnvironment.from_device(backend.device))
+    backend.run(equivalent, shots=1)
+    assert len(jobs) == 1
+    other = QDMIBackend(cast("Device", MockQDMIDevice(num_qubits=1, operations=["measure", "x"])))
+    incompatible = serialize_program(circuit, target=TargetEnvironment.from_device(other.device))
+    with pytest.raises(ValueError, match=r"incompatible.*ordered site"):
+        backend.run([equivalent, incompatible], shots=1)
+    assert len(jobs) == 1
+
+
+@pytest.mark.parametrize("width", [0, 3])
+def test_generic_compiled_header(recording_backend: RecordingBackend, width: int) -> None:
+    """Text inputs retain their logical result width even with zero shots."""
+    backend, _, _ = recording_backend
+    source = "OPENQASM 3; qubit q;" + (f"bit[{width}] c = 0; c[0] = measure q;" if width else "")
+    program = compile_program(source, target=TargetEnvironment.from_device(backend.device))
+    result = backend.run(program, shots=0).result()
+    assert result.results is not None
+    assert result.results[0].header["memory_slots"] == width
+    assert result.results[0].header["creg_sizes"] == ([["c", width]] if width else [])
+
+
+def test_compiled_alternative_format_runs_on_ddsim() -> None:
+    """Artifacts use any supported transport, regardless of the backend default."""
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+    circuit = QuantumCircuit(1, 1)
+    circuit.x(0)
+    circuit.measure(0, 0)
+    artifact = serialize_program(
+        circuit,
+        target=TargetEnvironment.from_device(backend.device, program_format=ProgramFormat.QIR_ADAPTIVE_MODULE),
+    )
+    default = backend.compile(circuit, options=CompilationOptions(seed=42))
+    assert isinstance(default, CompiledProgram)
+    assert default.program_format != artifact.program_format
+    assert backend.run(artifact, shots=4).result().get_counts() == {"1": 4}
+
+
+def test_compiled_unsupported_format_preflight(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unsupported later artifact cannot dispatch an earlier valid one."""
+    backend, jobs, _ = recording_backend
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    valid = backend.compile(circuit)
+    assert isinstance(valid, CompiledProgram)
+    alternative = serialize_program(
+        circuit,
+        target=TargetEnvironment.from_device(backend.device, program_format=ProgramFormat.QASM2),
+    )
+    original = TargetEnvironment.from_device
+
+    def snapshot(device: Device, *, program_format: ProgramFormat | None = None) -> TargetEnvironment:
+        if program_format == ProgramFormat.QASM2:
+            msg = "Device does not support QASM2"
+            raise ValueError(msg)
+        return original(device, program_format=program_format)
+
+    monkeypatch.setattr(TargetEnvironment, "from_device", snapshot)
+    with pytest.raises(ValueError, match="does not support QASM2"):
+        backend.run([valid, alternative], shots=4)
+    assert not jobs
+
+
+def test_compiled_batch_rejects_non_circuit_inputs(recording_backend: RecordingBackend) -> None:
+    """Invalid later entries and artifact bindings cannot partially dispatch a batch."""
+    backend, jobs, _ = recording_backend
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    program = backend.compile(circuit)
+    assert isinstance(program, CompiledProgram)
+    with pytest.raises(CircuitValidationError, match="Parameter bindings do not apply"):
+        backend.run([circuit, program], parameter_values=[{}, {}])
+    with pytest.raises(CircuitValidationError, match="QuantumCircuit or CompiledProgram"):
+        backend.run([program, "invalid"])  # ty: ignore[invalid-argument-type] Exercise invalid user input.
+    assert not jobs
+
+
+def test_job_requires_bit_results(recording_backend: RecordingBackend) -> None:
+    """Native numeric outputs cannot be silently treated as Qiskit bitstrings."""
+    backend, jobs, _ = recording_backend
+    with pytest.raises(ValueError, match="at least one compiled program"):
+        QDMIJob(backend, [], shots=1, memory=False)
+    program = compile_program(
+        "OPENQASM 3; output int[32] result; result = 7;",
+        target=TargetEnvironment.from_device(backend.device),
+    )
+    assert program.result_width is None
+    with pytest.raises(JobError, match="Boolean or classical-bit outputs"):
+        backend.run(program)
+    assert not jobs
+
+
+@pytest.mark.parametrize("sequence", [False, True])
+def test_compile_applies_provider_preprocessing(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch, *, sequence: bool
+) -> None:
+    """Provider input requirements apply before either compilation or submission."""
+    backend, jobs, _ = recording_backend
+
+    def require_measurement(circuit: QuantumCircuit) -> QuantumCircuit:
+        if "measure" not in circuit.count_ops():
+            msg = "At least one measurement is required"
+            raise CircuitValidationError(msg)
+        return circuit
+
+    monkeypatch.setattr(backend, "_preprocess_circuit", require_measurement)
+    circuit = QuantumCircuit(1, 1)
+    with pytest.raises(CircuitValidationError, match="measurement"):
+        backend.compile([circuit] if sequence else circuit)
+    circuit.measure(0, 0)
+    prepared = backend.compile([circuit] if sequence else circuit)
+    assert isinstance(prepared, list if sequence else CompiledProgram)
+    assert not jobs

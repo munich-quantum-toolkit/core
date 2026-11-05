@@ -19,13 +19,13 @@
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
 #include "qdmi/common/Diagnostics.hpp"
 
+#include "NativeCommands.h"
 #include "WorkerProtocol.hpp"
 
 #include "qdmi/constants.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
@@ -39,7 +39,6 @@
 #include <memory>
 #include <optional>
 #include <random>
-#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -147,9 +146,10 @@ struct Execution {
     const bool sampling = numShots_ != 0;
     const bool capture = sampling && captureQIROutput_;
     std::optional<raw_string_ostream> output;
-    auto created = qir::JitSession::create(
+    auto created = ::qir::JitSession::create(
         irBytes, "QDMI job",
-        sampling ? qir::Execution::Sampling : qir::Execution::StateExtraction,
+        sampling ? ::qir::Execution::Sampling
+                 : ::qir::Execution::StateExtraction,
         sampling ? seed_ : std::nullopt,
         capture ? &output.emplace(qirOutput_.emplace()) : nullptr, maxQubits_);
     if (!created) {
@@ -183,7 +183,7 @@ struct Execution {
       }
     }
     if (workers == 1) {
-      std::optional<qir::SampledOutput> terminalOutput;
+      std::optional<::qir::SampledOutput> terminalOutput;
       std::map<std::string, size_t> outcomes;
       const auto emit = [&](std::string_view shot) {
         if (shots_.empty() && jitSession.canSampleTerminal() &&
@@ -218,7 +218,8 @@ struct Execution {
         counts_.emplace(std::string(shot.rbegin(), shot.rend()), count);
       }
     } else {
-      std::mt19937_64 rng(seed_ ? *seed_ : qir::Runtime::generateRandomSeed());
+      std::mt19937_64 rng(seed_ ? *seed_
+                                : ::qir::Runtime::generateRandomSeed());
       std::vector<uint64_t> workerSeeds(workers);
       for (size_t i = 1; i < workers; ++i) {
         workerSeeds[i] = rng();
@@ -230,8 +231,8 @@ struct Execution {
       const bool shareCode = jitSession.canShareCompiledCode();
       const auto run = [&](const size_t i) -> int64_t {
         raw_string_ostream localOutput(records[i]);
-        std::unique_ptr<qir::JitSession> peer;
-        std::unique_ptr<qir::Runtime> workerRuntime;
+        std::unique_ptr<::qir::JitSession> peer;
+        std::unique_ptr<::qir::Runtime> workerRuntime;
         if (i != 0 && shareCode) {
           auto createdRuntime = jitSession.makeWorkerRuntime(workerSeeds[i]);
           if (!createdRuntime) {
@@ -242,8 +243,8 @@ struct Execution {
           }
           workerRuntime = std::move(*createdRuntime);
         } else if (i != 0) {
-          auto createdPeer = qir::JitSession::create(
-              irBytes, "QDMI job", qir::Execution::Sampling, workerSeeds[i],
+          auto createdPeer = ::qir::JitSession::create(
+              irBytes, "QDMI job", ::qir::Execution::Sampling, workerSeeds[i],
               capture ? &localOutput : nullptr, maxQubits_);
           if (!createdPeer) {
             qdmi::diagnostics::error("DDSIM program failed: {0}",
@@ -252,7 +253,7 @@ struct Execution {
           }
           peer = std::move(*createdPeer);
         }
-        qir::Runtime* worker = &runtime;
+        ::qir::Runtime* worker = &runtime;
         if (workerRuntime) {
           worker = workerRuntime.get();
         } else if (peer) {
@@ -371,14 +372,9 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
 }
 } // namespace
 
-int main(int argc, char** argv) {
-  const llvm::InitLLVM init(argc, argv);
+int mqtCoreRunWorker(const char* socketPath) {
   llvm::sys::DisableSystemDialogsOnCrash();
-  if (argc != 2) {
-    return 1;
-  }
-  auto connection =
-      raw_socket_stream::createConnectedUnix(std::span(argv, 2)[1]);
+  auto connection = raw_socket_stream::createConnectedUnix(socketPath);
   if (!connection) {
     llvm::consumeError(connection.takeError());
     return 1;

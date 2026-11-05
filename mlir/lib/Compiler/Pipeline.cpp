@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Compiler/Programs.h"
+#include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/JeffToQCO/JeffToQCO.h"
@@ -17,6 +18,7 @@
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -28,6 +30,8 @@
 #include "mqt/Target/QIR/Export.h"
 
 #include "Diagnostics.h"
+#include "Export.h"
+#include "TerminalReadout.h"
 
 #include "capnp/common.h"
 #include "jeff/Translation/Deserialize.hpp"
@@ -35,11 +39,15 @@
 #include "kj/array.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/EquivalenceClasses.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -49,10 +57,13 @@
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <map>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -93,7 +104,8 @@ LogicalResult QCProgram::normalizeGlobalPhases() {
   return mqt::normalizeGlobalPhases(mod());
 }
 
-FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
+FailureOr<OpenQASMProgram>
+QCProgram::intoOpenQASM3(const TargetEnvironment* environment) && {
   auto storage = std::move(*this).releaseStorage();
   if (failed(runWithPassManager(
           *storage.mod,
@@ -104,7 +116,7 @@ FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
           "failed to prepare QC for OpenQASM export"))) {
     return failure();
   }
-  auto source = qc::translateQCToOpenQASM3(std::move(storage.mod));
+  auto source = qc::translateQCToOpenQASM3(std::move(storage.mod), environment);
   if (failed(source)) {
     return failure();
   }
@@ -128,42 +140,43 @@ static FailureOr<IQMJSONProgram> exportIQMJSON(QIRProgram& qir,
 
 FailureOr<IQMJSONProgram>
 QCProgram::intoIQMJSON(const CompilerTarget& target) && {
-  auto source = std::move(*this);
-  if (failed(source.normalizeGlobalPhases()) ||
-      failed(runWithPassManager(
-          source.module(),
-          [](OpPassManager& pm) { pm.addPass(mqt::createDropGlobalPhases()); },
-          "failed to drop global phases for IQM JSON"))) {
+  const TargetEnvironment environment(
+      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  ProgramFormat::IQMJSON)));
+  auto exported =
+      exportQCProgram(std::move(*this), ProgramFormat::IQMJSON, &environment);
+  if (failed(exported)) {
     return failure();
   }
-  auto qir = std::move(source).intoQIR(QIRProfile::Base);
-  if (failed(qir)) {
-    return failure();
-  }
-  return exportIQMJSON(*qir, target);
+  return std::move(std::get<IQMJSONProgram>(*exported));
 }
 
-FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM2() && {
+FailureOr<OpenQASMProgram>
+QCProgram::intoOpenQASM2(const TargetEnvironment* environment) && {
   auto storage = std::move(*this).releaseStorage();
-  auto source = qc::translateQCToOpenQASM2(std::move(storage.mod));
+  auto source = qc::translateQCToOpenQASM2(std::move(storage.mod), environment);
   if (failed(source)) {
     return failure();
   }
   return OpenQASMProgram(std::move(*source));
 }
 
-FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
+FailureOr<QIRProgram>
+QCProgram::intoQIR(QIRProfile profile,
+                   const TargetEnvironment* environment) && {
   auto storage = std::move(*this).releaseStorage();
   auto moduleOp = *storage.mod;
   if (failed(runWithPassManager(
           moduleOp,
-          [profile](OpPassManager& pm) {
+          [profile, environment](OpPassManager& pm) {
             pm.addPass(mqt::createLowerQuantumModifiers());
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(mqt::createPromoteClassicalMemory());
-              pm.addPass(createQCToQIRAdaptive());
+              pm.addPass(environment ? createQCToQIRAdaptive(*environment)
+                                     : createQCToQIRAdaptive());
             } else {
-              pm.addPass(createQCToQIRBase());
+              pm.addPass(environment ? createQCToQIRBase(*environment)
+                                     : createQCToQIRBase());
             }
           },
           "failed to convert QC to QIR"))) {
@@ -257,14 +270,243 @@ LogicalResult QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
       "failed to decompose multi-controlled gates");
 }
 
+// Join native MOVE and CZ placements through non-placeable resonators.
+static void forEachVirtualCZ(
+    const CompilerTarget& target, ArrayRef<CompilerTarget::SiteId> sites,
+    llvm::function_ref<void(CompilerTarget::SiteId, CompilerTarget::SiteId,
+                            CompilerTarget::SiteId, bool)>
+        visit) {
+  for (const auto& move : target.operations()) {
+    if (move.canonicalName() != "move" ||
+        move.arity() != CompilerTarget::OperationCapability::Arity::fixed(2) ||
+        move.numParameters() != 0) {
+      continue;
+    }
+    for (const auto& tuple : move.siteTuples()) {
+      const auto a = tuple.sites()[0];
+      const auto r = tuple.sites()[1];
+      if (!llvm::is_contained(sites, a) || llvm::is_contained(sites, r)) {
+        continue;
+      }
+      for (const auto& cz : target.operations()) {
+        if (cz.canonicalName() != "cz" ||
+            cz.arity() !=
+                CompilerTarget::OperationCapability::Arity::fixed(2) ||
+            cz.numParameters() != 0) {
+          continue;
+        }
+        for (const auto& pair : cz.siteTuples()) {
+          const bool first = pair.sites()[0] == r;
+          const auto b = pair.sites()[first ? 1 : 0];
+          if (pair.sites()[first ? 0 : 1] == r && a != b &&
+              llvm::is_contained(sites, b)) {
+            visit(a, b, r, first);
+          }
+        }
+      }
+    }
+  }
+}
+
+static Expected<CompilerTarget> placementTarget(const CompilerTarget& target) {
+  auto placeable = target.placeableSites();
+  if (placeable.empty()) {
+    return createStringError(
+        std::errc::invalid_argument,
+        "no site supports both a single-qubit gate and measure");
+  }
+  if (placeable.size() == target.numSites()) {
+    return target;
+  }
+  std::set<CompilerTarget::Coupling> edges;
+  for (const auto& edge : target.couplings()) {
+    if (llvm::is_contained(placeable, edge.first) &&
+        llvm::is_contained(placeable, edge.second)) {
+      edges.insert(edge);
+    }
+  }
+  std::set<CompilerTarget::Coupling> virtualPairs;
+  forEachVirtualCZ(target, placeable, [&](auto a, auto b, auto, bool) {
+    virtualPairs.emplace(a, b);
+    virtualPairs.emplace(b, a);
+    edges.emplace(a, b);
+  });
+  if (target.connectivityKind() !=
+      CompilerTarget::Connectivity::Kind::AllToAll) {
+    llvm::EquivalenceClasses<CompilerTarget::SiteId> components;
+    for (const auto site : placeable) {
+      components.insert(site);
+    }
+    for (const auto& [a, b] : edges) {
+      components.unionSets(a, b);
+    }
+    std::set<CompilerTarget::SiteId> visited;
+    auto largest = placeable.front();
+    size_t largestSize = 0;
+    for (const auto site : placeable) {
+      if (visited.insert(components.getLeaderValue(site)).second) {
+        const auto size = llvm::range_size(components.members(site));
+        if (size > largestSize) {
+          largest = site;
+          largestSize = size;
+        }
+      }
+    }
+    std::erase_if(placeable, [&](auto site) {
+      return !components.isEquivalent(largest, site);
+    });
+    std::erase_if(edges, [&](const auto& edge) {
+      return !llvm::is_contained(placeable, edge.first) ||
+             !llvm::is_contained(placeable, edge.second);
+    });
+  }
+  std::vector<CompilerTarget::Site> sites;
+  for (const auto& site : target.sites()) {
+    if (llvm::is_contained(placeable, site.id())) {
+      sites.push_back(site);
+    }
+  }
+  using Capability = CompilerTarget::OperationCapability;
+  std::vector<Capability> operations;
+  for (const auto& op : target.operations()) {
+    if (op.arity().value() > placeable.size()) {
+      continue;
+    }
+    std::vector<CompilerTarget::SiteTuple> tuples;
+    for (const auto& tuple : op.siteTuples()) {
+      if (llvm::all_of(tuple.sites(), [&](auto site) {
+            return llvm::is_contained(placeable, site);
+          })) {
+        tuples.push_back(tuple);
+      }
+    }
+    if (!op.siteTuples().empty() && tuples.empty()) {
+      continue;
+    }
+    operations.push_back(llvm::cantFail(Capability::create(
+        op.name().str(), op.arity(), op.numParameters(), std::move(tuples),
+        op.duration(), op.fidelity(),
+        {op.fixedParameters().begin(), op.fixedParameters().end()},
+        op.canonicalName().str(),
+        {op.parameterBounds().begin(), op.parameterBounds().end()})));
+  }
+  std::vector<CompilerTarget::SiteTuple> virtualCZs;
+  for (const auto& [a, b] : virtualPairs) {
+    if (llvm::is_contained(placeable, a) && llvm::is_contained(placeable, b)) {
+      virtualCZs.push_back(
+          llvm::cantFail(CompilerTarget::SiteTuple::create({a, b})));
+    }
+  }
+  if (!virtualCZs.empty()) {
+    operations.push_back(
+        llvm::cantFail(Capability::create("cz", 2, 0, std::move(virtualCZs))));
+  }
+  const std::vector<CompilerTarget::Coupling> couplings(edges.begin(),
+                                                        edges.end());
+  const auto connectivity =
+      target.connectivityKind() == CompilerTarget::Connectivity::Kind::AllToAll
+          ? CompilerTarget::Connectivity::allToAll()
+          : CompilerTarget::Connectivity::fromCouplings(couplings);
+  const auto native =
+      CompilerTarget::NativeOperations::fromOperations(operations);
+  return target.name() ? CompilerTarget::create(target.name()->str(),
+                                                std::move(sites), connectivity,
+                                                native, target.durationUnit())
+                       : CompilerTarget::create(std::move(sites), connectivity,
+                                                native, target.durationUnit());
+}
+
+static void insertResonatorMoves(ModuleOp module,
+                                 const CompilerTarget& target) {
+  if (llvm::none_of(target.operations(), [](const auto& operation) {
+        return operation.canonicalName() == "move";
+      })) {
+    return;
+  }
+  using SiteId = CompilerTarget::SiteId;
+  const auto placeable = target.placeableSites();
+  std::map<std::pair<SiteId, SiteId>, std::pair<SiteId, bool>> routes;
+  forEachVirtualCZ(target, placeable, [&](auto a, auto b, auto r, bool first) {
+    routes.try_emplace({a, b}, r, first);
+  });
+  if (routes.empty()) {
+    return;
+  }
+  func::FuncOp move;
+  OpBuilder builder(module.getContext());
+  module.walk([&](qc::CtrlOp ctrl) {
+    if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1 ||
+        ctrl.getNumBodyUnitaries() != 1 ||
+        !isa<qc::ZOp>(ctrl.getBodyUnitary(0).getOperation())) {
+      return;
+    }
+    auto a = ctrl.getControl(0).getDefiningOp<qc::StaticOp>();
+    auto b = ctrl.getTarget(0).getDefiningOp<qc::StaticOp>();
+    if (!a || !b ||
+        target.supports(CompilerTarget::GateKind::CZ,
+                        std::array<int64_t, 2>{
+                            static_cast<int64_t>(a.getIndex()),
+                            static_cast<int64_t>(b.getIndex()),
+                        })) {
+      return;
+    }
+    auto route = routes.find({a.getIndex(), b.getIndex()});
+    if (route == routes.end()) {
+      route = routes.find({b.getIndex(), a.getIndex()});
+    }
+    if (route == routes.end()) {
+      return;
+    }
+    const auto [moving, stationary] = route->first;
+    const auto [resonator, first] = route->second;
+    if (!move) {
+      SmallVector<Type, 2> types(2, qc::QubitType::get(module.getContext()));
+      move = func::FuncOp::create(module.getLoc(), "move",
+                                  builder.getFunctionType(types, {}));
+      move.setPrivate();
+      move->setAttr(mqt::MQTDialect::SourceNameAttrHelper::getNameStr(),
+                    builder.getStringAttr("move"));
+      SymbolTable(module).insert(move);
+    }
+    builder.setInsertionPoint(ctrl);
+    Value r = qc::StaticOp::create(builder, ctrl.getLoc(),
+                                   qc::QubitType::get(module.getContext()),
+                                   resonator);
+    Value m = a.getIndex() == moving ? a.getResult() : b.getResult();
+    Value s = a.getIndex() == stationary ? a.getResult() : b.getResult();
+    func::CallOp::create(builder, ctrl.getLoc(), move, ValueRange{m, r});
+    qc::CtrlOp::create(builder, ctrl.getLoc(), ValueRange{first ? r : s},
+                       ValueRange{first ? s : r}, [&](ValueRange values) {
+                         qc::ZOp::create(builder, ctrl.getLoc(),
+                                         values.front());
+                       });
+    func::CallOp::create(builder, ctrl.getLoc(), move, ValueRange{m, r});
+    ctrl.erase();
+  });
+  scheduleTerminalReadout(module);
+}
+
 LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
                                            const CompilationOptions& options) {
-  return runQCOTransformPasses(
-      mod(),
-      [&environment, &options](OpPassManager& pm) {
-        populateTargetCompilationPipeline(pm, environment, options.mapping);
-      },
-      "failed to compile the QCO program for the target", options, true);
+  auto routing = inspect().numQubits == 0
+                     ? Expected<CompilerTarget>(environment.target())
+                     : placementTarget(environment.target());
+  if (!routing) {
+    return mod().emitError() << llvm::toString(routing.takeError());
+  }
+  const TargetEnvironment compilationEnvironment(
+      *routing, environment.payloadSpecification());
+  if (failed(runQCOTransformPasses(
+          mod(),
+          [&](OpPassManager& pm) {
+            populateTargetCompilationPipeline(pm, compilationEnvironment,
+                                              options.mapping);
+          },
+          "failed to compile the QCO program for the target", options, true))) {
+    return failure();
+  }
+  attachTargetEnvironment(mod(), environment);
+  return success();
 }
 
 LogicalResult
@@ -449,6 +691,79 @@ LogicalResult QIRProgram::writeBitcode(const std::filesystem::path& path) && {
 // Pipeline
 //===----------------------------------------------------------------------===//
 
+FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
+                                           const TargetEnvironment* environment,
+                                           const CompilationOptions& options) {
+  if (output == ProgramFormat::QC) {
+    // Keep verified independent gates ahead of readout before native frontends
+    // replace them with opaque calls. Preserve resources and routing metadata.
+    scheduleTerminalReadout(qc.module());
+    return CompilerProgram(std::move(qc));
+  }
+  if (output == ProgramFormat::OpenQASM3 ||
+      output == ProgramFormat::OpenQASM2) {
+    if (failed(runWithPassManager(qc.module(), populateQCExportPipeline,
+                                  "failed to clean up compiled QC", options))) {
+      return failure();
+    }
+    if (output == ProgramFormat::OpenQASM2 &&
+        failed(runWithPassManager(
+            qc.module(),
+            [&](OpPassManager& pm) {
+              const auto payload =
+                  llvm::cantFail(PayloadSpecification::forProgramFormat(
+                      ProgramFormat::OpenQASM2));
+              populateOpenQASM2PreparationPipeline(
+                  pm, payload.materialize(*qc.module().getContext()));
+            },
+            "failed to lower compiled QC for OpenQASM 2", options))) {
+      return failure();
+    }
+    auto source = output == ProgramFormat::OpenQASM2
+                      ? std::move(qc).intoOpenQASM2(environment)
+                      : std::move(qc).intoOpenQASM3(environment);
+    if (failed(source)) {
+      return failure();
+    }
+    return CompilerProgram(std::move(*source));
+  }
+  if (failed(qc.cleanup())) {
+    return failure();
+  }
+
+  const auto profile = output == ProgramFormat::QIRAdaptive
+                           ? QIRProfile::Adaptive
+                           : QIRProfile::Base;
+  if (failed(runWithPassManager(
+          qc.module(),
+          [&](OpPassManager& pm) {
+            const auto payload =
+                llvm::cantFail(PayloadSpecification::forProgramFormat(
+                    profile == QIRProfile::Adaptive ? ProgramFormat::QIRAdaptive
+                                                    : ProgramFormat::QIRBase));
+            populateQIRPreparationPipeline(
+                pm, payload.materialize(*qc.module().getContext()));
+            if (output == ProgramFormat::IQMJSON) {
+              pm.addPass(mqt::createDropGlobalPhases());
+            }
+          },
+          "failed to prepare compiled QC for QIR", options))) {
+    return failure();
+  }
+  auto qir = std::move(qc).intoQIR(profile, environment);
+  if (failed(qir) || failed(qir->cleanup())) {
+    return failure();
+  }
+  if (output == ProgramFormat::IQMJSON) {
+    auto source = exportIQMJSON(*qir, environment->target());
+    if (failed(source)) {
+      return failure();
+    }
+    return CompilerProgram(std::move(*source));
+  }
+  return CompilerProgram(std::move(*qir));
+}
+
 [[nodiscard]] static FailureOr<CompilerProgram>
 runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
                        const TargetEnvironment* environment,
@@ -549,69 +864,10 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
   if (failed(qc)) {
     return failure();
   }
-  if (output == ProgramFormat::QC) {
-    // Export cleanup can change resources and invalidate routing metadata.
-    return CompilerProgram(std::move(*qc));
+  if (environment != nullptr) {
+    insertResonatorMoves(qc->module(), environment->target());
   }
-  if (output == ProgramFormat::OpenQASM3 ||
-      output == ProgramFormat::OpenQASM2) {
-    if (failed(runWithPassManager(qc->module(), populateQCExportPipeline,
-                                  "failed to clean up compiled QC"))) {
-      return failure();
-    }
-    if (output == ProgramFormat::OpenQASM2 &&
-        failed(runWithPassManager(
-            qc->module(),
-            [&](OpPassManager& pm) {
-              const auto payload =
-                  llvm::cantFail(PayloadSpecification::forProgramFormat(
-                      ProgramFormat::OpenQASM2));
-              populateOpenQASM2PreparationPipeline(
-                  pm, payload.materialize(*qc->module().getContext()));
-            },
-            "failed to lower compiled QC for OpenQASM 2", options))) {
-      return failure();
-    }
-    auto source = output == ProgramFormat::OpenQASM2
-                      ? std::move(*qc).intoOpenQASM2()
-                      : std::move(*qc).intoOpenQASM3();
-    if (failed(source)) {
-      return failure();
-    }
-    return CompilerProgram(std::move(*source));
-  }
-  if (failed(qc->cleanup())) {
-    return failure();
-  }
-
-  const auto profile = output == ProgramFormat::QIRAdaptive
-                           ? QIRProfile::Adaptive
-                           : QIRProfile::Base;
-  if (failed(runWithPassManager(
-          qc->module(),
-          [&](OpPassManager& pm) {
-            const auto payload =
-                llvm::cantFail(PayloadSpecification::forProgramFormat(
-                    profile == QIRProfile::Adaptive ? ProgramFormat::QIRAdaptive
-                                                    : ProgramFormat::QIRBase));
-            populateQIRPreparationPipeline(
-                pm, payload.materialize(*qc->module().getContext()));
-          },
-          "failed to prepare compiled QC for QIR", options))) {
-    return failure();
-  }
-  auto qir = std::move(*qc).intoQIR(profile);
-  if (failed(qir) || failed(qir->cleanup())) {
-    return failure();
-  }
-  if (output == ProgramFormat::IQMJSON) {
-    auto source = exportIQMJSON(*qir, environment->target());
-    if (failed(source)) {
-      return failure();
-    }
-    return CompilerProgram(std::move(*source));
-  }
-  return CompilerProgram(std::move(*qir));
+  return exportQCProgram(std::move(*qc), output, environment, options);
 }
 
 static Expected<CompilerProgram>

@@ -14,8 +14,11 @@ add_executable(
   test_compiler_target.cpp
   test_iqm_json_pipeline.cpp
   test_parameter_binding.cpp
-  test_program_inspection.cpp)
-set_target_properties(mqt-core-mlir-unittests-compiler PROPERTIES UNITY_BUILD OFF)
+  test_program_inspection.cpp
+  test_resonator_routing.cpp)
+set_target_properties(
+  mqt-core-mlir-unittests-compiler
+  PROPERTIES UNITY_BUILD OFF RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/runtime")
 target_include_directories(
   mqt-core-mlir-unittests-compiler
   PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver)
@@ -56,4 +59,4 @@ gtest_discover_tests(
   PROPERTIES LABELS mqt-mlir-unittests
   DISCOVERY_TIMEOUT 60)
 
-add_subdirectory(mqt-cc)
+add_subdirectory(compile)
