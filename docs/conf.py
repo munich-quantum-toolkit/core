@@ -179,6 +179,7 @@ nitpick_ignore_regex = [
     ("py:(class|obj)", r"_Result"),
     # Compiler signature aliases are private stub types, not runtime classes.
     ("py:class", r"_(CompilerInput|CompilerInputT|CompilerTarget|CompilerOutput|CompileOptions|ProgramT|SourceT)"),
+    ("py:(class|obj)", r"_TargetResult(?:T_co)?"),
     ("py:class", r"qiskit\.result\.models\.ExperimentResult"),
     (
         "py:class",
