@@ -64,6 +64,7 @@
 #include "nanobind/stl/variant.h"
 #include "nanobind/stl/vector.h"
 
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
@@ -480,6 +481,22 @@ struct PythonInputAdapter<Function> {
 };
 } // namespace
 
+/// Retain the input dialect as the default compiler output family.
+[[nodiscard]] static ImportedProgram
+importMLIRProgram(std::variant<mlir::QCProgram, mlir::QCOProgram> program) {
+  return std::visit(
+      [](auto&& value) -> ImportedProgram {
+        return {
+            .program = std::forward<decltype(value)>(value),
+            .format = std::is_same_v<std::remove_cvref_t<decltype(value)>,
+                                     mlir::QCOProgram>
+                          ? OutputFormat::QCOOptimized
+                          : OutputFormat::QC,
+        };
+      },
+      std::move(program));
+}
+
 /// Construct a frontend program from a file path.
 [[nodiscard]] static ImportedProgram
 programFromPath(const std::filesystem::path& path) {
@@ -521,10 +538,7 @@ programFromPath(const std::filesystem::path& path) {
     };
   }
   if (extension == ".mlir") {
-    return {
-        .program = unwrap(mlir::QCProgram::fromMLIRFile(path)),
-        .format = OutputFormat::QC,
-    };
+    return importMLIRProgram(unwrap(mlir::loadMLIRProgram(path)));
   }
   if (extension == ".qasm") {
     return {
@@ -550,10 +564,7 @@ programFromString(const std::string_view input) {
           .format = OutputFormat::OpenQASM3,
       };
     }
-    return {
-        .program = unwrap(mlir::QCProgram::fromMLIRString(input)),
-        .format = OutputFormat::QC,
-    };
+    return importMLIRProgram(unwrap(mlir::parseMLIRProgram(input)));
   }
   return programFromPath(std::filesystem::path(input));
 }
@@ -787,10 +798,22 @@ payloadForOutput(OutputFormat output) {
   }();
   if (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
-    auto result =
-        outputEnvironment
-            ? bindings::qiskit::exportCircuit(std::move(qc), *outputEnvironment)
-            : bindings::qiskit::exportCircuit(std::move(qc), nullptr);
+    auto result = [&] {
+      if (outputEnvironment) {
+        return bindings::qiskit::exportCircuit(std::move(qc),
+                                               *outputEnvironment);
+      }
+      if (selected == OutputFormat::QPY &&
+          qc.module()->hasAttr(mlir::mqt::TargetEnvAttr::name)) {
+        const mlir::TargetEnvironmentAnalysis environment(qc.module());
+        if (!environment) {
+          throw nb::value_error(environment.error().str().c_str());
+        }
+        return bindings::qiskit::exportCircuit(std::move(qc),
+                                               environment.environment());
+      }
+      return bindings::qiskit::exportCircuit(std::move(qc), nullptr);
+    }();
     if (input.format == OutputFormat::Qiskit) {
       result.attr("name") = program.attr("name");
       result.attr("metadata") = nb::module_::import_("copy").attr("deepcopy")(
@@ -1247,6 +1270,22 @@ exportQPY(mlir::QCProgram program, const mlir::TargetEnvironment& environment) {
   }
 }
 
+template <class Model, class Attribute>
+[[nodiscard]] static Model parseAttributeModel(const std::string& source,
+                                               const char* message) {
+  auto context = mlir::createCompilerContext();
+  auto attribute = withDiagnostics(
+      context.get(), message, [&]() -> mlir::FailureOr<Attribute> {
+        auto parsed = mlir::dyn_cast_if_present<Attribute>(
+            mlir::parseAttribute(source, context.get()));
+        if (!parsed) {
+          return mlir::failure();
+        }
+        return parsed;
+      });
+  return unwrap(Model::create(attribute));
+}
+
 // NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
 void registerMLIR(nb::module_& m) {
 
@@ -1373,6 +1412,15 @@ void registerMLIR(nb::module_& m) {
           },
           "program_format"_a,
           "The standard contract for a QDMI program format.")
+      .def_static(
+          "from_mlir_str",
+          [](const std::string& source) {
+            return parseAttributeModel<mlir::PayloadSpecification,
+                                       mlir::mqt::PayloadSpecAttr>(
+                source, "Expected a valid #mqt.payload_spec attribute");
+          },
+          "source"_a,
+          "Parse and validate an MLIR payload specification attribute.")
       .def_prop_ro(
           "format",
           [](const mlir::PayloadSpecification& environment) {
@@ -1815,6 +1863,15 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
           },
           "Serialize the target as a typed MLIR attribute.")
       .def_static(
+          "from_mlir_str",
+          [](const std::string& source) {
+            return parseAttributeModel<mlir::CompilerTarget,
+                                       mlir::mqt::CompilationTargetAttr>(
+                source, "Expected a valid #mqt.compilation_target attribute");
+          },
+          "source"_a,
+          "Parse and validate an MLIR compilation target attribute.")
+      .def_static(
           "from_device",
           [](const qdmi::Device& device) {
             auto target = [&device] {
@@ -1992,6 +2049,13 @@ Returns:
 Programs own their MLIR module. Conversions can consume a program; use
 ``is_valid`` to check whether it can still be used.)pb");
   program
+      .def_static("from_mlir_str", bindResult(&mlir::parseMLIRProgram),
+                  "source"_a,
+                  "Parse QC or QCO MLIR, selecting its program type from the "
+                  "operations.")
+      .def_static(
+          "from_mlir_file", bindResult(&mlir::loadMLIRProgram), "path"_a,
+          "Load QC or QCO MLIR, including bytecode; '-' reads standard input.")
       .def_prop_ro("is_valid", &mlir::Program::isValid,
                    "Whether this program still owns its module.")
       .def(
@@ -2896,30 +2960,6 @@ and error contracts.)pb");
             return self.environment().payloadSpecification();
           },
           "The payload format and capabilities used for compilation.");
-
-  m.def(
-      "_export_qpy",
-      [](mlir::QCOProgram& program) {
-        auto source = copiedOrConsumed(program, false);
-        const auto context = source.context();
-        auto qc = withDiagnostics<nb::exception_type::runtime_error>(
-            context.get(), "QPY export failed",
-            [&] { return std::move(source).intoQC(); });
-        if (qc.module()->hasAttr(mlir::mqt::TargetEnvAttr::name)) {
-          const mlir::TargetEnvironmentAnalysis environment(qc.module());
-          if (!environment) {
-            throw nb::value_error(environment.error().str().c_str());
-          }
-          const auto payload =
-              unwrap(exportQPY(std::move(qc), environment.environment()));
-          return nb::bytes(payload.data(), payload.size());
-        }
-        return nb::cast<nb::bytes>(
-            writeQPY(bindings::qiskit::exportCircuit(std::move(qc), nullptr)));
-      },
-      "program"_a,
-      "Serialize compiled QCO as QPY, consuming it and retaining its target "
-      "environment.");
 
   m.def(
       "compile_program", PythonInputAdapter<&compilePythonProgram>{inputTypes},

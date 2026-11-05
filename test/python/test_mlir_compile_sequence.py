@@ -62,7 +62,7 @@ def test_sequence_infers_each_source_format(tmp_path: Path, *, as_paths: bool) -
         outputs = compile_program(paths, target=target)
     else:
         outputs = compile_program(sources, target=target)
-    assert_type(outputs, list[QCProgram | JeffProgram | OpenQASMProgram])
+    assert_type(outputs, list[QCProgram | QCOProgram | JeffProgram | OpenQASMProgram])
     assert isinstance(outputs[0], OpenQASMProgram)
     assert isinstance(outputs[1], QCProgram)
     assert [sample(program, shots=1) for program in outputs] == [{"0": 1}, {"1": 1}]

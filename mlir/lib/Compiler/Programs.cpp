@@ -64,6 +64,7 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <variant>
 
 using llvm::Error;
 using llvm::Expected;
@@ -161,6 +162,42 @@ template <class ProgramType, class Parse>
     return diagnostics.takeError();
   }
   return std::move(*program);
+}
+
+template <class Parse>
+[[nodiscard]] static Expected<std::variant<QCProgram, QCOProgram>>
+parseQuantumProgram(Parse&& parse) {
+  auto context = createCompilerContext();
+  CompilerDiagnostics diagnostics(context.get());
+  auto mod = std::forward<Parse>(parse)(context.get());
+  if (failed(mod)) {
+    return diagnostics.takeError();
+  }
+  if (moduleUsesDialect(**mod, "qco") || moduleUsesDialect(**mod, "qtensor")) {
+    auto program = QCOProgram::fromModule(context, std::move(*mod));
+    if (failed(program)) {
+      return diagnostics.takeError();
+    }
+    return std::move(*program);
+  }
+  auto program = QCProgram::fromModule(context, std::move(*mod));
+  if (failed(program)) {
+    return diagnostics.takeError();
+  }
+  return std::move(*program);
+}
+
+Expected<std::variant<QCProgram, QCOProgram>>
+parseMLIRProgram(const std::string_view source) {
+  return parseQuantumProgram([source](MLIRContext* context) {
+    return parseMLIRString(context, source);
+  });
+}
+
+Expected<std::variant<QCProgram, QCOProgram>>
+loadMLIRProgram(const std::filesystem::path& path) {
+  return parseQuantumProgram(
+      [&path](MLIRContext* context) { return parseMLIRFile(context, path); });
 }
 
 //===----------------------------------------------------------------------===//

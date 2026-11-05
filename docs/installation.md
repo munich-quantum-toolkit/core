@@ -203,6 +203,14 @@ QPY output preserves target gate aliases, physical qubit addresses, and layout
 metadata. QPY submission does not require Qiskit on the client when the
 destination device accepts QPY directly.
 
+QPY compilation runs through the Python compiler API. It accepts OpenQASM,
+QC/QCO MLIR, and jeff inputs, including `--input-format` overrides and standard
+input for OpenQASM and MLIR. Target and device selection, custom QCO pipelines,
+decomposition, seeds, and mapping controls are supported. Native-only MLIR
+debugging options, such as `--mlir-print-ir-after-all` and crash-reproducer
+settings, are rejected for QPY output. Reoptimizing previously mapped MLIR
+discards its existing layout metadata.
+
 ### Building from source
 
 Build from source to tune Core for the machine that will run it:

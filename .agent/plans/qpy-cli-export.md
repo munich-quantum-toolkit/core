@@ -1,19 +1,29 @@
 # Preserve target information in CLI QPY export
 
-Status: complete.
+Status: complete; validated locally.
 
 ## Scope and decisions
 
-The CLI exports compiled QCO through a private binding that reuses the Python
-compiler and QDMI QPY serializer. It recovers the canonical `mqt.target_env`
-with `TargetEnvironmentAnalysis`, retaining native gate aliases and layouts for
-sparse device sites. The binding consumes its input, including on failure.
+The CLI compiles directly with `compile_program(output=OutputFormat.QPY)`. The
+shared Python compiler owns optimization, target compilation, and QPY
+serialization. No subprocess or intermediate QCO file is needed. Qiskit stays
+optional, and serialization finishes before the destination is opened.
 
-The native compiler remains the owner of compilation options. Its temporary QCO
-output already carries the complete environment, so no new transport or public
-API is needed. Qiskit stays optional. Serialization remains buffered before
-opening the destination. Version, help, and device-list requests pass through to
-the native command.
+The QPY argument adapter retains input formats, standard input for OpenQASM and
+MLIR, explicit targets and payloads, QDMI discovery/configuration, custom
+pipelines, decomposition, seeds, and mapping controls. Native-only MLIR
+debugging options are rejected. Version, help, and device-list requests still
+use the native command.
+
+Generic MLIR import selects QC or QCO from parsed operations and uses the typed
+program validators. `Program.from_mlir_file` and the compiler convenience API
+share that importer. Target and payload attribute factories use MLIR parsing and
+the existing model validators; the CLI does not parse attribute syntax.
+
+QPY export also reads an embedded target environment when no explicit target is
+supplied. Reoptimizing mapped MLIR still removes its layout, as the native
+compiler did previously. Export retains the target's aliases, address width, and
+physical circuit action without reattaching stale layout metadata.
 
 QPY reconstructs renamed standard-gate instances with their standard names.
 Custom aliases therefore use a `Gate` with an explicit definition containing the
@@ -28,13 +38,30 @@ Built merged main at `ed8fe3a6f`, including #2925, and reproduced loss of target
 layout and failures for `--emit=qpy` combined with version or hidden help. The
 custom-alias tests also failed before the exporter fix.
 
-The final build passes all 637 tests in `test_commands.py`, `test_cli.py`,
-`test_mlir_qiskit_translation.py`, and `test_mlir_qiskit_target.py` with both
-Qiskit 2.5.0 and 2.6.1. These cover sparse addresses, custom and standard
-aliases, fixed and symbolic parameters, controlled gates, exact matrices, QPY
-17, binary stdout, and preservation of existing files on failure.
+The direct implementation passes 1,041 Python tests with each of Qiskit 2.5.0
+and 2.6.1, and five native program-import tests. Stubs were regenerated.
+Repository lint passes. Full-file C++ lint checked the changed implementation,
+binding, adapter, and test files; the binding file was rechecked after
+correcting its sole finding. Tests use local devices only.
 
-Regenerated stubs with `uvx nox -s stubs --force-python 3.14`. Repository lint
-and full-file C++ lint pass, including `QiskitAdapter.h` and
-`register_mlir.cpp`. Validation used macOS ARM64 and LLVM/MLIR 23.1.0. No remote
-hardware execution was needed.
+Three QCO source/file import cases failed before the generic importer fix, while
+the corresponding QC cases passed. Four embedded-target export cases failed
+before the shared exporter recovered target information. Tests cover input
+formats, standard input, custom pipelines, decomposition, numeric and boolean
+option spelling, target/device/configuration selection, unsupported debug
+options, and output preservation on failure.
+
+## Timing evidence
+
+The public command compiled the existing 16- and 64-qubit QFT inputs for the
+same all-to-all target with a custom single-qubit gate alias. Three runs per
+input on macOS ARM64 with Python 3.14.9 and Qiskit 2.6.1 gave median times of
+1.894 s and 2.187 s. Earlier subprocess-path medians were 1.970 s and 2.268 s.
+These historical measurements were not interleaved and do not establish a
+statistical speedup. Imports still dominate; QPY serialization took about 5 ms
+and 50 ms in the profiles. No memory claim was measured.
+
+Both outputs match the previous operation names, parameters, and physical
+operands, retain layout, and have the same sizes: 140,537 and 1,218,206 bytes.
+The retained change removes a subprocess and intermediate IR round trip; no
+broader performance rewrite is justified by these measurements.

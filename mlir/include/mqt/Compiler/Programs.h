@@ -620,6 +620,14 @@ private:
 using CompilerInput =
     std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram>;
 
+/// Parse QC or QCO MLIR, selecting the program type from its operations.
+[[nodiscard]] llvm::Expected<std::variant<QCProgram, QCOProgram>>
+parseMLIRProgram(std::string_view source);
+
+/// Load QC or QCO MLIR, including bytecode; `-` reads standard input.
+[[nodiscard]] llvm::Expected<std::variant<QCProgram, QCOProgram>>
+loadMLIRProgram(const std::filesystem::path& path);
+
 /// The program variants returned by the default compiler pipeline.
 using CompilerProgram =
     std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram,

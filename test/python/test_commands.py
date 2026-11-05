@@ -20,9 +20,11 @@ from unittest.mock import Mock
 
 import pytest
 from qiskit import qpy
+from qiskit.qpy.exceptions import QpyError
 from qiskit.quantum_info import Statevector
 
-from mqt.core.mlir import CompilerTarget
+from mqt.core import mlir
+from mqt.core.mlir import CompilerTarget, OutputFormat, QCProgram, compile_program
 
 
 @pytest.mark.parametrize("platform", ["linux", "win32"])
@@ -51,7 +53,7 @@ def test_native_command(monkeypatch: pytest.MonkeyPatch, platform: str) -> None:
 def test_qpy_export(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsysbinary: pytest.CaptureFixture[bytes], destination: str
 ) -> None:
-    """Run the real compiler and independently decode QPY or report an output failure."""
+    """Compile in-process and independently decode QPY or report an output failure."""
     source = tmp_path / "input.qasm"
     source.write_text("OPENQASM 3; qubit q; x q;")
     output = tmp_path / "output.qpy"
@@ -61,6 +63,7 @@ def test_qpy_export(
     elif destination == "missing-directory":
         arguments[-1] = str(tmp_path / "absent" / "output.qpy")
     monkeypatch.setattr(sys, "argv", arguments)
+    monkeypatch.setattr(subprocess, "run", Mock(side_effect=AssertionError("QPY must compile in-process")))
     with pytest.raises(SystemExit) as error:
         distribution("mqt-core").entry_points["mqt-core"].load()()
     if destination == "missing-directory":
@@ -79,7 +82,7 @@ def test_qpy_export_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fai
     source = tmp_path / "input.qasm"
     source.write_text("not OpenQASM" if failure == "compiler" else "OPENQASM 3; qubit q; x q;")
     if failure == "serializer":
-        monkeypatch.setattr(qpy, "dump", Mock(side_effect=ValueError("Cannot serialize circuit")))
+        monkeypatch.setattr(qpy, "dump", Mock(side_effect=QpyError("Cannot serialize circuit")))
     output = tmp_path / "output.qpy"
     output.write_bytes(b"existing")
     monkeypatch.setattr(sys, "argv", ["mqt-core", "compile", str(source), "-o", str(output)])
@@ -89,8 +92,141 @@ def test_qpy_export_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fai
     assert output.read_bytes() == b"existing"
 
 
+@pytest.mark.parametrize("input_format", ["openqasm", "qc", "qco", "jeff"])
+def test_qpy_input_formats(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, input_format: str) -> None:
+    """Load each supported frontend, including an explicit extension override."""
+    source = (
+        tmp_path / {"openqasm": "circuit.txt", "qc": "qc.mlir", "qco": "qco.mlir", "jeff": "circuit.jeff"}[input_format]
+    )
+    qasm = "OPENQASM 3; qubit q; x q;"
+    if input_format == "jeff":
+        compile_program(qasm, output=OutputFormat.JEFF).write(source)
+    elif input_format == "openqasm":
+        source.write_text(qasm)
+    else:
+        program = QCProgram.from_openqasm_str(qasm)
+        source.write_text(program.to_qco().ir if input_format == "qco" else program.ir)
+    output = tmp_path / "output.qpy"
+    arguments = ["mqt-core", "compile", str(source), "-o", str(output)]
+    if input_format == "openqasm":
+        arguments.append("--input-format=openqasm")
+    monkeypatch.setattr(sys, "argv", arguments)
+    with pytest.raises(SystemExit) as error:
+        distribution("mqt-core").entry_points["mqt-core"].load()()
+    assert error.value.code == 0
+    assert Statevector(qpy.load(BytesIO(output.read_bytes()))[0]).probabilities_dict() == {"1": 1.0}
+
+
+@pytest.mark.parametrize(
+    ("arguments", "width"),
+    [
+        (["--decompose-multi-controlled"], 2),
+        (["--decompose-multi-controlled=True"], 2),
+        (["--decompose-multi-controlled="], 2),
+        (["--decompose-multi-controlled=false"], 3),
+        (["--decompose-multi-controlled", "--decompose-multi-controlled-min-qubits=4"], 3),
+    ],
+)
+def test_qpy_decomposition(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, arguments: list[str], width: int) -> None:
+    """Honor the decomposition threshold while retaining the circuit's action."""
+    source = tmp_path / "input.qasm"
+    source.write_text("OPENQASM 3; qubit[3] q; x q[0]; x q[1]; ctrl(2) @ x q[0],q[1],q[2];")
+    output = tmp_path / "output.qpy"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "mqt-core",
+            "compile",
+            *arguments,
+            str(source),
+            "-o",
+            str(output),
+        ],
+    )
+    with pytest.raises(SystemExit) as error:
+        distribution("mqt-core").entry_points["mqt-core"].load()()
+    assert error.value.code == 0
+    circuit = qpy.load(BytesIO(output.read_bytes()))[0]
+    assert max(item.operation.num_qubits for item in circuit.data) == width
+    assert Statevector(circuit).data == pytest.approx(Statevector.from_label("111").data, abs=1e-14)
+
+
+@pytest.mark.parametrize(
+    ("text", "value"),
+    [
+        ("42", 42),
+        ("0x2a", 42),
+        ("0o52", 42),
+        ("052", 42),
+        ("0b101010", 42),
+        (str(2**64 - 1), 2**64 - 1),
+        ("08", None),
+        ("+1", None),
+        ("-1", None),
+        ("1_0", None),
+        (str(2**64), None),
+    ],
+)
+def test_qpy_unsigned_options(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, text: str, value: int | None) -> None:
+    """Retain LLVM's numeric spelling and range for seeds and mapping controls."""
+    source = tmp_path / "input.qasm"
+    source.write_text("OPENQASM 3; qubit q; x q;")
+    compile_mock = Mock(return_value=b"qpy")
+    monkeypatch.setattr(mlir, "compile_program", compile_mock)
+    monkeypatch.setattr(
+        sys, "argv", ["mqt-core", "compile", str(source), f"--seed={text}", "-o", str(tmp_path / "output.qpy")]
+    )
+    with pytest.raises(SystemExit) as error:
+        distribution("mqt-core").entry_points["mqt-core"].load()()
+    if value is None:
+        assert error.value.code != 0
+        compile_mock.assert_not_called()
+    else:
+        assert error.value.code == 0
+        assert compile_mock.call_args.kwargs["options"].seed == value
+
+
+def test_qpy_custom_pipeline(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """Run an explicitly requested pipeline through its CLI alias."""
+    source = tmp_path / "input.qasm"
+    source.write_text("OPENQASM 3; qubit q; gphase(0.37); x q;")
+    output = tmp_path / "output.qpy"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "mqt-core",
+            "compile",
+            str(source),
+            "-o",
+            str(output),
+            "--passes=builtin.module(drop-global-phases)",
+        ],
+    )
+    with pytest.raises(SystemExit) as error:
+        distribution("mqt-core").entry_points["mqt-core"].load()()
+    assert error.value.code == 0
+    assert Statevector(qpy.load(BytesIO(output.read_bytes()))[0]).data == pytest.approx([0, 1], abs=1e-14)
+
+
+def test_qpy_rejects_native_debug_option(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Reject unsupported native debugging options before touching output."""
+    output = tmp_path / "output.qpy"
+    output.write_bytes(b"existing")
+    monkeypatch.setattr(sys, "argv", ["mqt-core", "compile", "--mlir-print-ir-after-all", "-o", str(output)])
+    with pytest.raises(SystemExit) as error:
+        distribution("mqt-core").entry_points["mqt-core"].load()()
+    assert error.value.code != 0
+    assert "unrecognized arguments: --mlir-print-ir-after-all" in capsys.readouterr().err
+    assert output.read_bytes() == b"existing"
+
+
 @pytest.mark.parametrize("gate_name", ["u3", "device_u"])
-def test_qpy_target_export(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, gate_name: str) -> None:
+@pytest.mark.parametrize("input_format", ["openqasm", "qc", "qco"])
+def test_qpy_target_export(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, gate_name: str, input_format: str) -> None:
     """Retain native gate names, sparse device addresses, and logical layout."""
     target = CompilerTarget(
         "sparse device",
@@ -106,13 +242,28 @@ def test_qpy_target_export(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, gate
         '#mqt.payload_spec<format = <id = "qir", version = "2.1.0", profile = "base", encoding = binary>, '
         "capabilities = [], optional_capabilities_known = true>"
     )
-    source = tmp_path / "input.qasm"
-    source.write_text("OPENQASM 3; qubit q; x q;")
+    source = tmp_path / ("input.qasm" if input_format == "openqasm" else "input.mlir")
+    qasm = "OPENQASM 3; qubit q; x q;"
+    arguments = []
+    if input_format == "openqasm":
+        source.write_text(qasm)
+        arguments = [
+            f"--target={target}",
+            f"--payload-spec={payload}",
+            "--seed=42",
+            "--mapping-trials=1",
+            "--mapping-iterations=0",
+            "--mapping-lookahead=0",
+            "--mapping-search-memory-limit=0",
+        ]
+    else:
+        program = compile_program(qasm, target=target, output=OutputFormat.QC)
+        source.write_text(program.to_qco().ir if input_format == "qco" else program.ir)
     output = tmp_path / "output.qpy"
     monkeypatch.setattr(
         sys,
         "argv",
-        ["mqt-core", "compile", str(source), f"--target={target}", f"--payload-spec={payload}", "-o", str(output)],
+        ["mqt-core", "compile", str(source), "-o", str(output), *arguments],
     )
     with pytest.raises(SystemExit) as error:
         distribution("mqt-core").entry_points["mqt-core"].load()()
@@ -121,12 +272,12 @@ def test_qpy_target_export(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, gate
         restored = qpy.load(stream)[0]
     assert restored.count_ops() == {gate_name: 1}
     assert restored.num_qubits == 6
-    assert restored.layout is not None
-    placement = restored.layout.initial_index_layout(filter_ancillas=True)
-    assert len(placement) == 1
-    assert placement[0] in {2, 5}
-    assert restored.find_bit(restored.data[0].qubits[0]).index == placement[0]
-    expected = Statevector.from_int(1 << placement[0], 2**restored.num_qubits)
+    physical_qubit = restored.find_bit(restored.data[0].qubits[0]).index
+    assert physical_qubit in {2, 5}
+    if input_format == "openqasm":
+        assert restored.layout is not None
+        assert restored.layout.initial_index_layout(filter_ancillas=True) == [physical_qubit]
+    expected = Statevector.from_int(1 << physical_qubit, 2**restored.num_qubits)
     assert Statevector.from_instruction(restored).data == pytest.approx(expected.data, abs=1e-14)
 
 

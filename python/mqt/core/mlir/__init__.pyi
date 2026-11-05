@@ -198,6 +198,10 @@ class PayloadSpecification(Generic[_TargetResultT_co]):
     def from_program_format(program_format: mqt.core.qdmi.ProgramFormat) -> PayloadSpecification[CompiledProgram]:
         """The standard contract for a QDMI program format."""
 
+    @staticmethod
+    def from_mlir_str(source: str) -> PayloadSpecification:
+        """Parse and validate an MLIR payload specification attribute."""
+
     @property
     def format(self) -> PayloadFormat:
         """The selected payload format and receiver-version constraint."""
@@ -546,6 +550,10 @@ class CompilerTarget:
             """The explicit operations, if present."""
 
     @staticmethod
+    def from_mlir_str(source: str) -> CompilerTarget:
+        """Parse and validate an MLIR compilation target attribute."""
+
+    @staticmethod
     def from_device(device: Device) -> CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
 
@@ -709,6 +717,14 @@ class Program:
     Programs own their MLIR module. Conversions can consume a program; use
     ``is_valid`` to check whether it can still be used.
     """
+
+    @staticmethod
+    def from_mlir_str(source: str) -> QCProgram | QCOProgram:
+        """Parse QC or QCO MLIR, selecting its program type from the operations."""
+
+    @staticmethod
+    def from_mlir_file(path: str | os.PathLike) -> QCProgram | QCOProgram:
+        """Load QC or QCO MLIR, including bytecode; '-' reads standard input."""
 
     @property
     def is_valid(self) -> bool:
@@ -1612,9 +1628,6 @@ class CompiledProgram:
     def payload_specification(self) -> PayloadSpecification[CompiledProgram]:
         """The payload format and capabilities used for compilation."""
 
-def _export_qpy(program: QCOProgram) -> bytes:
-    """Serialize compiled QCO as QPY, consuming it and retaining its target environment."""
-
 @overload
 def compile_program(
     program: _CompilerInput,
@@ -1750,7 +1763,7 @@ def compile_program(
     target: CompilerTarget | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
-) -> QCProgram | JeffProgram | OpenQASMProgram: ...
+) -> QCProgram | QCOProgram | JeffProgram | OpenQASMProgram: ...
 @overload
 def compile_program(
     program: _CompilerInput,
@@ -1894,7 +1907,7 @@ def compile_program(
     target: CompilerTarget | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
-) -> list[QCProgram | JeffProgram | OpenQASMProgram]: ...
+) -> list[QCProgram | QCOProgram | JeffProgram | OpenQASMProgram]: ...
 @overload
 def compile_program(
     program: Sequence[_CompilerInputT],

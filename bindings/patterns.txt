@@ -373,7 +373,7 @@ mqt\.core\.mlir\.compile_program$:
         target: CompilerTarget | None = None,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
-    ) -> QCProgram | JeffProgram | OpenQASMProgram: ...
+    ) -> QCProgram | QCOProgram | JeffProgram | OpenQASMProgram: ...
     @overload
     def compile_program(
         program: _CompilerInput,
@@ -518,7 +518,7 @@ mqt\.core\.mlir\.compile_program$:
         target: CompilerTarget | None = None,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
-    ) -> list[QCProgram | JeffProgram | OpenQASMProgram]: ...
+    ) -> list[QCProgram | QCOProgram | JeffProgram | OpenQASMProgram]: ...
     @overload
     def compile_program(
         program: Sequence[_CompilerInputT],
