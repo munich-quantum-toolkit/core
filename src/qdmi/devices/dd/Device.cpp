@@ -810,7 +810,10 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
       qdmi::dd::WorkerRequest request{
           .format = static_cast<int32_t>(format_),
           .shots = numShots_,
-          .seed = seed_,
+          .seed = seed_
+                      ? std::optional<uint64_t>{static_cast<uint64_t>(*seed_) +
+                                                index}
+                      : std::nullopt,
           .captureOutput = captureQIROutput_,
           .maxWorkers = desired,
           .automaticWorkers = maxWorkers_ == 0,
