@@ -198,10 +198,6 @@ class PayloadSpecification(Generic[_TargetResultT_co]):
     def from_program_format(program_format: mqt.core.qdmi.ProgramFormat) -> PayloadSpecification[CompiledProgram]:
         """The standard contract for a QDMI program format."""
 
-    @staticmethod
-    def from_mlir_str(source: str) -> PayloadSpecification:
-        """Parse and validate an MLIR payload specification attribute."""
-
     @property
     def format(self) -> PayloadFormat:
         """The selected payload format and receiver-version constraint."""
@@ -550,10 +546,6 @@ class CompilerTarget:
             """The explicit operations, if present."""
 
     @staticmethod
-    def from_mlir_str(source: str) -> CompilerTarget:
-        """Parse and validate an MLIR compilation target attribute."""
-
-    @staticmethod
     def from_device(device: Device) -> CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
 
@@ -717,14 +709,6 @@ class Program:
     Programs own their MLIR module. Conversions can consume a program; use
     ``is_valid`` to check whether it can still be used.
     """
-
-    @staticmethod
-    def from_mlir_str(source: str) -> QCProgram | QCOProgram:
-        """Parse QC or QCO MLIR, selecting its program type from the operations."""
-
-    @staticmethod
-    def from_mlir_file(path: str | os.PathLike) -> QCProgram | QCOProgram:
-        """Load QC or QCO MLIR, including bytecode; '-' reads standard input."""
 
     @property
     def is_valid(self) -> bool:
@@ -1763,7 +1747,7 @@ def compile_program(
     target: CompilerTarget | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
-) -> QCProgram | QCOProgram | JeffProgram | OpenQASMProgram: ...
+) -> QCProgram | JeffProgram | OpenQASMProgram: ...
 @overload
 def compile_program(
     program: _CompilerInput,
@@ -1907,7 +1891,7 @@ def compile_program(
     target: CompilerTarget | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
-) -> list[QCProgram | QCOProgram | JeffProgram | OpenQASMProgram]: ...
+) -> list[QCProgram | JeffProgram | OpenQASMProgram]: ...
 @overload
 def compile_program(
     program: Sequence[_CompilerInputT],
@@ -1997,3 +1981,6 @@ def submit_program(
     retains its payload and must match the destination contract. Job results are raw;
     apply ``compiled.result_layout.decode_bits`` when a result layout is present.
     """
+
+def _export_qpy(program: QCProgram) -> bytes:
+    """Consume compiled QC and serialize QPY using its attached target environment."""

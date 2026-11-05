@@ -5272,11 +5272,19 @@ def installed(name):
         raise importlib.metadata.PackageNotFoundError(name)
     return {version!r}
 importlib.metadata.version = installed
-from mqt.core.mlir import PayloadSpecification
+from mqt.core.mlir import CompilerTarget, PayloadSpecification, QCProgram, TargetEnvironment, serialize_program
 from mqt.core.qdmi import ProgramFormat
 assert 'qiskit' not in sys.modules
+payload = PayloadSpecification.from_program_format(ProgramFormat.QPY)
+target = CompilerTarget(
+    1, connectivity=CompilerTarget.Connectivity.all_to_all(),
+    native_operations=CompilerTarget.NativeOperations([
+        CompilerTarget.OperationCapability("x", 1, 0),
+    ]),
+)
 try:
-    PayloadSpecification.from_program_format(ProgramFormat.QPY)
+    serialize_program(QCProgram.from_openqasm_str("OPENQASM 3; x $0;"),
+                      target=TargetEnvironment(target, payload))
 except RuntimeError:
     assert not {supported!r}
 else:

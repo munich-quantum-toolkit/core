@@ -725,11 +725,6 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
                             : PayloadEncoding::Text;
   switch (format) {
   case QDMI_PROGRAM_FORMAT_QPY:
-    if (qpyExporter.load() == nullptr) {
-      return createStringError(
-          std::make_error_code(std::errc::not_supported),
-          "QPY output requires the Python Qiskit bindings");
-    }
     return PayloadSpecification::create(
         {.id = "qpy", .version = "17", .encoding = PayloadEncoding::Binary},
         {
@@ -844,10 +839,9 @@ parsePayloadCapabilities(StringRef text, const PayloadSpecification& baseline) {
   return baseline.restrictCapabilities(*reported);
 }
 
-static Expected<TargetEnvironment>
-snapshotTargetEnvironment(const qdmi::Device& device,
-                          std::optional<QDMI_Program_Format> format,
-                          bool includeCalibration) {
+static Expected<TargetEnvironment> snapshotTargetEnvironment(
+    const qdmi::Device& device, std::optional<QDMI_Program_Format> format,
+    bool includeCalibration, bool requireSerializer = true) {
   auto supportedResult = device.getSupportedProgramFormats();
   if (!supportedResult) {
     return supportedResult.takeError();
@@ -860,7 +854,7 @@ snapshotTargetEnvironment(const qdmi::Device& device,
   }
   if (!format) {
     for (const auto candidate : PROGRAM_FORMAT_PREFERENCE) {
-      if ((candidate != QDMI_PROGRAM_FORMAT_QPY ||
+      if ((!requireSerializer || candidate != QDMI_PROGRAM_FORMAT_QPY ||
            qpyExporter.load() != nullptr) &&
           llvm::is_contained(supported, candidate)) {
         format = candidate;
@@ -874,6 +868,11 @@ snapshotTargetEnvironment(const qdmi::Device& device,
         "Device has no executable program format supported by the MQT "
         "compiler; hardware-only models require an explicit compiler target "
         "and output");
+  }
+  if (requireSerializer && *format == QDMI_PROGRAM_FORMAT_QPY &&
+      qpyExporter.load() == nullptr) {
+    return createStringError(std::make_error_code(std::errc::not_supported),
+                             "QPY output requires the Python Qiskit bindings");
   }
   auto payload = payloadSpecificationForProgramFormat(*format);
   if (!payload) {
@@ -898,8 +897,9 @@ snapshotTargetEnvironment(const qdmi::Device& device,
 
 Expected<TargetEnvironment>
 targetEnvironmentFromDevice(const qdmi::Device& device,
-                            std::optional<QDMI_Program_Format> format) {
-  return snapshotTargetEnvironment(device, format, true);
+                            std::optional<QDMI_Program_Format> format,
+                            const bool requireSerializer) {
+  return snapshotTargetEnvironment(device, format, true, requireSerializer);
 }
 
 Error validateTargetCompatibility(const TargetEnvironment& compiled,

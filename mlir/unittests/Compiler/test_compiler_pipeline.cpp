@@ -54,7 +54,6 @@
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
 
-#include "mlir/Bytecode/BytecodeWriter.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -2248,25 +2247,6 @@ h q;
       (QCProgram::fromMLIRString(qcoFromQC->str())).takeError()));
   EXPECT_TRUE(
       llvm::errorToBool((QCOProgram::fromMLIRString(mlir)).takeError()));
-
-  auto inferredQC = parseMLIRProgram(mlir);
-  auto inferredQCO = parseMLIRProgram(qcoFromQC->str());
-  MQT_ASSERT_SUCCESS(inferredQC);
-  MQT_ASSERT_SUCCESS(inferredQCO);
-  EXPECT_TRUE(std::holds_alternative<QCProgram>(*inferredQC));
-  EXPECT_TRUE(std::holds_alternative<QCOProgram>(*inferredQCO));
-  llvm::cantFail(
-      llvm::writeToOutput(mlirPath.string(), [&](llvm::raw_ostream& os) {
-        EXPECT_TRUE(succeeded(writeBytecodeToFile(qcoFromQC->module(), os)));
-        return llvm::Error::success();
-      }));
-  auto inferredBytecode = loadMLIRProgram(mlirPath);
-  MQT_ASSERT_SUCCESS(inferredBytecode);
-  ASSERT_TRUE(std::holds_alternative<QCOProgram>(*inferredBytecode));
-  EXPECT_EQ(std::get<QCOProgram>(*inferredBytecode).inspect().numQubits, 1);
-  EXPECT_TRUE(llvm::errorToBool(parseMLIRProgram("invalid MLIR").takeError()));
-  EXPECT_TRUE(llvm::errorToBool(
-      loadMLIRProgram(temporaryDirectory / "missing.mlir").takeError()));
 }
 
 TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
@@ -2348,7 +2328,6 @@ TEST_F(CompilerPipelineTest, ProgramImportsRejectMixedQuantumDialects) {
           .contains("QC programs must not contain QCO or QTensor operations"));
   EXPECT_TRUE(StringRef(llvm::toString(std::move(qcoError)))
                   .contains("QCO programs must not contain QC operations"));
-  EXPECT_TRUE(llvm::errorToBool(parseMLIRProgram(source).takeError()));
 }
 
 TEST_F(CompilerPipelineTest, ProgramImportsRecognizeQTensorOnlyModules) {

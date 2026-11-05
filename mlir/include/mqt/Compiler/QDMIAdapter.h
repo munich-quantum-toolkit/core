@@ -94,10 +94,12 @@ parsePayloadCapabilities(llvm::StringRef text,
 /// Snapshot the device and select its executable payload before compilation.
 ///
 /// Preference: QPY, OpenQASM 3, Adaptive QIR (binary, text), IQM JSON, Base QIR
-/// (binary, text), OpenQASM 2.
+/// (binary, text), OpenQASM 2. Intermediate compilation can select a payload
+/// without an installed serializer by setting requireSerializer to false.
 [[nodiscard]] llvm::Expected<TargetEnvironment> targetEnvironmentFromDevice(
     const qdmi::Device& device,
-    std::optional<QDMI_Program_Format> format = std::nullopt);
+    std::optional<QDMI_Program_Format> format = std::nullopt,
+    bool requireSerializer = true);
 
 /// Check hardware compatibility and payload support, ignoring calibration.
 ///

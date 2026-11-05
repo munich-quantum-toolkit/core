@@ -507,14 +507,37 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_NE(
       llvm::toString(missingQPY.takeError()).find("Python Qiskit bindings"),
       std::string::npos);
+  const auto qpy = llvm::cantFail(
+      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QPY));
+  for (const auto& supported : {
+           std::vector{QDMI_PROGRAM_FORMAT_QPY, QDMI_PROGRAM_FORMAT_QASM3},
+           std::vector{QDMI_PROGRAM_FORMAT_QPY},
+       }) {
+    formats = supported;
+    const auto intermediate = llvm::cantFail(mlir::targetEnvironmentFromDevice(
+        device, std::nullopt, /*requireSerializer=*/false));
+    EXPECT_EQ(intermediate.payloadSpecification().format(), qpy.format());
+    EXPECT_EQ(intermediate.payloadSpecification().capabilities(),
+              qpy.capabilities());
+    auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+        "OPENQASM 3; include \"stdgates.inc\"; x $0;"));
+    auto compiled = mlir::runDefaultPipeline(
+        program.copy(), mlir::ProgramFormat::QCOOptimized, intermediate);
+    MQT_ASSERT_SUCCESS(compiled);
+    auto serialized =
+        mlir::CompiledProgram::serialize(std::move(program), intermediate);
+    ASSERT_FALSE(serialized);
+    EXPECT_NE(
+        llvm::toString(serialized.takeError()).find("Python Qiskit bindings"),
+        std::string::npos);
+  }
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::targetEnvironmentFromDevice(device).takeError()));
   formats = {QDMI_PROGRAM_FORMAT_QASM3};
   EXPECT_TRUE(
       llvm::errorToBool(mlir::targetEnvironmentFromDevice(
                             device, QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)
                             .takeError()));
-  EXPECT_TRUE(llvm::errorToBool(
-      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QPY)
-          .takeError()));
 
   {
     const auto resetExporter =

@@ -24,7 +24,6 @@ from qiskit import qpy
 from qiskit.qpy.exceptions import QpyError
 from qiskit.quantum_info import Statevector
 
-from mqt.core import mlir
 from mqt.core.mlir import CompilerTarget, OutputFormat, QCProgram, compile_program
 
 if TYPE_CHECKING:
@@ -67,22 +66,20 @@ def test_native_command(monkeypatch: pytest.MonkeyPatch, run_command: CommandRun
 
 @pytest.mark.parametrize("destination", ["file", "stdout", "missing-directory"])
 def test_qpy_export(
-    monkeypatch: pytest.MonkeyPatch,
     run_command: CommandRunner,
     tmp_path: Path,
     capsysbinary: pytest.CaptureFixture[bytes],
     destination: str,
 ) -> None:
-    """Compile in-process and independently decode QPY or report an output failure."""
+    """Run the native compiler and independently decode QPY or report an output failure."""
     source = tmp_path / "input.qasm"
     source.write_text("OPENQASM 3; qubit q; x q;")
     output = tmp_path / "output.qpy"
-    arguments = ["compile", str(source), "-o", str(output)]
+    arguments = ["compile", str(source), "-o", str(output), "--qdmi-list-devices=false"]
     if destination == "stdout":
         arguments = ["compile", str(source), "--emit=qpy"]
     elif destination == "missing-directory":
-        arguments[-1] = str(tmp_path / "absent" / "output.qpy")
-    monkeypatch.setattr(subprocess, "run", Mock(side_effect=AssertionError("QPY must compile in-process")))
+        arguments[arguments.index("-o") + 1] = str(tmp_path / "absent" / "output.qpy")
     error = run_command(arguments)
     if destination == "missing-directory":
         assert "QPY export failed" in str(error)
@@ -152,67 +149,29 @@ def test_qpy_decomposition(run_command: CommandRunner, tmp_path: Path, arguments
     assert Statevector(circuit).data == pytest.approx(Statevector.from_label("111").data, abs=1e-14)
 
 
-@pytest.mark.parametrize(
-    ("text", "value"),
-    [
-        ("42", 42),
-        ("0x2a", 42),
-        ("0o52", 42),
-        ("052", 42),
-        ("0b101010", 42),
-        (str(2**64 - 1), 2**64 - 1),
-        ("08", None),
-        ("+1", None),
-        ("-1", None),
-        ("1_0", None),
-        (str(2**64), None),
-    ],
-)
-def test_qpy_unsigned_options(
-    monkeypatch: pytest.MonkeyPatch,
-    run_command: CommandRunner,
-    tmp_path: Path,
-    text: str,
-    value: int | None,
-) -> None:
-    """Retain LLVM's numeric spelling and range for seeds and mapping controls."""
-    source = tmp_path / "input.qasm"
-    source.write_text("OPENQASM 3; qubit q; x q;")
-    compile_mock = Mock(return_value=b"qpy")
-    monkeypatch.setattr(mlir, "compile_program", compile_mock)
-    error = run_command(["compile", str(source), f"--seed={text}", "-o", str(tmp_path / "output.qpy")])
-    if value is None:
-        assert error.code != 0
-        compile_mock.assert_not_called()
-    else:
-        assert error.code == 0
-        assert compile_mock.call_args.kwargs["options"].seed == value
-
-
 def test_qpy_custom_pipeline(run_command: CommandRunner, tmp_path: Path) -> None:
     """Run an explicitly requested pipeline through its CLI alias."""
     source = tmp_path / "input.qasm"
     source.write_text("OPENQASM 3; qubit q; gphase(0.37); x q;")
     output = tmp_path / "output.qpy"
-    error = run_command(["compile", str(source), "-o", str(output), "--passes=builtin.module(drop-global-phases)"])
+    error = run_command([
+        "compile",
+        str(source),
+        "-o",
+        str(output),
+        "--passes=builtin.module(drop-global-phases)",
+        "--mlir-print-ir-after-all",
+    ])
     assert error.code == 0
     assert Statevector(qpy.load(BytesIO(output.read_bytes()))[0]).data == pytest.approx([0, 1], abs=1e-14)
 
 
-def test_qpy_rejects_native_debug_option(
-    run_command: CommandRunner, tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Reject unsupported native debugging options before touching output."""
-    output = tmp_path / "output.qpy"
-    output.write_bytes(b"existing")
-    assert run_command(["compile", "--mlir-print-ir-after-all", "-o", str(output)]).code != 0
-    assert "unrecognized arguments: --mlir-print-ir-after-all" in capsys.readouterr().err
-    assert output.read_bytes() == b"existing"
-
-
 @pytest.mark.parametrize("gate_name", ["u3", "device_u"])
+@pytest.mark.parametrize("payload_format", ["qir", "qpy"])
 @pytest.mark.parametrize("input_format", ["openqasm", "qc", "qco"])
-def test_qpy_target_export(run_command: CommandRunner, tmp_path: Path, gate_name: str, input_format: str) -> None:
+def test_qpy_target_export(
+    run_command: CommandRunner, tmp_path: Path, gate_name: str, input_format: str, payload_format: str
+) -> None:
     """Retain native gate names, sparse device addresses, and logical layout."""
     target = CompilerTarget(
         "sparse device",
@@ -224,8 +183,13 @@ def test_qpy_target_export(run_command: CommandRunner, tmp_path: Path, gate_name
             CompilerTarget.OperationCapability("measure", 1, 0),
         ]),
     )
+    format_attribute = (
+        'id = "qir", version = "2.1.0", profile = "base"'
+        if payload_format == "qir"
+        else 'id = "qpy", version = "17", profile = ""'
+    )
     payload = (
-        '#mqt.payload_spec<format = <id = "qir", version = "2.1.0", profile = "base", encoding = binary>, '
+        f"#mqt.payload_spec<format = <{format_attribute}, encoding = binary>, "
         "capabilities = [], optional_capabilities_known = true>"
     )
     source = tmp_path / ("input.qasm" if input_format == "openqasm" else "input.mlir")

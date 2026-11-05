@@ -1,67 +1,44 @@
 # Preserve target information in CLI QPY export
 
-Status: complete; validated locally.
+Status: simplification implemented and validated locally.
 
-## Scope and decisions
+## Design
 
-The CLI compiles directly with `compile_program(output=OutputFormat.QPY)`. The
-shared Python compiler owns optimization, target compilation, and QPY
-serialization. No subprocess or intermediate QCO file is needed. Qiskit stays
-optional, and serialization finishes before the destination is opened.
+The Python CLI recognizes QPY output and forwards compilation options to the
+native compiler. It loads the optimized QCO result, converts it to QC, and calls
+an internal export-only binding. That binding reads the attached target
+environment and uses the existing Qiskit exporter and QPY serializer. It does
+not optimize or route the circuit again. Serialization completes before opening
+the destination file.
 
-The QPY argument adapter retains input formats, standard input for OpenQASM and
-MLIR, explicit targets and payloads, QDMI discovery/configuration, custom
-pipelines, decomposition, seeds, and mapping controls. Native-only MLIR
-debugging options are rejected. Version, help, and device-list requests still
-use the native command.
+The same target recovery serves `compile_program(output=OutputFormat.QPY)`.
+Public `to_qiskit(target=None)` retains its existing behavior. Native
+intermediate compilation can select a QPY payload without loading a serializer;
+execution still requires one. No additional public program loaders or
+target-attribute parsers are needed for the CLI.
 
-Generic MLIR import selects QC or QCO from parsed operations and uses the typed
-program validators. `Program.from_mlir_file` and the compiler convenience API
-share that importer. Target and payload attribute factories use MLIR parsing and
-the existing model validators; the CLI does not parse attribute syntax.
-
-QPY export also reads an embedded target environment when no explicit target is
-supplied. Reoptimizing mapped MLIR still removes its layout, as the native
-compiler did previously. Export retains the target's aliases, address width, and
-physical circuit action without reattaching stale layout metadata.
-
-QPY reconstructs renamed standard-gate instances with their standard names.
-Custom aliases therefore use a `Gate` with an explicit definition containing the
-original standard operation. Parameter order, qubit order, and exact phase
-survive serialization. Existing standard aliases keep their native
-representation. Definitions also preserve semantics when an alias collides with
-another standard name, such as an RX operation named `ry`.
+Custom target aliases use Qiskit's `Gate` with an explicit definition: QPY
+otherwise restores renamed standard gates with their original names. This also
+preserves parameter order and the semantics of aliases colliding with standard
+names.
 
 ## Validation
 
-Built merged main at `ed8fe3a6f`, including #2925, and reproduced loss of target
-layout and failures for `--emit=qpy` combined with version or hidden help. The
-custom-alias tests also failed before the exporter fix.
+Retain tests of independent QPY decoding, sparse physical addresses, logical
+layout, gate names, symbolic parameters, wire order, exact phase, optional
+Qiskit, informational commands, and output preservation on failure. Exercise
+native input formats, custom pipelines, and debugging-option forwarding through
+the CLI. Remove tests of the duplicated Python option parser and the public APIs
+introduced solely to support it.
 
-The direct implementation passes 1,041 Python tests with each of Qiskit 2.5.0
-and 2.6.1, and five native program-import tests. Stubs were regenerated.
-Repository lint passes. Full-file C++ lint checked the changed implementation,
-binding, adapter, and test files; the binding file was rechecked after
-correcting its sole finding. Tests use local devices only.
+The follow-up ponytail review found one reproducible command-handling bug:
+`--qdmi-list-devices=true` and `=1` listed devices and then attempted to load a
+nonexistent compiled file. The launcher now recognizes explicit boolean values;
+`=false` continues through compilation. CLI regressions cover both paths and
+preservation of an existing output file.
 
-Three QCO source/file import cases failed before the generic importer fix, while
-the corresponding QC cases passed. Four embedded-target export cases failed
-before the shared exporter recovered target information. Tests cover input
-formats, standard input, custom pipelines, decomposition, numeric and boolean
-option spelling, target/device/configuration selection, unsupported debug
-options, and output preservation on failure.
-
-## Timing evidence
-
-The public command compiled the existing 16- and 64-qubit QFT inputs for the
-same all-to-all target with a custom single-qubit gate alias. Three runs per
-input on macOS ARM64 with Python 3.14.9 and Qiskit 2.6.1 gave median times of
-1.894 s and 2.187 s. Earlier subprocess-path medians were 1.970 s and 2.268 s.
-These historical measurements were not interleaved and do not establish a
-statistical speedup. Imports still dominate; QPY serialization took about 5 ms
-and 50 ms in the profiles. No memory claim was measured.
-
-Both outputs match the previous operation names, parameters, and physical
-operands, retain layout, and have the same sizes: 140,537 and 1,218,206 bytes.
-The retained change removes a subprocess and intermediate IR round trip; no
-broader performance rewrite is justified by these measurements.
+The branch was rebased onto main at `1a6b190719`. `git range-diff` confirmed
+that the rebase retained every commit's changes. Validation results are recorded
+in the PR description. Native coverage includes QPY-only and multi-format device
+selection, payload restrictions, and missing-serializer rejection. No hardware
+jobs were submitted; hosted CI was not monitored.

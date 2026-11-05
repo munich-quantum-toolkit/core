@@ -561,7 +561,9 @@ int mqtCoreRunCompiler(int argc, char** argv) {
           llvm_unreachable("Unexpected inferred output format");
         }
       }
-      auto environment = targetEnvironmentFromDevice(*device, format);
+      auto environment = targetEnvironmentFromDevice(
+          *device, format,
+          /*requireSerializer=*/outputFormat != "qco-optimized");
       if (!environment) {
         return environment.takeError();
       }
@@ -627,12 +629,12 @@ int mqtCoreRunCompiler(int argc, char** argv) {
 
   std::optional<TargetEnvironment> targetEnvironment;
   if (compilerTarget) {
-    auto compilerOutput = selectedPayload->compilerOutput();
-    if (!compilerOutput) {
-      llvm::errs() << llvm::toString(compilerOutput.takeError()) << '\n';
-      return 1;
-    }
     if (outputFormat.getNumOccurrences() == 0) {
+      auto compilerOutput = selectedPayload->compilerOutput();
+      if (!compilerOutput) {
+        llvm::errs() << llvm::toString(compilerOutput.takeError()) << '\n';
+        return 1;
+      }
       parsedOutputFormat = *compilerOutput;
     }
     targetEnvironment.emplace(std::move(*compilerTarget),

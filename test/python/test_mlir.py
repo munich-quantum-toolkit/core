@@ -149,19 +149,15 @@ def test_compile_program_jeff_file() -> None:
 
 
 @pytest.mark.parametrize("form", ["source", "path", "named_module"])
-@pytest.mark.parametrize("dialect", [QCProgram, QCOProgram])
-def test_compile_program_mlir_input(form: str, dialect: type[QCProgram | QCOProgram], tmp_path: Path) -> None:
+def test_compile_program_mlir_input(form: str, tmp_path: Path) -> None:
     """Compile MLIR source and files while preserving Bell-state measurements."""
     source: str | Path = MLIR_STRING
-    if dialect is QCOProgram:
-        source = QCProgram.from_mlir_str(MLIR_STRING).to_qco().ir
     if form != "source":
-        path = tmp_path / ("module.mlir" if form == "named_module" else "program.mlir")
-        path.write_text(source, encoding="utf-8")
-        source = path
+        source = tmp_path / ("module.mlir" if form == "named_module" else "program.mlir")
+        source.write_text(MLIR_STRING, encoding="utf-8")
 
     result = compile_program(source)
-    assert isinstance(result, dialect)
+    assert isinstance(result, QCProgram)
     assert set(sample(result, shots=32, seed=1)) == {"00", "11"}
 
 
@@ -1968,16 +1964,6 @@ def test_compiler_target_accepts_plain_site_tuples(arity: int | CompilerTarget.O
     assert not target.supports_operation("cx", 2, sites=[0, 1])
     with pytest.raises(ValueError, match="site tuple does not match its arity"):
         CompilerTarget.OperationCapability("cx", arity, 0, site_tuples=[(0,)])
-
-
-@pytest.mark.parametrize("model", [CompilerTarget, PayloadSpecification])
-@pytest.mark.parametrize("source", ["invalid attribute", "42 : i64"])
-def test_compiler_attribute_parsers_reject_invalid_types(
-    model: type[CompilerTarget | PayloadSpecification], source: str
-) -> None:
-    """Reject malformed attributes and valid attributes of another type."""
-    with pytest.raises(ValueError, match="Expected a valid #mqt"):
-        model.from_mlir_str(source)
 
 
 def test_payload_specification_preserves_python_api() -> None:

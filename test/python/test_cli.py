@@ -247,7 +247,7 @@ def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, mon
         assert sum(counts.values()) == 128
 
 
-@pytest.mark.parametrize("option", ["--version", "--help-hidden"])
+@pytest.mark.parametrize("option", ["--version", "--help-hidden", "--qdmi-list-devices=true", "--qdmi-list-devices=1"])
 def test_qpy_cli_information(script_runner: ScriptRunner, tmp_path: Path, option: str) -> None:
     """Informational commands succeed without exporting or replacing a file."""
     output = tmp_path / "output.qpy"
