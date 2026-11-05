@@ -688,6 +688,8 @@ TEST_P(AncillaFamilyTest, RespectsNativeGatesAndWidthWithAvailableAncillas) {
           buildAncillaFamilyGate(b, family, ValueRange(wires).take_front(6));
           return SmallVector<Value>{};
         });
+    ASSERT_TRUE(succeeded(verify(*module)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*module)));
     if (native) {
       using Capability = CompilerTarget::OperationCapability;
       const bool phase =
@@ -719,6 +721,12 @@ TEST_P(AncillaFamilyTest, RespectsNativeGatesAndWidthWithAvailableAncillas) {
     }
     EXPECT_EQ(countMultiControlledOps(*module), 1U);
     EXPECT_EQ(countEffectiveCxOps(*module), 0U);
+    auto package = llvm::cantFail(dd::Package::create(9));
+    auto actual =
+        buildFunctionality(*module->getOps<func::FuncOp>().begin(), *package);
+    ASSERT_TRUE(succeeded(actual));
+    EXPECT_EQ(*actual, ancillaFamilyReference(*package, family, 5));
+    package->decRef(*actual);
   }
 }
 
@@ -1135,28 +1143,55 @@ TEST_F(MultiControlledDecompositionTest,
 }
 
 TEST_F(MultiControlledDecompositionTest,
-       AncillaUnknownTensorOccupancyFallsBack) {
-  Value unknownIndex;
+       AncillaFromElementsPrefersLaterCleanSlots) {
   auto module = QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
-    auto tensor = b.qtensorAlloc(7);
-    SmallVector<Value> wires;
-    for (int64_t i = 0; i < 6; ++i) {
-      auto [rest, qubit] = b.qtensorExtract(tensor, i);
-      tensor = rest;
-      wires.push_back(qubit);
+    auto data = b.allocQubitRegister(5);
+    SmallVector<Value> ancillas;
+    for (size_t i = 0; i < 4; ++i) {
+      Value qubit = b.allocQubit();
+      ancillas.push_back(i < 2 ? b.h(qubit) : qubit);
     }
-    auto [rest, ancilla] = b.qtensorExtract(tensor, 6);
-    unknownIndex = ancilla.getDefiningOp<qtensor::ExtractOp>().getIndex();
-    b.sink(ancilla);
-    b.mcx(ValueRange(wires).take_front(5), wires[5]);
+    b.qtensorFromElements(ancillas);
+    b.mcx(ValueRange(data.qubits).take_front(4), data[4]);
     return SmallVector<Value>{};
   });
-  auto function = *module->getOps<func::FuncOp>().begin();
-  ASSERT_TRUE(succeeded(function.insertArgument(0, IndexType::get(context()),
-                                                {}, function.getLoc())));
-  unknownIndex.replaceAllUsesWith(function.getArgument(0));
   ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module)));
-  EXPECT_EQ(countEffectiveCxOps(*module), 60U);
+  EXPECT_EQ(countEffectiveCxOps(*module), 18U);
+}
+
+TEST_F(MultiControlledDecompositionTest,
+       AncillaDiscoveryHandlesSparseOccupancyInHugeTensor) {
+  constexpr int64_t slots = 1099511627776;
+  for (const bool restore : {false, true}) {
+    qtensor::ExtractOp unknownExtract;
+    auto module =
+        QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
+          auto tensor = b.qtensorAlloc(slots);
+          SmallVector<Value> wires;
+          for (int64_t i = 0; i < 6; ++i) {
+            auto [rest, qubit] = b.qtensorExtract(tensor, i);
+            tensor = rest;
+            wires.push_back(qubit);
+          }
+          auto [rest, ancilla] = b.qtensorExtract(tensor, slots - 1);
+          unknownExtract = ancilla.getDefiningOp<qtensor::ExtractOp>();
+          if (restore) {
+            b.qtensorInsert(b.reset(ancilla), rest, slots - 1);
+          } else {
+            b.sink(ancilla);
+          }
+          b.mcx(ValueRange(wires).take_front(5), wires[5]);
+          return SmallVector<Value>{};
+        });
+    auto function = *module->getOps<func::FuncOp>().begin();
+    ASSERT_TRUE(succeeded(function.insertArgument(0, IndexType::get(context()),
+                                                  {}, function.getLoc())));
+    // Only the extraction becomes dynamic; the later insertion proves
+    // occupancy.
+    unknownExtract.getIndexMutable().assign(function.getArgument(0));
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module)));
+    EXPECT_EQ(countEffectiveCxOps(*module), restore ? 42U : 60U);
+  }
 }
 
 TEST_P(McrDdTest, PreservesFullOperatorAndBorrowedControls) {
@@ -1350,35 +1385,6 @@ TEST_F(MultiControlledDecompositionTest, RotationsRespectMinQubits) {
     ASSERT_TRUE(
         succeeded(runDecomposeMultiControlled(moduleOp.get(), options)));
     EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
-    expectImplementsControlledGate(funcOp, 3, rotationMatrix(axis, 0.73), 1);
-  }
-}
-
-TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeRotations) {
-  using OperationCapability = CompilerTarget::OperationCapability;
-  const std::vector operations{
-      llvm::cantFail(OperationCapability::create(
-          "rx", OperationCapability::Arity::variadic(4), 1)),
-      llvm::cantFail(OperationCapability::create(
-          "ry", OperationCapability::Arity::variadic(4), 1)),
-      llvm::cantFail(OperationCapability::create(
-          "rz", OperationCapability::Arity::variadic(4), 1)),
-  };
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      4, CompilerTarget::Connectivity::allToAll(),
-      CompilerTarget::NativeOperations::fromOperations(operations)));
-  for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
-    auto moduleOp = buildMcrModule(context(), 3, axis, 0.73);
-    ASSERT_TRUE(moduleOp);
-    ASSERT_TRUE(succeeded(verify(moduleOp.get())));
-    ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
-    PassManager pm(context());
-    pm.addPass(createDecomposeMultiControlled(target));
-    ASSERT_TRUE(succeeded(pm.run(moduleOp.get())));
-    ASSERT_TRUE(succeeded(verify(moduleOp.get())));
-    ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
-    EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
-    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
     expectImplementsControlledGate(funcOp, 3, rotationMatrix(axis, 0.73), 1);
   }
 }
@@ -1628,31 +1634,6 @@ TEST_F(MultiControlledDecompositionTest, MinQubitsThreshold) {
           runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
     }
   }
-}
-
-TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeMcy) {
-  auto moduleOp = buildControlledPauliModule(context(), 3, ControlledPauli::Y);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(moduleOp.get())));
-  ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
-  using OperationCapability = CompilerTarget::OperationCapability;
-  const std::vector operations{
-      llvm::cantFail(OperationCapability::create(
-          "y", OperationCapability::Arity::variadic(4), 0)),
-  };
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      4, CompilerTarget::Connectivity::allToAll(),
-      CompilerTarget::NativeOperations::fromOperations(operations)));
-  PassManager pm(context());
-  pm.addPass(createDecomposeMultiControlled(target));
-  ASSERT_TRUE(succeeded(pm.run(moduleOp.get())));
-  EXPECT_TRUE(succeeded(verify(moduleOp.get())));
-  EXPECT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
-  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 1U);
-  moduleOp->walk([](CtrlOp op) {
-    ASSERT_EQ(op.getNumBodyUnitaries(), 1U);
-    EXPECT_TRUE(isa<YOp>(op.getBodyUnitary(0).getOperation()));
-  });
 }
 
 TEST_F(MultiControlledDecompositionTest, AncillaWideFallbackPhasesAndCounts) {

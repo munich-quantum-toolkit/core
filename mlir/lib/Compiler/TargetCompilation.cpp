@@ -231,8 +231,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   // The module cleanup below owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   // Fold tensor accesses before SCCP; defer liveness until after placement.
-  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false,
-                             /*shrinkQTensor=*/false);
+  populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
   pm.addPass(qco::createCombineControlledGates(target));
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
@@ -240,8 +239,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
   // Unrolling exposes static register indices and tensor slots.
-  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false,
-                             /*shrinkQTensor=*/false);
+  populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
   pm.addPass(qco::createLegalizeControlFlow());
   populateDecompositionAndPlacement(pm, target);
   pm.addPass(qco::createFuseTwoQubitGates(target));
@@ -280,8 +278,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   // The module cleanup below owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   // Placement changes region results; run liveness once afterwards.
-  populateQCOCleanupPipeline(pm, /*removeDeadValues=*/false,
-                             /*shrinkQTensor=*/false);
+  populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
   pm.addPass(qco::createCombineControlledGates(target));
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());

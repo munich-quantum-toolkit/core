@@ -296,7 +296,9 @@ struct CircuitPlan {
   void append(PlanOp op) { ops.push_back(std::move(op)); }
 };
 
-/// A borrowed ancilla qubit is a live wire or a provably occupied tensor slot.
+/// A qubit available at the gate, either directly or in an occupied tensor
+/// slot.
+///
 /// Extracting a hole would duplicate a qubit.
 struct BorrowedAncilla {
   Value value;
@@ -1092,6 +1094,68 @@ static std::optional<bool> ancillaState(Value value,
   }
 }
 
+/// Find occupied candidates without scanning a potentially huge declared
+/// extent.
+static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
+                                         const DenseSet<Value>& restoredZeros) {
+  SmallVector<int64_t> slots;
+  DenseSet<int64_t> touched;
+  while (auto* definition = tensor.getDefiningOp()) {
+    if (auto extract = dyn_cast<qtensor::ExtractOp>(definition)) {
+      auto index = getConstantIntValue(extract.getIndex());
+      if (!index) {
+        break;
+      }
+      touched.insert(*index);
+      tensor = extract.getTensor();
+    } else if (auto insert = dyn_cast<qtensor::InsertOp>(definition)) {
+      auto index = getConstantIntValue(insert.getIndex());
+      if (!index) {
+        break;
+      }
+      if (touched.insert(*index).second) {
+        slots.push_back(*index);
+      }
+      tensor = insert.getDest();
+    } else {
+      if (isa<qtensor::AllocOp>(definition)) {
+        const auto size =
+            cast<RankedTensorType>(tensor.getType()).getDimSize(0);
+        size_t clean = 0;
+        for (int64_t index = 0; index < size && clean < limit; ++index) {
+          if (!touched.contains(index)) {
+            slots.push_back(index);
+            ++clean;
+          }
+        }
+      } else if (auto elements =
+                     dyn_cast<qtensor::FromElementsOp>(definition)) {
+        size_t clean = 0;
+        size_t dirty = 0;
+        for (int64_t index = 0;
+             std::cmp_less(index, elements.getElements().size()) &&
+             clean < limit;
+             ++index) {
+          if (touched.contains(index)) {
+            continue;
+          }
+          const bool zero = ancillaState(elements.getElements()[index],
+                                         std::nullopt, restoredZeros)
+                                .value_or(false);
+          auto& count = zero ? clean : dirty;
+          if (count < limit) {
+            slots.push_back(index);
+            ++count;
+          }
+        }
+      }
+      break;
+    }
+  }
+  llvm::sort(slots);
+  return slots;
+}
+
 static SmallVector<BorrowedAncilla>
 findAncillas(CtrlOp op, size_t limit, const DenseSet<Value>& restoredZeros) {
   SmallVector<BorrowedAncilla> ancillas, dirty;
@@ -1127,8 +1191,10 @@ findAncillas(CtrlOp op, size_t limit, const DenseSet<Value>& restoredZeros) {
       });
       return;
     }
-    for (int64_t slot = 0;
-         slot < tensorType.getDimSize(0) && ancillas.size() < limit; ++slot) {
+    for (int64_t slot : ancillaSlots(value, limit, restoredZeros)) {
+      if (ancillas.size() == limit) {
+        break;
+      }
       if (auto clean = ancillaState(value, slot, restoredZeros)) {
         remember({.value = value, .slot = slot, .clean = *clean});
       }

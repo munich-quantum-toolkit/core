@@ -656,7 +656,8 @@ def DecomposeMultiControlled
     `min-qubits` keeps them; the greedy rewriter lowers further when the
     threshold allows.
 
-    The pass borrows same-block live qubits or provably occupied tensor slots
+    The pass can borrow qubits defined before the gate and consumed after it
+    in the same block, including provably occupied tensor slots. It uses them
     as ancilla qubits when this reduces estimated CX equivalents before routing.
     It allocates no qubits and restores each ancilla qubit's state and
     correlations. Allocations and resets can prove a clean zero. For target

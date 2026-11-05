@@ -770,10 +770,9 @@ int mqtCoreRunCompiler(int argc, char** argv) {
                    *parsedOutputFormat == ProgramFormat::QIRAdaptive) {
                  pm.addPass(createInlinerPass());
                }
-               // Keep potential ancilla qubits live until decomposition.
-               const bool cleanup = !enableDecomposeMultiControlled;
-               populateQCOCleanupPipeline(pm, /*removeDeadValues=*/cleanup,
-                                          /*shrinkQTensor=*/cleanup);
+               // Keep potential ancilla qubits until decomposition.
+               populateQCOCleanupPipeline(
+                   pm, /*removeUnusedValues=*/!enableDecomposeMultiControlled);
                if (passPipeline.getNumOccurrences() != 0) {
                  if (failed(parseCustomPipeline(pm))) {
                    return failure();

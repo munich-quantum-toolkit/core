@@ -41,8 +41,8 @@ ancilla
   **Preferred term:** ancilla qubit. **Accepted aliases:** ancilla, helper
   qubit. A qubit used as temporary workspace. A clean ancilla starts and ends
   in the zero state. A dirty ancilla may have an unknown or entangled state.
-  The decomposition preserves its state and correlations when it returns the
-  qubit.
+  A compilation step that borrows a dirty ancilla must restore its state and
+  correlations before returning it.
 
 device qubit
   **Preferred term:** device qubit. **Accepted alias:** hardware qubit. A

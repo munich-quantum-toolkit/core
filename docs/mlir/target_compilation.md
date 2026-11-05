@@ -162,10 +162,11 @@ input, target, seed, and explicit trial count. Sampling uses a separate seed.
 For routing costs, search limits, and synthesis behavior, see the
 `place-and-route` pass in {doc}`QCO`.
 
-Controlled-gate decomposition can borrow live qubits as ancilla qubits when this
-reduces estimated entangling cost. It restores their states and correlations and
-allocates no additional qubits. See `decompose-multi-controlled` in {doc}`QCO`
-for eligibility and target restrictions.
+Controlled-gate decomposition can borrow other allocated qubits as ancilla
+qubits when this reduces estimated entangling cost. It restores their states and
+correlations and allocates no additional qubits. See
+`decompose-multi-controlled` in {doc}`QCO` for eligibility and target
+restrictions.
 
 ### Define a target
 
