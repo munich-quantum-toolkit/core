@@ -957,6 +957,32 @@ def test_native_import_preserves_bounds_without_placement(width: int | None) -> 
     assert next(op for op in target.operations if op.name == "rzz").parameter_bounds == [(0, pi / 2)]
 
 
+def test_native_synthesis_preserves_logical_wire_order() -> None:
+    """Keep terminal swaps, idle wires, and gate aliases in the exported circuit."""
+    source = QuantumCircuit(5, global_phase=0.23)
+    source.x(3)
+    source.h(0)
+    source.cx(3, 1)
+    source.swap(0, 3)
+    target = Target(num_qubits=source.num_qubits)
+    target.add_instruction(RZGate(Parameter("theta")))
+    target.add_instruction(RXGate(pi / 2), name="rxpi2")
+    target.add_instruction(CXGate())
+    compiler_target = CompilerTarget.from_qiskit(target)
+    environment = TargetEnvironment(compiler_target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
+
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.synthesize_for_target(environment, preserve_logical_order=True)
+    result = program.to_qiskit(target=compiler_target)
+
+    assert result.layout is None
+    assert result.num_qubits == source.num_qubits
+    names = {item.operation.name for item in result.data}
+    assert "rxpi2" in names
+    assert names <= target.operation_names
+    np.testing.assert_allclose(Operator(result).data, Operator(source).data, atol=1e-12)
+
+
 @pytest.mark.parametrize("native_rz", [False, True])
 def test_z_frames_stop_at_control_flow_and_barriers(*, native_rz: bool) -> None:
     """A pending Z frame must dominate each branch and stay before barriers."""

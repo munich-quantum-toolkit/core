@@ -31,8 +31,10 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -194,6 +196,51 @@ private:
   MappingOptions mapping_;
 };
 
+class RestoreLogicalWireOrderPass
+    : public PassWrapper<RestoreLogicalWireOrderPass, OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(RestoreLogicalWireOrderPass)
+
+protected:
+  void runOnOperation() override {
+    auto moduleOp = getOperation();
+    const auto attr = moduleOp->getAttr("mqt.layout");
+    if (!attr) {
+      moduleOp.emitError(
+          "logical wire order requires fixed-width dynamic input");
+      signalPassFailure();
+      return;
+    }
+    const auto layout =
+        mqt::QubitLayout::fromAttr(attr, [&] { return moduleOp.emitError(); });
+    if (failed(layout)) {
+      signalPassFailure();
+      return;
+    }
+    if (layout->routing || !layout->sites ||
+        !std::cmp_equal(layout->inputCount, layout->initial.size()) ||
+        !llvm::equal(*layout->sites,
+                     llvm::seq<int64_t>(0, layout->inputCount))) {
+      moduleOp.emitError(
+          "logical wire order requires a target of the input width with "
+          "consecutive site IDs starting at zero and no routing permutation");
+      signalPassFailure();
+      return;
+    }
+
+    SmallVector<uint64_t> logicalBySite(layout->initial.size());
+    for (auto [logical, site] : llvm::enumerate(layout->initial)) {
+      logicalBySite[static_cast<size_t>(site)] = logical;
+    }
+    moduleOp.walk([&](qco::StaticOp qubit) {
+      const auto site = qubit.getIndex();
+      assert(site < logicalBySite.size() && "placement uses target site IDs");
+      qubit.setIndex(logicalBySite[static_cast<size_t>(site)]);
+    });
+    moduleOp->removeAttr("mqt.layout");
+  }
+};
+
 } /* namespace */
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
@@ -250,7 +297,8 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
-                                     const MappingOptions& mapping) {
+                                     const MappingOptions& mapping,
+                                     bool preserveLogicalOrder) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
                                                             mapping));
   const auto& target = environment.target();
@@ -262,8 +310,14 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());
-  pm.addPass(qco::createElideTerminalSwapsPass());
+  if (!preserveLogicalOrder) {
+    pm.addPass(qco::createElideTerminalSwapsPass());
+  }
   pm.addPass(qco::createPlacementPass());
+  if (preserveLogicalOrder) {
+    // Restore source indices before synthesis chooses site-specific gates.
+    pm.addPass(std::make_unique<RestoreLogicalWireOrderPass>());
+  }
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   if (const auto basis = target.synthesisBasis();

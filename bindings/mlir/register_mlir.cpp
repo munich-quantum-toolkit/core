@@ -2342,19 +2342,27 @@ RuntimeError with MLIR diagnostics.)pb")
           "synthesize_for_target",
           [](mlir::QCOProgram& program,
              const mlir::TargetEnvironment& environment,
-             mlir::CompilationOptions options) {
+             mlir::CompilationOptions options, bool preserveLogicalOrder) {
             requireValid(program);
             withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(), "Target synthesis failed", [&] {
-                  return program.synthesizeForTarget(environment, options);
+                  return program.synthesizeForTarget(environment, options,
+                                                     preserveLogicalOrder);
                 });
           },
           "target_environment"_a, nb::kw_only(),
           "options"_a = mlir::CompilationOptions{},
+          "preserve_logical_order"_a = false,
           R"pb(Synthesize native operations without routing.
 
 Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep
-their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails.
+their device site IDs and must fit the target topology.
+
+Set ``preserve_logical_order=True`` for fixed-width dynamic input and an equally wide all-to-all target
+with site IDs starting at zero in consecutive order. Synthesis keeps wire permutations in the circuit
+and omits layout metadata. Pass the target to ``to_qiskit()`` to include idle wires in the export.
+
+Do not rely on the program contents if synthesis fails.
 Failures raise RuntimeError with the emitted MLIR diagnostics.)pb")
       .def(
           "to_qiskit",

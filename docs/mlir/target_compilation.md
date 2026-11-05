@@ -265,9 +265,13 @@ leaves the program unchanged.
 
 {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` translates to native
 gates while preserving static site IDs. Dynamic qubits require all-to-all
-connectivity. This method does not place qubits or require measurement support.
-It checks target support and topology; it mutates the program, including on
-failure, so copy first when needed.
+connectivity. Synthesis checks target support and topology and mutates the
+program. Copy the program before synthesis to preserve it on failure.
+
+Use `preserve_logical_order=True` for a fixed-width circuit and an equally wide
+all-to-all target with consecutive site IDs starting at zero. Wire permutations
+remain in the circuit and the output carries no layout metadata. Pass the target
+to `to_qiskit()` to include idle wires in the exported circuit.
 
 ### Payload control flow
 

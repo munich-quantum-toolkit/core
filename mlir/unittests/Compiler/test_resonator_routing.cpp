@@ -13,6 +13,8 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 
+#include "ExactUnitaryTest.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -96,6 +98,32 @@ const std::vector<Scenario> SCENARIOS{
         BELL_SOURCE,
     },
 };
+
+TEST(NativeSynthesis, PreservesLogicalWireOrder) {
+  auto qc = QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; include \"stdgates.inc\"; qubit[4] q; "
+      "x q[2]; h q[0]; swap q[0], q[2];");
+  ASSERT_TRUE(static_cast<bool>(qc)) << llvm::toString(qc.takeError());
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(succeeded(program));
+  auto expected = program->copy();
+  const auto payload = llvm::cantFail(
+      PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM3));
+  const auto makeEnvironment = [&](size_t width) {
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        width, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::unrestricted()));
+    return TargetEnvironment(target, payload);
+  };
+  const auto environment = makeEnvironment(4);
+  ASSERT_TRUE(succeeded(program->synthesizeForTarget(environment, {}, true)));
+  EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
+  ::mqt::test::expectFullUnitaryEqual(expected.module(), program->module(), 4);
+
+  auto wider = expected.copy();
+  EXPECT_TRUE(failed(wider.synthesizeForTarget(makeEnvironment(5), {}, true)));
+  EXPECT_TRUE(failed(program->synthesizeForTarget(environment, {}, true)));
+}
 
 } // namespace
 

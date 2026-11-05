@@ -50,6 +50,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 /// instrumentation settings when running this pipeline.
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
-                                     const MappingOptions& mapping = {});
+                                     const MappingOptions& mapping = {},
+                                     bool preserveLogicalOrder = false);
 
 } // namespace mlir

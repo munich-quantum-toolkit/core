@@ -514,11 +514,13 @@ LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
 
 LogicalResult
 QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
-                                const CompilationOptions& options) {
+                                const CompilationOptions& options,
+                                bool preserveLogicalOrder) {
   return runQCOTransformPasses(
       mod(),
-      [&environment, &options](OpPassManager& pm) {
-        populateTargetSynthesisPipeline(pm, environment, options.mapping);
+      [&](OpPassManager& pm) {
+        populateTargetSynthesisPipeline(pm, environment, options.mapping,
+                                        preserveLogicalOrder);
       },
       "failed to synthesize the QCO program for the target", options, true);
 }
