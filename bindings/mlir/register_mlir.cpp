@@ -874,6 +874,9 @@ compilePythonProgram(PythonInputTypes& types, const nb::handle program,
   } else if (!target.is_none() && !compilerTarget) {
     targetEnvironment.emplace(
         bindings::qiskit::importTargetEnvironment(target, std::nullopt, false));
+  }
+  if (targetEnvironment &&
+      targetEnvironment->payloadSpecification().format().id == "qiskit") {
     output = output.value_or(OutputFormat::Qiskit);
   }
 
@@ -2899,8 +2902,9 @@ inputs. Elements must share one supported input kind; subclasses are accepted.
 Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
 An explicit ``output`` selects each result's representation. Without it, a
-Qiskit target selects QuantumCircuit and a QDMI backend, device or target environment selects
-:class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
+Qiskit target or Qiskit payload environment selects QuantumCircuit. A QDMI
+backend, device or other target environment selects :class:`CompiledProgram`
+for :func:`submit_program`. Otherwise, each input
 retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
 QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
 QCO inputs return optimized QCO.

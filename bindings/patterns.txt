@@ -305,7 +305,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: _CompilerInput,
         *,
-        target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
+        target: qiskit.providers.BackendV2 | qiskit.transpiler.Target | TargetEnvironment,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> qiskit.circuit.QuantumCircuit | CompiledProgram: ...
@@ -313,7 +313,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: _CompilerInput,
         *,
-        target: mqt.core.qdmi.Device | str | TargetEnvironment,
+        target: mqt.core.qdmi.Device | str,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> CompiledProgram: ...
@@ -442,7 +442,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: Sequence[_CompilerInputT],
         *,
-        target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
+        target: qiskit.providers.BackendV2 | qiskit.transpiler.Target | TargetEnvironment,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> list[qiskit.circuit.QuantumCircuit] | list[CompiledProgram]: ...
@@ -450,7 +450,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: Sequence[_CompilerInputT],
         *,
-        target: mqt.core.qdmi.Device | str | TargetEnvironment,
+        target: mqt.core.qdmi.Device | str,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> list[CompiledProgram]: ...

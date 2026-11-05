@@ -74,7 +74,7 @@ if not supports_qiskit_translation():
     pytest.skip("Qiskit version has no compiler translation adapter", allow_module_level=True)
 
 
-@pytest.mark.parametrize("target_kind", [None, "backend", "qiskit", "compiler"])
+@pytest.mark.parametrize("target_kind", [None, "backend", "qiskit", "compiler", "environment"])
 def test_compile_program_qiskit_output(target_kind: str | None) -> None:
     """Compile a symbolic circuit with phase, routing, and backend constraints."""
     theta = Parameter("theta")
@@ -95,10 +95,11 @@ def test_compile_program_qiskit_output(target_kind: str | None) -> None:
         backend = GenericBackendV2(
             5, basis_gates=["sx", "x", "rz", "cx"], coupling_map=[[0, 1], [1, 2], [2, 3], [3, 4]], seed=1
         )
-        target: GenericBackendV2 | Target | CompilerTarget = {
+        target: GenericBackendV2 | Target | CompilerTarget | TargetEnvironment = {
             "backend": backend,
             "qiskit": backend.target,
             "compiler": CompilerTarget.from_qiskit(backend),
+            "environment": TargetEnvironment.from_qiskit(backend, strict=True),
         }[target_kind]
         compiled = compile_program(circuit, target=target, options=CompilationOptions(seed=7))
         assert isinstance(compiled, QuantumCircuit)
@@ -130,6 +131,7 @@ def test_compile_program_qiskit_output(target_kind: str | None) -> None:
         ("backend", OutputFormat.QC, QCProgram),
         ("qiskit", OutputFormat.QCO_OPTIMIZED, QCOProgram),
         ("compiler", OutputFormat.JEFF, JeffProgram),
+        ("environment", OutputFormat.OPENQASM3, OpenQASMProgram),
         ("backend", OutputFormat.OPENQASM3, OpenQASMProgram),
         ("qiskit", OutputFormat.QIR_BASE, QIRProgram),
         ("compiler", OutputFormat.QIR_ADAPTIVE, QIRProgram),
@@ -145,9 +147,12 @@ def test_compile_program_explicit_output(target_kind: str, output: OutputFormat,
     elif target_kind == "device_id":
         target = "mqt.ddsim.default"
     else:
-        target = {"backend": backend, "qiskit": backend.target, "compiler": CompilerTarget.from_qiskit(backend)}[
-            target_kind
-        ]
+        target = {
+            "backend": backend,
+            "qiskit": backend.target,
+            "compiler": CompilerTarget.from_qiskit(backend),
+            "environment": TargetEnvironment.from_qiskit(backend, strict=True),
+        }[target_kind]
     circuit = QuantumCircuit(2, 2)
     circuit.x(0)
     circuit.cx(0, 1)

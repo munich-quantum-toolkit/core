@@ -32,7 +32,7 @@ import warnings
 from importlib.metadata import version
 from numbers import Integral
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pennylane as qp
 from packaging.specifiers import SpecifierSet
@@ -299,7 +299,7 @@ class QDMIDevice(Device):
             try:
                 program = QCProgram.from_pennylane(tape, wires=self._tape_wires(tape))
                 prepared.append(
-                    compile_program(program, target=environment)
+                    cast("CompiledProgram", compile_program(program, target=environment))
                     if program.operation_counts().get("qc.measure", 0)
                     else None
                 )

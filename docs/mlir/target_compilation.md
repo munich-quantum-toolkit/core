@@ -39,10 +39,10 @@ print(f"Counts: {job.get_counts()}")
 `target` accepts a device, registered device ID,
 {py:class}`~mqt.core.mlir.CompilerTarget`,
 {py:class}`~mqt.core.mlir.TargetEnvironment`, or Qiskit backend/target. Device,
-environment, and `QDMIBackend` targets return a `CompiledProgram`; other Qiskit
-backends and targets return a `QuantumCircuit`. An explicit `output` selects
-another representation. For a `CompilerTarget`, the default preserves the
-input's program family.
+`QDMIBackend`, and non-Qiskit environment targets return a `CompiledProgram`.
+Other Qiskit backends, targets, and Qiskit payload environments return a
+`QuantumCircuit`. An explicit `output` selects another representation. For a
+`CompilerTarget`, the default preserves the input's program family.
 
 Use `TargetEnvironment.from_qiskit(target, strict=True)` to reject applicable
 gates or constraints Core cannot represent. It imports control flow as payload

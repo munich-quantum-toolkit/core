@@ -1703,7 +1703,7 @@ def compile_program(
 def compile_program(
     program: _CompilerInput,
     *,
-    target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
+    target: qiskit.providers.BackendV2 | qiskit.transpiler.Target | TargetEnvironment,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> qiskit.circuit.QuantumCircuit | CompiledProgram: ...
@@ -1711,7 +1711,7 @@ def compile_program(
 def compile_program(
     program: _CompilerInput,
     *,
-    target: mqt.core.qdmi.Device | str | TargetEnvironment,
+    target: mqt.core.qdmi.Device | str,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> CompiledProgram: ...
@@ -1839,7 +1839,7 @@ def compile_program(
 def compile_program(
     program: Sequence[_CompilerInputT],
     *,
-    target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
+    target: qiskit.providers.BackendV2 | qiskit.transpiler.Target | TargetEnvironment,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[qiskit.circuit.QuantumCircuit] | list[CompiledProgram]: ...
@@ -1847,7 +1847,7 @@ def compile_program(
 def compile_program(
     program: Sequence[_CompilerInputT],
     *,
-    target: mqt.core.qdmi.Device | str | TargetEnvironment,
+    target: mqt.core.qdmi.Device | str,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[CompiledProgram]: ...
@@ -1882,8 +1882,9 @@ def compile_program(
     Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
     An explicit ``output`` selects each result's representation. Without it, a
-    Qiskit target selects QuantumCircuit and a QDMI backend, device or target environment selects
-    :class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
+    Qiskit target or Qiskit payload environment selects QuantumCircuit. A QDMI
+    backend, device or other target environment selects :class:`CompiledProgram`
+    for :func:`submit_program`. Otherwise, each input
     retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
     QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
     QCO inputs return optimized QCO.
