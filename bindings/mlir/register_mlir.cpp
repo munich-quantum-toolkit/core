@@ -1869,9 +1869,11 @@ Raises:
           "The target name, if available.")
       .def_prop_ro("duration_unit", &mlir::CompilerTarget::durationUnit,
                    "The target timing unit, if available.")
-      .def_prop_ro("placeable_sites", &mlir::CompilerTarget::placeableSites,
-                   "Sites supporting a compiler-targetable single-qubit gate "
-                   "and measurement.")
+      .def_prop_ro(
+          "placeable_sites", &mlir::CompilerTarget::placeableSites,
+          "Sites supporting a compiler-targetable single-qubit gate.\n\n"
+          "If the target supports measurement, these sites must also "
+          "support readout.")
       .def_prop_ro("num_sites", &mlir::CompilerTarget::numSites,
                    "The number of target sites.")
       .def_prop_ro(
@@ -2317,8 +2319,9 @@ partial changes; use ``copy()`` to preserve the input.)pb")
            nb::kw_only(), "min_qubits"_a = 3,
            R"pb(Decompose gates that act on at least min_qubits qubits.
 
-Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates. min_qubits must be
-at least 3; default 3 means wider than two-qubit.)pb")
+Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
+at least 3. The pass borrows and restores ancilla qubits when this reduces the
+estimated entangling cost. It allocates no additional qubits.)pb")
       .def(
           "compile_for_target",
           [](mlir::QCOProgram& program,

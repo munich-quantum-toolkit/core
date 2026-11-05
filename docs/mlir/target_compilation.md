@@ -60,10 +60,11 @@ internally and export as one-parameter OpenQASM pulses with their phase
 correction.
 
 Target compilation places qubits only on sites with a supported single-qubit
-gate and measurement. With explicit couplings, it uses their largest connected
-component, including connections through resonators. Targets with ordered
-`move(qubit, resonator)` placements can route CZ gates through idle resonators.
-Core emits closed `move; cz; move` sandwiches before readout. Use
+gate. If the target supports measurement, these sites must also support readout.
+With explicit couplings, it uses their largest connected component, including
+connections through resonators. Targets with ordered `move(qubit, resonator)`
+placements can route CZ gates through idle resonators. Core emits closed
+`move; cz; move` sandwiches before readout. Use
 `compile_program(circuit, target=device)` with `submit_program`,
 `backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.
 Qiskit `transpile` does not support these targets. Native circuits that already
@@ -161,6 +162,12 @@ statistics, and mapping controls. Repeatable mapping requires the same build,
 input, target, seed, and explicit trial count. Sampling uses a separate seed.
 For routing costs, search limits, and synthesis behavior, see the
 `place-and-route` pass in {doc}`QCO`.
+
+Controlled-gate decomposition can borrow other allocated qubits as ancilla
+qubits when this reduces estimated entangling cost. It restores their states and
+correlations and allocates no additional qubits. See
+`decompose-multi-controlled` in {doc}`QCO` for eligibility and target
+restrictions.
 
 ### Define a target
 

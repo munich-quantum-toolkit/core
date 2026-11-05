@@ -472,9 +472,10 @@ public:
 
   /// Decompose gates that act on at least @p minQubits qubits.
   ///
-  /// Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, `qco.rccx`, and
-  /// constant-angle phase gates. @p minQubits must be at least 3; default 3
-  /// means wider than two-qubit.
+  /// Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and `qco.rccx`.
+  /// Phase and rotation angles may be constants or runtime values.
+  /// @p minQubits must be at least 3. The pass borrows and restores ancilla
+  /// qubits when this reduces the estimated entangling cost.
   [[nodiscard]] LogicalResult decomposeMultiControlled(uint64_t minQubits = 3);
 
   /// Compile for a target and attach layout metadata when possible.

@@ -99,10 +99,11 @@ void populateOpenQASM2PreparationPipeline(mlir::OpPassManager& pm,
 
 /// Populate a QCO-oriented cleanup pipeline on the given pass manager.
 ///
-/// Adds generic cleanup and qtensor shrink-to-fit. Dead-value removal may be
-/// deferred when a later pipeline stage changes region or function signatures.
+/// Adds generic cleanup, tensor shrinking, and dead-value removal. Set
+/// @p removeUnusedValues to false to preserve potential ancilla qubits and
+/// defer signature changes until after decomposition and placement.
 void populateQCOCleanupPipeline(mlir::OpPassManager& pm,
-                                bool removeDeadValues = true);
+                                bool removeUnusedValues = true);
 
 /// Populate a QIR-oriented cleanup pipeline on the given pass manager.
 ///

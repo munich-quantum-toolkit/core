@@ -642,6 +642,93 @@ def test_mapping_options_defaults() -> None:
     assert options.search_memory_limit == 256 * 1024 * 1024
 
 
+@requires_qiskit_translation
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
+def test_mc_borrow_ancillas_target_round_trip(method: str) -> None:
+    """Borrow an entangled ancilla qubit in both target pipelines."""
+    source = QuantumCircuit(7)
+    source.h(range(5))
+    source.ry(0.43, 5)
+    source.cx(0, 6)
+    source.append(library.XGate().control(5, annotated=False), range(6))
+    source.rz(0.29, 3)
+    expected = Operator(source).data[:, :64]
+    source.measure_all()
+    target = CompilerTarget(
+        7,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    getattr(program, method)(_test_target_environment(target), options=CompilationOptions(seed=7))
+    result = program.to_qiskit(target=target)
+    assert result.num_qubits == 7
+    assert result.count_ops()["measure"] == 7
+    assert result.count_ops()["cz"] <= 57  # 56 for the borrowed plan and one to entangle the ancilla.
+    result.remove_final_measurements()
+    actual = Operator(result).data[:, :64]
+    phase = np.vdot(expected.ravel(), actual.ravel()) / 64
+    np.testing.assert_allclose(actual, phase * expected, atol=1e-10)
+    assert abs(abs(phase) - 1) < 1e-10
+
+
+@requires_qiskit_translation
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
+@pytest.mark.parametrize("site_restricted", [False, True])
+def test_mc_borrow_ancillas_preserves_target_capacity(method: str, *, site_restricted: bool) -> None:
+    """Unused declared slots must remain removable on a smaller target."""
+    capacity = 7
+    source = QuantumCircuit(8)
+    source.h(range(5))
+    source.append(library.XGate().control(5, annotated=False), range(6))
+    operations = [
+        CompilerTarget.OperationCapability("u", 1, 3),
+        CompilerTarget.OperationCapability("cz", 2, 0),
+        CompilerTarget.OperationCapability("measure", 1, 0),
+    ]
+    if site_restricted:
+        operations.append(CompilerTarget.OperationCapability("rccx", 3, 0, site_tuples=[(0, 1, 2)]))
+    target = CompilerTarget(
+        capacity,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations(operations),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    getattr(program, method)(_test_target_environment(target), options=CompilationOptions(seed=7))
+    assert program.inspect().num_qubits == 6
+
+
+@requires_qiskit_translation
+def test_mc_borrow_ancillas_wide_measured_roundtrip() -> None:
+    """Export a measured HP24 fallback through target synthesis."""
+    width = 24
+    source = QuantumCircuit(width)
+    source.h(0)
+    source.ry(0.31, width - 1)
+    source.append(library.XGate().control(width - 1, annotated=False), range(width - 1, -1, -1))
+    source.rz(-0.27, 0)
+    source.measure_all()
+    target = CompilerTarget(
+        width,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.synthesize_for_target(_test_target_environment(target), options=CompilationOptions(seed=7))
+    result = program.to_qiskit(target=target)
+    assert result.num_qubits == width
+    assert result.count_ops()["measure"] == width
+    assert result.count_ops()["cz"] > 0
+
+
 @pytest.mark.parametrize(
     ("method", "all_to_all"),
     [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],
