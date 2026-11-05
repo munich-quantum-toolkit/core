@@ -227,6 +227,17 @@ def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, mon
         assert sum(counts.values()) == 128
 
 
+@pytest.mark.parametrize("option", ["--version", "--help-hidden"])
+def test_qpy_cli_information(script_runner: ScriptRunner, tmp_path: Path, option: str) -> None:
+    """Informational commands succeed without exporting or replacing a file."""
+    output = tmp_path / "output.qpy"
+    output.write_bytes(b"existing")
+    result = script_runner.run(["mqt-core", "compile", "--emit=qpy", "-o", str(output), option])
+    assert result.success
+    assert result.stdout
+    assert output.read_bytes() == b"existing"
+
+
 def test_compile_qpy_and_jeff(script_runner: ScriptRunner, tmp_path: Path) -> None:
     """Export QPY with Qiskit and execute a jeff round trip."""
     source = tmp_path / "bell.qasm"

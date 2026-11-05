@@ -22,6 +22,8 @@ import pytest
 from qiskit import qpy
 from qiskit.quantum_info import Statevector
 
+from mqt.core.mlir import CompilerTarget
+
 
 @pytest.mark.parametrize("platform", ["linux", "win32"])
 def test_native_command(monkeypatch: pytest.MonkeyPatch, platform: str) -> None:
@@ -66,14 +68,18 @@ def test_qpy_export(
     else:
         assert error.value.code == 0
         data = capsysbinary.readouterr().out if destination == "stdout" else output.read_bytes()
+        assert qpy.get_qpy_version(BytesIO(data)) == 17
         circuit = qpy.load(BytesIO(data))[0]
         assert Statevector.from_instruction(circuit).probabilities_dict() == {"1": 1.0}
 
 
-def test_qpy_compiler_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """A native compiler failure leaves an existing destination intact."""
+@pytest.mark.parametrize("failure", ["compiler", "serializer"])
+def test_qpy_export_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str) -> None:
+    """Compilation and serialization failures leave an existing destination intact."""
     source = tmp_path / "input.qasm"
-    source.write_text("not OpenQASM")
+    source.write_text("not OpenQASM" if failure == "compiler" else "OPENQASM 3; qubit q; x q;")
+    if failure == "serializer":
+        monkeypatch.setattr(qpy, "dump", Mock(side_effect=ValueError("Cannot serialize circuit")))
     output = tmp_path / "output.qpy"
     output.write_bytes(b"existing")
     monkeypatch.setattr(sys, "argv", ["mqt-core", "compile", str(source), "-o", str(output)])
@@ -81,6 +87,47 @@ def test_qpy_compiler_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
         distribution("mqt-core").entry_points["mqt-core"].load()()
     assert error.value.code != 0
     assert output.read_bytes() == b"existing"
+
+
+@pytest.mark.parametrize("gate_name", ["u3", "device_u"])
+def test_qpy_target_export(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, gate_name: str) -> None:
+    """Retain native gate names, sparse device addresses, and logical layout."""
+    target = CompilerTarget(
+        "sparse device",
+        [CompilerTarget.Site(2), CompilerTarget.Site(5)],
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability(gate_name, 1, 3, canonical_name="u"),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+    payload = (
+        '#mqt.payload_spec<format = <id = "qir", version = "2.1.0", profile = "base", encoding = binary>, '
+        "capabilities = [], optional_capabilities_known = true>"
+    )
+    source = tmp_path / "input.qasm"
+    source.write_text("OPENQASM 3; qubit q; x q;")
+    output = tmp_path / "output.qpy"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["mqt-core", "compile", str(source), f"--target={target}", f"--payload-spec={payload}", "-o", str(output)],
+    )
+    with pytest.raises(SystemExit) as error:
+        distribution("mqt-core").entry_points["mqt-core"].load()()
+    assert error.value.code == 0
+    with output.open("rb") as stream:
+        restored = qpy.load(stream)[0]
+    assert restored.count_ops() == {gate_name: 1}
+    assert restored.num_qubits == 6
+    assert restored.layout is not None
+    placement = restored.layout.initial_index_layout(filter_ancillas=True)
+    assert len(placement) == 1
+    assert placement[0] in {2, 5}
+    assert restored.find_bit(restored.data[0].qubits[0]).index == placement[0]
+    expected = Statevector.from_int(1 << placement[0], 2**restored.num_qubits)
+    assert Statevector.from_instruction(restored).data == pytest.approx(expected.data, abs=1e-14)
 
 
 @pytest.mark.parametrize("arguments", [["--help"], ["-o", "output.qasm"]])

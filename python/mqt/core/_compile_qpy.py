@@ -10,12 +10,12 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = {"argparse", "io", "pathlib", "subprocess", "tempfile"}
+__lazy_modules__ = {"argparse", "importlib", "pathlib", "subprocess", "tempfile"}
 
 import argparse
-import io
 import subprocess
 import sys
+from importlib import import_module
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -30,17 +30,22 @@ def compile_qpy(arguments: list[str]) -> int | None:
     parser.add_argument("--emit")
     parser.add_argument("-o", default="-")
     options, remaining = parser.parse_known_args(arguments[2:])
-    if "--help" in remaining or "-h" in remaining:
+    if any(
+        argument.lstrip("-")
+        in {"h", "help", "help-hidden", "help-list", "help-list-hidden", "version", "qdmi-list-devices"}
+        for argument in remaining
+        if argument.startswith("-")
+    ):
         return None
     if options.emit != "qpy" and not (options.emit is None and Path(options.o).suffix == ".qpy"):
         return None
 
     try:
-        from qiskit import qpy  # ruff: ignore[import-outside-top-level] - Optional serializer.
+        import_module("qiskit")
     except ImportError:
         sys.stderr.write("QPY output requires Qiskit: install mqt-core[qiskit].\n")
         return 1
-    from mqt.core.mlir import QCOProgram  # ruff: ignore[import-outside-top-level] - Load bindings only for QPY.
+    from mqt.core.mlir import QCOProgram, _export_qpy  # ruff: ignore[import-outside-top-level] - Load bindings only for QPY.
 
     with TemporaryDirectory() as directory:
         intermediate = Path(directory) / "program.qco.mlir"
@@ -49,11 +54,9 @@ def compile_qpy(arguments: list[str]) -> int | None:
         )
         if result.returncode:
             return result.returncode
-        circuit = QCOProgram.from_mlir_file(intermediate).to_qiskit()
-        buffer = io.BytesIO()
-        qpy.dump(circuit, buffer, version=17)
+        payload = _export_qpy(QCOProgram.from_mlir_file(intermediate))
         if options.o == "-":
-            sys.stdout.buffer.write(buffer.getvalue())
+            sys.stdout.buffer.write(payload)
         else:
-            Path(options.o).write_bytes(buffer.getvalue())
+            Path(options.o).write_bytes(payload)
     return 0

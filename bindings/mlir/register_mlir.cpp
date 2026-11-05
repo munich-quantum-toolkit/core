@@ -2898,6 +2898,30 @@ and error contracts.)pb");
           "The payload format and capabilities used for compilation.");
 
   m.def(
+      "_export_qpy",
+      [](mlir::QCOProgram& program) {
+        auto source = copiedOrConsumed(program, false);
+        const auto context = source.context();
+        auto qc = withDiagnostics<nb::exception_type::runtime_error>(
+            context.get(), "QPY export failed",
+            [&] { return std::move(source).intoQC(); });
+        if (qc.module()->hasAttr(mlir::mqt::TargetEnvAttr::name)) {
+          const mlir::TargetEnvironmentAnalysis environment(qc.module());
+          if (!environment) {
+            throw nb::value_error(environment.error().str().c_str());
+          }
+          const auto payload =
+              unwrap(exportQPY(std::move(qc), environment.environment()));
+          return nb::bytes(payload.data(), payload.size());
+        }
+        return nb::cast<nb::bytes>(
+            writeQPY(bindings::qiskit::exportCircuit(std::move(qc), nullptr)));
+      },
+      "program"_a,
+      "Serialize compiled QCO as QPY, consuming it and retaining its target "
+      "environment.");
+
+  m.def(
       "compile_program", PythonInputAdapter<&compilePythonProgram>{inputTypes},
       "program"_a, nb::kw_only(), "target"_a = nb::none(),
       "output"_a = nb::none(), "copy"_a = false,

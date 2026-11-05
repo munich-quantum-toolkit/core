@@ -1612,6 +1612,9 @@ class CompiledProgram:
     def payload_specification(self) -> PayloadSpecification[CompiledProgram]:
         """The payload format and capabilities used for compilation."""
 
+def _export_qpy(program: QCOProgram) -> bytes:
+    """Serialize compiled QCO as QPY, consuming it and retaining its target environment."""
+
 @overload
 def compile_program(
     program: _CompilerInput,

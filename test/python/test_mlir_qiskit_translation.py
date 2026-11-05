@@ -4981,6 +4981,37 @@ def test_qiskit_native_opaque_gate_has_no_invented_definition() -> None:
         sample(source, shots=1)
 
 
+@pytest.mark.parametrize(
+    "gate",
+    [library.XGate(), library.UGate(Parameter("z"), Parameter("a"), Parameter("m")), library.CRXGate(0.37)],
+    ids=["fixed", "symbolic", "controlled"],
+)
+def test_target_gate_alias_survives_qpy(gate: Gate) -> None:
+    """Native aliases retain names, parameter order, wires, and exact phases."""
+    name = f"device_{gate.name}"
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability(name, gate.num_qubits, len(gate.params), canonical_name=gate.name),
+        ]),
+    )
+    source = QuantumCircuit(2, global_phase=0.29)
+    source.append(gate, [1, 0][: gate.num_qubits])
+    exported = QCProgram.from_qiskit(source, native=True).to_qiskit(target=target)
+    buffer = BytesIO()
+    qpy.dump(exported, buffer, version=17)
+    buffer.seek(0)
+    restored = qpy.load(buffer)[0]
+    bindings = dict(zip(source.parameters, [0.17, -0.31, 0.53], strict=False))
+    expected = Operator(source.assign_parameters(bindings)).data
+    for circuit in (exported, restored):
+        assert circuit.count_ops() == {name: 1}
+        assert circuit.data[0].operation.name == name
+        assert circuit.data[0].operation.params == gate.params
+        np.testing.assert_allclose(Operator(circuit.assign_parameters(bindings)).data, expected, atol=1e-12)
+
+
 @pytest.mark.parametrize("name", ["bad;gate", "if"])
 def test_qiskit_native_export_rejects_invalid_gate_names(name: str) -> None:
     """Opaque names cannot introduce OpenQASM syntax or keywords."""
