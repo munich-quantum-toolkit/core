@@ -17,10 +17,10 @@ reproducers retain the effective value as input metadata.
 ## Staged target compilation
 
 `mqt.target_compilation_original_env` is a module attribute of type
-`#mqt.target_env`. Target preparation saves the execution environment while
-passes use the routing target. Successful finalization restores the saved
-environment and removes this attribute. Explicitly attaching another target
-environment removes the saved value; see {doc}`target_compilation`.
+`#mqt.target_env`. `mqt-target-prepare` saves the execution environment while
+passes use the routing target. `mqt-target-finalize` restores it on success and
+removes this attribute. Explicitly attaching a target environment also removes
+the saved value; see {doc}`target_compilation` for the pass-sequence contract.
 
 ## Passes
 

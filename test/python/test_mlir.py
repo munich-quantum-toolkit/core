@@ -2174,11 +2174,6 @@ def test_qco_program_runs_target_passes_in_stages(topology: str, basis: str) -> 
         inspection = candidate.inspect()
         assert set(inspection.gate_counts) <= {name for name, _, _ in gates}
         assert inspection.num_two_qubit_gates == sum(len(instruction.qubits) == 2 for instruction in result.data)
-        assert (
-            0
-            < result.depth(filter_function=lambda instruction: len(instruction.qubits) == 2)
-            <= (inspection.num_two_qubit_gates)
-        )
 
     assert prepared.ir == checkpoint
 

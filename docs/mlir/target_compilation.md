@@ -222,13 +222,13 @@ Omitting it, or passing `None`, keeps the stored environment.
 
 For pass-order experiments, prepare the source once, then compile independent
 copies. `mqt-target-prepare` records source qubit identities before inlining and
-structural cleanup, so idle inputs retain their positions in the exported
-layout. Preparation uses the same routing target as `compile_for_target`: it
-restricts placement to usable sites and adds virtual resonator couplings.
-`mqt-target-finalize` runs native synthesis, cleanup, and target verification,
-then restores the original execution environment. Copies and IR checkpoints
-retain this state; explicitly attaching another environment discards it. Start
-from the source when changing targets.
+cleanup, preserving idle inputs in the [layout](#layout-metadata) for supported
+allocation shapes. It uses the same routing target as `compile_for_target`,
+restricting placement to usable sites and adding virtual resonator couplings.
+`mqt-target-finalize` cleans up, synthesizes native gates, verifies the result,
+and restores the saved execution environment on success. Copies and IR
+checkpoints retain this state. Passing an environment again discards the saved
+value; start from the source when changing targets.
 
 The following example compares two pass orders with the default compiler using a
 fixed seed and routing trial count:
@@ -295,15 +295,15 @@ omitting it keeps the target-independent behavior. For all-to-all targets, use
 `place-qubits` instead of `place-and-route`. Set custom routing controls in the
 textual pass options; `CompilationOptions.mapping` configures the default target
 compiler. `unroll-modifiers` distributes composite gates before placement and
-native synthesis, as in the default compiler. The runner executes only the
-requested passes, so each sequence must meet its passes' input requirements.
+native synthesis. The runner executes only the requested passes, so each
+sequence must meet its passes' input requirements.
 
-The default `preserve_layout=False` clears existing layout metadata. Keep it
-enabled between the stages above: terminal-SWAP elision and mapping maintain the
-layout, while later synthesis and verification preserve it. For other passes,
-enable it only when they preserve wire identity and order or update the layout
-themselves. The option does not create or validate a mapping; it is not safe for
-qubit reuse, wire reordering, or retargeting that leaves stale metadata.
+The default `preserve_layout=False` clears existing layout metadata. Set
+`preserve_layout=True` throughout the sequence above: terminal-SWAP elision and
+mapping maintain the layout, while synthesis and verification preserve it. Use
+this flag only when passes keep wire and site identities or update the layout
+themselves. The flag does not create or validate a mapping; qubit reuse, wire
+reordering, or retargeting must not leave stale metadata.
 
 Use `copy()` or an IR checkpoint before trying another sequence: a failed pass
 can leave the supplied environment and partial changes on the program. A
@@ -463,9 +463,10 @@ Dynamic target compilation attaches placement and routing metadata when the
 input has fixed-size entry-block allocations. Static programs already name
 physical sites; compilation preserves those IDs and does not attach a layout.
 Static and dynamic qubits cannot be mixed. Compilation rejects an already
-attached layout. Custom pipelines clear it unless `preserve_layout=True` is set
-for passes that preserve or update the layout. See
-[transpiler layouts](qiskit.md#transpiler-layouts) for the full contract.
+attached layout. See [custom pass sequences](#custom-pass-sequences) for layout
+preservation between passes and
+[transpiler layouts](qiskit.md#transpiler-layouts) for the import and export
+contract.
 
 ### Temporary QDMI payload contract
 
