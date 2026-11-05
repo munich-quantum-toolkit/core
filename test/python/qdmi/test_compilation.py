@@ -341,7 +341,6 @@ def test_result_bit_order(program_format: ProgramFormat, *, swapped: bool) -> No
     )
     environment = TargetEnvironment.from_device("mqt.ddsim.default", program_format=program_format)
     compiled = compile_program(source, target=environment)
-    assert isinstance(compiled, CompiledProgram)
     job = submit_program(compiled, target="mqt.ddsim.default", num_shots=4)
     job.wait()
     shots = job.get_shots()
@@ -526,7 +525,6 @@ def test_adaptive_payload_supports_optional_computations() -> None:
     device = open_device("mqt.ddsim.default")
     environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QIR_ADAPTIVE_MODULE)
     compiled = compile_program(source, target=environment)
-    assert isinstance(compiled, CompiledProgram)
     assert compiled.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
     assert "qir.int-computations" in {c.capability_id for c in compiled.payload_specification.capabilities}
     job = submit_program(compiled, target=device, num_shots=16)

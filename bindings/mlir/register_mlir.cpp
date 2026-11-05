@@ -1349,8 +1349,10 @@ void registerMLIR(nb::module_& m) {
   programCapability.attr("MULTIWAY_BRANCHING") =
       mlir::ProgramCapability::MULTIWAY_BRANCHING.str();
 
-  nb::class_<mlir::PayloadSpecification>(m, "PayloadSpecification",
-                                         "Selected payload execution contract.")
+  nb::class_<mlir::PayloadSpecification>(
+      m, "PayloadSpecification", nb::is_generic(),
+      nb::sig("class PayloadSpecification(typing.Generic[_TargetResultT_co])"),
+      "Selected payload execution contract.")
       .def(
           "__init__",
           [](mlir::PayloadSpecification& self, mlir::PayloadFormat format,
@@ -1937,7 +1939,8 @@ Args:
         unrestricted support.)pb");
 
   nb::class_<mlir::TargetEnvironment>(
-      m, "TargetEnvironment",
+      m, "TargetEnvironment", nb::is_generic(),
+      nb::sig("class TargetEnvironment(typing.Generic[_TargetResultT_co])"),
       "A compiler target and its selected payload specification.")
       .def(nb::init<mlir::CompilerTarget, mlir::PayloadSpecification>(),
            "target"_a, "payload_specification"_a)
@@ -1947,7 +1950,8 @@ Args:
           nb::sig(
               "def from_qiskit(source: qiskit.transpiler.Target | "
               "qiskit.providers.BackendV2, *, native_num_qubits: int | None "
-              "= None, strict: bool = False) -> TargetEnvironment"),
+              "= None, strict: bool = False) -> "
+              "TargetEnvironment[qiskit.circuit.QuantumCircuit]"),
           R"pb(Snapshot a Qiskit target and its output capabilities.
 
 Args:
@@ -1972,7 +1976,7 @@ Returns:
           "device"_a, nb::kw_only(), "program_format"_a = nb::none(),
           nb::sig("def from_device(device: mqt.core.qdmi.Device | str, *, "
                   "program_format: mqt.core.qdmi.ProgramFormat | None = None) "
-                  "-> TargetEnvironment"),
+                  "-> TargetEnvironment[CompiledProgram]"),
           "Snapshot a QDMI device and select its executable payload.")
       .def_prop_ro("target", &mlir::TargetEnvironment::target,
                    "The compiler target.")

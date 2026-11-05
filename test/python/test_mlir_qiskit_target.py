@@ -49,6 +49,7 @@ from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
     CompilationOptions,
+    CompiledProgram,
     CompilerTarget,
     JeffProgram,
     OpenQASMProgram,
@@ -417,6 +418,29 @@ def test_custom_names_and_operations() -> None:
             CompilerTarget.from_qiskit(source, operation_names=[name])
     with pytest.raises(ValueError, match="no native gate applicability"):
         CompilerTarget.from_qiskit(source, operation_names=["global_phase"])
+
+
+def test_environment_result_types() -> None:
+    """Factory and reconstructed environments preserve their output types."""
+    source = GenericBackendV2(1, basis_gates=["u"], seed=1).target
+    circuit = QuantumCircuit(1)
+    circuit.x(0)
+    qiskit = TargetEnvironment.from_qiskit(source, strict=True)
+    reconstructed = TargetEnvironment(qiskit.target, qiskit.payload_specification)
+    assert_type(compile_program(circuit, target=reconstructed), QuantumCircuit)
+    assert_type(compile_program([circuit], target=reconstructed), list[QuantumCircuit])
+    assert_type(compile_program(circuit, target=qiskit, output=OutputFormat.QC), QCProgram)
+
+    payload = PayloadSpecification.from_program_format(ProgramFormat.QASM3)
+    device = TargetEnvironment(qiskit.target, payload)
+    assert_type(compile_program(circuit, target=device), CompiledProgram)
+    assert_type(compile_program([circuit], target=device), list[CompiledProgram])
+
+    raw = PayloadSpecification[CompiledProgram](PayloadFormat("qiskit", "2.6"))
+    assert_type(raw, PayloadSpecification[QuantumCircuit | CompiledProgram])
+    dynamic = TargetEnvironment(qiskit.target, raw)
+    result = assert_type(compile_program(circuit, target=dynamic), QuantumCircuit | CompiledProgram)
+    assert isinstance(result, QuantumCircuit)
 
 
 @pytest.mark.parametrize("native_num_qubits", [None, 2])

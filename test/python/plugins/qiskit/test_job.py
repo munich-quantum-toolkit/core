@@ -694,7 +694,6 @@ def test_job_requires_bit_results(recording_backend: RecordingBackend) -> None:
         "OPENQASM 3; output int[32] result; result = 7;",
         target=TargetEnvironment.from_device(backend.device),
     )
-    assert isinstance(program, CompiledProgram)
     assert program.result_width is None
     with pytest.raises(JobError, match="Boolean or classical-bit outputs"):
         backend.run(program)

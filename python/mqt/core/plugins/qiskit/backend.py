@@ -522,7 +522,7 @@ class QDMIBackend(BackendV2):
             if isinstance(circuits, QuantumCircuit)
             else [self._preprocess_circuit(circuit) for circuit in circuits]
         )
-        return compile_program(circuits, target=self, options=options)
+        return compile_program(circuits, target=self._environment, options=options)
 
     def run(
         self,
