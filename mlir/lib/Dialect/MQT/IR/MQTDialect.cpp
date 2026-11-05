@@ -470,8 +470,7 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     return success();
   }
-  if (attribute.getName() == kSourceQubitCountAttr ||
-      attribute.getName() == kLogicalQubitCountAttr) {
+  if (attribute.getName() == kSourceQubitCountAttr) {
     auto count = dyn_cast<IntegerAttr>(attribute.getValue());
     if (!isa<ModuleOp>(operation) || !count ||
         !count.getType().isSignlessInteger(64) || count.getInt() < 0) {

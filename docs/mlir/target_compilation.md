@@ -270,30 +270,31 @@ leaves the program unchanged.
 
 ### Gate-set synthesis
 
-Pass {py:class}`~mqt.core.mlir.CompilerTarget.NativeOperations` to
-{py:func}`~mqt.core.mlir.compile_program` to synthesize a logical circuit
-without device placement:
+Create a target with {py:meth}`~mqt.core.mlir.CompilerTarget.for_gate_set` to
+synthesize a program into native gates without device placement:
 
 ```python
 gates = CompilerTarget.NativeOperations.from_qiskit(qiskit_target)
-native = compile_program(circuit, target=gates)
+target = CompilerTarget.for_gate_set(gates)
+native = compile_program(circuit, target=target)
 ```
 
-The result preserves source wire order, terminal permutations, and idle wires.
-Qiskit output has no layout metadata; OpenQASM output declares logical qubits.
-The default output follows the input format family. Each circuit in a sequence
-retains its own width. Inputs must use fixed-width qubit allocations in the
-entry block, without static qubits or existing layout metadata. Manually
+The result preserves program-qubit order, terminal permutations, and idle
+qubits. Qiskit output has no layout metadata; OpenQASM output declares program
+qubits. The default output follows the input format family. Each circuit in a
+sequence retains its own width. Inputs must use fixed-width qubit allocations in
+the entry block, without static qubits or existing layout metadata. Manually
 constructed capabilities with site-specific placements are rejected.
 
 ### Synthesis without routing
 
 {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` translates to native
-gates while preserving static site IDs. Dynamic qubits require all-to-all
-connectivity. Dynamic qubits are assigned target sites; static qubits retain
-their site IDs. This method does not require measurement support. It checks
-target support and topology; it mutates the program, including on failure, so
-copy first when needed.
+gates. Gate-set targets preserve the program qubit interface as described above.
+For device targets, dynamic qubits require all-to-all connectivity. Dynamic
+qubits are assigned target sites; static qubits retain their site IDs. This
+method does not require measurement support. It checks target support and
+topology; it mutates the program, including on failure, so copy first when
+needed.
 
 ### Payload control flow
 

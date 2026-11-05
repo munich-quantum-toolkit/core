@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
 #include "mlir/IR/MLIRContext.h"
@@ -28,6 +29,10 @@ struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
 
   LogicalResult matchAndRewrite(SinkOp op,
                                 PatternRewriter& rewriter) const override {
+    if (mqt::preservesProgramQubits(op)) {
+      return failure();
+    }
+
     auto* defOp = op.getQubit().getDefiningOp();
     if (!isa_and_nonnull<AllocOp, StaticOp>(defOp)) {
       return failure();

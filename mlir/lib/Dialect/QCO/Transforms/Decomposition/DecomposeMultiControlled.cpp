@@ -1755,15 +1755,17 @@ protected:
                            target_->connectivityKind() ==
                                CompilerTarget::Connectivity::Kind::AllToAll;
     // Choose ancillas once using the cost of each complete original gate.
-    if (canBorrow && (!target_ || allocationsFitTarget(getOperation(),
-                                                       target_->numSites()))) {
+    if (canBorrow &&
+        (!target_ || !target_->hasDeviceConstraints() ||
+         allocationsFitTarget(getOperation(), target_->numSites()))) {
       StaticSites candidateSites;
       SmallVector<CtrlOp> candidates;
       getOperation().walk([&](CtrlOp op) {
         // Ancillas cannot improve three-qubit gates or fit beside a full
         // target.
         if (op.getNumQubits() < std::max<uint64_t>(minQubits, 4) ||
-            (target_ && op.getNumQubits() >= target_->numSites())) {
+            (target_ && target_->hasDeviceConstraints() &&
+             op.getNumQubits() >= target_->numSites())) {
           return;
         }
         auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());

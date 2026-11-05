@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -27,6 +28,10 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
 
   LogicalResult matchAndRewrite(DeallocOp op,
                                 PatternRewriter& rewriter) const override {
+    if (mqt::preservesProgramQubits(op)) {
+      return failure();
+    }
+
     // Get the AllocOp defining the qubit
     auto allocOp = op.getQubit().getDefiningOp<AllocOp>();
     if (!allocOp) {

@@ -63,6 +63,7 @@ from mqt.core.mlir import (
     TargetEnvironment,
     compile_program,
     sample,
+    serialize_program,
     submit_program,
 )
 from mqt.core.qdmi import ProgramFormat, open_device
@@ -1214,7 +1215,8 @@ def test_compile_program_sequence_qiskit_target_snapshot() -> None:
     assert_type(compile_program(programs, target=CompilerTarget.from_qiskit(backend)), list[QCProgram])
 
 
-def test_gate_set_synthesis_preserves_logical_circuits() -> None:
+@pytest.mark.parametrize("with_environment", [False, True])
+def test_gate_set_synthesis_preserves_program_qubits(*, with_environment: bool) -> None:
     """Gate-set compilation keeps source wires, aliases, phase, and idle inputs."""
     target = Target()
     target.add_instruction(RZGate(Parameter("theta")))
@@ -1227,14 +1229,24 @@ def test_gate_set_synthesis_preserves_logical_circuits() -> None:
     source.cx(3, 1)
     source.swap(0, 3)
     sources = [source, QuantumCircuit(2), QuantumCircuit(0, global_phase=0.4)]
-    results = compile_program(sources, target=gates)
+    compiler_target = CompilerTarget.for_gate_set(gates)
+    assert not compiler_target.has_device_constraints
+    assert compiler_target.num_sites == 0
+    selected_target = (
+        TargetEnvironment(compiler_target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
+        if with_environment
+        else compiler_target
+    )
+    results = compile_program(sources, target=selected_target)
     for original, result in zip(sources, results, strict=True):
+        assert isinstance(result, QuantumCircuit)
         assert result.layout is None
         assert result.num_qubits == original.num_qubits
         np.testing.assert_allclose(Operator(result).data, Operator(original).data, atol=1e-12)
+    assert isinstance(results[0], QuantumCircuit)
     assert "rxpi2" in {item.operation.name for item in results[0].data}
     assert {item.operation.name for item in results[0].data} <= target.operation_names
-    repeated = compile_program(results[0], target=gates)
+    repeated = compile_program(results[0], target=compiler_target)
     np.testing.assert_allclose(Operator(repeated).data, Operator(source).data, atol=1e-12)
 
 
@@ -1250,7 +1262,7 @@ def test_gate_set_synthesis_restores_borrowed_ancillas() -> None:
     target.add_instruction(CXGate())
     gates = CompilerTarget.NativeOperations.from_qiskit(target)
 
-    result = compile_program(source, target=gates)
+    result = compile_program(source, target=CompilerTarget.for_gate_set(gates))
 
     assert result.layout is None
     assert result.num_qubits == source.num_qubits
@@ -1259,8 +1271,8 @@ def test_gate_set_synthesis_restores_borrowed_ancillas() -> None:
 
 
 @pytest.mark.parametrize("output", [OutputFormat.OPENQASM2, OutputFormat.OPENQASM3])
-def test_gate_set_qasm_owns_logical_wires(output: OutputFormat) -> None:
-    """Standalone QASM preserves logical wire order and trailing idle wires."""
+def test_gate_set_qasm_owns_program_qubits(output: OutputFormat) -> None:
+    """Standalone QASM preserves program-qubit order and trailing idle wires."""
     from qiskit import qasm2, qasm3  # ruff:ignore[import-outside-top-level]
 
     source = QuantumCircuit(4)
@@ -1273,7 +1285,7 @@ def test_gate_set_qasm_owns_logical_wires(output: OutputFormat) -> None:
         CompilerTarget.OperationCapability("cx", 2, 0),
         CompilerTarget.OperationCapability("gphase", 0, 1),
     ])
-    result = compile_program(source, target=gates, output=output)
+    result = compile_program(source, target=CompilerTarget.for_gate_set(gates), output=output)
     assert isinstance(result, OpenQASMProgram)
     assert "$" not in result.source
     restored = qasm2.loads(result.source) if output == OutputFormat.OPENQASM2 else qasm3.loads(result.source)
@@ -1285,16 +1297,16 @@ def test_gate_set_rejects_physical_constraints() -> None:
     """A gate set cannot silently acquire device placement semantics."""
     capability = CompilerTarget.OperationCapability("x", 1, 0, site_tuples=[CompilerTarget.SiteTuple([0])])
     gates = CompilerTarget.NativeOperations([capability])
-    with pytest.raises(RuntimeError, match="site-specific"):
-        compile_program(QuantumCircuit(1), target=gates)
+    with pytest.raises(ValueError, match="site"):
+        CompilerTarget.for_gate_set(gates)
     physical = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; x $0;')
-    with pytest.raises(RuntimeError, match="allocated qubits"):
-        compile_program(physical, target=CompilerTarget.NativeOperations.unrestricted())
+    with pytest.raises(RuntimeError, match="allocated program qubits"):
+        compile_program(physical, target=CompilerTarget.for_gate_set(CompilerTarget.NativeOperations.unrestricted()))
 
 
 @pytest.mark.parametrize("output", [OutputFormat.OPENQASM2, OutputFormat.OPENQASM3])
 def test_gate_set_qasm_preserves_readout(output: OutputFormat) -> None:
-    """Logical native reset and measurement keep their quantum and classical indices."""
+    """Native reset and measurement keep their quantum and classical indices."""
     source = QuantumCircuit(4, 2)
     source.reset(2)
     source.x(2)
@@ -1304,9 +1316,37 @@ def test_gate_set_qasm_preserves_readout(output: OutputFormat) -> None:
     target.add_instruction(RZGate(Parameter("phi")))
     target.add_instruction(Measure())
     target.add_instruction(Reset())
-    result = compile_program(source, target=CompilerTarget.NativeOperations.from_qiskit(target), output=output)
+    result = compile_program(
+        source, target=CompilerTarget.for_gate_set(CompilerTarget.NativeOperations.from_qiskit(target)), output=output
+    )
     assert isinstance(result, OpenQASMProgram)
     restored = QCProgram.from_openqasm_str(result.source).to_qiskit()
     assert restored.num_qubits == 4
     assert restored.num_clbits == 2
     assert sample(restored, shots=8) == {"10": 8}
+
+
+def test_gate_set_cannot_serialize_executable_payload() -> None:
+    """Device submission requires a device target, even for native circuits."""
+    target = CompilerTarget.for_gate_set(CompilerTarget.NativeOperations.unrestricted())
+    environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
+    with pytest.raises(ValueError, match="require a device target"):
+        serialize_program(QuantumCircuit(1), target=environment)
+
+
+@pytest.mark.parametrize("output", [OutputFormat.QISKIT, OutputFormat.OPENQASM2, OutputFormat.OPENQASM3])
+@pytest.mark.parametrize("active", [False, True])
+def test_gate_set_preserves_register_inputs(output: OutputFormat, *, active: bool) -> None:
+    """Register buffers do not own extra qubits or erase idle program inputs."""
+    source = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] idle; qubit[3] work;'
+    expected = QuantumCircuit(5)
+    if active:
+        source += " x work[1];"
+        expected.x(3)
+    target = CompilerTarget.for_gate_set(CompilerTarget.NativeOperations.unrestricted())
+    result = compile_program(source, target=target, output=output)
+    if isinstance(result, OpenQASMProgram):
+        result = QCProgram.from_openqasm_str(result.source).to_qiskit()
+    assert isinstance(result, QuantumCircuit)
+    assert result.num_qubits == 5
+    np.testing.assert_allclose(Operator(result).data, Operator(expected).data, atol=1e-12)

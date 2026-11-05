@@ -149,7 +149,11 @@ protected:
       if (environment_.target().vertexForSite(site)) {
         return WalkResult::advance();
       }
-      op.emitError() << "target does not contain static site " << site;
+      if (!target.hasDeviceConstraints()) {
+        op.emitError("gate-set synthesis requires allocated program qubits");
+      } else {
+        op.emitError() << "target does not contain static site " << site;
+      }
       return WalkResult::interrupt();
     });
     if (staticSites.wasInterrupted()) {
@@ -180,7 +184,38 @@ protected:
       signalPassFailure();
       return;
     }
-    if (hasStatic) {
+    if (!target.hasDeviceConstraints()) {
+      auto entry = mqt::getEntryPoint(getOperation());
+      if (!entry || !entry.getBody().hasOneBlock() ||
+          llvm::any_of(entry.getArgumentTypes(), qco::isLinearQubitType)) {
+        getOperation().emitError(
+            "gate-set synthesis requires fixed-width entry-block allocations");
+        signalPassFailure();
+        return;
+      }
+      const auto allocations = getOperation().walk([&](Operation* op) {
+        if (!isa<qco::AllocOp, qtensor::AllocOp>(op)) {
+          return WalkResult::advance();
+        }
+        if (op->getBlock() != &entry.getBody().front()) {
+          op->emitError("gate-set synthesis requires entry-block allocations");
+          return WalkResult::interrupt();
+        }
+        if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
+          const auto extent = getConstantIntValue(tensor.getSize());
+          if (!extent || *extent < 0) {
+            tensor.emitError(
+                "gate-set synthesis requires fixed-width allocations");
+            return WalkResult::interrupt();
+          }
+        }
+        return WalkResult::advance();
+      });
+      if (allocations.wasInterrupted()) {
+        signalPassFailure();
+        return;
+      }
+    } else if (hasStatic) {
       getOperation()->removeAttr(mqt::kSourceQubitCountAttr);
     } else if (failed(prepareLayout(getOperation(), environment_))) {
       signalPassFailure();
@@ -199,8 +234,7 @@ private:
 
 /// Borrow before placement while allocations still prove clean states.
 static void populateDecompositionAndPlacement(OpPassManager& pm,
-                                              const CompilerTarget& target,
-                                              bool gateSet = false) {
+                                              const CompilerTarget& target) {
   const bool needsSites =
       target.connectivityKind() ==
           CompilerTarget::Connectivity::Kind::AllToAll &&
@@ -211,14 +245,15 @@ static void populateDecompositionAndPlacement(OpPassManager& pm,
   if (!needsSites) {
     pm.addPass(qco::createDecomposeMultiControlled(target));
   }
+  if (!target.hasDeviceConstraints()) {
+    return;
+  }
   // Drop unused slots before placement checks target capacity.
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
-  if (!gateSet) {
-    pm.addPass(qco::createElideTerminalSwapsPass());
-  }
+  pm.addPass(qco::createElideTerminalSwapsPass());
   if (target.connectivityKind() ==
       CompilerTarget::Connectivity::Kind::AllToAll) {
-    pm.addPass(qco::createPlacementPass(gateSet));
+    pm.addPass(qco::createPlacementPass());
   }
   if (needsSites) {
     pm.addPass(qco::createDecomposeMultiControlled(target));
@@ -274,8 +309,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
-                                     const MappingOptions& mapping,
-                                     bool gateSet) {
+                                     const MappingOptions& mapping) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
                                                             mapping));
   const auto& target = environment.target();
@@ -287,7 +321,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());
-  populateDecompositionAndPlacement(pm, target, gateSet);
+  populateDecompositionAndPlacement(pm, target);
   pm.addPass(qco::createFuseTwoQubitGates(target));
   if (const auto basis = target.synthesisBasis();
       basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {

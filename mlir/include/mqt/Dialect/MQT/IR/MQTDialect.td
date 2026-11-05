@@ -49,12 +49,6 @@ def MQTDialect : Dialect {
     `qtensor.alloc` slot. Tensor shrinking retains surviving entries; placement consumes them.
     Removed slots remain in the attached layout.
 
-    `mqt.logical_qubit_count` retains a gate-set circuit's interface width while
-    native passes and export preparation use static wire indices. It is a
-    nonnegative i64 on the module. The compiler consumes it after preparation
-    when materializing owned logical inputs, including idle wires. It is not a
-    device layout and does not remain on exported programs.
-
     `mqt.input_name` records the source-level name of a function input,
     including the name used by parameter binding.
     `mqt.input_id` optionally records an opaque 128-bit source identity on a
@@ -264,7 +258,10 @@ def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
   let description = [{
     Records source target facts without derived routing or synthesis caches.
     Ordered sites define dense compiler vertices. Connectivity and native
-    operation support is unrestricted or explicit.
+    operation support is unrestricted or explicit. The optional `gate_set`
+    marker denotes a target without device sites or placement constraints.
+    Gate-set synthesis preserves the program qubit interface, including idle
+    inputs and terminal permutations.
 
     The following target has two explicitly connected sites and one native
     operation:
@@ -285,7 +282,8 @@ def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
       EnumParameter<ConnectivityKind>:$connectivity,
       MQTArrayRefParameter<"CouplingAttr">:$couplings,
       EnumParameter<NativeOperationsKind>:$native_operations,
-      MQTArrayRefParameter<"NativeOperationAttr">:$operations);
+      MQTArrayRefParameter<"NativeOperationAttr">:$operations,
+      OptionalParameter<"UnitAttr">:$gate_set);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
 }

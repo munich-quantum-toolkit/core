@@ -24,10 +24,6 @@
 
 namespace mlir::mqt {
 
-/// Logical interface width retained until export preparation has finished.
-inline constexpr llvm::StringLiteral kLogicalQubitCountAttr =
-    "mqt.logical_qubit_count";
-
 /// Number of input slots being tracked until placement publishes the layout.
 inline constexpr llvm::StringLiteral kSourceQubitCountAttr =
     "mqt.source_qubit_count";

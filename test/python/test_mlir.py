@@ -29,6 +29,7 @@ from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
     CompilationOptions,
+    CompiledProgram,
     CompilerTarget,
     IQMJSONProgram,
     JeffProgram,
@@ -925,6 +926,7 @@ def test_compile_and_serialize_with_device_environment() -> None:
     device = open_builtin_device("mqt.ddsim.default", custom1="2")
     environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QASM3)
     compiled = compile_program(QASM_STRING, target=environment)
+    assert isinstance(compiled, CompiledProgram)
     assert compiled.program_format == ProgramFormat.QASM3
     native = compile_program(QASM_STRING, target=environment, output=OutputFormat.QC)
     serialized = serialize_program(native, target=environment)
@@ -936,6 +938,7 @@ def test_compile_and_serialize_with_device_environment() -> None:
 
     restricted = TargetEnvironment(environment.target, PayloadSpecification(environment.payload_specification.format))
     restricted_program = compile_program(QASM_STRING, target=restricted)
+    assert isinstance(restricted_program, CompiledProgram)
     job = submit_program(restricted_program, target=device, num_shots=8)
     assert job.wait()
     assert sum(job.get_counts().values()) == 8
@@ -951,6 +954,7 @@ def test_explicit_output_preserves_environment_payload_version() -> None:
     payload = PayloadSpecification(PayloadFormat("openqasm", ">=3.1,<4"))
     environment = TargetEnvironment(target, payload)
     compiled = compile_program(QASM_STRING, target=environment)
+    assert isinstance(compiled, CompiledProgram)
     explicit = compile_program(QASM_STRING, target=environment, output=OutputFormat.OPENQASM3)
     assert isinstance(compiled.payload, str)
     assert compiled.payload.startswith("OPENQASM 3.1;")

@@ -1475,6 +1475,25 @@ module {{
   }
 }
 
+TEST(CompilerQDMIAdapterTest, RejectsGateSetsForExecutablePrograms) {
+  const auto target = llvm::cantFail(CompilerTarget::forGateSet(
+      CompilerTarget::NativeOperations::unrestricted()));
+  const mlir::TargetEnvironment environment(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QASM3)));
+  auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; qubit q; x q;"));
+  for (const bool compile : {false, true}) {
+    auto result =
+        compile ? mlir::CompiledProgram::compile(program.copy(), environment)
+                : mlir::CompiledProgram::serialize(program.copy(), environment);
+    ASSERT_FALSE(result);
+    EXPECT_NE(
+        llvm::toString(result.takeError()).find("require a device target"),
+        std::string::npos);
+  }
+}
+
 TEST(CompilerQDMIAdapterTest, SerializesNativeProgramsInExecutableFormats) {
   const auto target = llvm::cantFail(
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),

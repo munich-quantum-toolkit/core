@@ -715,7 +715,8 @@ payloadForOutput(OutputFormat output) {
     std::optional<OutputFormat> output, bool copy,
     const std::string& qcoPipeline, const mlir::CompilationOptions& options) {
   auto input = programFromInput(types, program, copy);
-  if (targetEnvironment && !output) {
+  if (targetEnvironment && targetEnvironment->target().hasDeviceConstraints() &&
+      !output) {
     auto compiled = [&] {
       const nb::gil_scoped_release release;
       return unwrap(mlir::CompiledProgram::compile(
@@ -725,9 +726,7 @@ payloadForOutput(OutputFormat output) {
   }
 
   const auto selected = output.value_or(input.format);
-  const bool gateSet =
-      nb::isinstance<mlir::CompilerTarget::NativeOperations>(target);
-  if (!target.is_none() && !gateSet && !outputEnvironment) {
+  if (!target.is_none() && !outputEnvironment) {
     auto payload = payloadForOutput(selected);
     if (targetEnvironment) {
       const auto& requested = targetEnvironment->payloadSpecification();
@@ -773,18 +772,10 @@ payloadForOutput(OutputFormat output) {
       (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY)
           ? mlir::ProgramFormat::QC
           : static_cast<mlir::ProgramFormat>(selected);
-  const auto* gates =
-      gateSet ? &nb::cast<const mlir::CompilerTarget::NativeOperations&>(target)
-              : nullptr;
-  const auto gatePayload =
-      gateSet ? std::optional{payloadForOutput(selected)} : std::nullopt;
   auto compiled = [&] {
     const nb::gil_scoped_release release;
     auto result =
-        gateSet
-            ? mlir::runDefaultPipeline(std::move(input.program), nativeOutput,
-                                       *gates, *gatePayload, options)
-        : outputEnvironment
+        outputEnvironment
             ? mlir::runDefaultPipeline(std::move(input.program), nativeOutput,
                                        *outputEnvironment, options)
             : mlir::runDefaultPipeline(std::move(input.program), nativeOutput,
@@ -798,8 +789,7 @@ payloadForOutput(OutputFormat output) {
   if (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
     auto result =
-        gateSet ? bindings::qiskit::exportGateSetCircuit(std::move(qc))
-        : outputEnvironment
+        outputEnvironment
             ? bindings::qiskit::exportCircuit(std::move(qc), *outputEnvironment)
             : bindings::qiskit::exportCircuit(std::move(qc), nullptr);
     if (input.format == OutputFormat::Qiskit) {
@@ -882,8 +872,7 @@ compilePythonProgram(PythonInputTypes& types, const nb::handle program,
                  target.attr("_environment"))) {
     targetEnvironment =
         nb::cast<const mlir::TargetEnvironment&>(target.attr("_environment"));
-  } else if (!target.is_none() && !compilerTarget &&
-             !nb::isinstance<mlir::CompilerTarget::NativeOperations>(target)) {
+  } else if (!target.is_none() && !compilerTarget) {
     targetEnvironment.emplace(
         bindings::qiskit::importTarget(target, nb::none(), std::nullopt),
         bindings::qiskit::payloadSpecification(target));
@@ -1754,6 +1743,17 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
           "The explicit operations, if present.");
 
   compilerTarget
+      .def_static(
+          "for_gate_set",
+          [](mlir::CompilerTarget::NativeOperations operations) {
+            return unwrap(
+                mlir::CompilerTarget::forGateSet(std::move(operations)));
+          },
+          "native_operations"_a,
+          "Create a gate-set target without device constraints.")
+      .def_prop_ro(
+          "has_device_constraints", &mlir::CompilerTarget::hasDeviceConstraints,
+          "Whether compilation assigns program qubits to device sites.")
       .def(
           "__init__",
           [](mlir::CompilerTarget& self, const size_t numSites,
@@ -2896,14 +2896,14 @@ inputs. Elements must share one supported input kind; subclasses are accepted.
 Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
 An explicit ``output`` selects each result's representation. Without it, a
-Qiskit target selects QuantumCircuit and a QDMI backend, device or target environment selects
-:class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
-retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
+Qiskit target selects QuantumCircuit and a QDMI backend, device or device target
+environment selects :class:`CompiledProgram` for :func:`submit_program`.
+Otherwise, each input retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
 QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
 QCO inputs return optimized QCO.
 
-A ``CompilerTarget.NativeOperations`` target synthesizes gates without device placement.
-It preserves logical wire order and idle wires, including terminal permutations,
+A target created by ``CompilerTarget.for_gate_set`` synthesizes gates without device placement.
+It preserves program-qubit order and idle qubits, including terminal permutations,
 and retains the input format family by default. Inputs must have fixed-width
 entry-block allocations and no static qubits or layout metadata. Site-specific
 capabilities are rejected; ``NativeOperations.from_qiskit`` imports gates
@@ -2918,8 +2918,7 @@ consumed, while later inputs remain usable.
 Args:
     program: Source text, a file path, a Qiskit circuit, a typed compiler program,
         or a homogeneous sequence of these inputs.
-    target: A CompilerTarget.NativeOperations gate set, CompilerTarget,
-        TargetEnvironment, Qiskit BackendV2 or Target,
+    target: A CompilerTarget, TargetEnvironment, Qiskit BackendV2 or Target,
         QDMI Device, or device ID.
     output: The returned representation. QC_IMPORT and raw QCO are checkpoints
         before target compilation and cannot be combined with a target.

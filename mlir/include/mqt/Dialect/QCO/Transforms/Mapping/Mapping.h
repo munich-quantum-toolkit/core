@@ -20,9 +20,8 @@ namespace mlir {
 
 namespace qco {
 
-/// Create deterministic placement, optionally assigning prepared source slots
-/// directly without publishing a physical layout.
-std::unique_ptr<Pass> createPlacementPass(bool sourceOrder = false);
+/// Create a deterministic placement pass for a compiler target.
+std::unique_ptr<Pass> createPlacementPass();
 
 /// Elide terminal SWAPs in prepared straight-line programs before placement.
 ///

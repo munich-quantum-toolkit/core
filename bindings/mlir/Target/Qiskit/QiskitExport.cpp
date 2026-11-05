@@ -23,6 +23,7 @@
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QC/Translation/MeasurementStores.h"
+#include "mqt/Dialect/QC/Translation/QubitReferences.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 #include "mqt/Support/IntegerExpressions.h"
 
@@ -354,6 +355,7 @@ struct ExportState {
   llvm::DenseMap<mlir::Value, uint32_t> qubits;
   llvm::DenseMap<mlir::Value, uint32_t> quantumBases;
   llvm::DenseMap<mlir::Value, uint32_t> quantumSizes;
+  llvm::DenseMap<mlir::Value, llvm::SmallVector<uint32_t>> qubitReferences;
   llvm::DenseMap<mlir::Value, ClassicalRegisterInfo> classicalRegisterInfo;
   llvm::DenseSet<mlir::Operation*> expressionOperations;
   llvm::DenseMap<mlir::Value, size_t> expressionDepths;
@@ -958,6 +960,32 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
           "QC to Qiskit export encountered an unsupported memory allocation");
     }
   }
+  for (auto storage :
+       function.getBody().front().getOps<mlir::memref::AllocaOp>()) {
+    auto references = mlir::qc::collectQubitReferences(storage);
+    if (mlir::failed(references)) {
+      throw std::runtime_error(
+          "QC to Qiskit export encountered invalid qubit references");
+    }
+    auto& indices = state.qubitReferences[storage.getResult()];
+    for (auto qubit : *references) {
+      const auto index = state.qubits.find(qubit);
+      if (index == state.qubits.end()) {
+        throw std::runtime_error(
+            "QC to Qiskit export could not resolve a qubit reference");
+      }
+      indices.push_back(index->second);
+    }
+    if (const auto name = storage->getAttrOfType<mlir::StringAttr>(
+            mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
+      if (indices.empty()) {
+        throw std::runtime_error(
+            "Qiskit does not support empty quantum registers");
+      }
+      state.quantumRegisters.push_back(
+          {.name = name.str(), .bits = {indices.begin(), indices.end()}});
+    }
+  }
   function.walk([&](mlir::memref::LoadOp load) {
     if (!llvm::isa<mlir::qc::QubitType>(load.getResult().getType()) ||
         load.getIndices().size() != 1U) {
@@ -968,13 +996,22 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
       throw std::runtime_error(
           "QC to Qiskit export does not support dynamic qubit indices");
     }
+    const auto checked = checkedIndex(*index, "qubit");
+    if (const auto references = state.qubitReferences.find(load.getMemRef());
+        references != state.qubitReferences.end()) {
+      if (checked >= references->second.size()) {
+        throw std::runtime_error(
+            "QC to Qiskit export encountered an out-of-bounds qubit index");
+      }
+      state.qubits[load.getResult()] = references->second[checked];
+      return;
+    }
     const auto base = state.quantumBases.find(load.getMemRef());
     if (base == state.quantumBases.end()) {
       throw std::runtime_error(
           "QC to Qiskit export could not resolve a qubit-register allocation");
     }
     const auto size = state.quantumSizes.find(load.getMemRef());
-    const auto checked = checkedIndex(*index, "qubit");
     if (size == state.quantumSizes.end() || checked >= size->second) {
       throw std::runtime_error(
           "QC to Qiskit export encountered an out-of-bounds qubit index");
@@ -993,6 +1030,8 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
     }
   }
   if (!state.quantumRegisters.empty()) {
+    std::ranges::sort(state.quantumRegisters, {},
+                      [](const Register& reg) { return reg.bits.front(); });
     std::vector<Register> registers;
     uint32_t next = state.quantumRegisters.front().bits.front();
     size_t generated = 0;
@@ -2499,6 +2538,16 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         }
         continue;
       }
+      if (auto storage = llvm::dyn_cast<mlir::memref::AllocaOp>(operation);
+          storage && topLevel &&
+          state.qubitReferences.contains(storage.getResult())) {
+        continue;
+      }
+      if (auto store = llvm::dyn_cast<mlir::memref::StoreOp>(operation);
+          store && topLevel &&
+          state.qubitReferences.contains(store.getMemRef())) {
+        continue;
+      }
       if (auto load = llvm::dyn_cast<mlir::memref::LoadOp>(operation)) {
         if (state.qubits.contains(load.getResult())) {
           continue;
@@ -2883,9 +2932,11 @@ collectGateDefinition(mlir::func::FuncOp function) {
   };
 }
 
-[[nodiscard]] static nb::object exportCircuitImpl(
-    mlir::QCProgram program, const mlir::CompilerTarget* const target,
-    const mlir::PayloadSpecification* const payload, bool logical = false) {
+[[nodiscard]] static nb::object
+exportCircuitImpl(mlir::QCProgram program,
+                  const mlir::CompilerTarget* const target,
+                  const mlir::PayloadSpecification* const payload) {
+  const bool deviceTarget = target != nullptr && target->hasDeviceConstraints();
   auto moduleOp = program.module();
   auto function = mlir::mqt::getEntryPoint(moduleOp);
   if (!function) {
@@ -2934,19 +2985,19 @@ collectGateDefinition(mlir::func::FuncOp function) {
   }
   ExportState state;
   collectParameters(function, state, function.getNumArguments());
-  if (target != nullptr && !logical) {
+  if (deviceTarget) {
     state.numQubits = checkedIndex(
         static_cast<uint64_t>(*llvm::max_element(target->siteIds())) + 1,
         "target address width");
   }
   materializeBooleanResults(function);
   prepareMeasurementStores(function);
-  collectResources(function, state, logical ? nullptr : target);
+  collectResources(function, state, deviceTarget ? target : nullptr);
   indexWrites(function.getBody().front(), state.writes);
   auto circuit = collectBlock(function.getBody().front(), state, 0U);
   llvm::StringSet<> usedNames;
   validateExportParameters(circuit, usedNames);
-  if (target != nullptr && !logical) {
+  if (deviceTarget) {
     Register reg{.name = "q"};
     reg.bits.resize(state.numQubits);
     std::iota(reg.bits.begin(), reg.bits.end(), 0U);
@@ -3032,17 +3083,6 @@ collectGateDefinition(mlir::func::FuncOp function) {
     writer->setLayout(*layout);
   }
   return writer->finish();
-}
-
-nb::object exportGateSetCircuit(mlir::QCProgram program) {
-  const mlir::TargetEnvironmentAnalysis analysis(program.module());
-  if (!analysis) {
-    throw std::runtime_error(
-        "gate-set output requires its synthesis environment");
-  }
-  const auto& environment = analysis.environment();
-  return exportCircuitImpl(std::move(program), &environment.target(),
-                           &environment.payloadSpecification(), true);
 }
 
 nb::object exportCircuit(mlir::QCProgram program,

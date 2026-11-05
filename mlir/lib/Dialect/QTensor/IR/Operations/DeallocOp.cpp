@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/IR/MLIRContext.h"
@@ -26,6 +27,10 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
 
   LogicalResult matchAndRewrite(DeallocOp op,
                                 PatternRewriter& rewriter) const override {
+    if (mqt::preservesProgramQubits(op)) {
+      return failure();
+    }
+
     // Check whether the tensor is directly defined by an otherwise unused
     // qtensor::AllocOp.
     auto tensor = op.getTensor();

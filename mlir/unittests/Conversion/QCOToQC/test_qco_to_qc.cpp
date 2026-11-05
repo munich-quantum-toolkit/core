@@ -1200,3 +1200,43 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(
                 aliasSafeNestedForLoopCtrlOpWithExtractedQubit)}));
+
+TEST(QCOToQCRegressionTest, RetainsOwnedProgramTensorAfterCleanup) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                  qtensor::QTensorDialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  for (const auto* shape : {"4", "?"}) {
+    const auto source = llvm::formatv(R"mlir(
+module attributes {{mqt.target_env = #mqt.target_env<
+    compilation_target = #mqt.compilation_target<sites = [],
+        connectivity = all_to_all, couplings = [],
+        native_operations = unrestricted, operations = [], gate_set = unit>,
+    payload_specification = #mqt.payload_spec<
+        format = <id = "openqasm", version = "3.0", profile = "", encoding = text>,
+        capabilities = [], optional_capabilities_known = false>>} {{
+  func.func @main() attributes {{mqt.entry_point} {{
+    %size = arith.constant 4 : index
+    %reg = qtensor.alloc(%size) : tensor<{0}x!qco.qubit>
+    qtensor.dealloc %reg : tensor<{0}x!qco.qubit>
+    return
+  }
+}
+)mlir",
+                                      shape)
+                            .str();
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+    ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
+    size_t qubits = 0;
+    size_t releases = 0;
+    moduleOp->walk([&](qc::AllocOp) { ++qubits; });
+    moduleOp->walk([&](qc::DeallocOp) { ++releases; });
+    EXPECT_EQ(qubits, 4);
+    EXPECT_EQ(releases, 4);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}

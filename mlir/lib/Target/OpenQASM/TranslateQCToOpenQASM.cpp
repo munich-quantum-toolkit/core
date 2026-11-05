@@ -27,6 +27,7 @@
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QC/Translation/MeasurementStores.h"
+#include "mqt/Dialect/QC/Translation/QubitReferences.h"
 #include "mqt/Support/IntegerExpressions.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 #include "mqt/Target/OpenQASM/GateCatalog.h"
@@ -325,6 +326,7 @@ private:
   func::FuncOp function;
   raw_indented_ostream* output = nullptr;
   DenseMap<Value, Resource> resources;
+  DenseSet<Value> qubitReferenceStorage_;
   SmallVector<Value> resourceOrder;
   DenseMap<Value, std::string> valueNames;
   DenseSet<Value> returnedRegisters;
@@ -1105,6 +1107,45 @@ private:
           continue;
         }
         auto type = alloc.getType();
+        if (isa<qc::QubitType>(type.getElementType())) {
+          auto elements = collectQubitReferences(alloc);
+          if (failed(elements)) {
+            return failure();
+          }
+          if (elements->empty()) {
+            return fail(alloc, "qubit reference storage must not be empty");
+          }
+          auto* begin = llvm::find(resourceOrder, elements->front());
+          if (begin == resourceOrder.end() ||
+              static_cast<size_t>(resourceOrder.end() - begin) <
+                  elements->size() ||
+              !llvm::equal(*elements,
+                           ArrayRef<Value>(begin, elements->size())) ||
+              llvm::any_of(*elements, [&](Value qubit) {
+                return !qubit.getDefiningOp<qc::AllocOp>() ||
+                       !resources.at(qubit).scalar;
+              })) {
+            return fail(
+                alloc,
+                "qubit reference storage requires consecutive program qubits");
+          }
+          const auto attr = alloc->getAttrOfType<StringAttr>(
+              mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+          const auto name =
+              qubitRegisterName(attr ? attr.getValue() : StringRef{});
+          resources.try_emplace(alloc, Resource{
+                                           .kind = ResourceKind::Qubit,
+                                           .name = name,
+                                           .width = type.getDimSize(0),
+                                       });
+          for (auto [index, qubit] : llvm::enumerate(*elements)) {
+            valueNames[qubit] = (Twine(name) + "[" + Twine(index) + "]").str();
+          }
+          auto* position = resourceOrder.erase(begin, begin + elements->size());
+          resourceOrder.insert(position, alloc);
+          qubitReferenceStorage_.insert(alloc);
+          continue;
+        }
         if (!type.hasStaticShape() || type.getRank() < 1 ||
             type.getRank() > 7 || !type.getLayout().isIdentity() ||
             type.getMemorySpace() ||
@@ -1464,6 +1505,14 @@ private:
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
     llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
+    if (auto store = dyn_cast<memref::StoreOp>(&operation);
+        store && qubitReferenceStorage_.contains(store.getMemRef())) {
+      return success();
+    }
+    if (auto storage = dyn_cast<memref::AllocaOp>(&operation);
+        storage && qubitReferenceStorage_.contains(storage)) {
+      return success();
+    }
     if (version2_ && isa<scf::ForOp, scf::WhileOp, scf::IndexSwitchOp,
                          cbit::WriteOp, memref::StoreOp, memref::CopyOp,
                          memref::AllocaOp, tensor::ExtractOp>(&operation)) {

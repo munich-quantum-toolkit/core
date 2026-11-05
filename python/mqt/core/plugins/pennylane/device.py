@@ -42,7 +42,7 @@ from pennylane.transforms import defer_measurements
 from pennylane.transforms.core import CompilePipeline
 
 from mqt.core import UntestedVersionWarning, mlir
-from mqt.core.mlir import QCProgram, compile_program
+from mqt.core.mlir import CompiledProgram, QCProgram, compile_program
 from mqt.core.mlir._pennylane import Context
 from mqt.core.plugins.pennylane.exceptions import PennyLaneConfigurationError as ConfigurationError
 from mqt.core.plugins.pennylane.exceptions import PennyLaneTranslationError as TranslationError
@@ -58,7 +58,6 @@ if TYPE_CHECKING:
     from pennylane.typing import Result, ResultBatch
     from pennylane.wires import Wires
 
-    from mqt.core.mlir import CompiledProgram
     from mqt.core.qdmi import Device as QDMIDeviceHandle
     from mqt.core.qdmi import ProgramFormat
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters
@@ -298,11 +297,13 @@ class QDMIDevice(Device):
                 continue
             try:
                 program = QCProgram.from_pennylane(tape, wires=self._tape_wires(tape))
-                prepared.append(
+                compiled = (
                     compile_program(program, target=environment)
                     if program.operation_counts().get("qc.measure", 0)
                     else None
                 )
+                assert compiled is None or isinstance(compiled, CompiledProgram)
+                prepared.append(compiled)
             except (KeyError, RuntimeError, TypeError, ValueError) as exc:
                 raise TranslationError(str(exc)) from exc
         return prepared

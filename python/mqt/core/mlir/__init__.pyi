@@ -30,8 +30,7 @@ _CompilerInput: TypeAlias = (
     str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
 )
 _CompilerTarget: TypeAlias = (
-    CompilerTarget.NativeOperations
-    | CompilerTarget
+    CompilerTarget
     | TargetEnvironment
     | qiskit.providers.BackendV2
     | qiskit.transpiler.Target
@@ -542,6 +541,14 @@ class CompilerTarget:
         @property
         def operations(self) -> list[CompilerTarget.OperationCapability]:
             """The explicit operations, if present."""
+
+    @staticmethod
+    def for_gate_set(native_operations: CompilerTarget.NativeOperations) -> CompilerTarget:
+        """Create a gate-set target without device constraints."""
+
+    @property
+    def has_device_constraints(self) -> bool:
+        """Whether compilation assigns program qubits to device sites."""
 
     @staticmethod
     def from_device(device: Device) -> CompilerTarget:
@@ -1695,15 +1702,23 @@ def compile_program(
 def compile_program(
     program: _CompilerInput,
     *,
-    target: mqt.core.qdmi.Device | str | TargetEnvironment,
+    target: mqt.core.qdmi.Device | str,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> CompiledProgram: ...
 @overload
 def compile_program(
+    program: _CompilerInput,
+    *,
+    target: TargetEnvironment,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> _CompilerOutput | CompiledProgram: ...
+@overload
+def compile_program(
     program: _ProgramT,
     *,
-    target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
+    target: CompilerTarget | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> _ProgramT: ...
@@ -1711,7 +1726,7 @@ def compile_program(
 def compile_program(
     program: str | os.PathLike[str],
     *,
-    target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
+    target: CompilerTarget | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> QCProgram | JeffProgram | OpenQASMProgram: ...
@@ -1831,15 +1846,23 @@ def compile_program(
 def compile_program(
     program: Sequence[_CompilerInputT],
     *,
-    target: mqt.core.qdmi.Device | str | TargetEnvironment,
+    target: mqt.core.qdmi.Device | str,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[CompiledProgram]: ...
 @overload
 def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: TargetEnvironment,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[_CompilerOutput] | list[CompiledProgram]: ...
+@overload
+def compile_program(
     program: Sequence[_ProgramT],
     *,
-    target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
+    target: CompilerTarget | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[_ProgramT]: ...
@@ -1847,7 +1870,7 @@ def compile_program(
 def compile_program(
     program: Sequence[_SourceT],
     *,
-    target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
+    target: CompilerTarget | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[QCProgram | JeffProgram | OpenQASMProgram]: ...
@@ -1866,14 +1889,14 @@ def compile_program(
     Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
     An explicit ``output`` selects each result's representation. Without it, a
-    Qiskit target selects QuantumCircuit and a QDMI backend, device or target environment selects
-    :class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
-    retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
+    Qiskit target selects QuantumCircuit and a QDMI backend, device or device target
+    environment selects :class:`CompiledProgram` for :func:`submit_program`.
+    Otherwise, each input retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
     QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
     QCO inputs return optimized QCO.
 
-    A ``CompilerTarget.NativeOperations`` target synthesizes gates without device placement.
-    It preserves logical wire order and idle wires, including terminal permutations,
+    A target created by ``CompilerTarget.for_gate_set`` synthesizes gates without device placement.
+    It preserves program-qubit order and idle qubits, including terminal permutations,
     and retains the input format family by default. Inputs must have fixed-width
     entry-block allocations and no static qubits or layout metadata. Site-specific
     capabilities are rejected; ``NativeOperations.from_qiskit`` imports gates
@@ -1888,8 +1911,7 @@ def compile_program(
     Args:
         program: Source text, a file path, a Qiskit circuit, a typed compiler program,
             or a homogeneous sequence of these inputs.
-        target: A CompilerTarget.NativeOperations gate set, CompilerTarget,
-            TargetEnvironment, Qiskit BackendV2 or Target,
+        target: A CompilerTarget, TargetEnvironment, Qiskit BackendV2 or Target,
             QDMI Device, or device ID.
         output: The returned representation. QC_IMPORT and raw QCO are checkpoints
             before target compilation and cannot be combined with a target.

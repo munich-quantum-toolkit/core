@@ -11,7 +11,6 @@
 #pragma once
 
 #include "mqt/Compiler/CompilationOptions.h"
-#include "mqt/Compiler/Target.h"
 
 #include "capnp/message.h"
 #include "jeff.capnp.h"
@@ -51,7 +50,7 @@ class OpenQASMProgram;
 class IQMJSONProgram;
 class QIRProgram;
 class TargetEnvironment;
-class PayloadSpecification;
+class CompilerTarget;
 
 /// A value for a scalar or statically sized one-dimensional f64 input.
 using ParameterValue = std::variant<std::vector<double>, double>;
@@ -642,17 +641,6 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
 [[nodiscard]] llvm::Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    const TargetEnvironment& environment,
-                   const CompilationOptions& options = {});
-
-/// Synthesize a fixed-width logical circuit into placement-independent gates.
-///
-/// Retains source wire order and idle wires. Capabilities with site tuples,
-/// existing layouts, static qubits, and runtime-sized allocations are rejected.
-/// The payload specifies output lowering constraints.
-[[nodiscard]] llvm::Expected<CompilerProgram>
-runDefaultPipeline(CompilerInput program, ProgramFormat output,
-                   const CompilerTarget::NativeOperations& gates,
-                   const PayloadSpecification& payload,
                    const CompilationOptions& options = {});
 
 /// Run the coordinated default compiler pipeline for a target.
