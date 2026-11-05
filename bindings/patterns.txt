@@ -190,7 +190,7 @@ mqt\.core\.mlir\.CompilerTarget\.from_device_id$:
 mqt\.core\.mlir\.__prefix__$:
     \from typing import TypeAlias, TypeVar, TypedDict, Unpack
     _CompilerInput: TypeAlias = str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
-    _CompilerTarget: TypeAlias = CompilerTarget | TargetEnvironment | qiskit.providers.BackendV2 | qiskit.transpiler.Target | mqt.core.qdmi.Device | str
+    _CompilerTarget: TypeAlias = CompilerTarget.NativeOperations | CompilerTarget | TargetEnvironment | qiskit.providers.BackendV2 | qiskit.transpiler.Target | mqt.core.qdmi.Device | str
     _CompilerOutput: TypeAlias = qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | QIRProgram | IQMJSONProgram
     _ProgramT = TypeVar("_ProgramT", qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
     _CompilerInputT = TypeVar("_CompilerInputT", str, os.PathLike[str], qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
@@ -321,7 +321,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: _ProgramT,
         *,
-        target: CompilerTarget | None = None,
+        target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> _ProgramT: ...
@@ -329,7 +329,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: str | os.PathLike[str],
         *,
-        target: CompilerTarget | None = None,
+        target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> QCProgram | JeffProgram | OpenQASMProgram: ...
@@ -458,7 +458,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: Sequence[_ProgramT],
         *,
-        target: CompilerTarget | None = None,
+        target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> list[_ProgramT]: ...
@@ -466,7 +466,7 @@ mqt\.core\.mlir\.compile_program$:
     def compile_program(
         program: Sequence[_SourceT],
         *,
-        target: CompilerTarget | None = None,
+        target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
         output: None = None,
         **kwargs: Unpack[_CompileOptions],
     ) -> list[QCProgram | JeffProgram | OpenQASMProgram]: ...

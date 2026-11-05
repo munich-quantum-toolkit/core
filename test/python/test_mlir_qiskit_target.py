@@ -974,80 +974,6 @@ def test_native_import_preserves_bounds_without_placement(width: int | None) -> 
     assert next(op for op in target.operations if op.name == "rzz").parameter_bounds == [(0, pi / 2)]
 
 
-def test_native_synthesis_preserves_logical_wire_order() -> None:
-    """Keep terminal swaps, idle wires, and gate aliases in the exported circuit."""
-    source = QuantumCircuit(5, global_phase=0.23)
-    source.x(3)
-    source.h(0)
-    source.cx(3, 1)
-    source.swap(0, 3)
-    target = Target(num_qubits=source.num_qubits)
-    target.add_instruction(RZGate(Parameter("theta")))
-    target.add_instruction(RXGate(pi / 2), name="rxpi2")
-    target.add_instruction(CXGate())
-    compiler_target = CompilerTarget.from_qiskit(target)
-    environment = TargetEnvironment(compiler_target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
-
-    program = QCProgram.from_qiskit(source).to_qco()
-    program.synthesize_for_target(environment, options=CompilationOptions(preserve_logical_order=True))
-    result = program.to_qiskit(target=compiler_target)
-
-    assert result.layout is None
-    assert result.num_qubits == source.num_qubits
-    names = {item.operation.name for item in result.data}
-    assert "rxpi2" in names
-    assert names <= target.operation_names
-    np.testing.assert_allclose(Operator(result).data, Operator(source).data, atol=1e-12)
-
-
-def test_native_synthesis_preserves_logical_order_with_borrowed_ancillas() -> None:
-    """Borrow idle input wires before placement and restore them without readout."""
-    source = QuantumCircuit(7)
-    source.h([1, 2, 3, 4])
-    source.ry(0.37, 5)
-    source.mcx([1, 2, 3, 4], 5)
-    source.swap(1, 5)
-    target = Target(num_qubits=source.num_qubits)
-    target.add_instruction(UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")))
-    target.add_instruction(CXGate())
-    compiler_target = CompilerTarget.from_qiskit(target)
-    environment = TargetEnvironment(compiler_target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
-
-    program = QCProgram.from_qiskit(source).to_qco()
-    program.synthesize_for_target(environment, options=CompilationOptions(preserve_logical_order=True))
-    result = program.to_qiskit(target=compiler_target)
-
-    assert result.layout is None
-    assert result.num_qubits == source.num_qubits
-    assert any(result.find_bit(qubit).index in {0, 6} for item in result.data for qubit in item.qubits)
-    np.testing.assert_allclose(Statevector(result).data, Statevector(source).data, atol=1e-12)
-
-
-def test_native_synthesis_preserves_site_specific_controlled_gates() -> None:
-    """Restore logical sites before deciding whether a controlled gate is native."""
-    source = QuantumCircuit(4)
-    source.h([1, 2])
-    source.append(library.RCCXGate(), [1, 2, 3])
-    compiler_target = CompilerTarget(
-        source.num_qubits,
-        connectivity=CompilerTarget.Connectivity.all_to_all(),
-        native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability("u", 1, 3),
-            CompilerTarget.OperationCapability("cx", 2, 0),
-            CompilerTarget.OperationCapability("rccx", 3, 0, [CompilerTarget.SiteTuple([1, 2, 3])]),
-        ]),
-    )
-    environment = TargetEnvironment(compiler_target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
-
-    program = QCProgram.from_qiskit(source).to_qco()
-    program.synthesize_for_target(environment, options=CompilationOptions(preserve_logical_order=True))
-    result = program.to_qiskit(target=compiler_target)
-
-    assert result.layout is None
-    assert result.count_ops().get("rccx") == 1
-    np.testing.assert_allclose(Operator(result).data, Operator(source).data, atol=1e-12)
-
-
 @pytest.mark.parametrize("native_rz", [False, True])
 def test_z_frames_stop_at_control_flow_and_barriers(*, native_rz: bool) -> None:
     """A pending Z frame must dominate each branch and stay before barriers."""
@@ -1286,3 +1212,101 @@ def test_compile_program_sequence_qiskit_target_snapshot() -> None:
     assert_type(compile_program(programs[0], target=backend.target, copy=True), QuantumCircuit)
     assert_type(compile_program(programs, target=backend.target, copy=True), list[QuantumCircuit])
     assert_type(compile_program(programs, target=CompilerTarget.from_qiskit(backend)), list[QCProgram])
+
+
+def test_gate_set_synthesis_preserves_logical_circuits() -> None:
+    """Gate-set compilation keeps source wires, aliases, phase, and idle inputs."""
+    target = Target()
+    target.add_instruction(RZGate(Parameter("theta")))
+    target.add_instruction(RXGate(pi / 2), name="rxpi2")
+    target.add_instruction(CXGate())
+    gates = CompilerTarget.NativeOperations.from_qiskit(target)
+    source = QuantumCircuit(5, global_phase=0.23)
+    source.x(3)
+    source.h(0)
+    source.cx(3, 1)
+    source.swap(0, 3)
+    sources = [source, QuantumCircuit(2), QuantumCircuit(0, global_phase=0.4)]
+    results = compile_program(sources, target=gates)
+    for original, result in zip(sources, results, strict=True):
+        assert result.layout is None
+        assert result.num_qubits == original.num_qubits
+        np.testing.assert_allclose(Operator(result).data, Operator(original).data, atol=1e-12)
+    assert "rxpi2" in {item.operation.name for item in results[0].data}
+    assert {item.operation.name for item in results[0].data} <= target.operation_names
+    repeated = compile_program(results[0], target=gates)
+    np.testing.assert_allclose(Operator(repeated).data, Operator(source).data, atol=1e-12)
+
+
+def test_gate_set_synthesis_restores_borrowed_ancillas() -> None:
+    """Borrow idle input wires before placement and restore their clean state."""
+    source = QuantumCircuit(7)
+    source.h([1, 2, 3, 4])
+    source.ry(0.37, 5)
+    source.mcx([1, 2, 3, 4], 5)
+    source.swap(1, 5)
+    target = Target()
+    target.add_instruction(UGate(Parameter("theta"), Parameter("phi"), Parameter("lambda")))
+    target.add_instruction(CXGate())
+    gates = CompilerTarget.NativeOperations.from_qiskit(target)
+
+    result = compile_program(source, target=gates)
+
+    assert result.layout is None
+    assert result.num_qubits == source.num_qubits
+    assert any(result.find_bit(qubit).index in {0, 6} for item in result.data for qubit in item.qubits)
+    np.testing.assert_allclose(Statevector(result).data, Statevector(source).data, atol=1e-12)
+
+
+@pytest.mark.parametrize("output", [OutputFormat.OPENQASM2, OutputFormat.OPENQASM3])
+def test_gate_set_qasm_owns_logical_wires(output: OutputFormat) -> None:
+    """Standalone QASM preserves logical wire order and trailing idle wires."""
+    from qiskit import qasm2, qasm3  # ruff:ignore[import-outside-top-level]
+
+    source = QuantumCircuit(4)
+    source.x(2)
+    source.cx(2, 0)
+    source.swap(0, 2)
+    gates = CompilerTarget.NativeOperations([
+        CompilerTarget.OperationCapability("rx", 1, 1),
+        CompilerTarget.OperationCapability("rz", 1, 1),
+        CompilerTarget.OperationCapability("cx", 2, 0),
+        CompilerTarget.OperationCapability("gphase", 0, 1),
+    ])
+    result = compile_program(source, target=gates, output=output)
+    assert isinstance(result, OpenQASMProgram)
+    assert "$" not in result.source
+    restored = qasm2.loads(result.source) if output == OutputFormat.OPENQASM2 else qasm3.loads(result.source)
+    assert restored.num_qubits == source.num_qubits
+    assert Operator(restored).equiv(Operator(source))
+
+
+def test_gate_set_rejects_physical_constraints() -> None:
+    """A gate set cannot silently acquire device placement semantics."""
+    capability = CompilerTarget.OperationCapability("x", 1, 0, site_tuples=[CompilerTarget.SiteTuple([0])])
+    gates = CompilerTarget.NativeOperations([capability])
+    with pytest.raises(RuntimeError, match="site-specific"):
+        compile_program(QuantumCircuit(1), target=gates)
+    physical = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; x $0;')
+    with pytest.raises(RuntimeError, match="allocated qubits"):
+        compile_program(physical, target=CompilerTarget.NativeOperations.unrestricted())
+
+
+@pytest.mark.parametrize("output", [OutputFormat.OPENQASM2, OutputFormat.OPENQASM3])
+def test_gate_set_qasm_preserves_readout(output: OutputFormat) -> None:
+    """Logical native reset and measurement keep their quantum and classical indices."""
+    source = QuantumCircuit(4, 2)
+    source.reset(2)
+    source.x(2)
+    source.measure(2, 1)
+    target = Target()
+    target.add_instruction(RXGate(Parameter("theta")))
+    target.add_instruction(RZGate(Parameter("phi")))
+    target.add_instruction(Measure())
+    target.add_instruction(Reset())
+    result = compile_program(source, target=CompilerTarget.NativeOperations.from_qiskit(target), output=output)
+    assert isinstance(result, OpenQASMProgram)
+    restored = QCProgram.from_openqasm_str(result.source).to_qiskit()
+    assert restored.num_qubits == 4
+    assert restored.num_clbits == 2
+    assert sample(restored, shots=8) == {"10": 8}

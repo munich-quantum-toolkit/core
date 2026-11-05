@@ -49,6 +49,12 @@ def MQTDialect : Dialect {
     `qtensor.alloc` slot. Tensor shrinking retains surviving entries; placement consumes them.
     Removed slots remain in the attached layout.
 
+    `mqt.logical_qubit_count` retains a gate-set circuit's interface width while
+    native passes and export preparation use static wire indices. It is a
+    nonnegative i64 on the module. The compiler consumes it after preparation
+    when materializing owned logical inputs, including idle wires. It is not a
+    device layout and does not remain on exported programs.
+
     `mqt.input_name` records the source-level name of a function input,
     including the name used by parameter binding.
     `mqt.input_id` optionally records an opaque 128-bit source identity on a

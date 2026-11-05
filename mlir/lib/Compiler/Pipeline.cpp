@@ -19,11 +19,14 @@
 #include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
@@ -39,6 +42,7 @@
 #include "kj/array.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
@@ -57,11 +61,13 @@
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <limits>
 #include <map>
 #include <set>
 #include <span>
@@ -91,6 +97,65 @@ namespace mlir {
   return qco::verifyLinearity(mod);
 }
 
+/// Materialize the logical interface after cleanup, including unused inputs.
+template <class Alloc, class Static, class Dispose>
+static LogicalResult restoreLogicalQubits(ModuleOp moduleOp) {
+  auto count =
+      moduleOp->getAttrOfType<IntegerAttr>(mqt::kLogicalQubitCountAttr);
+  if (!moduleOp->hasAttr(mqt::kLogicalQubitCountAttr)) {
+    return success();
+  }
+  auto entry = mqt::getEntryPoint(moduleOp);
+  if (!count || !count.getType().isSignlessInteger(64) || count.getInt() < 0 ||
+      !entry || !entry.getBody().hasOneBlock()) {
+    return moduleOp.emitError("logical interface requires a nonnegative i64 "
+                              "width and a single-block entry point");
+  }
+  const auto width = static_cast<uint64_t>(count.getInt());
+  const auto invalid = moduleOp.walk([&](Operation* op) {
+    auto buffer = dyn_cast<memref::AllocOp>(op);
+    if (isa<Alloc, qtensor::AllocOp>(op) ||
+        (buffer && isa<qc::QubitType>(buffer.getType().getElementType()))) {
+      op->emitError("pending logical interface requires static qubits");
+      return WalkResult::interrupt();
+    }
+    if (auto qubit = dyn_cast<Static>(op);
+        qubit && (qubit.getIndex() >= width ||
+                  qubit->getBlock() != &entry.getBody().front())) {
+      qubit.emitError("logical interface requires entry-block static qubits "
+                      "within its width");
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  if (invalid.wasInterrupted()) {
+    return failure();
+  }
+  OpBuilder builder(moduleOp.getContext());
+  builder.setInsertionPointToStart(&entry.getBody().front());
+  SmallVector<Value> qubits;
+  for (uint64_t index = 0; index < width; ++index) {
+    qubits.push_back(Alloc::create(builder, entry.getLoc()));
+  }
+  moduleOp.walk([&](Static op) {
+    op.replaceAllUsesWith(qubits[op.getIndex()]);
+    op.erase();
+  });
+  builder.setInsertionPoint(entry.getBody().front().getTerminator());
+  moduleOp->removeAttr(mqt::kLogicalQubitCountAttr);
+  for (auto qubit : qubits) {
+    // QCO already has sinks for live wires; QC static wires have no
+    // deallocation.
+    if (!std::is_same_v<Dispose, qco::SinkOp> || qubit.use_empty()) {
+      Dispose::create(builder, entry.getLoc(), qubit);
+    }
+  }
+  if constexpr (std::is_same_v<Alloc, qco::AllocOp>) {
+    return qco::verifyLinearity(moduleOp);
+  }
+  return success();
+}
+
 //===----------------------------------------------------------------------===//
 // QCProgram
 //===----------------------------------------------------------------------===//
@@ -114,6 +179,10 @@ QCProgram::intoOpenQASM3(const TargetEnvironment* environment) && {
             pm.addPass(mqt::createPromoteClassicalMemory());
           },
           "failed to prepare QC for OpenQASM export"))) {
+    return failure();
+  }
+  if (failed(restoreLogicalQubits<qc::AllocOp, qc::StaticOp, qc::DeallocOp>(
+          *storage.mod))) {
     return failure();
   }
   auto source = qc::translateQCToOpenQASM3(std::move(storage.mod), environment);
@@ -491,9 +560,6 @@ static void insertResonatorMoves(ModuleOp module,
 
 LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
                                            const CompilationOptions& options) {
-  if (options.preserveLogicalOrder) {
-    return mod().emitError("logical wire order requires native synthesis");
-  }
   auto routing = inspect().numQubits == 0
                      ? Expected<CompilerTarget>(environment.target())
                      : placementTarget(environment.target());
@@ -520,9 +586,8 @@ QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
                                 const CompilationOptions& options) {
   return runQCOTransformPasses(
       mod(),
-      [&](OpPassManager& pm) {
-        populateTargetSynthesisPipeline(pm, environment, options.mapping,
-                                        options.preserveLogicalOrder);
+      [&environment, &options](OpPassManager& pm) {
+        populateTargetSynthesisPipeline(pm, environment, options.mapping);
       },
       "failed to synthesize the QCO program for the target", options, true);
 }
@@ -701,7 +766,14 @@ LogicalResult QIRProgram::writeBitcode(const std::filesystem::path& path) && {
 FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
                                            const TargetEnvironment* environment,
                                            const CompilationOptions& options) {
+  const auto restore = [&] {
+    return restoreLogicalQubits<qc::AllocOp, qc::StaticOp, qc::DeallocOp>(
+        qc.module());
+  };
   if (output == ProgramFormat::QC) {
+    if (failed(restore())) {
+      return failure();
+    }
     // Keep verified independent gates ahead of readout before native frontends
     // replace them with opaque calls. Preserve resources and routing metadata.
     scheduleTerminalReadout(qc.module());
@@ -724,6 +796,9 @@ FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
                   pm, payload.materialize(*qc.module().getContext()));
             },
             "failed to lower compiled QC for OpenQASM 2", options))) {
+      return failure();
+    }
+    if (output == ProgramFormat::OpenQASM2 && failed(restore())) {
       return failure();
     }
     auto source = output == ProgramFormat::OpenQASM2
@@ -757,6 +832,9 @@ FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
           "failed to prepare compiled QC for QIR", options))) {
     return failure();
   }
+  if (failed(restore())) {
+    return failure();
+  }
   auto qir = std::move(qc).intoQIR(profile, environment);
   if (failed(qir) || failed(qir->cleanup())) {
     return failure();
@@ -771,11 +849,79 @@ FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
   return CompilerProgram(std::move(*qir));
 }
 
+/// Gate-set compilation has logical wires, not physical placement constraints.
+static FailureOr<TargetEnvironment> synthesizeGateSet(
+    QCOProgram& program, const CompilerTarget::NativeOperations& gates,
+    const PayloadSpecification& payload, const CompilationOptions& options) {
+  auto moduleOp = program.module();
+  auto entry = mqt::getEntryPoint(moduleOp);
+  if (!entry || !entry.getBody().hasOneBlock() ||
+      moduleOp->hasAttr("mqt.layout")) {
+    return moduleOp.emitError("gate-set synthesis requires a logical circuit "
+                              "without layout metadata");
+  }
+  if (llvm::any_of(gates.operations(),
+                   [](const auto& op) { return !op.siteTuples().empty(); })) {
+    return moduleOp.emitError(
+        "gate-set synthesis does not accept site-specific operations");
+  }
+  const auto info = program.inspect();
+  if (!info.numQubits || !info.staticQubits.empty()) {
+    return moduleOp.emitError(
+        "gate-set synthesis requires fixed-width allocated qubits");
+  }
+  const auto allocations = moduleOp.walk([&](Operation* op) {
+    if (isa<qco::AllocOp, qtensor::AllocOp>(op) &&
+        op->getBlock() != &entry.getBody().front()) {
+      op->emitError(
+          "gate-set synthesis requires entry-block qubit allocations");
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  if (allocations.wasInterrupted()) {
+    return failure();
+  }
+  const auto width = *info.numQubits;
+  if (std::cmp_greater(width, std::numeric_limits<int64_t>::max())) {
+    return moduleOp.emitError("logical interface width exceeds the i64 range");
+  }
+  // The synthesis machinery needs a nonempty target even for a zero-wire
+  // circuit.
+  uint64_t capacity = std::max<uint64_t>(1, width);
+  for (const auto& gate : gates.operations()) {
+    capacity = std::max<uint64_t>(capacity, gate.arity().value());
+  }
+  auto target = CompilerTarget::create(
+      capacity, CompilerTarget::Connectivity::allToAll(), gates);
+  if (!target) {
+    return moduleOp.emitError() << llvm::toString(target.takeError());
+  }
+  TargetEnvironment environment(*target, payload);
+  if (failed(runQCOTransformPasses(
+          moduleOp,
+          [&](OpPassManager& pm) {
+            populateTargetSynthesisPipeline(pm, environment, options.mapping,
+                                            /*gateSet=*/true);
+          },
+          "failed to synthesize the gate set", options, true))) {
+    return failure();
+  }
+
+  moduleOp->setAttr(
+      mqt::kLogicalQubitCountAttr,
+      IntegerAttr::get(IntegerType::get(moduleOp.getContext(), 64),
+                       static_cast<int64_t>(width)));
+  return environment;
+}
+
 [[nodiscard]] static FailureOr<CompilerProgram>
 runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
                        const TargetEnvironment* environment,
                        std::string_view qcoPipeline,
-                       const CompilationOptions& options) {
+                       const CompilationOptions& options,
+                       const CompilerTarget::NativeOperations* gates = nullptr,
+                       const PayloadSpecification* payload = nullptr) {
   if (output == ProgramFormat::QCImport) {
     if (std::holds_alternative<QCProgram>(program)) {
       return CompilerProgram(std::move(std::get<QCProgram>(program)));
@@ -828,7 +974,15 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
     return failure();
   }
 
-  if (environment != nullptr) {
+  std::optional<TargetEnvironment> gateEnvironment;
+  if (gates != nullptr) {
+    auto synthesized = synthesizeGateSet(*qco, *gates, *payload, options);
+    if (failed(synthesized)) {
+      return failure();
+    }
+    gateEnvironment.emplace(std::move(*synthesized));
+    environment = &*gateEnvironment;
+  } else if (environment != nullptr) {
     if (failed(qco->compileForTarget(*environment, options))) {
       return failure();
     }
@@ -854,6 +1008,12 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
         failed(qco->cleanup())) {
       return failure();
     }
+  }
+  if ((output == ProgramFormat::QCOOptimized ||
+       output == ProgramFormat::Jeff) &&
+      failed(restoreLogicalQubits<qco::AllocOp, qco::StaticOp, qco::SinkOp>(
+          qco->module()))) {
+    return failure();
   }
   if (output == ProgramFormat::QCOOptimized) {
     return CompilerProgram(std::move(*qco));
@@ -881,7 +1041,9 @@ static Expected<CompilerProgram>
 runNativePipeline(CompilerInput program, ProgramFormat output,
                   const TargetEnvironment* environment,
                   std::string_view qcoPipeline,
-                  const CompilationOptions& options) {
+                  const CompilationOptions& options,
+                  const CompilerTarget::NativeOperations* gates = nullptr,
+                  const PayloadSpecification* payload = nullptr) {
   if (output == ProgramFormat::IQMJSON &&
       (environment == nullptr ||
        environment->target().nativeOperationsKind() ==
@@ -916,7 +1078,7 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
       program);
   CompilerDiagnostics diagnostics(context.get());
   auto result = runDefaultPipelineImpl(std::move(program), output, environment,
-                                       qcoPipeline, options);
+                                       qcoPipeline, options, gates, payload);
   if (failed(result)) {
     return diagnostics.takeError(
         std::make_error_code(std::errc::invalid_argument));
@@ -943,6 +1105,19 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
   }
   return runNativePipeline(std::move(program), output, &environment,
                            "mqt-qco-default", options);
+}
+
+Expected<CompilerProgram>
+runDefaultPipeline(CompilerInput program, ProgramFormat output,
+                   const CompilerTarget::NativeOperations& gates,
+                   const PayloadSpecification& payload,
+                   const CompilationOptions& options) {
+  if (output == ProgramFormat::QCImport || output == ProgramFormat::QCO) {
+    return createStringError(std::errc::invalid_argument,
+                             "raw output stops before gate-set synthesis");
+  }
+  return runNativePipeline(std::move(program), output, nullptr,
+                           "mqt-qco-default", options, &gates, &payload);
 }
 
 Expected<CompilerProgram>

@@ -114,8 +114,9 @@ struct Computation {
 /// Consume source labels while the existing placement loop replaces roots.
 class LayoutRecorder {
 public:
-  LayoutRecorder(func::FuncOp func, const CompilerTarget& target)
-      : module_(func->getParentOfType<ModuleOp>()) {
+  LayoutRecorder(func::FuncOp func, const CompilerTarget& target,
+                 bool sourceOrder = false)
+      : module_(func->getParentOfType<ModuleOp>()), sourceOrder_(sourceOrder) {
     auto count =
         module_->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);
     if (!count) {
@@ -150,24 +151,28 @@ public:
               });
   }
 
-  void record(Operation* root, std::optional<int64_t> slot, size_t vertex) {
+  size_t record(Operation* root, std::optional<int64_t> slot, size_t vertex) {
     if (!layout_ || !valid_) {
-      return;
+      return vertex;
     }
     auto indices =
         root->getAttrOfType<DenseI64ArrayAttr>(mqt::kSourceQubitIndicesAttr);
     if (!indices || !slot || *slot < 0 || *slot >= indices.size() ||
         vertex >= layout_->initial.size()) {
       valid_ = false;
-      return;
+      return vertex;
     }
     const auto source = indices[*slot];
     if (source < 0 || source >= layout_->inputCount ||
         layout_->initial[source] != -1) {
       valid_ = false;
-      return;
+      return vertex;
+    }
+    if (sourceOrder_) {
+      vertex = static_cast<size_t>(source);
     }
     layout_->initial[source] = static_cast<int64_t>(vertex);
+    return vertex;
   }
 
   LogicalResult finish() {
@@ -176,7 +181,7 @@ public:
       return module_.emitError(
           "input qubit identity was lost during placement");
     }
-    if (!layout_) {
+    if (!layout_ || sourceOrder_) {
       return success();
     }
     llvm::SmallBitVector used(layout_->initial.size());
@@ -217,6 +222,7 @@ private:
   SmallVector<int64_t> circuitSources_;
   DenseI64ArrayAttr circuitRouting_;
   bool valid_ = true;
+  bool sourceOrder_;
 };
 
 } // namespace
@@ -365,13 +371,13 @@ static LogicalResult checkCapacity(func::FuncOp func,
 /// Analogously to `discoverComputation`, the i-th extract operation defines
 /// the i-th program qubit. The function assumes that discovery and capacity
 /// checks succeeded.
-static FailureOr<Wires> applyPlacement(Region& body,
-                                       const CompilerTarget& target,
-                                       const Layout<QubitIndex>& layout,
-                                       const Computation& computation,
-                                       IRRewriter& rewriter) {
+static FailureOr<Wires>
+applyPlacement(Region& body, const CompilerTarget& target,
+               const Layout<QubitIndex>& layout, const Computation& computation,
+               IRRewriter& rewriter, bool sourceOrder = false) {
   SmallVector<Value> staticQubits;
-  const auto nhardware = layout.nHardwareQubits();
+  const auto nhardware =
+      sourceOrder ? target.numSites() : layout.nHardwareQubits();
   staticQubits.reserve(nhardware);
 
   rewriter.setInsertionPointToStart(&body.front());
@@ -384,10 +390,11 @@ static FailureOr<Wires> applyPlacement(Region& body,
 
   size_t prog = 0;
 
-  LayoutRecorder recorder(cast<func::FuncOp>(body.getParentOp()), target);
+  LayoutRecorder recorder(cast<func::FuncOp>(body.getParentOp()), target,
+                          sourceOrder);
   for (auto alloc : computation.scalarAllocations) {
-    const auto vertex = layout.getHardwareIndex(prog++);
-    recorder.record(alloc, 0, vertex);
+    const auto vertex =
+        recorder.record(alloc, 0, layout.getHardwareIndex(prog++));
     auto qubit = staticQubits[vertex];
 
     rewriter.replaceAllUsesWith(alloc.getResult(), qubit);
@@ -398,9 +405,9 @@ static FailureOr<Wires> applyPlacement(Region& body,
     for (Operation* operation : tensor.operations) {
       TypeSwitch<Operation*>(operation)
           .Case([&](ExtractOp op) {
-            const auto vertex = layout.getHardwareIndex(prog++);
-            recorder.record(tensor.allocation,
-                            getConstantIntValue(op.getIndex()), vertex);
+            const auto vertex = recorder.record(
+                tensor.allocation, getConstantIntValue(op.getIndex()),
+                layout.getHardwareIndex(prog++));
             auto qubit = staticQubits[vertex];
 
             rewriter.replaceAllUsesWith(op.getResult(), qubit);
@@ -420,11 +427,10 @@ static FailureOr<Wires> applyPlacement(Region& body,
   }
 
   rewriter.setInsertionPoint(body.back().getTerminator());
-  for (; prog < nhardware; ++prog) {
-    const auto hw = layout.getHardwareIndex(prog);
-    auto qubit = staticQubits[hw];
-
-    SinkOp::create(rewriter, body.getLoc(), qubit);
+  for (auto qubit : staticQubits) {
+    if (qubit.use_empty()) {
+      SinkOp::create(rewriter, body.getLoc(), qubit);
+    }
   }
 
   if (failed(recorder.finish())) {
@@ -438,7 +444,8 @@ static FailureOr<Wires> applyPlacement(Region& body,
 /// Assign allocation slots to sites without traversing or expanding their uses.
 static LogicalResult placeIndexedAllocations(func::FuncOp func,
                                              const CompilerTarget& target,
-                                             IRRewriter& rewriter) {
+                                             IRRewriter& rewriter,
+                                             bool sourceOrder = false) {
   SmallVector<Operation*> allocations;
   size_t required = 0;
   for (Operation& op : func.getOps()) {
@@ -465,14 +472,14 @@ static LogicalResult placeIndexedAllocations(func::FuncOp func,
   }
 
   size_t vertex = 0;
-  LayoutRecorder recorder(func, target);
+  LayoutRecorder recorder(func, target, sourceOrder);
   for (Operation* alloc : allocations) {
     rewriter.setInsertionPoint(alloc);
     int64_t slot = 0;
     const auto nextQubit = [&] {
-      recorder.record(alloc, slot++, vertex);
+      const auto assigned = recorder.record(alloc, slot++, vertex++);
       return StaticOp::create(rewriter, alloc->getLoc(),
-                              target.siteForVertex(vertex++));
+                              target.siteForVertex(assigned));
     };
     if (isa<AllocOp>(alloc)) {
       auto qubit = nextQubit();
@@ -515,6 +522,13 @@ struct PlacementPass final
     : PassWrapper<PlacementPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PlacementPass)
 
+  explicit PlacementPass(bool sourceOrder = false)
+      : sourceOrder_(sourceOrder) {}
+
+private:
+  bool sourceOrder_;
+
+public:
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<QCODialect, qtensor::QTensorDialect>();
   }
@@ -550,7 +564,8 @@ protected:
     IRRewriter rewriter(&getContext());
     const auto& target = targetAnalysis.environment().target();
     if (targetAnalysis.environment().supportsIndexedQubits()) {
-      if (failed(placeIndexedAllocations(func, target, rewriter))) {
+      if (failed(
+              placeIndexedAllocations(func, target, rewriter, sourceOrder_))) {
         signalPassFailure();
       }
       return;
@@ -565,7 +580,7 @@ protected:
 
     const auto layout = Layout<QubitIndex>::identity(computation->wires.size());
     if (failed(applyPlacement(func.getFunctionBody(), target, layout,
-                              *computation, rewriter))) {
+                              *computation, rewriter, sourceOrder_))) {
       signalPassFailure();
     }
   }
@@ -2369,8 +2384,8 @@ private:
 
 } // namespace
 
-std::unique_ptr<Pass> createPlacementPass() {
-  return std::make_unique<PlacementPass>();
+std::unique_ptr<Pass> createPlacementPass(bool sourceOrder) {
+  return std::make_unique<PlacementPass>(sourceOrder);
 }
 
 } // namespace mlir::qco

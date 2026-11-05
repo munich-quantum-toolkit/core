@@ -725,7 +725,9 @@ payloadForOutput(OutputFormat output) {
   }
 
   const auto selected = output.value_or(input.format);
-  if (!target.is_none() && !outputEnvironment) {
+  const bool gateSet =
+      nb::isinstance<mlir::CompilerTarget::NativeOperations>(target);
+  if (!target.is_none() && !gateSet && !outputEnvironment) {
     auto payload = payloadForOutput(selected);
     if (targetEnvironment) {
       const auto& requested = targetEnvironment->payloadSpecification();
@@ -771,10 +773,18 @@ payloadForOutput(OutputFormat output) {
       (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY)
           ? mlir::ProgramFormat::QC
           : static_cast<mlir::ProgramFormat>(selected);
+  const auto* gates =
+      gateSet ? &nb::cast<const mlir::CompilerTarget::NativeOperations&>(target)
+              : nullptr;
+  const auto gatePayload =
+      gateSet ? std::optional{payloadForOutput(selected)} : std::nullopt;
   auto compiled = [&] {
     const nb::gil_scoped_release release;
     auto result =
-        outputEnvironment
+        gateSet
+            ? mlir::runDefaultPipeline(std::move(input.program), nativeOutput,
+                                       *gates, *gatePayload, options)
+        : outputEnvironment
             ? mlir::runDefaultPipeline(std::move(input.program), nativeOutput,
                                        *outputEnvironment, options)
             : mlir::runDefaultPipeline(std::move(input.program), nativeOutput,
@@ -788,7 +798,8 @@ payloadForOutput(OutputFormat output) {
   if (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
     auto result =
-        outputEnvironment
+        gateSet ? bindings::qiskit::exportGateSetCircuit(std::move(qc))
+        : outputEnvironment
             ? bindings::qiskit::exportCircuit(std::move(qc), *outputEnvironment)
             : bindings::qiskit::exportCircuit(std::move(qc), nullptr);
     if (input.format == OutputFormat::Qiskit) {
@@ -871,7 +882,8 @@ compilePythonProgram(PythonInputTypes& types, const nb::handle program,
                  target.attr("_environment"))) {
     targetEnvironment =
         nb::cast<const mlir::TargetEnvironment&>(target.attr("_environment"));
-  } else if (!target.is_none() && !compilerTarget) {
+  } else if (!target.is_none() && !compilerTarget &&
+             !nb::isinstance<mlir::CompilerTarget::NativeOperations>(target)) {
     targetEnvironment.emplace(
         bindings::qiskit::importTarget(target, nb::none(), std::nullopt),
         bindings::qiskit::payloadSpecification(target));
@@ -2020,19 +2032,14 @@ Zero disables node expansion. Container overhead, caches, and IR are extra.)pb")
                                        R"pb(Shared compiler controls.
 
 An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds.)pb")
-      .def(nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions,
-                    bool>(),
-           nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
-           "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
-           "preserve_logical_order"_a = false)
+      .def(
+          nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions>(),
+          nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
+          "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{})
       .def_rw("seed", &mlir::CompilationOptions::seed)
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
-      .def_rw("mapping", &mlir::CompilationOptions::mapping)
-      .def_rw("preserve_logical_order",
-              &mlir::CompilationOptions::preserveLogicalOrder,
-              "Keep source wire order and materialize permutations in native "
-              "synthesis.");
+      .def_rw("mapping", &mlir::CompilationOptions::mapping);
 
   nb::class_<mlir::QuantumProgramInfo>(
       m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.
@@ -2362,13 +2369,7 @@ RuntimeError with MLIR diagnostics.)pb")
           R"pb(Synthesize native operations without routing.
 
 Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep
-their device site IDs and must fit the target topology.
-
-Pass ``CompilationOptions(preserve_logical_order=True)`` for fixed-width dynamic input and an equally wide all-to-all target
-with site IDs starting at zero in consecutive order. Synthesis keeps wire permutations in the circuit
-and omits layout metadata. Pass the target to ``to_qiskit()`` to include idle wires in the export.
-
-Do not rely on the program contents if synthesis fails.
+their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails.
 Failures raise RuntimeError with the emitted MLIR diagnostics.)pb")
       .def(
           "to_qiskit",
@@ -2888,7 +2889,7 @@ and error contracts.)pb");
       "program"_a, nb::kw_only(), "target"_a = nb::none(),
       "output"_a = nb::none(), "copy"_a = false,
       "qco_pipeline"_a = "mqt-qco-default", "options"_a = nb::none(),
-      R"pb(Compile a program or a homogeneous sequence for an optional hardware target.
+      R"pb(Compile a program or a homogeneous sequence for a gate set or hardware target.
 
 A sequence returns a list in input order, including for empty and singleton
 inputs. Elements must share one supported input kind; subclasses are accepted.
@@ -2901,6 +2902,13 @@ retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
 QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
 QCO inputs return optimized QCO.
 
+A ``CompilerTarget.NativeOperations`` target synthesizes gates without device placement.
+It preserves logical wire order and idle wires, including terminal permutations,
+and retains the input format family by default. Inputs must have fixed-width
+entry-block allocations and no static qubits or layout metadata. Site-specific
+capabilities are rejected; ``NativeOperations.from_qiskit`` imports gates
+without physical placement.
+
 Typed MLIR inputs are consumed; set ``copy=True`` to preserve them. Source text,
 paths, Qiskit circuits and OpenQASM programs remain reusable. Sequence input
 kinds are checked before compilation. Compilation stops at the first failure
@@ -2910,7 +2918,8 @@ consumed, while later inputs remain usable.
 Args:
     program: Source text, a file path, a Qiskit circuit, a typed compiler program,
         or a homogeneous sequence of these inputs.
-    target: A CompilerTarget, TargetEnvironment, Qiskit BackendV2 or Target,
+    target: A CompilerTarget.NativeOperations gate set, CompilerTarget,
+        TargetEnvironment, Qiskit BackendV2 or Target,
         QDMI Device, or device ID.
     output: The returned representation. QC_IMPORT and raw QCO are checkpoints
         before target compilation and cannot be combined with a target.

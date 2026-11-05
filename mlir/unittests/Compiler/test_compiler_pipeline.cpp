@@ -7641,4 +7641,58 @@ TEST_F(CompilerPipelineTest, OpenQASMReceiverVersionFloorAndFutureMinorInput) {
   llvm::consumeError(unsupported.takeError());
 }
 
+TEST_F(CompilerPipelineTest, GateSetSynthesisPreservesOwnedWireOrder) {
+  const auto gates = CompilerTarget::NativeOperations::unrestricted();
+  const auto payload = llvm::cantFail(
+      PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM3));
+  auto source = QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; include \"stdgates.inc\"; qubit[4] q; "
+      "x q[2]; h q[0]; swap q[0], q[2];");
+  MQT_ASSERT_SUCCESS(source);
+  auto expected = source->copy().intoQCO();
+  ASSERT_TRUE(succeeded(expected));
+  auto compiled = runDefaultPipeline(
+      std::move(*source), ProgramFormat::QCOOptimized, gates, payload);
+  MQT_ASSERT_SUCCESS(compiled);
+  auto& actual = std::get<QCOProgram>(*compiled);
+  EXPECT_EQ(actual.inspect().numQubits, 4);
+  EXPECT_TRUE(actual.inspect().staticQubits.empty());
+  EXPECT_FALSE(actual.module()->hasAttr("mqt.layout"));
+  EXPECT_TRUE(succeeded(verify(actual.module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(actual.module())));
+  expectFullUnitaryEqual(expected->module(), actual.module(), 4);
+  auto repeated = runDefaultPipeline(
+      std::move(actual), ProgramFormat::QCOOptimized, gates, payload);
+  MQT_ASSERT_SUCCESS(repeated);
+  auto& again = std::get<QCOProgram>(*repeated);
+  EXPECT_EQ(again.inspect().numQubits, 4);
+  expectFullUnitaryEqual(expected->module(), again.module(), 4);
+}
+
+TEST_F(CompilerPipelineTest, RejectsInvalidLogicalInterfaceWidth) {
+  auto source = QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; include \"stdgates.inc\"; x $5;");
+  MQT_ASSERT_SUCCESS(source);
+  Builder builder(source->module().getContext());
+  for (Attribute width : {
+           Attribute(builder.getI64IntegerAttr(-1)),
+           Attribute(builder.getI64IntegerAttr(1)),
+           Attribute(builder.getStringAttr("invalid")),
+       }) {
+    auto program = source->copy();
+    program.module()->setAttr(mlir::mqt::kLogicalQubitCountAttr, width);
+    EXPECT_TRUE(failed(std::move(program).intoOpenQASM3()));
+  }
+}
+
+TEST_F(CompilerPipelineTest, RejectsLogicalInterfaceOnOwnedQubits) {
+  auto source = QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; x q;");
+  MQT_ASSERT_SUCCESS(source);
+  Builder builder(source->module().getContext());
+  source->module()->setAttr(mlir::mqt::kLogicalQubitCountAttr,
+                            builder.getI64IntegerAttr(1));
+  EXPECT_TRUE(failed(std::move(*source).intoOpenQASM3()));
+}
+
 } // namespace mqt::test::compiler

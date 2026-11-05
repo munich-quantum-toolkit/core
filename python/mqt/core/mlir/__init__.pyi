@@ -30,7 +30,8 @@ _CompilerInput: TypeAlias = (
     str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
 )
 _CompilerTarget: TypeAlias = (
-    CompilerTarget
+    CompilerTarget.NativeOperations
+    | CompilerTarget
     | TargetEnvironment
     | qiskit.providers.BackendV2
     | qiskit.transpiler.Target
@@ -751,7 +752,6 @@ class CompilationOptions:
         enable_timing: bool = False,
         enable_statistics: bool = False,
         mapping: MappingOptions = ...,
-        preserve_logical_order: bool = False,
     ) -> None: ...
     @property
     def seed(self) -> int | None: ...
@@ -769,12 +769,6 @@ class CompilationOptions:
     def mapping(self) -> MappingOptions: ...
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
-    @property
-    def preserve_logical_order(self) -> bool:
-        """Keep source wire order and materialize permutations in native synthesis."""
-
-    @preserve_logical_order.setter
-    def preserve_logical_order(self, arg: bool, /) -> None: ...
 
 class QuantumProgramInfo:
     """Quantum resources and static IR statistics.
@@ -1148,13 +1142,7 @@ class QCOProgram(Program):
         """Synthesize native operations without routing.
 
         Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep
-        their device site IDs and must fit the target topology.
-
-        Pass ``CompilationOptions(preserve_logical_order=True)`` for fixed-width dynamic input and an equally wide all-to-all target
-        with site IDs starting at zero in consecutive order. Synthesis keeps wire permutations in the circuit
-        and omits layout metadata. Pass the target to ``to_qiskit()`` to include idle wires in the export.
-
-        Do not rely on the program contents if synthesis fails.
+        their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails.
         Failures raise RuntimeError with the emitted MLIR diagnostics.
         """
 
@@ -1715,7 +1703,7 @@ def compile_program(
 def compile_program(
     program: _ProgramT,
     *,
-    target: CompilerTarget | None = None,
+    target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> _ProgramT: ...
@@ -1723,7 +1711,7 @@ def compile_program(
 def compile_program(
     program: str | os.PathLike[str],
     *,
-    target: CompilerTarget | None = None,
+    target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> QCProgram | JeffProgram | OpenQASMProgram: ...
@@ -1851,7 +1839,7 @@ def compile_program(
 def compile_program(
     program: Sequence[_ProgramT],
     *,
-    target: CompilerTarget | None = None,
+    target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[_ProgramT]: ...
@@ -1859,7 +1847,7 @@ def compile_program(
 def compile_program(
     program: Sequence[_SourceT],
     *,
-    target: CompilerTarget | None = None,
+    target: CompilerTarget | CompilerTarget.NativeOperations | None = None,
     output: None = None,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[QCProgram | JeffProgram | OpenQASMProgram]: ...
@@ -1871,7 +1859,7 @@ def compile_program(
     output: OutputFormat,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[_CompilerOutput]:
-    """Compile a program or a homogeneous sequence for an optional hardware target.
+    """Compile a program or a homogeneous sequence for a gate set or hardware target.
 
     A sequence returns a list in input order, including for empty and singleton
     inputs. Elements must share one supported input kind; subclasses are accepted.
@@ -1884,6 +1872,13 @@ def compile_program(
     QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
     QCO inputs return optimized QCO.
 
+    A ``CompilerTarget.NativeOperations`` target synthesizes gates without device placement.
+    It preserves logical wire order and idle wires, including terminal permutations,
+    and retains the input format family by default. Inputs must have fixed-width
+    entry-block allocations and no static qubits or layout metadata. Site-specific
+    capabilities are rejected; ``NativeOperations.from_qiskit`` imports gates
+    without physical placement.
+
     Typed MLIR inputs are consumed; set ``copy=True`` to preserve them. Source text,
     paths, Qiskit circuits and OpenQASM programs remain reusable. Sequence input
     kinds are checked before compilation. Compilation stops at the first failure
@@ -1893,7 +1888,8 @@ def compile_program(
     Args:
         program: Source text, a file path, a Qiskit circuit, a typed compiler program,
             or a homogeneous sequence of these inputs.
-        target: A CompilerTarget, TargetEnvironment, Qiskit BackendV2 or Target,
+        target: A CompilerTarget.NativeOperations gate set, CompilerTarget,
+            TargetEnvironment, Qiskit BackendV2 or Target,
             QDMI Device, or device ID.
         output: The returned representation. QC_IMPORT and raw QCO are checkpoints
             before target compilation and cannot be combined with a target.

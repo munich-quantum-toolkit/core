@@ -268,19 +268,32 @@ failed pass can leave the supplied environment and earlier changes on the
 program; copy the input before trying another sequence. A pipeline parsing error
 leaves the program unchanged.
 
+### Gate-set synthesis
+
+Pass {py:class}`~mqt.core.mlir.CompilerTarget.NativeOperations` to
+{py:func}`~mqt.core.mlir.compile_program` to synthesize a logical circuit
+without device placement:
+
+```python
+gates = CompilerTarget.NativeOperations.from_qiskit(qiskit_target)
+native = compile_program(circuit, target=gates)
+```
+
+The result preserves source wire order, terminal permutations, and idle wires.
+Qiskit output has no layout metadata; OpenQASM output declares logical qubits.
+The default output follows the input format family. Each circuit in a sequence
+retains its own width. Inputs must use fixed-width qubit allocations in the
+entry block, without static qubits or existing layout metadata. Manually
+constructed capabilities with site-specific placements are rejected.
+
 ### Synthesis without routing
 
 {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` translates to native
 gates while preserving static site IDs. Dynamic qubits require all-to-all
-connectivity. Measurement support is not required. Synthesis checks target
-support and topology and mutates the program. Copy the program before synthesis
-to preserve it on failure.
-
-Pass `CompilationOptions(preserve_logical_order=True)` to native synthesis for a
-fixed-width circuit and an equally wide all-to-all target with consecutive site
-IDs starting at zero. Wire permutations remain in the circuit and the output
-carries no layout metadata. Pass the target to `to_qiskit()` to include idle
-wires in the exported circuit.
+connectivity. Dynamic qubits are assigned target sites; static qubits retain
+their site IDs. This method does not require measurement support. It checks
+target support and topology; it mutates the program, including on failure, so
+copy first when needed.
 
 ### Payload control flow
 

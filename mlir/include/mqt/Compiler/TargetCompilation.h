@@ -47,10 +47,12 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 /// authoritative and must remain unchanged during pipeline execution.
 /// Explicit native-operation targets must provide a single-qubit synthesis
 /// basis. Use runWithCompilationOptions to apply compilation-wide seed and
-/// instrumentation settings when running this pipeline.
+/// instrumentation settings when running this pipeline. Gate-set synthesis
+/// assigns source slots directly and keeps terminal permutations in the
+/// circuit; its caller owns validation and logical-interface materialization.
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
                                      const MappingOptions& mapping = {},
-                                     bool preserveLogicalOrder = false);
+                                     bool gateSet = false);
 
 } // namespace mlir

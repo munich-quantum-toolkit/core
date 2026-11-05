@@ -62,6 +62,9 @@ payloadSpecification(nb::handle target = nb::none());
 exportCircuit(mlir::QCProgram program,
               const mlir::CompilerTarget* target = nullptr);
 
+/// Export owned logical wires with the attached gate-set capabilities.
+[[nodiscard]] nb::object exportGateSetCircuit(mlir::QCProgram program);
+
 /// Export a compiled circuit, including layout and payload control-flow limits.
 [[nodiscard]] nb::object
 exportCircuit(mlir::QCProgram program,

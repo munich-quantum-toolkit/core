@@ -2883,10 +2883,9 @@ collectGateDefinition(mlir::func::FuncOp function) {
   };
 }
 
-[[nodiscard]] static nb::object
-exportCircuitImpl(mlir::QCProgram program,
-                  const mlir::CompilerTarget* const target,
-                  const mlir::PayloadSpecification* const payload) {
+[[nodiscard]] static nb::object exportCircuitImpl(
+    mlir::QCProgram program, const mlir::CompilerTarget* const target,
+    const mlir::PayloadSpecification* const payload, bool logical = false) {
   auto moduleOp = program.module();
   auto function = mlir::mqt::getEntryPoint(moduleOp);
   if (!function) {
@@ -2935,19 +2934,19 @@ exportCircuitImpl(mlir::QCProgram program,
   }
   ExportState state;
   collectParameters(function, state, function.getNumArguments());
-  if (target != nullptr) {
+  if (target != nullptr && !logical) {
     state.numQubits = checkedIndex(
         static_cast<uint64_t>(*llvm::max_element(target->siteIds())) + 1,
         "target address width");
   }
   materializeBooleanResults(function);
   prepareMeasurementStores(function);
-  collectResources(function, state, target);
+  collectResources(function, state, logical ? nullptr : target);
   indexWrites(function.getBody().front(), state.writes);
   auto circuit = collectBlock(function.getBody().front(), state, 0U);
   llvm::StringSet<> usedNames;
   validateExportParameters(circuit, usedNames);
-  if (target != nullptr) {
+  if (target != nullptr && !logical) {
     Register reg{.name = "q"};
     reg.bits.resize(state.numQubits);
     std::iota(reg.bits.begin(), reg.bits.end(), 0U);
@@ -3033,6 +3032,17 @@ exportCircuitImpl(mlir::QCProgram program,
     writer->setLayout(*layout);
   }
   return writer->finish();
+}
+
+nb::object exportGateSetCircuit(mlir::QCProgram program) {
+  const mlir::TargetEnvironmentAnalysis analysis(program.module());
+  if (!analysis) {
+    throw std::runtime_error(
+        "gate-set output requires its synthesis environment");
+  }
+  const auto& environment = analysis.environment();
+  return exportCircuitImpl(std::move(program), &environment.target(),
+                           &environment.payloadSpecification(), true);
 }
 
 nb::object exportCircuit(mlir::QCProgram program,

@@ -3061,13 +3061,15 @@ private:
     if (nativeTarget_ && callee.isExternal()) {
       SmallVector<CompilerTarget::SiteId> sites;
       SmallVector<std::optional<double>> parameters;
+      size_t arity = 0;
       for (auto operand : operands) {
         if (operand.getType().isF64()) {
           parameters.push_back(mqt::valueToDouble(operand));
         } else if (auto site = operand.getDefiningOp<StaticOp>()) {
           sites.push_back(static_cast<CompilerTarget::SiteId>(site.getIndex()));
+          ++arity;
         } else {
-          return fail(operation, "native gates require static target sites");
+          ++arity;
         }
       }
       StringRef canonical = call.symbol;
@@ -3081,8 +3083,11 @@ private:
         canonical = "r";
       }
       const auto selected = nativeTarget_->findOperation(
-          canonical, sites.size(), parameters, sites, 0,
-          [this, &call, nativePulse](const auto& capability) {
+          canonical, arity, parameters,
+          sites.size() == arity
+              ? std::optional<ArrayRef<CompilerTarget::SiteId>>(sites)
+              : std::nullopt,
+          0, [this, &call, nativePulse](const auto& capability) {
             return (!nativePulse || capability.name() == call.symbol) &&
                    hasCompatibleNativeMeaning(capability);
           });
@@ -3115,17 +3120,18 @@ private:
     if (!nativeTarget_) {
       return success();
     }
-    auto physical = qubit.getDefiningOp<StaticOp>();
-    if (physical) {
-      const std::array sites{
-          static_cast<CompilerTarget::SiteId>(physical.getIndex()),
-      };
-      const auto match = nativeTarget_->findOperation(
-          name, 1, {}, sites, 0,
-          [name](const auto& capability) { return capability.name() == name; });
-      if (match.capability != nullptr) {
-        return success();
-      }
+    SmallVector<CompilerTarget::SiteId, 1> sites;
+    if (auto physical = qubit.getDefiningOp<StaticOp>()) {
+      sites.push_back(static_cast<CompilerTarget::SiteId>(physical.getIndex()));
+    }
+    const auto match = nativeTarget_->findOperation(
+        name, 1, {},
+        sites.empty() ? std::nullopt
+                      : std::optional<ArrayRef<CompilerTarget::SiteId>>(sites),
+        0,
+        [name](const auto& capability) { return capability.name() == name; });
+    if (match.capability != nullptr) {
+      return success();
     }
     return fail(operation,
                 "target operation cannot be emitted as native OpenQASM");
@@ -3154,11 +3160,15 @@ private:
     SmallVector<CompilerTarget::SiteId> sites;
     for (auto qubit : qubits) {
       auto physical = qubit.getDefiningOp<StaticOp>();
-      if (!physical) {
-        return fail(unitary, "native OpenQASM gates require physical qubits");
+      if (physical) {
+        sites.push_back(
+            static_cast<CompilerTarget::SiteId>(physical.getIndex()));
       }
-      sites.push_back(static_cast<CompilerTarget::SiteId>(physical.getIndex()));
     }
+    const auto knownSites =
+        sites.size() == qubits.size()
+            ? std::optional<ArrayRef<CompilerTarget::SiteId>>(sites)
+            : std::nullopt;
     SmallVector<std::optional<double>> parameters;
     for (auto parameter : body.getParameters()) {
       parameters.push_back(mqt::valueToDouble(parameter));
@@ -3172,15 +3182,15 @@ private:
              (openqasm::frontend::isValidIdentifier(operation.name()) ||
               (symbol == "gphase" && operation.name() == "gphase"));
     };
-    auto selected =
-        nativeTarget_->findOperation(symbol, qubits.size(), parameters, sites,
-                                     controlCount, compatibleSpelling);
+    auto selected = nativeTarget_->findOperation(
+        symbol, qubits.size(), parameters, knownSites, controlCount,
+        compatibleSpelling);
     const bool promoteU2 = selected.capability == nullptr && symbol == "u2";
     if (promoteU2) {
       parameters.insert(parameters.begin(), std::numbers::pi / 2);
-      selected =
-          nativeTarget_->findOperation("u", qubits.size(), parameters, sites,
-                                       controlCount, compatibleSpelling);
+      selected = nativeTarget_->findOperation("u", qubits.size(), parameters,
+                                              knownSites, controlCount,
+                                              compatibleSpelling);
     }
     const auto [capability, genericControls] = selected;
     if (capability == nullptr) {
