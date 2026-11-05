@@ -1885,6 +1885,58 @@ TEST(CompilerQDMIAdapterTest, ValidatesResultLayoutSamples) {
   }
 }
 
+TEST(CompilerQDMIAdapterTest, ExcludesUnsupportedIQMDynamicPrimitives) {
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.sc.default"));
+  const auto operations = llvm::cantFail(device.getOperations());
+  static thread_local QDMI_Operation renamed;
+  renamed = *llvm::find_if(operations, [](const auto& operation) {
+    return llvm::cantFail(operation.getName()) == "cz";
+  });
+  auto* api =
+      &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
+  static thread_local decltype(QDMI_device_session_query_operation_property)*
+      query;
+  static thread_local std::string name;
+  query = api->device_session_query_operation_property;
+  const auto restore = llvm::make_scope_exit(
+      [&] { api->device_session_query_operation_property = query; });
+  api->device_session_query_operation_property =
+      [](QDMI_Device_Session session, QDMI_Operation operation, size_t numSites,
+         const QDMI_Site* sites, size_t numParams, const double* params,
+         QDMI_Operation_Property property, size_t size, void* value,
+         size_t* sizeRet) -> int {
+    if (operation == renamed && property == QDMI_OPERATION_PROPERTY_NAME) {
+      if (sizeRet != nullptr) {
+        *sizeRet = name.size() + 1;
+      }
+      if (value != nullptr) {
+        if (size < name.size() + 1) {
+          return QDMI_ERROR_INVALIDARGUMENT;
+        }
+        std::memcpy(value, name.c_str(), name.size() + 1);
+      }
+      return QDMI_SUCCESS;
+    }
+    if (operation == renamed &&
+        property == QDMI_OPERATION_PROPERTY_PARAMETERSNUM) {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    return query(session, operation, numSites, sites, numParams, params,
+                 property, size, value, sizeRet);
+  };
+  for (const auto* primitive : {"cc_prx", "measure_ff"}) {
+    name = primitive;
+    auto target = mlir::compilerTargetFromDevice(device);
+    MQT_ASSERT_SUCCESS(target);
+    EXPECT_TRUE(target->supportsOperation("r", 1, 2));
+    EXPECT_FALSE(target->supportsOperation(primitive, 1));
+  }
+  name = "unknown_rotation";
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::compilerTargetFromDevice(device).takeError()));
+}
+
 TEST(CompilerQDMIAdapterTest, SnapshotsVersionedParameterConstraints) {
   const auto device =
       llvm::cantFail(qdmi::Session::openDevice("mqt.sc.default"));

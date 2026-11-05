@@ -327,6 +327,8 @@ snapshotOperations(const std::vector<qdmi::Operation>& operations,
     if (llvm::is_contained(
             {
                 "barrier",
+                "cc_prx",
+                "measure_ff",
                 "if_else",
                 "for_loop",
                 "while_loop",

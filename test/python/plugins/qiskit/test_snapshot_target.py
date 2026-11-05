@@ -433,3 +433,22 @@ def test_parameter_variant_names_are_local_and_keep_unrestricted_name(monkeypatc
         assert backend.target.instruction_supported("rx", (0,), parameters=[0.8])
         assert backend.target.operation_from_name("rx_1").params == [0.5]
     assert names == [{"rx", "rx_1"}, {"rx", "rx_1"}]
+
+
+def test_native_pulse_requires_its_declared_native_name() -> None:
+    """A one-parameter native pulse cannot be renamed to a two-parameter PRX."""
+    capability = CompilerTarget.OperationCapability
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            capability("prx", 1, 2),
+            capability("measure", 1, 0),
+        ]),
+    )
+    circuit = QuantumCircuit(1)
+    circuit.append(Gate("gpi", 1, [0.25]), [0])
+    with pytest.raises((ValueError, RuntimeError), match="not native"):
+        serialize_program(
+            circuit, target=TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QASM3))
+        )

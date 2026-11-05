@@ -6095,6 +6095,48 @@ ctrl(2) @ rz(0.2) q[0], q[1], q[2];
   }
 }
 
+TEST_F(CompilerPipelineTest, NativePulseOpenQASMPreservesArityAndPhase) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      1, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("gpi", 1, 1)),
+          llvm::cantFail(Capability::create("gpi2", 1, 1)),
+          llvm::cantFail(Capability::create("measure", 1, 0)),
+      })));
+  const TargetEnvironment environment(target, makePayloadSpecification());
+  auto qc = QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; qubit q; "
+      "ry(0.73) q; rz(0.37) q; rx(-1.2) q;");
+  MQT_ASSERT_SUCCESS(qc);
+  auto original = std::move(*qc).intoQCO();
+  ASSERT_TRUE(succeeded(original));
+  auto native = original->copy();
+  ASSERT_TRUE(succeeded(native.compileForTarget(environment)));
+  auto lowered = std::move(native).intoQC();
+  ASSERT_TRUE(succeeded(lowered));
+  auto emitted = std::move(*lowered).intoOpenQASM3();
+  ASSERT_TRUE(succeeded(emitted));
+  auto source = emitted->source();
+  EXPECT_NE(source.find("gpi("), std::string::npos);
+  EXPECT_NE(source.find("gpi2("), std::string::npos);
+  const auto include = source.find("include \"stdgates.inc\";");
+  ASSERT_NE(include, std::string::npos);
+  // Definitions enforce each native signature and give an independent phase
+  // oracle.
+  source.insert(include + std::string("include \"stdgates.inc\";").size(),
+                "\ngate gpi(phi) q { gphase(pi / 2); "
+                "rz(-phi) q; rx(pi) q; rz(phi) q; }\n"
+                "gate gpi2(phi) q { rz(-phi) q; rx(pi / 2) q; rz(phi) q; }\n");
+  auto restoredQC = QCProgram::fromOpenQASMString(source);
+  MQT_ASSERT_SUCCESS(restoredQC);
+  auto restored = std::move(*restoredQC).intoQCO();
+  ASSERT_TRUE(succeeded(restored));
+  ASSERT_TRUE(succeeded(restored->runPassPipeline("inline")));
+  ASSERT_TRUE(succeeded(restored->cleanup()));
+  expectFullUnitaryEqual(original->module(), restored->module(), 1);
+}
+
 TEST_F(CompilerPipelineTest, TargetOpenQASMRetainsExportableControlledAngles) {
   using Capability = CompilerTarget::OperationCapability;
   const auto target = llvm::cantFail(CompilerTarget::create(
