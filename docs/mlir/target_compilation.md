@@ -212,6 +212,42 @@ a bounded search-memory budget, configured with
 `MappingOptions.search_memory_limit`; this does not cap total process memory.
 See {doc}`QCO` for routing and synthesis details.
 
+### Custom pass sequences
+
+Pass a `target_environment` to
+{py:meth}`~mqt.core.mlir.QCOProgram.run_pass_pipeline` to use target-aware
+passes in a custom sequence. The environment replaces any stored environment
+after the pipeline parses successfully and remains available to later calls.
+Omitting it, or passing `None`, keeps the stored environment.
+
+Using the target defined above:
+
+```{code-cell} ipython3
+from mqt.core.mlir import CompilationOptions, PayloadFormat, PayloadSpecification, QCProgram, TargetEnvironment
+
+environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.1")))
+source = QCProgram.from_openqasm_str(bell_qasm).to_qco()
+candidate = source.copy()
+candidate.cleanup()
+candidate.run_pass_pipeline(
+    "place-and-route{ntrials=1},target-native-synthesis,drop-global-phases",
+    target_environment=environment,
+    options=CompilationOptions(seed=7),
+)
+candidate.run_pass_pipeline("verify-target-conformance")
+```
+
+The runner executes only the requested passes; it does not add the preparation
+or verification stages of the full target compiler. Choose an order that meets
+each pass's input requirements. The example drops unobservable global phases
+because this target does not support them. Set mapping controls in the textual
+`place-and-route` options; `CompilationOptions.mapping` configures the full
+target pipeline.
+
+Execution clears existing layout metadata. A failed pass can leave the supplied
+environment and earlier changes on the program; copy the input before trying
+another sequence. A pipeline parsing error leaves the program unchanged.
+
 ### Synthesis without routing
 
 {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` translates to native

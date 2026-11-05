@@ -2270,14 +2270,25 @@ cancel, fuse, or specialize gates.)pb")
       .def(
           "run_pass_pipeline",
           [](mlir::QCOProgram& program, const std::string& pipeline,
+             const mlir::TargetEnvironment* environment,
              mlir::CompilationOptions options) {
             requireValid(program);
             withDiagnostics<nb::exception_type::runtime_error>(
-                program.context().get(), "Compiler action failed",
-                [&] { return program.runPassPipeline(pipeline, options); });
+                program.context().get(), "Compiler action failed", [&] {
+                  const nb::gil_scoped_release release;
+                  return program.runPassPipeline(pipeline, options,
+                                                 environment);
+                });
           },
-          "pipeline"_a, nb::kw_only(), "options"_a = mlir::CompilationOptions{},
-          "Run a textual MLIR pass pipeline in place.")
+          "pipeline"_a, nb::kw_only(), "target_environment"_a = nb::none(),
+          "options"_a = mlir::CompilationOptions{},
+          R"pb(Run a textual MLIR pass pipeline in place.
+
+The supplied target environment replaces the existing one after parsing succeeds
+and remains attached for subsequent passes. None retains the existing environment.
+Only the requested passes run; no default target compilation stages are added.
+Existing layout metadata is cleared before execution. Execution failure can leave
+partial changes; use ``copy()`` to preserve the input.)pb")
       .def("merge_single_qubit_rotation_gates",
            &FallibleMemberAdapter<
                &mlir::QCOProgram::mergeSingleQubitRotationGates>::call,

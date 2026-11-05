@@ -1080,8 +1080,17 @@ class QCOProgram(Program):
     def normalize_global_phases(self) -> None:
         """Normalize scoped global phases in place."""
 
-    def run_pass_pipeline(self, pipeline: str, *, options: CompilationOptions = ...) -> None:
-        """Run a textual MLIR pass pipeline in place."""
+    def run_pass_pipeline(
+        self, pipeline: str, *, target_environment: TargetEnvironment | None = None, options: CompilationOptions = ...
+    ) -> None:
+        """Run a textual MLIR pass pipeline in place.
+
+        The supplied target environment replaces the existing one after parsing succeeds
+        and remains attached for subsequent passes. None retains the existing environment.
+        Only the requested passes run; no default target compilation stages are added.
+        Existing layout metadata is cleared before execution. Execution failure can leave
+        partial changes; use ``copy()`` to preserve the input.
+        """
 
     def merge_single_qubit_rotation_gates(self) -> None:
         """Merge compatible consecutive single-qubit rotation gates."""

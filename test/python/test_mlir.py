@@ -2115,6 +2115,88 @@ def test_qco_program_runs_textual_pipeline(capfd: pytest.CaptureFixture[str]) ->
     assert not capfd.readouterr().err
 
 
+def test_qco_program_runs_target_passes_in_stages() -> None:
+    """Route and synthesize using an environment retained between calls."""
+    source = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    program = source.copy()
+    program.cleanup()
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity([(0, 1)]),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+        ]),
+    )
+
+    program.run_pass_pipeline(
+        "place-and-route{ntrials=1}",
+        target_environment=_test_target_environment(target),
+        options=CompilationOptions(seed=7),
+    )
+    program.run_pass_pipeline("target-native-synthesis,verify-target-conformance", target_environment=None)
+
+    assert program.gate_counts().get("cz") == 1
+    assert set(program.gate_counts()) <= {"u", "cz", "gphase", "measure"}
+    assert set(sample(program, shots=32, seed=1)) == {"00", "11"}
+    assert "mqt.target_env" not in source.ir
+
+
+def test_qco_program_textual_pipeline_replaces_target(capfd: pytest.CaptureFixture[str]) -> None:
+    """A supplied environment replaces native-operation support for later passes."""
+    program = QCProgram.from_openqasm_str('OPENQASM 3; include "stdgates.inc"; qubit q; x q;').to_qco()
+    supported = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity([]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program.run_pass_pipeline(
+        "place-and-route{ntrials=1},verify-target-conformance",
+        target_environment=_test_target_environment(supported),
+    )
+    unsupported = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity([]),
+        native_operations=CompilerTarget.NativeOperations([CompilerTarget.OperationCapability("z", 1, 0)]),
+    )
+
+    with pytest.raises(RuntimeError, match="target does not support operation"):
+        program.run_pass_pipeline("verify-target-conformance", target_environment=_test_target_environment(unsupported))
+    with pytest.raises(RuntimeError, match="target does not support operation"):
+        program.run_pass_pipeline("verify-target-conformance")
+    assert not capfd.readouterr().err
+
+    program.run_pass_pipeline("verify-target-conformance", target_environment=_test_target_environment(supported))
+
+
+def test_qco_program_invalid_target_pipeline_preserves_input() -> None:
+    """Parsing failure preserves the current target and transpiler layout."""
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    original = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program.compile_for_target(_test_target_environment(original))
+    before = program.ir
+    assert "mqt.target_env" in before
+    assert "mqt.layout" in before
+    replacement = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([]),
+    )
+
+    with pytest.raises(RuntimeError, match="does not refer to a registered pass"):
+        program.run_pass_pipeline("not-a-pass", target_environment=_test_target_environment(replacement))
+    assert program.ir == before
+
+    program.run_pass_pipeline("canonicalize", target_environment=_test_target_environment(original))
+    assert "mqt.layout" not in program.ir
+
+
 def test_qco_program_runs_pauli_twirling_pass() -> None:
     """Run default and seeded Pauli twirling on copied QCO programs."""
     source = compile_program(QASM_STRING, output=OutputFormat.QCO)

@@ -437,9 +437,16 @@ public:
   [[nodiscard]] LogicalResult normalizeGlobalPhases();
 
   /// Run an MLIR textual QCO pass pipeline in place.
+  ///
+  /// A supplied environment replaces the module's target environment after
+  /// parsing succeeds and remains attached for subsequent passes. Otherwise,
+  /// retain the existing environment. Clear layout metadata before execution.
+  /// Execution failure can leave partial changes; copy the program to preserve
+  /// the input.
   [[nodiscard]] LogicalResult
   runPassPipeline(std::string_view pipeline,
-                  const CompilationOptions& options = {});
+                  const CompilationOptions& options = {},
+                  const TargetEnvironment* environment = nullptr);
 
   /// Merge consecutive single-qubit rotation gates.
   [[nodiscard]] LogicalResult mergeSingleQubitRotationGates();
