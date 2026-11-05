@@ -10,14 +10,7 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = {
-    "importlib.metadata",
-    "mqt.core._compile_qpy",
-    "mqt.core._qdmi_discovery",
-    "pathlib",
-    "subprocess",
-    "typing",
-}
+__lazy_modules__ = {"importlib.metadata", "mqt.core._qdmi_discovery", "pathlib", "subprocess", "typing"}
 
 import os
 import subprocess
@@ -26,7 +19,6 @@ from importlib.metadata import distribution
 from pathlib import Path
 from typing import NoReturn
 
-from mqt.core._compile_qpy import compile_qpy
 from mqt.core._qdmi_discovery import discover_qdmi_manifests
 
 
@@ -40,12 +32,9 @@ def main() -> NoReturn:
         discover_qdmi_manifests(lambda path: manifests.append(f"--qdmi-manifest={path}"))
         arguments[2:2] = manifests
     if len(arguments) > 1 and arguments[1] == "compile":
-        try:
-            result = compile_qpy(arguments)
-        except (ValueError, RuntimeError, OSError) as error:
-            sys.exit(f"QPY export failed: {error}")
-        if result is not None:
-            sys.exit(result)
+        from mqt.core.mlir import _run_compiler  # ruff: ignore[import-outside-top-level] - Only compiler commands load bindings.
+
+        sys.exit(_run_compiler(arguments[1:]))
     if sys.platform == "win32":
         # Windows exec exits the launcher without waiting for the native tool.
         sys.exit(subprocess.run(arguments, check=False).returncode)  # ruff: ignore[subprocess-without-shell-equals-true]

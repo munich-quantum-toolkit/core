@@ -2498,9 +2498,18 @@ public:
         operation = operation.attr("control")(extraControls,
                                               nb::arg("annotated") = false);
       } else {
-        operation.attr("name") = nb::str(nativeName.data(), nativeName.size());
+        // QPY restores renamed standard gates under their standard names.
+        const auto circuitModule = nb::module_::import_("qiskit.circuit");
+        auto definition = circuitModule.attr("QuantumCircuit")(qubits.size());
+        definition.attr("append")(operation, definition.attr("qubits"),
+                                  nb::arg("copy") = false);
+        auto alias =
+            circuitModule.attr("Gate")(nativeName, qubits.size(), values);
+        alias.attr("definition") = definition;
+        operation = std::move(alias);
       }
-      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits),
+                                    nb::arg("copy") = false);
       return;
     }
     if (std::ranges::all_of(parameters, [](const Parameter& parameter) {

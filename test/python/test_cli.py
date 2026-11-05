@@ -11,9 +11,11 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import sys
 from importlib.metadata import distribution
+from io import StringIO
 from pathlib import Path
 from subprocess import check_output
 from typing import TYPE_CHECKING
@@ -202,7 +204,7 @@ def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, mon
     (metadata / "METADATA").write_text("Name: cli-provider\nVersion: 1.0\n")
     (metadata / "entry_points.txt").write_text("[mqt.core.qdmi.manifests]\ncli = cli_provider\n")
     (metadata / "RECORD").write_text("cli_provider/device.qdmi.json,,\n")
-    monkeypatch.setenv("PYTHONPATH", str(tmp_path))
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path), prepend=os.pathsep)
     result = script_runner.run(["mqt-core", "compile", "--qdmi-list-devices"])
     assert result.success
     assert "cli.test.device" in result.stdout
@@ -219,12 +221,59 @@ def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, mon
         str(compiled),
     ])
     assert result.success
+    qpy_output = tmp_path / "bell.qpy"
+    config = tmp_path / "registry.json"
+    config.write_text(json.dumps({"schema-version": 1, "qdmi": {"devices": [{**device, "id": "cli.config.device"}]}}))
+    for device_id, options in [("cli.test.device", []), ("cli.config.device", [f"--qdmi-config={config}"])]:
+        result = script_runner.run([
+            "mqt-core",
+            "compile",
+            str(source),
+            f"--qdmi-device={device_id}",
+            "-o",
+            str(qpy_output),
+            *options,
+        ])
+        assert result.success
+        with qpy_output.open("rb") as stream:
+            circuit = qpy.load(stream)[0]
+        assert circuit.layout is not None
+        assert circuit.num_clbits == 2
     for program in [source, compiled]:
         result = script_runner.run(["mqt-core", "run", str(program), "--qdmi-device=cli.test.device", "--shots=128"])
         assert result.success
         counts = json.loads(result.stdout)["counts"]
         assert set(counts) == {"00", "11"}
         assert sum(counts.values()) == 128
+
+
+@pytest.mark.parametrize("option", ["--version", "--help-hidden", "--qdmi-list-devices=true", "--qdmi-list-devices=1"])
+def test_qpy_cli_information(script_runner: ScriptRunner, tmp_path: Path, option: str) -> None:
+    """Informational commands succeed without exporting or replacing a file."""
+    output = tmp_path / "output.qpy"
+    output.write_bytes(b"existing")
+    result = script_runner.run(["mqt-core", "compile", "--emit=qpy", "-o", str(output), option])
+    assert result.success
+    assert result.stdout
+    assert output.read_bytes() == b"existing"
+
+
+@pytest.mark.parametrize("input_format", ["openqasm", "qc", "qco"])
+def test_qpy_stdin(script_runner: ScriptRunner, tmp_path: Path, input_format: str) -> None:
+    """Read OpenQASM and either MLIR dialect directly from standard input."""
+    source = "OPENQASM 3; qubit q; x q;"
+    if input_format != "openqasm":
+        program = QCProgram.from_openqasm_str(source)
+        source = program.to_qco().ir if input_format == "qco" else program.ir
+    output = tmp_path / "output.qpy"
+    arguments = ["mqt-core", "compile", "-o", str(output)]
+    if input_format == "openqasm":
+        arguments.append("--input-format=openqasm")
+    result = script_runner.run(arguments, stdin=StringIO(source))
+    assert result.success
+    with output.open("rb") as stream:
+        circuit = qpy.load(stream)[0]
+    assert Statevector(circuit).probabilities_dict() == {"1": 1.0}
 
 
 def test_compile_qpy_and_jeff(script_runner: ScriptRunner, tmp_path: Path) -> None:

@@ -10,12 +10,13 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 from math import pi
 from typing import TYPE_CHECKING, assert_type, cast
 
 import numpy as np
 import pytest
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, qpy
 from qiskit.circuit import Barrier, Gate, Measure, Parameter, Reset, library
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import IfElseOp, WhileLoopOp
@@ -533,7 +534,8 @@ def test_compile_named_fixed_rotations(*, symbolic: bool) -> None:
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
-def test_export_fixed_rotations_by_parameters_and_sites() -> None:
+@pytest.mark.parametrize("qpy_roundtrip", [False, True])
+def test_export_fixed_rotations_by_parameters_and_sites(*, qpy_roundtrip: bool) -> None:
     """Select aliases by values and placement, including colliding gate names."""
     source = Target(num_qubits=2)
     source.add_instruction(RXGate(pi / 2), {(0,): None}, name="a_quarter")
@@ -562,8 +564,16 @@ def test_export_fixed_rotations_by_parameters_and_sites() -> None:
 }
 """)
     exported = program.to_qiskit(target=target)
+    if qpy_roundtrip:
+        buffer = BytesIO()
+        qpy.dump(exported, buffer, version=17)
+        buffer.seek(0)
+        exported = qpy.load(buffer)[0]
     assert [item.operation.name for item in exported.data] == ["a_quarter", "b_half", "z_variable", "ry"]
-    assert all(item.operation.base_class is RXGate for item in exported.data)
+    bound = exported.assign_parameters({"theta": 0.3})
+    expected = circuit.assign_parameters({"theta": 0.3})
+    for actual, original in zip(bound.data, expected.data, strict=True):
+        np.testing.assert_allclose(Operator(actual.operation).data, Operator(original.operation).data, atol=1e-12)
     restored = QCProgram.from_qiskit(exported).to_qiskit()
     assert np.allclose(
         Operator(restored.assign_parameters({"theta": 0.3})).data,

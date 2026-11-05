@@ -507,14 +507,37 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_NE(
       llvm::toString(missingQPY.takeError()).find("Python Qiskit bindings"),
       std::string::npos);
+  const auto qpy = llvm::cantFail(
+      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QPY));
+  for (const auto& supported : {
+           std::vector{QDMI_PROGRAM_FORMAT_QPY, QDMI_PROGRAM_FORMAT_QASM3},
+           std::vector{QDMI_PROGRAM_FORMAT_QPY},
+       }) {
+    formats = supported;
+    const auto intermediate =
+        llvm::cantFail(mlir::inspectTargetEnvironment(device));
+    EXPECT_EQ(intermediate.payloadSpecification().format(), qpy.format());
+    EXPECT_EQ(intermediate.payloadSpecification().capabilities(),
+              qpy.capabilities());
+    auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
+        "OPENQASM 3; include \"stdgates.inc\"; x $0;"));
+    auto compiled = mlir::runDefaultPipeline(
+        program.copy(), mlir::ProgramFormat::QCOOptimized, intermediate);
+    MQT_ASSERT_SUCCESS(compiled);
+    auto serialized =
+        mlir::CompiledProgram::serialize(std::move(program), intermediate);
+    ASSERT_FALSE(serialized);
+    EXPECT_NE(
+        llvm::toString(serialized.takeError()).find("Python Qiskit bindings"),
+        std::string::npos);
+  }
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::targetEnvironmentFromDevice(device).takeError()));
   formats = {QDMI_PROGRAM_FORMAT_QASM3};
   EXPECT_TRUE(
       llvm::errorToBool(mlir::targetEnvironmentFromDevice(
                             device, QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)
                             .takeError()));
-  EXPECT_TRUE(llvm::errorToBool(
-      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QPY)
-          .takeError()));
 
   {
     const auto resetExporter =
@@ -545,6 +568,21 @@ TEST(CompilerQDMIAdapterTest,
     MQT_ASSERT_SUCCESS(compiled);
     EXPECT_EQ(compiled->programFormat(), QDMI_PROGRAM_FORMAT_QPY);
     EXPECT_EQ(compiled->payload(), "fake QPY payload");
+
+    mlir::setQPYExporter(nullptr);
+    const auto createJob = api->device_session_create_device_job;
+    const auto restoreCreateJob = llvm::make_scope_exit(
+        [&] { api->device_session_create_device_job = createJob; });
+    static thread_local bool submissionReached;
+    submissionReached = false;
+    api->device_session_create_device_job = [](QDMI_Device_Session,
+                                               QDMI_Device_Job*) -> int {
+      submissionReached = true;
+      return QDMI_ERROR_NOTSUPPORTED;
+    };
+    auto submission = mlir::trySubmitPrograms(device, {&*compiled});
+    EXPECT_TRUE(llvm::errorToBool(submission.takeError()));
+    EXPECT_TRUE(submissionReached);
   }
 
   const auto adaptive =

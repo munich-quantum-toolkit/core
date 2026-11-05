@@ -51,6 +51,7 @@ target_link_libraries(
   PRIVATE
     MQT::CoreBenchGenerate
     MQTCompilerQDMIAdapter
+    MQTCompilerDriver
     MQTCompilerCatalystAdapter
     MQTCompilerPipeline
     LLVMIRReader

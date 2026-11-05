@@ -1981,3 +1981,6 @@ def submit_program(
     retains its payload and must match the destination contract. Job results are raw;
     apply ``compiled.result_layout.decode_bits`` when a result layout is present.
     """
+
+def _run_compiler(arguments: Sequence[str]) -> int:
+    """Run the compiler command once. LLVM options can terminate the process."""
