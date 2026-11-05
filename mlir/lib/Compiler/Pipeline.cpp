@@ -63,7 +63,6 @@
 #include <cstring>
 #include <filesystem>
 #include <map>
-#include <optional>
 #include <set>
 #include <span>
 #include <string>
@@ -265,12 +264,11 @@ LogicalResult QCOProgram::runQubitReusePipeline() {
                                "failed to run the qubit reuse pipeline");
 }
 
-LogicalResult QCOProgram::decomposeMultiControlled(uint64_t minQubits,
-                                                   bool borrowAncillas) {
+LogicalResult QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
   return runQCOTransformPasses(
       mod(),
-      [minQubits, borrowAncillas](OpPassManager& pm) {
-        populateDecomposeMultiControlledPipeline(pm, minQubits, borrowAncillas);
+      [minQubits](OpPassManager& pm) {
+        populateDecomposeMultiControlledPipeline(pm, minQubits);
       },
       "failed to decompose multi-controlled gates");
 }
@@ -505,8 +503,7 @@ LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
           mod(),
           [&](OpPassManager& pm) {
             populateTargetCompilationPipeline(pm, compilationEnvironment,
-                                              options.mapping,
-                                              options.borrowAncillas);
+                                              options.mapping);
           },
           "failed to compile the QCO program for the target", options, true))) {
     return failure();
@@ -521,8 +518,7 @@ QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
   return runQCOTransformPasses(
       mod(),
       [&environment, &options](OpPassManager& pm) {
-        populateTargetSynthesisPipeline(pm, environment, options.mapping,
-                                        options.borrowAncillas);
+        populateTargetSynthesisPipeline(pm, environment, options.mapping);
       },
       "failed to synthesize the QCO program for the target", options, true);
 }

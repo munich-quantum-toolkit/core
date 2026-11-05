@@ -473,12 +473,9 @@ public:
   ///
   /// Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and `qco.rccx`.
   /// Phase and rotation angles may be constants or runtime values.
-  /// @p minQubits must be at least 3; default 3
-  /// means wider than two-qubit. Set @p borrowAncillas to false to disable
-  /// external helpers; original controls remain available as internal
-  /// workspace. Helpers are restored, not allocated.
-  [[nodiscard]] LogicalResult
-  decomposeMultiControlled(uint64_t minQubits = 3, bool borrowAncillas = true);
+  /// @p minQubits must be at least 3. The pass borrows and restores ancilla
+  /// qubits when this reduces the estimated entangling cost.
+  [[nodiscard]] LogicalResult decomposeMultiControlled(uint64_t minQubits = 3);
 
   /// Compile for a target and attach layout metadata when possible.
   ///

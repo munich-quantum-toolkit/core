@@ -641,23 +641,10 @@ def test_mapping_options_defaults() -> None:
     assert options.search_memory_limit == 256 * 1024 * 1024
 
 
-def test_mcx_borrow_ancillas_options() -> None:
-    """Borrow available helpers by default and expose a mutable opt-out."""
-    options = CompilationOptions()
-    assert options.borrow_ancillas is True
-    assert CompilationOptions(borrow_ancillas=False).borrow_ancillas is False
-    options.borrow_ancillas = False
-    assert options.borrow_ancillas is False
-    options.borrow_ancillas = True
-    assert options.borrow_ancillas is True
-
-
 @requires_qiskit_translation
-@pytest.mark.parametrize(
-    "method", ["compile_for_target", "synthesize_for_target", "decompose_multi_controlled", "run_pass_pipeline"]
-)
+@pytest.mark.parametrize("method", ["compile_for_target", "synthesize_for_target"])
 def test_mc_borrow_ancillas_target_round_trip(method: str) -> None:
-    """Preserve a measured circuit with an entangled helper across each API."""
+    """Borrow an entangled ancilla qubit in both target pipelines."""
     source = QuantumCircuit(7)
     source.h(range(5))
     source.ry(0.43, 5)
@@ -675,35 +662,17 @@ def test_mc_borrow_ancillas_target_round_trip(method: str) -> None:
             CompilerTarget.OperationCapability("measure", 1, 0),
         ]),
     )
-    counts = []
-    for borrow_ancillas in (False, True):
-        program = QCProgram.from_qiskit(source).to_qco()
-        if method in {"decompose_multi_controlled", "run_pass_pipeline"}:
-            if method == "decompose_multi_controlled":
-                if borrow_ancillas:
-                    program.decompose_multi_controlled()
-                else:
-                    program.decompose_multi_controlled(borrow_ancillas=False)
-            else:
-                option = f"{{borrow-ancillas={str(borrow_ancillas).lower()}}}"
-                program.run_pass_pipeline(f"decompose-multi-controlled{option}")
-            program.synthesize_for_target(
-                _test_target_environment(target), options=CompilationOptions(seed=7, borrow_ancillas=False)
-            )
-        else:
-            options = CompilationOptions(seed=7, borrow_ancillas=borrow_ancillas)
-            getattr(program, method)(_test_target_environment(target), options=options)
-        result = program.to_qiskit(target=target)
-        assert result.num_qubits == 7
-        assert result.count_ops()["measure"] == 7
-        result.remove_final_measurements()
-        # Top-level global phase may change; relative helper/data phases may not.
-        actual = Operator(result).data[:, :64]
-        phase = np.vdot(expected.ravel(), actual.ravel()) / 64
-        np.testing.assert_allclose(actual, phase * expected, atol=1e-10)
-        assert abs(abs(phase) - 1) < 1e-10
-        counts.append(result.count_ops()["cz"])
-    assert counts[1] < counts[0]
+    program = QCProgram.from_qiskit(source).to_qco()
+    getattr(program, method)(_test_target_environment(target), options=CompilationOptions(seed=7))
+    result = program.to_qiskit(target=target)
+    assert result.num_qubits == 7
+    assert result.count_ops()["measure"] == 7
+    assert result.count_ops()["cz"] <= 57  # 56 for the borrowed plan and one to entangle the ancilla.
+    result.remove_final_measurements()
+    actual = Operator(result).data[:, :64]
+    phase = np.vdot(expected.ravel(), actual.ravel()) / 64
+    np.testing.assert_allclose(actual, phase * expected, atol=1e-10)
+    assert abs(abs(phase) - 1) < 1e-10
 
 
 @requires_qiskit_translation
@@ -727,45 +696,9 @@ def test_mc_borrow_ancillas_preserves_target_capacity(method: str, *, site_restr
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations(operations),
     )
-    outputs = []
-    for borrow_ancillas in (False, True):
-        program = QCProgram.from_qiskit(source).to_qco()
-        getattr(program, method)(
-            _test_target_environment(target), options=CompilationOptions(seed=7, borrow_ancillas=borrow_ancillas)
-        )
-        outputs.append(program.to_qiskit(target=target))
-    assert outputs[0] == outputs[1]
-    assert outputs[1].num_qubits <= capacity
-
-
-@requires_qiskit_translation
-def test_mc_borrow_ancillas_default_falls_back_without_helpers() -> None:
-    """Default borrowing cannot use controls or the target as external helpers."""
-    source = QuantumCircuit(6)
-    source.h(range(5))
-    controlled = library.XGate().control(5, annotated=False)
-    wires = [5, 4, 3, 1, 0, 2]
-    source.ry(0.31, 2)
-    source.append(controlled, wires)
-    source.h(3)
-    source.rz(-0.27, 2)
-    source.append(controlled.inverse(), wires)
-    expected = Operator(source).data
-    source.measure_all()
-    outputs = []
-    for borrow_ancillas in (False, True):
-        program = QCProgram.from_qiskit(source).to_qco()
-        if borrow_ancillas:
-            program.decompose_multi_controlled()
-        else:
-            program.decompose_multi_controlled(borrow_ancillas=False)
-        outputs.append(program.to_qc().to_qiskit())
-    assert outputs[0] == outputs[1]
-    assert outputs[1].num_qubits == 6
-    assert outputs[1].count_ops()["measure"] == 6
-    outputs[1].remove_final_measurements()
-    # Standalone decomposition preserves exact phase, not only the |0> output.
-    np.testing.assert_allclose(Operator(outputs[1]).data, expected, atol=1e-10, rtol=0)
+    program = QCProgram.from_qiskit(source).to_qco()
+    getattr(program, method)(_test_target_environment(target), options=CompilationOptions(seed=7))
+    assert program.inspect().num_qubits == 6
 
 
 @requires_qiskit_translation

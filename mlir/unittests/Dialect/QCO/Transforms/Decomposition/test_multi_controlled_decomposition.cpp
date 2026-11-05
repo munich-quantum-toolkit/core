@@ -74,7 +74,7 @@ static constexpr std::array<size_t, 20> K_DD_CONTROL_COUNTS = {
 static constexpr size_t K_MATRIX_DD_MAX_PAULI = 9;
 static constexpr size_t K_MATRIX_DD_MAX_MCP = 6;
 /// Retain representative SP22 widths and cover the HP24 crossover, both
-/// dirty-helper modes, and wide phase ladders that can fold to identity.
+/// dirty-ancilla modes, and wide phase ladders that can fold to identity.
 static constexpr std::array<size_t, 13> K_COHERENT_PAULI_CONTROL_COUNTS = {
     10, 11, 21, 22, 23, 24, 32, 33, 34, 47, 48, 63, 64,
 };
@@ -126,7 +126,7 @@ static constexpr std::array<size_t, 13> K_SMOKE_CONTROL_COUNTS = {
   return k == 2 ? 6 : (6 * k * k) - (26 * k) + 40;
 }
 
-/// CX regression budget for relative-phase halves with no external helpers.
+/// CX regression budget for relative-phase halves with no external ancillas.
 ///
 /// Each half occurs twice and costs 1 CX at one control, else 6n−8 CX.
 [[nodiscard]] static constexpr size_t expectedMcrCxBudget(size_t k) {
@@ -401,9 +401,9 @@ static void expectStatesNear(dd::Package& package, const dd::VectorDD& actual,
   package.decRef(difference);
 }
 
-/// Compare every output amplitude for the inputs with zero high-order helpers.
+/// Compare every output amplitude for the inputs with zero high-order ancillas.
 ///
-/// Includes helper leakage and exact phase; stops at the first mismatch.
+/// Includes ancilla leakage and exact phase; stops at the first mismatch.
 static void expectOperatorColumnsNear(const dd::MatrixDD& actual,
                                       const dd::MatrixDD& expected,
                                       size_t width, size_t inputWidth) {
@@ -568,7 +568,7 @@ static void buildAncillaFamilyGate(QCOProgramBuilder& builder,
     builder.mcy(data.drop_back(), data.back());
   } else if (family == AncillaFamily::Phase ||
              family == AncillaFamily::PhasePi) {
-    builder.mcp(family == AncillaFamily::Phase ? 0.73 : std::numbers::pi,
+    builder.mcp(family == AncillaFamily::Phase ? 0.73 : -std::numbers::pi,
                 data.drop_back(), data.back());
   } else {
     builder.mcz(data.drop_back(), data.back());
@@ -589,7 +589,7 @@ static dd::MatrixDD ancillaFamilyReference(dd::Package& package,
   if (family == AncillaFamily::Phase || family == AncillaFamily::PhasePi) {
     return makeControlledGateDD(
         package, k,
-        phaseMatrix(family == AncillaFamily::Phase ? 0.73 : std::numbers::pi),
+        phaseMatrix(family == AncillaFamily::Phase ? 0.73 : -std::numbers::pi),
         k);
   }
   return makeControlledGateDD(
@@ -600,97 +600,60 @@ static dd::MatrixDD ancillaFamilyReference(dd::Package& package,
       k);
 }
 
-TEST_P(AncillaFamilyTest, DirtyFullOperatorAndBorrowing) {
+TEST_P(AncillaFamilyTest, FullAncillaLadderPreservesOperator) {
   const auto family = GetParam();
-  for (size_t k = 3; k <= 7; ++k) {
-    for (const bool borrowAncillas : {false, true}) {
-      SCOPED_TRACE(testing::Message()
-                   << "k=" << k << " borrowing=" << borrowAncillas);
-      const size_t width = 2 * k - 1;
-      auto module =
-          QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
-            SmallVector<Value> wires;
-            for (size_t i = 0; i < width; ++i) {
-              wires.push_back(b.staticQubit(i));
-            }
-            buildAncillaFamilyGate(b, family,
-                                   ValueRange(wires).take_front(k + 1));
-            return SmallVector<Value>{};
-          });
-      DecomposeMultiControlledOptions options;
-      options.borrowAncillas = borrowAncillas;
-      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module, options)));
-      expectFullyLowered(*module);
-      auto package = llvm::cantFail(dd::Package::create(width));
-      auto actual =
-          buildFunctionality(*module->getOps<func::FuncOp>().begin(), *package);
-      ASSERT_TRUE(succeeded(actual));
-      // Full equality includes all helper states and their entanglement.
-      EXPECT_EQ(*actual, ancillaFamilyReference(*package, family, k));
-      package->decRef(*actual);
-      if (ancillaRotationAxis(family)) {
-        const size_t fallback = expectedMcrCxBudget(k);
-        EXPECT_EQ(countEffectiveCxOps(*module),
-                  k >= 5 && borrowAncillas ? std::min(fallback, 8 * k - 6)
-                                           : fallback);
-      } else if (family == AncillaFamily::Phase) {
-        EXPECT_EQ(countEffectiveCxOps(*module), expectedMcpCx(k));
-      } else if (k == 6) {
-        const size_t shell = family == AncillaFamily::Swap ? 2 : 0;
-        EXPECT_EQ(countEffectiveCxOps(*module),
-                  shell + (borrowAncillas ? 42U : 100U));
-      }
-    }
-  }
-}
-
-TEST_P(AncillaFamilyTest, CleanSubspaceAndBorrowing) {
-  const auto family = GetParam();
-  for (size_t k = 3; k <= 5; ++k) {
+  // Cover the smallest useful Pauli ladders and the rotation cost crossover.
+  for (const auto [k, clean] : {
+           std::pair{3U, true},
+           std::pair{5U, true},
+           std::pair{4U, false},
+           std::pair{6U, false},
+           std::pair{7U, false},
+       }) {
+    SCOPED_TRACE(testing::Message() << "k=" << k << " clean=" << clean);
     const size_t width = 2 * k - 1;
-    for (const bool borrowAncillas : {false, true}) {
-      SCOPED_TRACE(testing::Message()
-                   << "k=" << k << " borrowing=" << borrowAncillas);
-      auto module =
-          QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
-            SmallVector<Value> wires;
-            for (size_t i = 0; i < width; ++i) {
-              wires.push_back(b.allocQubit());
-            }
-            buildAncillaFamilyGate(b, family,
-                                   ValueRange(wires).take_front(k + 1));
-            return SmallVector<Value>{};
-          });
-      DecomposeMultiControlledOptions options;
-      options.borrowAncillas = borrowAncillas;
-      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module, options)));
-      auto package = llvm::cantFail(dd::Package::create(width));
-      auto actual =
-          buildFunctionality(*module->getOps<func::FuncOp>().begin(), *package);
-      ASSERT_TRUE(succeeded(actual));
-      auto expected = ancillaFamilyReference(*package, family, k);
+    auto module =
+        QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
+          SmallVector<Value> wires;
+          for (size_t i = 0; i < width; ++i) {
+            wires.push_back(clean ? b.allocQubit() : b.staticQubit(i));
+          }
+          buildAncillaFamilyGate(b, family,
+                                 ValueRange(wires).take_front(k + 1));
+          return SmallVector<Value>{};
+        });
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module)));
+    expectFullyLowered(*module);
+    auto package = llvm::cantFail(dd::Package::create(width));
+    auto actual =
+        buildFunctionality(*module->getOps<func::FuncOp>().begin(), *package);
+    ASSERT_TRUE(succeeded(actual));
+    auto expected = ancillaFamilyReference(*package, family, k);
+    if (clean) {
       package->incRef(expected);
       expectOperatorColumnsNear(*actual, expected, width, k + 1);
       package->decRef(expected);
-      package->decRef(*actual);
-      if (ancillaRotationAxis(family)) {
-        const size_t used = borrowAncillas ? k - 2 : 0;
-        const size_t cleanCost = 6 * used + expectedMcrCxBudget(k - used);
-        EXPECT_EQ(countEffectiveCxOps(*module),
-                  std::min(cleanCost, expectedMcrCxBudget(k)));
-      } else if (k == 5) {
-        const size_t shell = family == AncillaFamily::Swap ? 2 : 0;
-        EXPECT_EQ(countEffectiveCxOps(*module),
-                  shell + (borrowAncillas ? 24U : 60U));
-      } else if (family != AncillaFamily::Phase && borrowAncillas) {
-        const size_t shell = family == AncillaFamily::Swap ? 2 : 0;
-        EXPECT_EQ(countEffectiveCxOps(*module), 6 * k - 6 + shell);
-      }
+    } else {
+      EXPECT_EQ(*actual, expected);
+    }
+    package->decRef(*actual);
+
+    if (ancillaRotationAxis(family)) {
+      const size_t ladderCost = clean ? 6 * k - 8 : 8 * k - 6;
+      EXPECT_EQ(countEffectiveCxOps(*module),
+                std::min(ladderCost, expectedMcrCxBudget(k)));
+    } else if (family == AncillaFamily::Phase) {
+      EXPECT_EQ(countEffectiveCxOps(*module),
+                clean ? 6 * k - 6 : expectedMcpCx(k));
+    } else {
+      const size_t shell = family == AncillaFamily::Swap ? 2 : 0;
+      EXPECT_EQ(countEffectiveCxOps(*module),
+                shell + (clean ? 6 * k - 6 : 8 * k - 6));
     }
   }
 }
 
-TEST_P(AncillaFamilyTest, UnavailableHelpersFallBack) {
+TEST_P(AncillaFamilyTest, FallsBackWithoutAvailableAncillas) {
   const auto family = GetParam();
   auto module = QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
     b.sink(b.allocQubit());
@@ -706,15 +669,14 @@ TEST_P(AncillaFamilyTest, UnavailableHelpersFallBack) {
     return SmallVector<Value>{};
   });
   ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*module)));
-  // Neither SWAP target, a tensor hole, a dead wire nor a future wire is free.
-  EXPECT_EQ(countEffectiveCxOps(*module), ancillaRotationAxis(family)      ? 28U
-                                          : family == AncillaFamily::Phase ? 60U
-                                          : family == AncillaFamily::Swap
-                                              ? 62U
-                                              : 60U);
+  // SWAP targets, tensor holes, dead wires, and future wires are ineligible.
+  const size_t expected = ancillaRotationAxis(family)     ? 28
+                          : family == AncillaFamily::Swap ? 62
+                                                          : 60;
+  EXPECT_EQ(countEffectiveCxOps(*module), expected);
 }
 
-TEST_P(AncillaFamilyTest, RespectsNativeGatesAndWidthWithAvailableHelpers) {
+TEST_P(AncillaFamilyTest, RespectsNativeGatesAndWidthWithAvailableAncillas) {
   const auto family = GetParam();
   for (const bool native : {false, true}) {
     auto module =
@@ -771,17 +733,12 @@ INSTANTIATE_TEST_SUITE_P(Ancilla, AncillaFamilyTest,
                            return ancillaFamilyName(info.param);
                          });
 
-TEST_P(AncillaAngleTest, RuntimeAnglesAndHelperRestoration) {
+TEST_P(AncillaAngleTest, RuntimeAnglesAndAncillaRestoration) {
   const auto family = GetParam();
   const auto axis = ancillaRotationAxis(family);
-  // Prefer cheaper clean helpers even when a dirty helper appears first.
-  for (const auto [mixed, borrowAncillas] : {
-           std::pair{true, false},
-           std::pair{true, true},
-           std::pair{false, true},
-       }) {
-    SCOPED_TRACE(testing::Message()
-                 << "mixed=" << mixed << " borrowing=" << borrowAncillas);
+  // Prefer cheaper clean ancillas even when a dirty ancilla appears first.
+  for (const bool mixed : {false, true}) {
+    SCOPED_TRACE(testing::Message() << "mixed=" << mixed);
     Value parameter;
     auto moduleOp =
         QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
@@ -809,13 +766,10 @@ TEST_P(AncillaAngleTest, RuntimeAnglesAndHelperRestoration) {
     ASSERT_TRUE(succeeded(function.insertArgument(
         0, Float64Type::get(context()), {}, function.getLoc())));
     parameter.replaceAllUsesWith(function.getArgument(0));
-    DecomposeMultiControlledOptions options;
-    options.borrowAncillas = borrowAncillas;
-    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
     expectFullyLowered(*moduleOp);
-    const bool compressed = mixed && borrowAncillas;
     EXPECT_EQ(countEffectiveCxOps(*moduleOp),
-              axis ? (compressed ? 22U : 28U) : (compressed ? 28U : 60U));
+              axis ? (mixed ? 22U : 28U) : (mixed ? 28U : 60U));
     for (double theta : K_ANCILLA_ANGLES) {
       SCOPED_TRACE(theta);
       auto package = llvm::cantFail(dd::Package::create(9));
@@ -857,13 +811,15 @@ TEST_P(AncillaAngleTest, DirtyConstantAnglesAndMixedSelection) {
             for (size_t i = 7; i < (mixed ? 10U : 11U); ++i) {
               dirty.push_back(b.x(reg[i]));
             }
-            b.ctrl(ValueRange(reg.qubits).take_front(k), reg[k],
-                   [&](Value target) {
-                     return applyAncillaAngleGate(
-                         b, family, b.floatConstant(theta), target);
-                   });
-            for (auto helper : dirty) {
-              b.x(helper);
+            SmallVector<Value> controls{
+                reg[6], reg[5], reg[4], reg[3], reg[1], reg[0],
+            };
+            b.ctrl(controls, reg[2], [&](Value target) {
+              return applyAncillaAngleGate(b, family, b.floatConstant(theta),
+                                           target);
+            });
+            for (auto ancilla : dirty) {
+              b.x(ancilla);
             }
             return SmallVector<Value>{};
           });
@@ -879,7 +835,7 @@ TEST_P(AncillaAngleTest, DirtyConstantAnglesAndMixedSelection) {
       ASSERT_TRUE(succeeded(actual));
       auto expected = makeControlledGateDD(
           *package, k, axis ? rotationMatrix(*axis, theta) : phaseMatrix(theta),
-          k);
+          2);
       package->incRef(expected);
       if (mixed) {
         // Only the last wire is known zero. All dirty/data states remain free.
@@ -893,77 +849,7 @@ TEST_P(AncillaAngleTest, DirtyConstantAnglesAndMixedSelection) {
   }
 }
 
-TEST_F(MultiControlledDecompositionTest,
-       AncillaDirtyPhaseNonImprovingFallback) {
-  // One dirty helper cannot improve on the ancilla-free plan. Rejection must
-  // preserve the region-local runtime angle and leave valid quantum wire uses.
-  Value parameter;
-  auto moduleOp =
-      QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
-        auto reg = b.allocQubitRegister(11);
-        b.h(reg[10]);
-        parameter = b.floatConstant(0.73);
-        b.ctrl(ValueRange(reg.qubits).take_front(9), reg[9], [&](Value target) {
-          return b.p(arith::NegFOp::create(b, parameter), target);
-        });
-        return SmallVector<Value>{};
-      });
-  auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  ASSERT_TRUE(succeeded(function.insertArgument(0, Float64Type::get(context()),
-                                                {}, function.getLoc())));
-  parameter.replaceAllUsesWith(function.getArgument(0));
-  OwningOpRef<ModuleOp> fallback(moduleOp->clone());
-  DecomposeMultiControlledOptions options;
-  options.borrowAncillas = false;
-  ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*fallback, options)));
-  ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
-  EXPECT_EQ(countEffectiveCxOps(*moduleOp), 290U);
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      *moduleOp, *fallback, OperationEquivalence::IgnoreLocations));
-}
-
-TEST_P(AncillaAngleTest, ConstantAnglesAndReorderedOperands) {
-  const auto family = GetParam();
-  const auto axis = ancillaRotationAxis(family);
-  for (double theta : {
-           0.0,
-           std::numbers::pi,
-           -std::numbers::pi,
-           2 * std::numbers::pi,
-           -2 * std::numbers::pi,
-       }) {
-    for (const bool borrowAncillas : {false, true}) {
-      SCOPED_TRACE(testing::Message()
-                   << "theta=" << theta << " borrowing=" << borrowAncillas);
-      auto moduleOp =
-          QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
-            auto reg = b.allocQubitRegister(7);
-            SmallVector<Value> controls{reg[5], reg[4], reg[3], reg[1], reg[0]};
-            b.ctrl(controls, reg[2], [&](Value target) {
-              return applyAncillaAngleGate(b, family, b.floatConstant(theta),
-                                           target);
-            });
-            return SmallVector<Value>{};
-          });
-      DecomposeMultiControlledOptions options;
-      options.borrowAncillas = borrowAncillas;
-      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
-      auto package = llvm::cantFail(dd::Package::create(7));
-      auto actual = buildFunctionality(
-          *moduleOp->getOps<func::FuncOp>().begin(), *package);
-      ASSERT_TRUE(succeeded(actual));
-      auto expected = makeControlledGateDD(
-          *package, 5, axis ? rotationMatrix(*axis, theta) : phaseMatrix(theta),
-          2);
-      package->incRef(expected);
-      expectOperatorColumnsNear(*actual, expected, 7, 6);
-      package->decRef(expected);
-      package->decRef(*actual);
-    }
-  }
-}
-
-TEST_P(AncillaAngleTest, OneHelperWithBorrowedResidualControls) {
+TEST_P(AncillaAngleTest, CleanAncillaWithBorrowedResidualControls) {
   const auto family = GetParam();
   const auto axis = ancillaRotationAxis(family);
   constexpr size_t k = 8;
@@ -991,10 +877,10 @@ TEST_P(AncillaAngleTest, OneHelperWithBorrowedResidualControls) {
   package->decRef(*actual);
 }
 
-TEST_P(AncillaFamilyTest, OneDirtyHelperFullOperator) {
+TEST_P(AncillaFamilyTest, OneDirtyAncillaFullOperator) {
   const auto family = GetParam();
   const auto axis = ancillaRotationAxis(family);
-  for (size_t k = 5; k <= 9; ++k) {
+  for (const size_t k : {5U, 8U, 9U}) {
     SCOPED_TRACE(k);
     auto moduleOp =
         QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
@@ -1024,71 +910,58 @@ TEST_P(AncillaFamilyTest, OneDirtyHelperFullOperator) {
   }
 }
 
-TEST_F(MultiControlledDecompositionTest, AncillaNegativePiUsesDirtyMczHelpers) {
-  auto moduleOp = QCOProgramBuilder::build(context(), [](QCOProgramBuilder& b) {
-    SmallVector<Value> wires;
-    for (size_t i = 0; i < 7; ++i) {
-      wires.push_back(b.staticQubit(i));
-    }
-    b.mcp(-std::numbers::pi, ValueRange(wires).take_front(5), wires[5]);
-    return SmallVector<Value>{};
-  });
-  ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
-  EXPECT_EQ(countEffectiveCxOps(*moduleOp), 56U);
-  auto package = llvm::cantFail(dd::Package::create(7));
-  auto actual =
-      buildFunctionality(*moduleOp->getOps<func::FuncOp>().begin(), *package);
-  ASSERT_TRUE(succeeded(actual));
-  EXPECT_EQ(*actual, makeControlledGateDD(*package, 5,
-                                          phaseMatrix(-std::numbers::pi), 5));
-  package->decRef(*actual);
-}
-
-TEST_F(MultiControlledDecompositionTest, AncillaPhaseDirtyLadderBeatsFallback) {
-  // The first width where the full dirty ladder beats the fallback.
-  // A single gate has a compact DD; do not enumerate the 17-qubit matrix.
+TEST_F(MultiControlledDecompositionTest, RuntimePhaseNeedsFullDirtyLadder) {
+  // Nine controls are the first width where the full dirty ladder wins.
   constexpr size_t k = 9;
-  for (auto [helpers, borrowAncillas] : {
-           std::pair{6U, true},
-           std::pair{7U, true},
-           std::pair{7U, false},
-       }) {
-    SCOPED_TRACE(testing::Message()
-                 << "helpers=" << helpers << " borrowing=" << borrowAncillas);
-    const size_t width = k + 1 + helpers;
+  constexpr double theta = 0.73;
+  for (const size_t numAncillas : {6U, 7U}) {
+    SCOPED_TRACE(numAncillas);
+    const size_t width = k + 1 + numAncillas;
+    Value parameter;
     auto moduleOp =
         QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
           SmallVector<Value> wires;
           for (size_t i = 0; i < width; ++i) {
             wires.push_back(b.staticQubit(i));
           }
-          b.mcp(0.73, ValueRange(wires).take_front(k), wires[k]);
+          parameter = b.floatConstant(theta);
+          b.ctrl(ValueRange(wires).take_front(k), wires[k], [&](Value target) {
+            return b.p(arith::NegFOp::create(b, parameter), target);
+          });
           return SmallVector<Value>{};
         });
-    DecomposeMultiControlledOptions options;
-    options.borrowAncillas = borrowAncillas;
-    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
+    auto function = *moduleOp->getOps<func::FuncOp>().begin();
+    ASSERT_TRUE(succeeded(function.insertArgument(
+        0, Float64Type::get(context()), {}, function.getLoc())));
+    parameter.replaceAllUsesWith(function.getArgument(0));
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
     expectFullyLowered(*moduleOp);
     EXPECT_EQ(countEffectiveCxOps(*moduleOp),
-              borrowAncillas && helpers == k - 2 ? 282U : 290U);
+              numAncillas == k - 2 ? 282U : 290U);
     auto package = llvm::cantFail(dd::Package::create(width));
-    auto actual =
-        buildFunctionality(*moduleOp->getOps<func::FuncOp>().begin(), *package);
+    const DDArgumentBindings bindings{
+        {
+            function.getArgument(0),
+            FloatAttr::get(Float64Type::get(context()), theta),
+        },
+    };
+    auto actual = buildFunctionality(function, *package, bindings);
     ASSERT_TRUE(succeeded(actual));
-    EXPECT_EQ(*actual, makeControlledGateDD(*package, k, phaseMatrix(0.73), k));
+    EXPECT_EQ(*actual,
+              makeControlledGateDD(*package, k, phaseMatrix(-theta), k));
     package->decRef(*actual);
   }
 }
 
-TEST_P(AncillaAngleTest, ResetAndRestoredHelperReuse) {
+TEST_P(AncillaAngleTest, ResetAndRestoredAncillaReuse) {
   const auto family = GetParam();
   for (const bool reset : {false, true}) {
     auto moduleOp =
         QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
           auto reg = b.allocQubitRegister(7);
-          auto helper = b.measure(b.h(reg[6])).first;
+          auto ancilla = b.measure(b.h(reg[6])).first;
           if (reset) {
-            helper = b.reset(helper);
+            ancilla = b.reset(ancilla);
           }
           for (size_t i = 0; i < 5; ++i) {
             reg.qubits[i] = b.h(reg[i]);
@@ -1103,7 +976,7 @@ TEST_P(AncillaAngleTest, ResetAndRestoredHelperReuse) {
             return applyAncillaAngleGate(b, family, b.floatConstant(-1.21),
                                          arg);
           });
-          b.measure(helper);
+          b.measure(ancilla);
           return SmallVector<Value>{};
         });
     auto package = llvm::cantFail(dd::Package::create(7));
@@ -1148,8 +1021,8 @@ TEST_F(MultiControlledDecompositionTest,
           QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
             auto tensor = b.qtensorAlloc(7);
             if (dirty) {
-              auto [rest, helper] = b.qtensorExtract(tensor, 6);
-              tensor = b.qtensorInsert(b.h(helper), rest, 6);
+              auto [rest, ancilla] = b.qtensorExtract(tensor, 6);
+              tensor = b.qtensorInsert(b.h(ancilla), rest, 6);
             }
             SmallVector<Value> wires;
             for (int64_t i = 0; i < 6; ++i) {
@@ -1213,7 +1086,7 @@ TEST_F(MultiControlledDecompositionTest, AncillaCleanExtractedSlotCanBeReused) {
   EXPECT_EQ(countEffectiveCxOps(*module), 84U);
 }
 
-TEST_F(MultiControlledDecompositionTest, AncillaMultipleHelpersInOneTensor) {
+TEST_F(MultiControlledDecompositionTest, BorrowsMultipleAncillasFromOneTensor) {
   auto module = QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
     auto tensor = b.qtensorAlloc(7);
     SmallVector<Value> wires;
@@ -1241,7 +1114,7 @@ TEST_F(MultiControlledDecompositionTest, AncillaMultipleHelpersInOneTensor) {
 
 TEST_F(MultiControlledDecompositionTest,
        AncillaDiscoveryPrefersLaterCleanSlotsInLargeTensor) {
-  // Discovery needs at most controls - 2 helpers, even in a large register.
+  // Discovery needs at most controls - 2 ancillas, even in a large register.
   // An earlier dirty wire cannot prevent a later clean slot from being used.
   for (const int64_t slots : {1, 65536}) {
     auto moduleOp =
@@ -1272,9 +1145,9 @@ TEST_F(MultiControlledDecompositionTest,
       tensor = rest;
       wires.push_back(qubit);
     }
-    auto [rest, helper] = b.qtensorExtract(tensor, 6);
-    unknownIndex = helper.getDefiningOp<qtensor::ExtractOp>().getIndex();
-    b.sink(helper);
+    auto [rest, ancilla] = b.qtensorExtract(tensor, 6);
+    unknownIndex = ancilla.getDefiningOp<qtensor::ExtractOp>().getIndex();
+    b.sink(ancilla);
     b.mcx(ValueRange(wires).take_front(5), wires[5]);
     return SmallVector<Value>{};
   });
@@ -1393,7 +1266,7 @@ TEST_F(MultiControlledDecompositionTest, PhasesPreserveRuntimeAngles) {
       expectFullyLowered(moduleOp.get());
       EXPECT_LE(countEffectiveCxOps(moduleOp.get()),
                 expectedMcpCx(numControls));
-      funcOp.walk([](AllocOp) { ADD_FAILURE() << "unexpected helper qubit"; });
+      funcOp.walk([](AllocOp) { ADD_FAILURE() << "unexpected ancilla qubit"; });
       for (const double theta : K_ANCILLA_ANGLES) {
         SCOPED_TRACE(testing::Message() << "theta=" << theta);
         const DDArgumentBindings bindings{
@@ -1445,7 +1318,7 @@ TEST_F(MultiControlledDecompositionTest,
         expectFullyDecomposed(funcOp);
         EXPECT_EQ(countStaticQubits(funcOp), numControls + 1);
         funcOp.walk(
-            [](AllocOp) { ADD_FAILURE() << "unexpected helper qubit"; });
+            [](AllocOp) { ADD_FAILURE() << "unexpected ancilla qubit"; });
         // The same bound covers every axis and permits future cancellation.
         EXPECT_LE(countSingleControlledGates<XOp>(moduleOp.get()),
                   expectedMcrCxBudget(numControls));
@@ -1536,7 +1409,7 @@ TEST_P(McPauliDdTest, EquivalenceAndCxCount) {
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   if (k <= K_MATRIX_DD_MAX_PAULI) {
     expectFullyDecomposed(funcOp);
-    funcOp.walk([](AllocOp) { ADD_FAILURE() << "unexpected helper qubit"; });
+    funcOp.walk([](AllocOp) { ADD_FAILURE() << "unexpected ancilla qubit"; });
     expectImplementsControlledGate(funcOp, k, pauliMatrix(pauli), 0);
   } else {
     expectMatchesReferenceOnBasisStates(funcOp, k, pauli);
@@ -1736,7 +1609,7 @@ TEST_F(MultiControlledDecompositionTest, MinQubitsThreshold) {
       ASSERT_TRUE(
           runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
       auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-      // A width threshold may retain smaller RCCX helpers.
+      // A width threshold may retain smaller RCCX gates.
       funcOp.walk([&](UnitaryOpInterface gate) {
         EXPECT_LT(gate.getNumQubits(), options.minQubits);
       });
@@ -1806,14 +1679,12 @@ TEST_F(MultiControlledDecompositionTest, AncillaWideFallbackPhasesAndCounts) {
             }
             return SmallVector<Value>{};
           });
-      DecomposeMultiControlledOptions options;
-      options.borrowAncillas = false;
-      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
+      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
       auto function = *moduleOp->getOps<func::FuncOp>().begin();
       expectFullyLowered(*moduleOp);
       EXPECT_EQ(countStaticQubits(function), k + 1);
       function.walk(
-          [](AllocOp) { ADD_FAILURE() << "unexpected helper qubit"; });
+          [](AllocOp) { ADD_FAILURE() << "unexpected ancilla qubit"; });
       const size_t cost =
           k < 23 ? expectedMcpCx(k) : (k % 2 == 1 ? 88 * k - 54 : 96 * k - 154);
       EXPECT_EQ(countEffectiveCxOps(*moduleOp), cost + (swap ? 2 : 0));
@@ -1859,45 +1730,38 @@ TEST_F(MultiControlledDecompositionTest, AncillaWideFallbackPhasesAndCounts) {
 TEST_F(MultiControlledDecompositionTest,
        AncillaWideBorrowingAndDirtyRestoration) {
   for (size_t k : {23U, 24U}) {
-    for (const bool borrowAncillas : {false, true}) {
-      SCOPED_TRACE(testing::Message()
-                   << "controls=" << k << " borrowing=" << borrowAncillas);
-      auto moduleOp =
-          QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
-            SmallVector<Value> reg;
-            for (size_t i = 0; i < k + 2; ++i) {
-              reg.push_back(b.staticQubit(i));
-            }
-            auto helper = b.h(reg[k + 1]);
-            auto [control, target] = b.cx(helper, reg[k / 2]);
-            reg[k / 2] = target;
-            b.mcx(ValueRange(reg).take_front(k), reg[k]);
-            b.rz(0.37, control);
-            return SmallVector<Value>{};
-          });
-      auto function = *moduleOp->getOps<func::FuncOp>().begin();
-      auto package = llvm::cantFail(dd::Package::create(k + 2));
-      std::vector<dd::BasisStates> state(k + 2, dd::BasisStates::one);
-      state[k] = dd::BasisStates::right;
-      std::mt19937_64 beforeRng(7), afterRng(7);
-      auto expected = simulate(
-          function, llvm::cantFail(dd::makeBasisState(k + 2, state, *package)),
-          *package, beforeRng);
-      ASSERT_TRUE(succeeded(expected));
-      DecomposeMultiControlledOptions options;
-      options.borrowAncillas = borrowAncillas;
-      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
-      auto actual = simulate(
-          function, llvm::cantFail(dd::makeBasisState(k + 2, state, *package)),
-          *package, afterRng);
-      ASSERT_TRUE(succeeded(actual));
-      expectStatesNear(*package, *actual, *expected);
-      package->decRef(*actual);
-      package->decRef(*expected);
-      const size_t fallback = k % 2 == 1 ? 88 * k - 54 : 96 * k - 154;
-      EXPECT_EQ(countEffectiveCxOps(*moduleOp),
-                1 + (borrowAncillas ? 16 * k - 8 : fallback));
-    }
+    SCOPED_TRACE(k);
+    auto moduleOp =
+        QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
+          SmallVector<Value> reg;
+          for (size_t i = 0; i < k + 2; ++i) {
+            reg.push_back(b.staticQubit(i));
+          }
+          auto ancilla = b.h(reg[k + 1]);
+          auto [control, target] = b.cx(ancilla, reg[k / 2]);
+          reg[k / 2] = target;
+          b.mcx(ValueRange(reg).take_front(k), reg[k]);
+          b.rz(0.37, control);
+          return SmallVector<Value>{};
+        });
+    auto function = *moduleOp->getOps<func::FuncOp>().begin();
+    auto package = llvm::cantFail(dd::Package::create(k + 2));
+    std::vector<dd::BasisStates> state(k + 2, dd::BasisStates::one);
+    state[k] = dd::BasisStates::right;
+    std::mt19937_64 beforeRng(7), afterRng(7);
+    auto expected = simulate(
+        function, llvm::cantFail(dd::makeBasisState(k + 2, state, *package)),
+        *package, beforeRng);
+    ASSERT_TRUE(succeeded(expected));
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
+    auto actual = simulate(
+        function, llvm::cantFail(dd::makeBasisState(k + 2, state, *package)),
+        *package, afterRng);
+    ASSERT_TRUE(succeeded(actual));
+    expectStatesNear(*package, *actual, *expected);
+    package->decRef(*actual);
+    package->decRef(*expected);
+    EXPECT_EQ(countEffectiveCxOps(*moduleOp), 1 + 16 * k - 8);
   }
 }
 
@@ -1916,13 +1780,11 @@ TEST_F(MultiControlledDecompositionTest, AncillaFreeSwapReorderedWires) {
           std::ignore = b.mcswap(controls, target1, target0);
           return SmallVector<Value>{};
         });
-    DecomposeMultiControlledOptions options;
-    options.borrowAncillas = false;
-    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp, options)));
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
     auto function = *moduleOp->getOps<func::FuncOp>().begin();
     expectFullyLowered(*moduleOp);
     EXPECT_EQ(countStaticQubits(function), k + 1);
-    function.walk([](AllocOp) { ADD_FAILURE() << "unexpected helper qubit"; });
+    function.walk([](AllocOp) { ADD_FAILURE() << "unexpected ancilla qubit"; });
     EXPECT_EQ(countEffectiveCxOps(*moduleOp),
               (k <= 8 ? expectedMcxCx(k) : expectedMcpCx(k)) + 2);
     auto package = llvm::cantFail(dd::Package::create(k + 1));

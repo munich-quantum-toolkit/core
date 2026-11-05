@@ -4480,19 +4480,14 @@ TEST_F(CompilerPipelineTest, BorrowingPreservesPreplacedExplicitTopology) {
         for (size_t site = 0; site < 6; ++site) {
           data.push_back(builder.staticQubit(site));
         }
-        auto helper = builder.h(builder.staticQubit(6));
+        auto ancilla = builder.h(builder.staticQubit(6));
         builder.mcx(ValueRange(data).drop_back(), data.back());
-        // Keep the leaf-site helper live across the controlled gate.
-        return SmallVector<Value>{builder.measure(helper).second};
+        // Keep the leaf-site ancilla live across the controlled gate.
+        return SmallVector<Value>{builder.measure(ancilla).second};
       });
   auto input = QCOProgram::fromModule(context, std::move(moduleOp));
   ASSERT_TRUE(succeeded(input));
-  for (const bool borrowAncillas : {false, true}) {
-    SCOPED_TRACE(borrowAncillas);
-    auto program = input->copy();
-    EXPECT_TRUE(succeeded(program.compileForTarget(
-        environment, {.borrowAncillas = borrowAncillas})));
-  }
+  EXPECT_TRUE(succeeded(input->compileForTarget(environment)));
 }
 
 TEST_F(CompilerPipelineTest, StaticNativeThreeQubitGateSurvives) {

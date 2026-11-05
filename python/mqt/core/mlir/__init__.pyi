@@ -748,7 +748,6 @@ class CompilationOptions:
         enable_timing: bool = False,
         enable_statistics: bool = False,
         mapping: MappingOptions = ...,
-        borrow_ancillas: bool = True,
     ) -> None: ...
     @property
     def seed(self) -> int | None: ...
@@ -766,16 +765,6 @@ class CompilationOptions:
     def mapping(self) -> MappingOptions: ...
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
-    @property
-    def borrow_ancillas(self) -> bool:
-        """Borrow existing live helpers in built-in target pipelines.
-
-        Set False to disable external borrowing. Textual pipelines use the pass's
-        borrow-ancillas option.
-        """
-
-    @borrow_ancillas.setter
-    def borrow_ancillas(self, arg: bool, /) -> None: ...
 
 class QuantumProgramInfo:
     """Quantum resources and static IR statistics.
@@ -1128,13 +1117,12 @@ class QCOProgram(Program):
     def run_qubit_reuse_pipeline(self) -> None:
         """Prepare the program for qubit reuse and reuse eligible qubits."""
 
-    def decompose_multi_controlled(self, *, min_qubits: int = 3, borrow_ancillas: bool = True) -> None:
+    def decompose_multi_controlled(self, *, min_qubits: int = 3) -> None:
         """Decompose gates that act on at least min_qubits qubits.
 
         Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
-        at least 3. Live helpers can be borrowed when they reduce the estimated
-        entangling count. They are restored without allocating new qubits.
-        Set borrow_ancillas=False to disable external borrowing.
+        at least 3. The pass borrows and restores ancilla qubits when this reduces the
+        estimated entangling cost. It allocates no additional qubits.
         """
 
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:

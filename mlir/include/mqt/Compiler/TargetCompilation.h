@@ -35,8 +35,7 @@ class OpPassManager;
 /// instrumentation settings when running this pipeline.
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
-                                       const MappingOptions& mapping = {},
-                                       bool borrowAncillas = true);
+                                       const MappingOptions& mapping = {});
 
 /// Populate target-native block synthesis without routing.
 ///
@@ -51,7 +50,6 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 /// instrumentation settings when running this pipeline.
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
-                                     const MappingOptions& mapping = {},
-                                     bool borrowAncillas = true);
+                                     const MappingOptions& mapping = {});
 
 } // namespace mlir

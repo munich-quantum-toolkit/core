@@ -634,11 +634,10 @@ def DecomposeMultiControlled
     Width is the total number of qubits the gate acts on (controls plus
     targets).
 
-    HP24 uses one dirty helper for an odd number of controls and two for an
-    even number. These helpers are borrowed from the gate's qubits and restored;
-    no additional qubits are allocated. The exact adjoint cancels the
-    incrementer's relative phases. The CX-equivalent cost model selects MCP(π)
-    through 22 controls and HP24 from 23 controls.
+    HP24 borrows one of the gate's qubits as a dirty ancilla for odd control
+    counts and two for even counts. The exact adjoint restores them and cancels
+    the incrementer's relative phases. The CX-equivalent cost model selects
+    MCP(π) through 22 controls and HP24 from 23 controls.
 
     Rotation synthesis uses a linear number of gates and no additional
     qubits. Each relative-phase half borrows controls from the opposite half;
@@ -657,26 +656,18 @@ def DecomposeMultiControlled
     `min-qubits` keeps them; the greedy rewriter lowers further when the
     threshold allows.
 
-    External borrowing selects same-block live qubits or provably occupied
-    tensor slots outside the original gate. It allocates no qubits and
-    restores each helper's state and correlations. Allocations and resets
-    can prove a clean zero. Target-aware borrowing requires declared
-    allocations to fit and skips fixed sites on explicit topologies.
-
-    The chosen plan must reduce estimated CX equivalents before routing.
-    `borrow-ancillas=false` disables external borrowing. Original controls
-    can still serve as restored workspace.
+    The pass borrows same-block live qubits or provably occupied tensor slots
+    as ancilla qubits when this reduces estimated CX equivalents before routing.
+    It allocates no qubits and restores each ancilla qubit's state and
+    correlations. Allocations and resets can prove a clean zero. For target
+    compilation, declared allocations must fit the target. On explicit
+    topologies, the pass borrows only before physical sites are assigned.
   }];
-  let options =
-      [Option<
-           "minQubits", "min-qubits", "uint64_t", "3",
-           "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and qco.rccx "
-           "that act on at least this many qubits (must be at least 3; default "
-           "3 "
-           "means wider than two-qubit).">,
-       Option<"borrowAncillas", "borrow-ancillas", "bool", "true",
-              "Borrow existing live helpers when beneficial. False disables "
-              "external borrowing; no new qubits are allocated.">];
+  let options = [Option<
+      "minQubits", "min-qubits", "uint64_t", "3",
+      "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and qco.rccx "
+      "that act on at least this many qubits (must be at least 3; default 3 "
+      "means wider than two-qubit).">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

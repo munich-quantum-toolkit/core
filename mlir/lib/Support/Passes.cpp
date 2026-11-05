@@ -157,11 +157,9 @@ bool isDecomposeMultiControlledConfigValid(const uint64_t minQubits) {
 }
 
 void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
-                                              const uint64_t minQubits,
-                                              bool borrowAncillas) {
+                                              const uint64_t minQubits) {
   qco::DecomposeMultiControlledOptions options;
   options.minQubits = minQubits;
-  options.borrowAncillas = borrowAncillas;
   pm.addPass(qco::createDecomposeMultiControlled(options));
 }
 
