@@ -229,7 +229,7 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
+void populateQCOCleanupPipeline(OpPassManager& pm, bool removeUnusedValues) {
   pm.addPass(mlir::mqt::createSimplifyClassicalControl());
   pm.addPass(mqt::createPromoteClassicalMemory());
   pm.addPass(mqt::createNormalizeGlobalPhases());
@@ -238,9 +238,11 @@ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
           .enableCSEBetweenIterations()
           .setUseTopDownTraversal()
           .setMaxIterations(GreedyRewriteConfig::kNoLimit)));
-  pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  if (removeUnusedValues) {
+    pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  }
   pm.addPass(createSymbolDCEPass());
-  if (removeDeadValues) {
+  if (removeUnusedValues) {
     pm.addPass(createRemoveDeadValuesPass());
   }
 }

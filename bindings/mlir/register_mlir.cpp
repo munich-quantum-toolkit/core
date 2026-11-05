@@ -2319,8 +2319,9 @@ partial changes; use ``copy()`` to preserve the input.)pb")
            nb::kw_only(), "min_qubits"_a = 3,
            R"pb(Decompose gates that act on at least min_qubits qubits.
 
-Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates. min_qubits must be
-at least 3; default 3 means wider than two-qubit.)pb")
+Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
+at least 3. The pass borrows and restores ancilla qubits when this reduces the
+estimated entangling cost. It allocates no additional qubits.)pb")
       .def(
           "compile_for_target",
           [](mlir::QCOProgram& program,

@@ -36,6 +36,14 @@ program qubit
   **Preferred term:** program qubit. **Accepted alias:** virtual qubit. A qubit
   named by the input program before assignment to a device site.
 
+ancilla qubit
+ancilla
+  **Preferred term:** ancilla qubit. **Accepted aliases:** ancilla, helper
+  qubit. A qubit used as temporary workspace. A clean ancilla starts and ends
+  in the zero state. A dirty ancilla may have an unknown or entangled state.
+  A compilation step that borrows a dirty ancilla must restore its state and
+  correlations before returning it.
+
 device qubit
   **Preferred term:** device qubit. **Accepted alias:** hardware qubit. A
   target site on which a program qubit can be placed.

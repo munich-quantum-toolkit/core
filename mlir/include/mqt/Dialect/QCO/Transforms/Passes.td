@@ -600,6 +600,7 @@ def RemoveDeadGates : Pass<"remove-dead-gates", "mlir::ModuleOp"> {
 def DecomposeMultiControlled
     : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect",
                            "::mlir::arith::ArithDialect"];
   let summary = "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and "
                 "qco.rccx that act on at least min-qubits qubits";
@@ -619,28 +620,29 @@ def DecomposeMultiControlled
     | ------ | -------------- | ------------- |
     | X/Z | 3 | Elementary CCX/CCZ; `rccx` when `min-qubits` is at most 3 |
     | X/Z | 4 | Elementary CCCX/CCCZ |
-    | X/Z | 5 | Specialized ancilla-free relative-phase `C^4(Z)` |
-    | X/Z | 6–33 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
-    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with partitioned incrementers |
+    | X/Z | 5–9 | Phase-corrected MCP(π) via relative-phase RZ half-gates |
+    | X/Z | 10–23 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
+    | X/Z | ≥24 | Huang-Palsberg (HP24) phase ladder with relative-phase partitioned incrementers |
     | Y | ≥3 | X decomposition with `S†` before and `S` after on the target |
-    | RX/RY/RZ | ≥3 | Balanced control halves with exact MCX and quarter-angle rotations; RX uses H-conjugated RZ |
+    | RX/RY/RZ | ≥3 | Relative-phase control halves with quarter-angle RZ rotations; basis changes give RX/RY |
     | Phase | 3 | Optimized `C^2(P)` |
-    | Phase | 4–5 | Vale (Barenco-relative residual) |
-    | Phase | ≥6 | da Silva-Park SP22 linear-depth |
+    | Phase | 4–9 | Relative-phase RZ construction with recursive scalar-phase correction |
+    | Phase | ≥10 | da Silva-Park SP22 linear-depth |
     | Constant phase | any (`±π`) | Routed through the Z path |
     | SWAP | ≥ `min-qubits` | `MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b)` |
 
     Width is the total number of qubits the gate acts on (controls plus
     targets).
 
-    HP24 uses one dirty helper for an odd number of controls and two for an
-    even number. These helpers are borrowed from the gate's qubits and restored;
-    no additional qubits are allocated.
+    HP24 borrows one of the gate's qubits as a dirty ancilla for odd control
+    counts and two for even counts. The exact adjoint restores them and cancels
+    the incrementer's relative phases. The CX-equivalent cost model selects
+    MCP(π) through 22 controls and HP24 from 23 controls.
 
     Rotation synthesis uses a linear number of gates and no additional
-    qubits. Each half-MCX may borrow controls from the opposite half and
-    restores them coherently. The decomposition preserves phase, including
-    the conditional phase of a rotation by `2π`.
+    qubits. Each relative-phase half borrows controls from the opposite half;
+    forward and inverse halves cancel all residual phases, preserving the
+    conditional phase of a rotation by `2π`.
 
     Phase synthesis needs no additional qubits and uses a quadratic number of
     gates. Runtime angles require only power-of-two scaling.
@@ -653,6 +655,14 @@ def DecomposeMultiControlled
     Intermediate building blocks may be left as `qco.ctrl` / `qco.rccx` when
     `min-qubits` keeps them; the greedy rewriter lowers further when the
     threshold allows.
+
+    The pass can borrow qubits defined before the gate and consumed after it
+    in the same block, including provably occupied tensor slots. It uses them
+    as ancilla qubits when this reduces estimated CX equivalents before routing.
+    It allocates no qubits and restores each ancilla qubit's state and
+    correlations. Allocations and resets can prove a clean zero. For target
+    compilation, declared allocations must fit the target. On explicit
+    topologies, the pass borrows only before physical sites are assigned.
   }];
   let options = [Option<
       "minQubits", "min-qubits", "uint64_t", "3",
