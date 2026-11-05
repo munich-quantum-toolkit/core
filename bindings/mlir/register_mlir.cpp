@@ -3023,12 +3023,11 @@ apply ``compiled.result_layout.decode_bits`` when a result layout is present.)pb
           argv.push_back(argument.data());
         }
         argv.push_back(nullptr);
-        const nb::gil_scoped_release release;
         return mqtCoreRunCompiler(static_cast<int>(arguments.size()),
                                   argv.data(),
                                   qpyAvailable ? &exportQPYFile : nullptr);
       },
-      "arguments"_a,
+      "arguments"_a, nb::call_guard<nb::gil_scoped_release>(),
       "Run the compiler command once. LLVM options can terminate the process.");
 
   bindings::pennylane::registerBindings(m);
