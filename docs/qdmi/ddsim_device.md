@@ -163,6 +163,25 @@ fresh system entropy. QIR output capture is indexed by program, like shots,
 counts, and state results. Worker reuse supports ordinary QDMI programs; it does
 not isolate arbitrary native process-global side effects between executions.
 
+## Program completion trace
+
+Set `MQT_CORE_DDSIM_PROGRAM_TRACE` to a new file path before submitting a job to
+record its terminal program transitions. This process-wide setting must not be
+changed concurrently with submissions. Each path belongs to one job: existing
+files, empty paths, and `-` are rejected before submission. Unset the variable
+or select a new path before another job.
+
+The tab-separated columns are steady-clock nanoseconds, program index, terminal
+QDMI status, total worker budget, and slots held at completion. Records are
+ordered under the job mutex. The final field is not peak program parallelism; a
+canceled queued program holds zero slots.
+
+A write failure emits a diagnostic and stops tracing without changing quantum
+results or execution status. The file may be incomplete. Trace consumers must
+check that every program has exactly one terminal record and validate its status
+before using the observations. Leave the variable unset when tracing is not
+needed.
+
 ## QIR output capture
 
 Set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM2` to a `bool` value of `true` before

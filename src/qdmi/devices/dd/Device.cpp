@@ -27,8 +27,10 @@
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>
@@ -311,10 +313,29 @@ struct Execution {
   QDMI_Job_Status status = QDMI_JOB_STATUS_CREATED;
   size_t remaining = 0;
   std::vector<Program> programs;
+  std::unique_ptr<llvm::raw_fd_ostream> programTrace;
+  size_t workerLimit = 0;
 
   /// Called under mutex once a program has stopped or a queued program is
   /// cancelled.
-  void finish() {
+  void finish(size_t index, size_t grant = 0) {
+    if (programTrace) {
+      const auto now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                           std::chrono::steady_clock::now().time_since_epoch())
+                           .count();
+      *programTrace << now << '\t' << index << '\t' << programs[index].status
+                    << '\t' << workerLimit << '\t' << grant << '\n';
+      programTrace->flush();
+      if (remaining == 1 || programTrace->has_error()) {
+        programTrace->close();
+        if (programTrace->has_error()) {
+          qdmi::diagnostics::error("Could not write DDSIM program trace: {0}",
+                                   programTrace->error().message());
+          programTrace->clear_error();
+        }
+        programTrace.reset();
+      }
+    }
     if (--remaining != 0) {
       return;
     }
@@ -793,6 +814,22 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
     return QDMI_ERROR_NOTSUPPORTED;
   }
   auto& executor = qdmi::dd::executor();
+  // A trace path belongs to one job; never append to another job's records.
+  if (const char* path = std::getenv("MQT_CORE_DDSIM_PROGRAM_TRACE")) {
+    if (*path == '\0' || std::string_view(path) == "-") {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    std::error_code error;
+    auto trace = std::make_unique<llvm::raw_fd_ostream>(
+        path, error, llvm::sys::fs::CD_CreateNew);
+    if (error) {
+      qdmi::diagnostics::error("Could not create DDSIM program trace: {0}",
+                               error.message());
+      return QDMI_ERROR_FATAL;
+    }
+    execution->programTrace = std::move(trace);
+  }
+  execution->workerLimit = executor.limit;
   const size_t perProgramLimit =
       std::max(size_t{1}, executor.limit / execution->programs.size());
   const size_t desired = std::min({
@@ -871,7 +908,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
                 result ? QDMI_JOB_STATUS_DONE : QDMI_JOB_STATUS_FAILED;
             program.result = std::move(result);
           }
-          execution->finish();
+          execution->finish(index, grant);
         });
         try {
           {
@@ -959,7 +996,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
       });
     } catch (const std::exception& error) {
       execution->programs[index].status = QDMI_JOB_STATUS_FAILED;
-      execution->finish();
+      execution->finish(index);
       qdmi::diagnostics::error("Could not schedule DDSIM program: {0}",
                                error.what());
     }
@@ -981,10 +1018,11 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::cancel() -> QDMI_STATUS {
       execution_->status = QDMI_JOB_STATUS_CANCELED;
       return QDMI_SUCCESS;
     }
-    for (auto& program : execution_->programs) {
+    for (size_t index = 0; index < execution_->programs.size(); ++index) {
+      auto& program = execution_->programs[index];
       if (program.status == QDMI_JOB_STATUS_QUEUED) {
         program.status = QDMI_JOB_STATUS_CANCELED;
-        execution_->finish();
+        execution_->finish(index);
       } else if (program.status == QDMI_JOB_STATUS_RUNNING) {
         program.cancelRequested = true;
         if (program.worker) {
