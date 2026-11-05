@@ -203,12 +203,13 @@ LogicalResult QCOProgram::normalizeGlobalPhases() {
   return qco::verifyLinearity(mod());
 }
 
-LogicalResult
-QCOProgram::runPassPipeline(std::string_view pipeline,
-                            const CompilationOptions& options,
-                            const TargetEnvironment* environment) {
+LogicalResult QCOProgram::runPassPipeline(std::string_view pipeline,
+                                          const CompilationOptions& options,
+                                          const TargetEnvironment* environment,
+                                          bool preservesLayout) {
   if (failed(qco::verifyLinearity(mod())) ||
-      failed(::runPassPipeline(mod(), pipeline, options, environment))) {
+      failed(::runPassPipeline(mod(), pipeline, options, environment,
+                               preservesLayout))) {
     return failure();
   }
   return qco::verifyLinearity(mod());

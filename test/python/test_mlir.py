@@ -2144,6 +2144,38 @@ def test_qco_program_runs_target_passes_in_stages() -> None:
     assert "mqt.target_env" not in source.ir
 
 
+@requires_qiskit_translation
+def test_qco_program_textual_passes_preserve_routed_layout() -> None:
+    """Keep logical wire order through separate post-routing passes and export."""
+    source = QuantumCircuit(3)
+    source.h(0)
+    source.rx(0.3, 1)
+    source.rz(0.7, 2)
+    source.cx(0, 1)
+    source.cx(1, 2)
+    source.cx(0, 2)
+    target = CompilerTarget(
+        3,
+        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_qiskit(source).to_qco()
+    program.compile_for_target(
+        _test_target_environment(target), options=CompilationOptions(seed=7, mapping=MappingOptions(trials=1))
+    )
+    before = program.to_qiskit(target=target, copy=True)
+    assert before.layout is not None
+    assert before.layout.routing_permutation() != list(range(3))
+
+    program.run_pass_pipeline("target-native-synthesis", preserve_layout=True)
+    program.run_pass_pipeline("verify-target-conformance", preserve_layout=True)
+    result = program.to_qiskit(target=target)
+
+    assert result.layout is not None
+    assert result.layout.final_index_layout() == before.layout.final_index_layout()
+    assert np.allclose(Operator.from_circuit(result).data, Operator(source).data, atol=1e-10, rtol=0)
+
+
 def test_qco_program_textual_pipeline_replaces_target(capfd: pytest.CaptureFixture[str]) -> None:
     """A supplied environment replaces native-operation support for later passes."""
     program = QCProgram.from_openqasm_str('OPENQASM 3; include "stdgates.inc"; qubit q; x q;').to_qco()

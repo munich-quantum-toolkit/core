@@ -244,9 +244,22 @@ because this target does not support them. Set mapping controls in the textual
 `place-and-route` options; `CompilationOptions.mapping` configures the full
 target pipeline.
 
-Execution clears existing layout metadata. A failed pass can leave the supplied
-environment and earlier changes on the program; copy the input before trying
-another sequence. A pipeline parsing error leaves the program unchanged.
+The default `preserve_layout=False` clears existing layout metadata. Use
+`preserve_layout=True` only for passes that preserve wire identity and site
+order. For example, continue from a program compiled with layout metadata:
+
+```{code-cell} ipython3
+placed = source.copy()
+placed.compile_for_target(environment)
+placed.run_pass_pipeline("target-native-synthesis,drop-global-phases", preserve_layout=True)
+placed.run_pass_pipeline("verify-target-conformance", preserve_layout=True)
+```
+
+This option retains existing metadata; it does not generate a layout or remap
+wires. Do not enable it for qubit reuse, wire reordering, or retargeting. A
+failed pass can leave the supplied environment and earlier changes on the
+program; copy the input before trying another sequence. A pipeline parsing error
+leaves the program unchanged.
 
 ### Synthesis without routing
 
@@ -401,7 +414,8 @@ Dynamic target compilation attaches placement and routing metadata when the
 input has fixed-size entry-block allocations. Static programs already name
 physical sites; compilation preserves those IDs and does not attach a layout.
 Static and dynamic qubits cannot be mixed. Compilation rejects an already
-attached layout; later transformations clear it. See
+attached layout. Custom pipelines clear it unless `preserve_layout=True` is set
+for passes that preserve wire identity and site order. See
 [transpiler layouts](qiskit.md#transpiler-layouts) for the full contract.
 
 ### Temporary QDMI payload contract

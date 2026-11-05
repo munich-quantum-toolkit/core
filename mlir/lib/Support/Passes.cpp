@@ -165,7 +165,8 @@ void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
 
 LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
                               const CompilationOptions& options,
-                              const TargetEnvironment* environment) {
+                              const TargetEnvironment* environment,
+                              bool preservesLayout) {
   registerMQTCompilerPasses();
   PassManager pm(mod.getContext());
   std::string diagnostics;
@@ -177,7 +178,7 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
   if (environment != nullptr) {
     attachTargetEnvironment(mod, *environment);
   }
-  return runWithCompilationOptions(pm, mod, options);
+  return runWithCompilationOptions(pm, mod, options, preservesLayout);
 }
 
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
