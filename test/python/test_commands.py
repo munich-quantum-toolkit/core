@@ -151,7 +151,10 @@ def test_qpy_decomposition(tmp_path: Path, arguments: list[str], width: int) -> 
 def test_qpy_custom_pipeline(tmp_path: Path) -> None:
     """Run an explicitly requested pipeline through its CLI alias."""
     source = tmp_path / "input.qasm"
-    source.write_text("OPENQASM 3; qubit q; gphase(0.37); x q;")
+    source.write_text(
+        'OPENQASM 3; include "stdgates.inc"; input float unused; qubit[8] q; '
+        "if (false) { rx(unused) q[7]; } gphase(0.37); x q[2];"
+    )
     output = tmp_path / "output.qpy"
     error = run_command([
         "compile",

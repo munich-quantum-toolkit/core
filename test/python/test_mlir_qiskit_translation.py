@@ -5012,6 +5012,28 @@ def test_target_gate_alias_survives_qpy(gate: Gate) -> None:
         np.testing.assert_allclose(Operator(circuit.assign_parameters(bindings)).data, expected, atol=1e-12)
 
 
+def test_symbolic_gate_aliases_own_their_parameters() -> None:
+    """Mutating an exported alias leaves other occurrences and the input intact."""
+    theta = Parameter("theta")
+    source = QuantumCircuit(2)
+    source.u(theta, 0, 0, 0)
+    source.u(theta, 0, 0, 1)
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("device_u", 1, 3, canonical_name="u"),
+        ]),
+    )
+    exported = QCProgram.from_qiskit(source, native=True).to_qiskit(target=target)
+    first, second = (item.operation for item in exported.data)
+    first.params[0] = 0.25
+    first.definition.data[0].operation.params[0] = 0.5
+    assert second.params[0] == theta
+    assert second.definition.data[0].operation.params[0] == theta
+    assert source.data[0].operation.params[0] == theta
+
+
 @pytest.mark.parametrize("name", ["bad;gate", "if"])
 def test_qiskit_native_export_rejects_invalid_gate_names(name: str) -> None:
     """Opaque names cannot introduce OpenQASM syntax or keywords."""

@@ -818,9 +818,11 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
        *parsedOutputFormat == ProgramFormat::QIRBase ||
        *parsedOutputFormat == ProgramFormat::QIRAdaptive) &&
       failed(runPasses(
-          [](OpPassManager& pm) {
+          [emitQPY](OpPassManager& pm) {
             pm.addPass(createQCOToQC());
-            populateQCCleanupPipeline(pm);
+            if (!emitQPY) {
+              populateQCCleanupPipeline(pm);
+            }
             return success();
           },
           /*preservesLayout=*/emitQPY))) {
