@@ -54,6 +54,11 @@ topology, and payload capabilities. IQM JSON also checks site names. Changes to
 calibration values alone do not invalidate a compiled program. Raw payloads can
 be submitted with `device.submit_job`.
 
+QDMI target snapshots omit the unsupported IQM dynamic primitives `cc_prx` and
+`measure_ff`. Native GPI/GPI2 capabilities use fixed-angle R semantics
+internally and export as one-parameter OpenQASM pulses with their phase
+correction.
+
 Target compilation places qubits only on sites with a supported single-qubit
 gate and measurement. With explicit couplings, it uses their largest connected
 component, including connections through resonators. Targets with ordered

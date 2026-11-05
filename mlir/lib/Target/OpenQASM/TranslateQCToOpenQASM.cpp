@@ -22,6 +22,7 @@
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -135,6 +136,7 @@ struct ArrayAssignment {
 };
 
 struct GateCall {
+  std::string globalPhase;
   std::string modifiers;
   std::string symbol;
   SmallVector<std::string> parameters;
@@ -3068,10 +3070,21 @@ private:
           return fail(operation, "native gates require static target sites");
         }
       }
+      StringRef canonical = call.symbol;
+      const bool nativePulse =
+          (call.symbol == "gpi" || call.symbol == "gpi2") &&
+          parameters.size() == 1;
+      if (nativePulse) {
+        parameters.insert(parameters.begin(), call.symbol == "gpi"
+                                                  ? std::numbers::pi
+                                                  : std::numbers::pi / 2.);
+        canonical = "r";
+      }
       const auto selected = nativeTarget_->findOperation(
-          call.symbol, sites.size(), parameters, sites, 0,
-          [this](const auto& capability) {
-            return hasCompatibleNativeMeaning(capability);
+          canonical, sites.size(), parameters, sites, 0,
+          [this, &call, nativePulse](const auto& capability) {
+            return (!nativePulse || capability.name() == call.symbol) &&
+                   hasCompatibleNativeMeaning(capability);
           });
       if (selected.capability == nullptr) {
         return fail(operation, "external gate is not native for the target");
@@ -3188,6 +3201,23 @@ private:
         return failure();
       }
       call.parameters.push_back(std::move(*expression));
+    }
+    if (capability->canonicalName() == "r" &&
+        (call.symbol == "gpi" || call.symbol == "gpi2")) {
+      if (version2_) {
+        return fail(unitary, "native GPI pulses require OpenQASM 3");
+      }
+      const double angle =
+          call.symbol == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+      if (!parameters.front() || std::abs(*parameters.front() - angle) >
+                                     mqt::PARAMETER_COMPARISON_TOLERANCE) {
+        return fail(unitary,
+                    "native GPI pulse requires its fixed rotation angle");
+      }
+      call.parameters.erase(call.parameters.begin());
+      if (call.symbol == "gpi") {
+        call.globalPhase = "-pi / 2";
+      }
     }
     for (auto qubit : qubits) {
       auto expression = emitQubit(qubit);
@@ -3486,6 +3516,9 @@ private:
         failed(recordOpaqueGate(call.symbol, call.parameters.size(),
                                 call.qubits.size(), operation))) {
       return failure();
+    }
+    if (!call.globalPhase.empty()) {
+      stream << "gphase(" << call.globalPhase << ");\n";
     }
     stream << call.modifiers << call.symbol;
     if (!call.parameters.empty()) {

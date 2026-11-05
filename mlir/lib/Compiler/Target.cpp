@@ -509,6 +509,22 @@ CompilerTarget::OperationCapability::create(
     }
   }
 
+  // Native GPI pulses expose only the azimuth of a fixed-angle R rotation.
+  if (arity == Arity::fixed(1) && numParameters == 1 &&
+      (canonical == "gpi" || canonical == "gpi2")) {
+    const double angle =
+        canonical == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+    canonical = "r";
+    numParameters = 2;
+    if (fixedParameters.empty()) {
+      fixedParameters.emplace_back();
+    }
+    fixedParameters.insert(fixedParameters.begin(), angle);
+    if (!parameterBounds.empty()) {
+      parameterBounds.insert(parameterBounds.begin(), std::nullopt);
+    }
+  }
+
   return OperationCapability(std::move(name), std::move(canonical), arity,
                              numParameters, std::move(siteTuples), duration,
                              fidelity, std::move(fixedParameters),
