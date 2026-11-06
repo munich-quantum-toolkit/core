@@ -34,12 +34,14 @@ namespace nb = nanobind;
 ///
 /// @param circuit Borrowed Python circuit; it is neither modified nor consumed.
 /// @param native Whether the circuit is already compiled for a device.
+/// @param ignoreLayout Whether to skip importing the transpiler layout.
 /// @returns A program owning its MLIR context and translated module.
 /// @throws std::runtime_error If the circuit is outside the supported import
 /// subset.
 /// @throws nanobind::python_error If a Python API call fails.
 [[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit,
-                                            bool native = false);
+                                            bool native = false,
+                                            bool ignoreLayout = false);
 
 /// Snapshot a Qiskit Target or BackendV2 into an owned compiler target.
 ///

@@ -203,6 +203,8 @@ mqt\.core\.mlir\.__prefix__$:
         copy: bool
         qco_pipeline: str
         options: CompilationOptions | None
+        ignore_input_layout: bool
+        include_output_layout: bool
 
 mqt\.core\.mlir\.PayloadSpecification\.__init__$:
     def __new__(
