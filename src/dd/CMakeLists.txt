@@ -19,8 +19,9 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
 
   # add headers using file sets
   target_sources(
-    ${MQT_CORE_TARGET_NAME}-dd PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                      FILES ${DD_HEADERS})
+    ${MQT_CORE_TARGET_NAME}-dd
+    PUBLIC
+    FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${DD_HEADERS})
 
   # add link libraries
   target_link_libraries(
@@ -32,14 +33,15 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
   include(GenerateExportHeader)
   generate_export_header(${MQT_CORE_TARGET_NAME}-dd BASE_NAME mqt_core_dd)
   target_sources(
-    ${MQT_CORE_TARGET_NAME}-dd PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
-                                      FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_dd_export.h)
+    ${MQT_CORE_TARGET_NAME}-dd
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
+      FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_dd_export.h)
   if(NOT BUILD_MQT_CORE_SHARED_LIBS)
     target_compile_definitions(${MQT_CORE_TARGET_NAME}-dd PUBLIC MQT_CORE_DD_STATIC_DEFINE)
   endif()
 
   # add to list of MQT core targets
-  set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-dd
-      PARENT_SCOPE)
+  set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-dd PARENT_SCOPE)
 endif()

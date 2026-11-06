@@ -16,15 +16,19 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
 
   # Add headers using file sets
-  target_sources(${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                       FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/Driver.hpp)
+  target_sources(
+    ${TARGET_NAME}
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+      FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/driver/Driver.hpp)
 
   # Add link libraries
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi MQT::CoreQDMICommon
-    PRIVATE qdmi::qdmi_project_warnings $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>
-            ${CMAKE_DL_LIBS})
+    PRIVATE
+      qdmi::qdmi_project_warnings $<BUILD_INTERFACE:nlohmann_json::nlohmann_json> ${CMAKE_DL_LIBS})
 
   mqt_get_qdmi_device_targets(QDMI_DEVICE_TARGETS)
 
@@ -35,8 +39,9 @@ if(NOT TARGET ${TARGET_NAME})
     else()
       add_dependencies(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
       foreach(device IN LISTS QDMI_DEVICE_TARGETS)
-        target_link_options(${TARGET_NAME} INTERFACE
-                            $<BUILD_INTERFACE:-Wl,-rpath,$<TARGET_FILE_DIR:${device}>>)
+        target_link_options(
+          ${TARGET_NAME}
+          INTERFACE $<BUILD_INTERFACE:-Wl,-rpath,$<TARGET_FILE_DIR:${device}>>)
       endforeach()
     endif()
   endif()
@@ -45,6 +50,4 @@ if(NOT TARGET ${TARGET_NAME})
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS}
-    PARENT_SCOPE)
+set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} PARENT_SCOPE)

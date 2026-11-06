@@ -156,7 +156,7 @@ build = [
   "vcs-versioning>=2.3",
 ]
 cpp-lint = [
-  "cpp-linter==1.14.1",
+  "cpp-linter==1.15.1",
   "nanobind~=3.1.0",
 ]
 
@@ -233,7 +233,15 @@ required-version = ">=0.13.4"
 cache-keys = [
   { file = "pyproject.toml" },
   { git = { commit = true, tags = true } },
-  { file = "bindings/**/*.cpp" },
+  { file = "CMakeLists.txt" },
+  { file = "cmake/**/*" },
+  { file = "bindings/**/*" },
+  { file = "include/**/*" },
+  { file = "src/**/*" },
+  { file = "json/**/*" },
+  { env = "SKBUILD_CMAKE_ARGS" },
+  { env = "SKBUILD_CMAKE_BUILD_TYPE" },
+  { env = "DEPLOY" },
 ]
 
 [tool.uv.sources]

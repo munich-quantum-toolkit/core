@@ -79,9 +79,9 @@ generation, and repository lint provide the final acceptance evidence.
 - Observation: Python 3.11 already selects Sphinx 8.2.3 on v3.x. The Sphinx 9
   floor in the source pull request comes from the main dependency graph, not
   from nanobind split mode.
-- Observation: v3.x predates the symbol-localization code that pull request
-  #2209 extends. Applying only textual conflict hunks would omit required macOS
-  exception RTTI exports and ELF symbol and section handling.
+- Observation: v3.x predates the symbol-localization code that pull
+  request #2209 extends. Applying only textual conflict hunks would omit
+  required macOS exception RTTI exports and ELF symbol and section handling.
 - Observation: nanobind 3.0.0 was yanked after pull request #2209 merged because
   its metadata mistakenly declared Python 3.9 compatibility. Evidence: uv now
   rejects 3.0.0 for the compatible `~=3.0.0` requirement and identifies 3.0.1 as
@@ -108,8 +108,9 @@ generation, and repository lint provide the final acceptance evidence.
   history contains provisional implementations and merges unrelated to v3.x.
   Date/Author: 2026-09-01 / Codex.
 - Decision: Keep MLIR and QIR absent and omit LLVM setup from the release-wheel
-  workflow. Rationale: restoring removed stacks would undo v3.x pull request
-  #2314 and is not needed for nanobind 3. Date/Author: 2026-09-01 / Codex.
+  workflow. Rationale: restoring removed stacks would undo v3.x pull
+  request #2314 and is not needed for nanobind 3. Date/Author: 2026-09-01 /
+  Codex.
 - Decision: Port the complete final `cmake/AddMQTPythonBinding.cmake` behavior.
   Rationale: split mode requires module-name tracking, macOS initializer and
   exception RTTI exports, ELF symbol hiding and section collection, Windows

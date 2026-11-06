@@ -20,21 +20,23 @@ if(NOT TARGET MQT::CoreIR)
 
   # add headers using file sets
   target_sources(
-    ${MQT_CORE_TARGET_NAME}-ir PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                      FILES ${IR_HEADERS})
+    ${MQT_CORE_TARGET_NAME}-ir
+    PUBLIC
+    FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${IR_HEADERS})
 
   # generate export header
   include(GenerateExportHeader)
   generate_export_header(${MQT_CORE_TARGET_NAME}-ir BASE_NAME mqt_core_ir)
   target_sources(
-    ${MQT_CORE_TARGET_NAME}-ir PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
-                                      FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_ir_export.h)
+    ${MQT_CORE_TARGET_NAME}-ir
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
+      FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_ir_export.h)
   if(NOT BUILD_MQT_CORE_SHARED_LIBS)
     target_compile_definitions(${MQT_CORE_TARGET_NAME}-ir PUBLIC MQT_CORE_IR_STATIC_DEFINE)
   endif()
 
   # add to list of MQT core target
-  set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-ir
-      PARENT_SCOPE)
+  set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-ir PARENT_SCOPE)
 endif()

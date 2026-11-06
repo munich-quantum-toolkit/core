@@ -15,9 +15,7 @@ function(kebab_to_camel output input)
     string(TOUPPER ${first} first)
     string(APPEND result "${first}${rest}")
   endforeach()
-  set(${output}
-      "${result}"
-      PARENT_SCOPE)
+  set(${output} "${result}" PARENT_SCOPE)
 endfunction()
 
 function(add_mqt_core_library name)
@@ -46,17 +44,16 @@ function(add_mqt_core_library name)
   if(ARG_HIDDEN_VISIBILITY)
     set_target_properties(
       ${name}
-      PROPERTIES C_VISIBILITY_PRESET hidden
-                 CXX_VISIBILITY_PRESET hidden
-                 VISIBILITY_INLINES_HIDDEN 1)
+      PROPERTIES C_VISIBILITY_PRESET hidden CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN 1)
   endif()
 
   # Always compile with position-independent code to enable usage in shared libraries
   set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
   set_target_properties(
-    ${name} PROPERTIES SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-                       EXPORT_NAME Core${ARG_ALIAS_NAME})
+    ${name}
+    PROPERTIES
+      SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR} EXPORT_NAME Core${ARG_ALIAS_NAME})
   # Give Unix wheels one file at the ABI name used by existing consumers.
   if(SKBUILD AND UNIX)
     if(APPLE)

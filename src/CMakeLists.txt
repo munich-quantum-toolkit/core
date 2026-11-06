@@ -9,7 +9,6 @@
 set(MQT_CORE_TARGETS "")
 
 if(MQT_CORE_INSTALL)
-  include(GNUInstallDirs)
   set(MQT_CORE_CONFIG_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/cmake/mqt-core")
   set(MQT_CORE_TARGETS_EXPORT_NAME "mqt-core-targets")
   set(MQT_CORE_CMAKE_CONFIG_TEMPLATE "${PROJECT_SOURCE_DIR}/cmake/mqt-core-config.cmake.in")
@@ -74,7 +73,8 @@ if(MQT_CORE_INSTALL)
   configure_package_config_file(
     ${MQT_CORE_CMAKE_CONFIG_TEMPLATE} ${MQT_CORE_CMAKE_PROJECT_CONFIG_FILE}
     INSTALL_DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
-    NO_SET_AND_CHECK_MACRO NO_CHECK_REQUIRED_COMPONENTS_MACRO)
+    NO_SET_AND_CHECK_MACRO
+    NO_CHECK_REQUIRED_COMPONENTS_MACRO)
   write_basic_package_version_file(
     ${MQT_CORE_CMAKE_VERSION_CONFIG_FILE}
     VERSION ${PROJECT_VERSION}
@@ -92,21 +92,18 @@ if(MQT_CORE_INSTALL)
     set(mqt_core_namelink NAMELINK_COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
   endif()
 
-  # FILE_SET should be aligned with LIBRARY and ARCHIVE, so we turn cmake-format off
-  # cmake-format: off
   install(
     TARGETS ${MQT_CORE_TARGETS}
     EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
-            ${mqt_core_namelink}
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            COMPONENT ${MQT_CORE_TARGET_NAME}_Development
+    LIBRARY
+      DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
+      ${mqt_core_namelink}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Development
     FILE_SET HEADERS
-            DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt-core
-            COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-  # cmake-format: on
+      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mqt-core
+      COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 
   install(
     EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
@@ -117,11 +114,8 @@ if(MQT_CORE_INSTALL)
 
   install(
     FILES ${PROJECT_SOURCE_DIR}/cmake/AddMQTPythonBinding.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/Cache.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/PackageAddTest.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/PreventInSourceBuilds.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/StandardProjectSettings.cmake
+    ${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake
+    ${PROJECT_SOURCE_DIR}/cmake/PackageAddTest.cmake
     DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
 endif()

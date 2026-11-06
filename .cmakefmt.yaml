@@ -1,0 +1,11 @@
+format:
+  line_width: 100
+  max_hanging_wrap_lines: 3
+  max_rows_cmdline: 3
+  keyword_case: "upper"
+  enable_sort: true
+  autosort: false
+
+markup:
+  enable_markup: true
+  first_comment_is_literal: true

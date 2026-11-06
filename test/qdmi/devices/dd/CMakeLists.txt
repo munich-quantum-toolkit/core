@@ -38,7 +38,8 @@ if(TARGET MQT::CoreQDMI_DDSIM_Device)
     add_custom_command(
       TARGET ${TARGET_NAME}
       PRE_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>
-              $<TARGET_FILE_DIR:${TARGET_NAME}>)
+      COMMAND
+        ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>
+        $<TARGET_FILE_DIR:${TARGET_NAME}>)
   endif()
 endif()

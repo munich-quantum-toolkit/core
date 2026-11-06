@@ -41,8 +41,8 @@ function(enable_project_options target_name)
 
       check_cxx_compiler_flag(-march=native HAS_MARCH_NATIVE)
       if(HAS_MARCH_NATIVE)
-        if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang" OR CMAKE_SYSTEM_PROCESSOR MATCHES
-                                                      "(x86)|(x86_64)|(AMD64)|(amd64)")
+        if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang"
+           OR CMAKE_SYSTEM_PROCESSOR MATCHES "(x86)|(x86_64)|(AMD64)|(amd64)")
           target_compile_options(${target_name} INTERFACE -march=native)
         else()
           target_compile_options(${target_name} INTERFACE -mcpu=native)
@@ -51,13 +51,15 @@ function(enable_project_options target_name)
     endif()
 
     # enable some more optimizations in release mode
-    target_compile_options(${target_name} INTERFACE $<$<CONFIG:RELEASE>:-fno-math-errno
-                                                    -fno-trapping-math -fno-stack-protector>)
+    target_compile_options(
+      ${target_name}
+      INTERFACE "$<$<CONFIG:RELEASE>:-fno-math-errno;-fno-trapping-math;-fno-stack-protector>")
 
     # enable some more options for better debugging
     target_compile_options(
-      ${target_name} INTERFACE $<$<CONFIG:DEBUG>:-fno-omit-frame-pointer
-                               -fno-optimize-sibling-calls -fno-inline-functions>)
+      ${target_name}
+      INTERFACE
+        "$<$<CONFIG:DEBUG>:-fno-omit-frame-pointer;-fno-optimize-sibling-calls;-fno-inline-functions>")
   endif()
 
   option(BINDINGS "Configure for building Python bindings")

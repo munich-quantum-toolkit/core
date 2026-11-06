@@ -73,7 +73,7 @@ pygments_style = "colorful"
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
     "numpy": ("https://numpy.org/doc/stable/", None),
-    "qiskit": ("https://docs.quantum.ibm.com/api/qiskit", None),
+    "qiskit": ("https://quantum.cloud.ibm.com/docs/api/qiskit", None),
     "pennylane": ("https://docs.pennylane.ai/en/stable/", None),
     "mqt": ("https://mqt.readthedocs.io/en/stable", None),
     "ddsim": ("https://mqt.readthedocs.io/projects/ddsim/en/stable", None),

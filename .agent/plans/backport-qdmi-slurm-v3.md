@@ -38,16 +38,16 @@ samplers and estimators from a backend.
 - [x] (2026-08-14) Added the optional-component wheel target needed by the
   faster stub build and regenerated the recursive stubs without a tracked
   result.
-- [x] (2026-08-14) Ported the applicable QDMI adapter changes from pull request
-      #2084, including its explicit primitive defaults and removal of the
-      generic `options` mapping. Retained only the compatible v3
+- [x] (2026-08-14) Ported the applicable QDMI adapter changes from pull
+      request #2084, including its explicit primitive defaults and removal of
+      the generic `options` mapping. Retained only the compatible v3
       `session_parameters` mapping.
 - [x] (2026-08-14) Ported the removal of dead pybind11 CMake support from pull
       request #2106 and the removal of `[tool.qdmi]` configuration from pull
       request #2116.
 - [x] (2026-08-14) Rescanned current `main` and added the compatible
-      documentation-build improvements from #1988 and repository guidance from
-      #2072. Rejected QIR, QCO, compiler-target, and OpenQASM changes whose
+      documentation-build improvements from #1988 and repository guidance
+      from #2072. Rejected QIR, QCO, compiler-target, and OpenQASM changes whose
       source layers do not exist on v3.
 - [x] (2026-08-14) Built and tested the complete non-MLIR native and Python
   surfaces and built the documentation with Sphinx-LLM.
