@@ -494,6 +494,9 @@ def test_native_qiskit_environment_filters_gates_by_width() -> None:
     """Build a width-specific basis while retaining Qiskit's control-flow support."""
     source = Target(num_qubits=4)
     source.add_instruction(XGate(), {(3,): None})
+    source.add_instruction(SXGate())
+    source.add_instruction(RZGate(Parameter("theta")))
+    source.add_instruction(Measure())
     source.add_instruction(Gate("wide", 2, []))
     source.add_instruction(Gate("unavailable", 1, []), {})
     source.add_instruction(Barrier(1))
@@ -501,18 +504,30 @@ def test_native_qiskit_environment_filters_gates_by_width() -> None:
     source.add_instruction(IfElseOp, name="if_else")
 
     environment = TargetEnvironment.from_qiskit(source, native_num_qubits=1, strict=True)
-    assert environment.target.num_sites == 1
-    assert environment.target.connectivity_kind == CompilerTarget.ConnectivityKind.ALL_TO_ALL
-    assert {operation.name for operation in environment.target.operations} == {"x", "gphase"}
-    assert environment.target.supports_operation("x", 1, 0, [0])
+    assert not environment.target.has_device_constraints
+    assert {operation.name for operation in environment.target.operations} == {"x", "sx", "rz", "measure", "gphase"}
+    assert environment.target.supports_operation("x", 1, 0)
     assert environment.payload_specification.format.format_id == "qiskit"
     assert any(
         capability.capability_id == ProgramCapability.FORWARD_BRANCHING
         for capability in environment.payload_specification.capabilities
     )
 
+    circuit = QuantumCircuit(1, 1)
+    circuit.x(0)
+    circuit.measure(0, 0)
+    with circuit.if_test((circuit.clbits[0], True)):
+        circuit.x(0)
+    circuit.measure(0, 0)
+    compiled = compile_program(circuit, target=environment)
+    assert compiled.num_qubits == circuit.num_qubits
+    assert compiled.layout is None
+    assert sample(compiled, shots=1) == {"0": 1}
+
     with pytest.raises(ValueError, match=r"unsupported operation.*'wide'"):
         TargetEnvironment.from_qiskit(source, native_num_qubits=2, strict=True)
+    with pytest.raises(ValueError, match="native_num_qubits must be positive"):
+        TargetEnvironment.from_qiskit(source, native_num_qubits=0, strict=True)
 
 
 @pytest.mark.parametrize("symbolic", [False, True])

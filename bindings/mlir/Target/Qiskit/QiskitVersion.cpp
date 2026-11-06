@@ -138,13 +138,14 @@ mlir::TargetEnvironment
 importTargetEnvironment(nb::handle source, std::optional<size_t> nativeWidth,
                         bool strict) {
   using Target = mlir::CompilerTarget;
+  if (nativeWidth == 0U) {
+    throw nb::value_error("native_num_qubits must be positive");
+  }
   const auto translation = selectTranslation();
   auto target =
       nativeWidth
-          ? unwrap(Target::create(*nativeWidth,
-                                  Target::Connectivity::allToAll(),
-                                  translation->importNativeOperations(
-                                      source, nb::none(), strict, nativeWidth)))
+          ? unwrap(Target::forGateSet(translation->importNativeOperations(
+                source, nb::none(), strict, nativeWidth)))
           : translation->importTarget(source, nb::none(), std::nullopt, strict);
   return {target, translation->payloadSpecification(source)};
 }

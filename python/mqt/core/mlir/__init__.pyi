@@ -692,9 +692,9 @@ class TargetEnvironment(Generic[_TargetResultT_co]):
 
         Args:
             source: Qiskit Target or BackendV2.
-            native_num_qubits: Use an all-to-all target of this positive width for
-                native synthesis. Ignore device placement and gates wider than this
-                width. None retains the device topology.
+            native_num_qubits: Build a gate-set target without device placement.
+                Pass the circuit's positive width to skip wider gates. None retains
+                the device topology.
             strict: Raise ValueError for an applicable gate or constraint that Core
                 cannot represent. By default, warn and omit unsupported gates.
 
