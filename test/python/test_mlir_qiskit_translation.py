@@ -1593,6 +1593,13 @@ def test_custom_gate_with_standard_name_is_not_mistranslated() -> None:
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
+def test_openqasm_standard_named_gate_preserves_definition() -> None:
+    """Honor an explicit gate body instead of the implicit standard gate."""
+    program = QCProgram.from_openqasm_str("OPENQASM 3; gate x q { U(0,0,0) q; } qubit q; x q;")
+
+    assert np.allclose(Operator(program.to_qiskit()).data, np.eye(2))
+
+
 def test_custom_gate_export_drops_unreferenced_functions() -> None:
     """Drop helper definitions that the exported circuit does not use."""
     program = QCProgram.from_mlir_str(
