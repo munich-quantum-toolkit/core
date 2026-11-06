@@ -1218,6 +1218,12 @@ public:
       }
 #endif
     }
+    if (kind == OperationKind::Barrier) {
+      const nb::object label = pythonOperation(index).attr("label");
+      if (!label.is_none()) {
+        result.barrierLabel = nb::cast<std::string>(label);
+      }
+    }
     result.standardGate = standardGateMapping(result.name);
     return result;
   }
@@ -2647,7 +2653,15 @@ public:
     checkExitCode(qk_circuit_reset(circuit_, qubit), "adding reset");
   }
 
-  void addBarrier(const std::vector<uint32_t>& qubits) override {
+  void addBarrier(const std::vector<uint32_t>& qubits,
+                  const std::optional<std::string>& label) override {
+    if (label) {
+      auto operation =
+          nb::module_::import_("qiskit.circuit")
+              .attr("Barrier")(qubits.size(), nb::arg("label") = *label);
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      return;
+    }
     checkExitCode(qk_circuit_barrier(circuit_, qubits.data(),
                                      static_cast<uint32_t>(qubits.size())),
                   "adding barrier");

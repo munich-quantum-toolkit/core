@@ -848,7 +848,7 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
     auto qcQubits = adaptor.getQubitsIn();
 
     // Create qc.barrier operation
-    qc::BarrierOp::create(rewriter, op.getLoc(), qcQubits);
+    qc::BarrierOp::create(rewriter, op.getLoc(), qcQubits, op.getLabelAttr());
 
     // Replace the output qubits with the same qc references
     rewriter.replaceOp(op, qcQubits);

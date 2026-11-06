@@ -2811,6 +2811,26 @@ def test_measurement_snapshot_survives_overwritten_destination(overwrite: str) -
     assert sample(restored, shots=1, seed=1) == {expected: 1}
 
 
+@pytest.mark.parametrize("compiled", [False, True], ids=["round-trip", "compiled"])
+def test_qiskit_barrier_labels(*, compiled: bool) -> None:
+    """Keep interior, consecutive, and trailing barrier labels on their wires."""
+    label = "phase \N{GREEK SMALL LETTER ALPHA}"
+    circuit = QuantumCircuit(2)
+    circuit.h(0)
+    circuit.barrier(0, label=label)
+    circuit.barrier(0, label="")
+    circuit.cx(0, 1)
+    circuit.barrier(0)
+    circuit.barrier(1, label="output")
+
+    result = compile_program(circuit) if compiled else QCProgram.from_qiskit(circuit).to_qiskit()
+    assert [
+        (item.operation.label, [result.find_bit(qubit).index for qubit in item.qubits])
+        for item in result.data
+        if item.operation.name == "barrier"
+    ] == [(label, [0]), ("", [0]), (None, [0]), ("output", [1])]
+
+
 @pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
 @pytest.mark.parametrize("gate", ["x", "swap", "reset", "barrier", "inv"])
 def test_delayed_measurement_store_across_quantum_operations(gate: str, *, via_qco: bool) -> None:
