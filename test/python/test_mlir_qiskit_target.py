@@ -174,6 +174,27 @@ def test_recompile_qiskit_physical_wires() -> None:
     assert mapped.layout is layout
 
 
+def test_layout_options_require_qiskit_input_or_output() -> None:
+    """Reject inapplicable layout options before consuming a typed input."""
+    circuit = QuantumCircuit(1)
+    circuit.x(0)
+    program = QCProgram.from_qiskit(circuit)
+    with pytest.raises(ValueError, match="ignore_input_layout=True requires a Qiskit circuit input"):
+        compile_program(program, output=OutputFormat.QISKIT, ignore_input_layout=True)
+    with pytest.raises(ValueError, match="include_output_layout=False requires Qiskit or explicit QPY output"):
+        compile_program(program, include_output_layout=False)
+    assert compile_program(program, output=OutputFormat.QISKIT, include_output_layout=False) == circuit
+
+    with pytest.raises(ValueError, match="include_output_layout=False"):
+        compile_program(circuit, output=OutputFormat.QC, include_output_layout=False)
+
+    backend = GenericBackendV2(1, basis_gates=["u"], seed=1)
+    payload = PayloadSpecification.from_program_format(ProgramFormat.QPY)
+    target = TargetEnvironment(CompilerTarget.from_qiskit(backend), payload)
+    with pytest.raises(ValueError, match="include_output_layout=False"):
+        compile_program([circuit], target=target, include_output_layout=False)
+
+
 def test_compile_program_target_without_measurement() -> None:
     """Allow unitary-only targets without accepting measurements on them."""
     target = Target(num_qubits=1)

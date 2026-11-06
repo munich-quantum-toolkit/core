@@ -739,9 +739,27 @@ qpyCircuit(mlir::QCProgram program,
     std::optional<OutputFormat> output, bool copy,
     const std::string& qcoPipeline, const mlir::CompilationOptions& options,
     const bool ignoreInputLayout, const bool includeOutputLayout) {
+  const bool compiledOutput =
+      !output && targetEnvironment &&
+      targetEnvironment->target().hasDeviceConstraints();
+  if (ignoreInputLayout || !includeOutputLayout) {
+    const auto circuitType = types.quantumCircuit();
+    const bool qiskitInput =
+        circuitType && types.inputType(program).is(circuitType);
+    if (ignoreInputLayout && !qiskitInput) {
+      throw nb::value_error(
+          "ignore_input_layout=True requires a Qiskit circuit input");
+    }
+    const bool qiskitOutput =
+        output ? *output == OutputFormat::Qiskit || *output == OutputFormat::QPY
+               : !compiledOutput && qiskitInput;
+    if (!includeOutputLayout && !qiskitOutput) {
+      throw nb::value_error(
+          "include_output_layout=False requires Qiskit or explicit QPY output");
+    }
+  }
   auto input = programFromInput(types, program, copy, ignoreInputLayout);
-  if (targetEnvironment && targetEnvironment->target().hasDeviceConstraints() &&
-      !output) {
+  if (compiledOutput) {
     auto compiled = [&] {
       const nb::gil_scoped_release release;
       return unwrap(mlir::CompiledProgram::compile(
@@ -2996,10 +3014,11 @@ Args:
         Custom pipelines require no target.
     options: Shared compilation controls.
     ignore_input_layout: Treat the current wires of a Qiskit input as fresh
-        program qubits. Defaults to False.
+        program qubits. Defaults to False. True requires a Qiskit circuit input.
     include_output_layout: Attach layout metadata to Qiskit and explicit QPY
         outputs when available. Defaults to True. Physical wire indices and
-        measurement destinations are preserved either way.
+        measurement destinations are preserved either way. False requires
+        Qiskit or explicit QPY output.
 
 Device defaults prefer QPY, OpenQASM 3, Adaptive QIR (binary, text), IQM JSON, then Base QIR
 (binary, text). Use a ``TargetEnvironment`` to select an exact execution format.

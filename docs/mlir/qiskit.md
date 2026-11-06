@@ -287,11 +287,12 @@ inputs without an attached layout. Set `ignore_input_layout=True` on
 `compile_program` to recompile a Qiskit circuit using its current wire order as
 the new input order. Set `include_output_layout=False` to omit the new layout
 from Qiskit or explicit QPY output while keeping its physical wires and
-measurement destinations. Use the conversion methods above to preserve an
-existing layout. The numeric mapping omits Qiskit input register names and input
-ancilla labels and requires complete layouts. See {doc}`MQT dialect <MQT>` for
-the metadata schema and {doc}`target compilation <target_compilation>` for
-placement.
+measurement destinations. These settings raise `ValueError` if the input or
+output format does not support them. Use the conversion methods above to
+preserve an existing layout. The numeric mapping omits Qiskit input register
+names and input ancilla labels and requires complete layouts. See
+{doc}`MQT dialect <MQT>` for the metadata schema and
+{doc}`target compilation <target_compilation>` for placement.
 
 Names passed between Qiskit and the compiler must not contain NUL characters.
 Loop lists with jumps and switch cases with variables are supported within the
