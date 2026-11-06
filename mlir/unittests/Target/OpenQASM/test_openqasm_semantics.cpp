@@ -986,7 +986,7 @@ sx q[0];
                                                   strict));
 }
 
-TEST(OpenQASMFrontendTest, StrictPolicyAllowsUserDefinedGateNames) {
+TEST(OpenQASMFrontendTest, AllowsUndeclaredStandardLibraryGateNames) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
 gate x q {
@@ -995,8 +995,16 @@ gate x q {
 qubit q;
 x q;
 )qasm";
-  const auto strict = openqasm::frontend::GatePolicy::Strict;
-  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(source, strict));
+  for (const auto policy : {
+           openqasm::frontend::GatePolicy::Strict,
+           openqasm::frontend::GatePolicy::MQTCompatibility,
+       }) {
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(source, policy);
+    ASSERT_TRUE(analyzed);
+    ASSERT_EQ(analyzed.program->gates.size(), 1);
+    EXPECT_EQ(analyzed.program->gates.front().name, "x");
+    EXPECT_FALSE(analyzed.program->gates.front().body.empty());
+  }
 }
 
 TEST(OpenQASMFrontendTest, RequiresGateDefinitionScopes) {
@@ -2158,8 +2166,8 @@ TEST(OpenQASMFrontendTest, RejectsInvalidProgramsAcrossSemanticFamilies) {
           .source = "OPENQASM 3.1; gate custom q {} gate custom q {}",
       },
       {
-          .name = "custom-gate-conflicts-with-catalog",
-          .source = "OPENQASM 3.1; gate x q {}",
+          .name = "custom-gate-conflicts-with-import",
+          .source = "OPENQASM 3.1; include \"stdgates.inc\"; gate x q {}",
       },
       {
           .name = "wrong-gate-parameter-count",
