@@ -58,3 +58,11 @@ void printArray(AsmPrinter& printer, const llvm::ArrayRef<Element> elements) {
 
 #define GET_ATTRDEF_CLASSES
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h.inc" // IWYU pragma: export
+
+namespace mlir {
+class Operation;
+namespace mqt {
+/// Whether the enclosing target requires retaining the program qubit interface.
+[[nodiscard]] bool preservesProgramQubits(Operation* operation);
+} // namespace mqt
+} // namespace mlir

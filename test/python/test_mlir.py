@@ -938,6 +938,7 @@ def test_compile_and_serialize_with_device_environment() -> None:
 
     restricted = TargetEnvironment(environment.target, PayloadSpecification(environment.payload_specification.format))
     restricted_program = compile_program(QASM_STRING, target=restricted)
+    assert isinstance(restricted_program, CompiledProgram)
     job = submit_program(restricted_program, target=device, num_shots=8)
     assert job.wait()
     assert sum(job.get_counts().values()) == 8

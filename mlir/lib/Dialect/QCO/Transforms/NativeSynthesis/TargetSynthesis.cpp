@@ -451,10 +451,11 @@ static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
                                                 const SiteMap& sites) {
   SmallVector<SiteId, 2> result;
   for (Value qubit : getQubitValues(operation->getOperands())) {
-    if (!sites.at(qubit)) {
+    const auto found = sites.find(qubit);
+    if (found == sites.end() || !found->second) {
       return {};
     }
-    result.push_back(*sites.at(qubit));
+    result.push_back(*found->second);
   }
   return result;
 }
@@ -1542,7 +1543,9 @@ protected:
           return capability.id == ProgramCapability::FORWARD_BRANCHING &&
                  capability.value == 0 && capability.constraints.empty();
         });
-    auto sites = collectStaticSites(moduleOp, indexed);
+    auto sites = target.hasDeviceConstraints()
+                     ? collectStaticSites(moduleOp, indexed)
+                     : FailureOr<SiteMap>(SiteMap{});
     if (failed(sites)) {
       signalPassFailure();
       return;
@@ -1655,7 +1658,9 @@ protected:
     }
     const CompilerTarget& target = environment.environment().target();
     const bool indexed = environment.environment().supportsIndexedQubits();
-    auto sites = collectStaticSites(moduleOp, indexed);
+    auto sites = target.hasDeviceConstraints()
+                     ? collectStaticSites(moduleOp, indexed)
+                     : FailureOr<SiteMap>(SiteMap{});
     if (failed(sites)) {
       signalPassFailure();
       return;
@@ -1765,7 +1770,7 @@ std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
 }
 
 void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
-  // Placement consumes allocations; native synthesis normalizes phases.
+  // Device placement consumes allocations; gate-set targets retain them.
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   // Reuse unchanged classical reads before native synthesis splits their uses.

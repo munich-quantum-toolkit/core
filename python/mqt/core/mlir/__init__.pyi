@@ -53,7 +53,7 @@ _CompilerInputT = TypeVar(
     OpenQASMProgram,
 )
 _SourceT = TypeVar("_SourceT", str, os.PathLike[str])
-_TargetResult: TypeAlias = qiskit.circuit.QuantumCircuit | CompiledProgram
+_TargetResult: TypeAlias = _CompilerOutput | CompiledProgram
 _TargetResultT_co = TypeVar("_TargetResultT_co", bound=_TargetResult, default=_TargetResult, covariant=True)
 
 class _CompileOptions(TypedDict, total=False, closed=True):
@@ -193,7 +193,7 @@ class PayloadSpecification(Generic[_TargetResultT_co]):
         payload_format: PayloadFormat,
         capabilities: Sequence[ProgramCapability] = (),
         optional_capabilities_known: bool = False,
-    ) -> PayloadSpecification[_TargetResult]: ...
+    ) -> PayloadSpecification[qiskit.circuit.QuantumCircuit | CompiledProgram]: ...
     @staticmethod
     def from_program_format(program_format: mqt.core.qdmi.ProgramFormat) -> PayloadSpecification[CompiledProgram]:
         """The standard contract for a QDMI program format."""
@@ -546,6 +546,14 @@ class CompilerTarget:
             """The explicit operations, if present."""
 
     @staticmethod
+    def for_gate_set(native_operations: CompilerTarget.NativeOperations) -> CompilerTarget:
+        """Create a gate-set target without device constraints."""
+
+    @property
+    def has_device_constraints(self) -> bool:
+        """Whether compilation assigns program qubits to device sites."""
+
+    @staticmethod
     def from_device(device: Device) -> CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
 
@@ -665,9 +673,14 @@ class CompilerTarget:
 class TargetEnvironment(Generic[_TargetResultT_co]):
     """A compiler target and its selected payload specification."""
 
-    def __init__(
-        self, target: CompilerTarget, payload_specification: PayloadSpecification[_TargetResultT_co]
-    ) -> None: ...
+    @overload
+    def __new__(
+        cls, target: CompilerTarget, payload_specification: PayloadSpecification[qiskit.circuit.QuantumCircuit]
+    ) -> TargetEnvironment[qiskit.circuit.QuantumCircuit]: ...
+    @overload
+    def __new__(
+        cls, target: CompilerTarget, payload_specification: PayloadSpecification
+    ) -> TargetEnvironment[_TargetResult]: ...
     @staticmethod
     def from_qiskit(
         source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
@@ -679,9 +692,9 @@ class TargetEnvironment(Generic[_TargetResultT_co]):
 
         Args:
             source: Qiskit Target or BackendV2.
-            native_num_qubits: Use an all-to-all target of this positive width for
-                native synthesis. Ignore device placement and gates wider than this
-                width. None retains the device topology.
+            native_num_qubits: Build a gate-set target without device placement.
+                Pass the circuit's positive width to skip wider gates. None retains
+                the device topology.
             strict: Raise ValueError for an applicable gate or constraint that Core
                 cannot represent. By default, warn and omit unsupported gates.
 
@@ -1900,7 +1913,7 @@ def compile_program(
     output: OutputFormat,
     **kwargs: Unpack[_CompileOptions],
 ) -> list[_CompilerOutput]:
-    """Compile a program or a homogeneous sequence for an optional hardware target.
+    """Compile a program or a homogeneous sequence for a gate set or hardware target.
 
     A sequence returns a list in input order, including for empty and singleton
     inputs. Elements must share one supported input kind; subclasses are accepted.
@@ -1908,11 +1921,18 @@ def compile_program(
 
     An explicit ``output`` selects each result's representation. Without it, a
     Qiskit target or Qiskit payload environment selects QuantumCircuit. A QDMI
-    backend, device or other target environment selects :class:`CompiledProgram`
-    for :func:`submit_program`. Otherwise, each input
-    retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
+    backend, device or other device target environment selects :class:`CompiledProgram`
+    for :func:`submit_program`. Otherwise, each input retains its format family:
+    OpenQASM source returns :class:`OpenQASMProgram`,
     QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
     QCO inputs return optimized QCO.
+
+    A target created by ``CompilerTarget.for_gate_set`` synthesizes gates without device placement.
+    It preserves program-qubit order and idle qubits, including terminal permutations,
+    and retains the input format family by default. Inputs must have fixed-width
+    entry-block allocations and no static qubits or layout metadata. Site-specific
+    capabilities are rejected; ``NativeOperations.from_qiskit`` imports gates
+    without physical placement.
 
     Typed MLIR inputs are consumed; set ``copy=True`` to preserve them. Source text,
     paths, Qiskit circuits and OpenQASM programs remain reusable. Sequence input

@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
@@ -102,6 +103,10 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
 
   LogicalResult matchAndRewrite(AllocOp allocOp,
                                 PatternRewriter& rewriter) const override {
+    if (mqt::preservesProgramQubits(allocOp)) {
+      return failure();
+    }
+
     auto oldSize = getConstantIntValue(allocOp.getSize());
     if (!oldSize || *oldSize <= 0) {
       return failure();

@@ -22,6 +22,7 @@
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Support/Passes.h"
@@ -57,6 +58,7 @@
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -491,6 +493,9 @@ static void insertResonatorMoves(ModuleOp module,
 
 LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
                                            const CompilationOptions& options) {
+  if (!environment.target().hasDeviceConstraints()) {
+    return synthesizeForTarget(environment, options);
+  }
   auto routing = inspect().numQubits == 0
                      ? Expected<CompilerTarget>(environment.target())
                      : placementTarget(environment.target());
@@ -880,6 +885,7 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
                   const CompilationOptions& options) {
   if (output == ProgramFormat::IQMJSON &&
       (environment == nullptr ||
+       !environment->target().hasDeviceConstraints() ||
        environment->target().nativeOperationsKind() ==
            CompilerTarget::NativeOperations::Kind::Unrestricted)) {
     return createStringError(std::errc::invalid_argument,

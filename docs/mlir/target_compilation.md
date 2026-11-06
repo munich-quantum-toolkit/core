@@ -39,15 +39,16 @@ print(f"Counts: {job.get_counts()}")
 `target` accepts a device, registered device ID,
 {py:class}`~mqt.core.mlir.CompilerTarget`,
 {py:class}`~mqt.core.mlir.TargetEnvironment`, or Qiskit backend/target. Device,
-`QDMIBackend`, and non-Qiskit environment targets return a `CompiledProgram`.
-Other Qiskit backends, targets, and Qiskit payload environments return a
-`QuantumCircuit`. An explicit `output` selects another representation. For a
-`CompilerTarget`, the default preserves the input's program family.
+`QDMIBackend`, and non-Qiskit device environment targets return a
+`CompiledProgram`. Other Qiskit backends, targets, and Qiskit payload
+environments return a `QuantumCircuit`. An explicit `output` selects another
+representation. For a `CompilerTarget` or a non-Qiskit gate-set environment, the
+default preserves the input's program family.
 
 Use `TargetEnvironment.from_qiskit(target, strict=True)` to reject applicable
 gates or constraints Core cannot represent. It imports control flow as payload
-capabilities. For native synthesis, pass `native_num_qubits` to use an
-all-to-all target of that width and skip gates that cannot fit.
+capabilities. For native synthesis, pass the circuit's width as
+`native_num_qubits` to import a gate-set target and skip wider gates.
 
 A list or tuple of one input kind returns results in input order. Typed MLIR
 inputs are consumed unless `copy=True`; source text and Qiskit circuits remain
@@ -81,6 +82,14 @@ reduction or MOVE insertion.
 IQM execution requires its default
 [full MOVE frame tracking](https://docs.iqm.tech/iqm-client/api/iqm.iqm_client.models.CircuitCompilationOptions.html)
 to correct MOVE frames.
+
+### Unused qubits
+
+Canonicalization retains owned qubit allocations. The `remove-unused-qubits`
+pass removes unused allocation/release pairs; QC and QTensor register-shrinking
+passes remove unused register slots. These transformations retain program qubits
+when a gate-set target is attached. Device compilation performs this cleanup
+before placement checks device capacity.
 
 ### Choose a format
 
@@ -273,13 +282,34 @@ failed pass can leave the supplied environment and earlier changes on the
 program; copy the input before trying another sequence. A pipeline parsing error
 leaves the program unchanged.
 
+### Gate-set synthesis
+
+Create a target with {py:meth}`~mqt.core.mlir.CompilerTarget.for_gate_set` to
+synthesize a program into native gates without device placement:
+
+```python
+gates = CompilerTarget.NativeOperations.from_qiskit(qiskit_target)
+target = CompilerTarget.for_gate_set(gates)
+native = compile_program(circuit, target=target)
+```
+
+The result preserves program-qubit order, terminal permutations, and idle
+qubits. Qiskit output has no layout metadata; OpenQASM output declares program
+qubits. The default output follows the input format family; an environment with
+a Qiskit payload selects Qiskit output. Each circuit in a sequence retains its
+own width. Inputs must use fixed-width qubit allocations in the entry block,
+without static qubits or existing layout metadata. Manually constructed
+capabilities with site-specific placements are rejected.
+
 ### Synthesis without routing
 
 {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` translates to native
-gates while preserving static site IDs. Dynamic qubits require all-to-all
-connectivity. This method does not place qubits or require measurement support.
-It checks target support and topology; it mutates the program, including on
-failure, so copy first when needed.
+gates. Gate-set targets preserve the program qubit interface as described above.
+For device targets, dynamic qubits require all-to-all connectivity. Dynamic
+qubits are assigned target sites; static qubits retain their site IDs. This
+method does not require measurement support. It checks target support and
+topology; it mutates the program, including on failure, so copy first when
+needed.
 
 ### Payload control flow
 

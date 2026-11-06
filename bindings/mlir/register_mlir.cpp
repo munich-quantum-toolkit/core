@@ -735,7 +735,8 @@ qpyCircuit(mlir::QCProgram program,
     std::optional<OutputFormat> output, bool copy,
     const std::string& qcoPipeline, const mlir::CompilationOptions& options) {
   auto input = programFromInput(types, program, copy);
-  if (targetEnvironment && !output) {
+  if (targetEnvironment && targetEnvironment->target().hasDeviceConstraints() &&
+      !output) {
     auto compiled = [&] {
       const nb::gil_scoped_release release;
       return unwrap(mlir::CompiledProgram::compile(
@@ -1778,6 +1779,17 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
           "The explicit operations, if present.");
 
   compilerTarget
+      .def_static(
+          "for_gate_set",
+          [](mlir::CompilerTarget::NativeOperations operations) {
+            return unwrap(
+                mlir::CompilerTarget::forGateSet(std::move(operations)));
+          },
+          "native_operations"_a,
+          "Create a gate-set target without device constraints.")
+      .def_prop_ro(
+          "has_device_constraints", &mlir::CompilerTarget::hasDeviceConstraints,
+          "Whether compilation assigns program qubits to device sites.")
       .def(
           "__init__",
           [](mlir::CompilerTarget& self, const size_t numSites,
@@ -1990,9 +2002,9 @@ Args:
 
 Args:
     source: Qiskit Target or BackendV2.
-    native_num_qubits: Use an all-to-all target of this positive width for
-        native synthesis. Ignore device placement and gates wider than this
-        width. None retains the device topology.
+    native_num_qubits: Build a gate-set target without device placement.
+        Pass the circuit's positive width to skip wider gates. None retains
+        the device topology.
     strict: Raise ValueError for an applicable gate or constraint that Core
         cannot represent. By default, warn and omit unsupported gates.
 
@@ -2934,7 +2946,7 @@ and error contracts.)pb");
       "program"_a, nb::kw_only(), "target"_a = nb::none(),
       "output"_a = nb::none(), "copy"_a = false,
       "qco_pipeline"_a = "mqt-qco-default", "options"_a = nb::none(),
-      R"pb(Compile a program or a homogeneous sequence for an optional hardware target.
+      R"pb(Compile a program or a homogeneous sequence for a gate set or hardware target.
 
 A sequence returns a list in input order, including for empty and singleton
 inputs. Elements must share one supported input kind; subclasses are accepted.
@@ -2942,11 +2954,18 @@ Strings and paths are single inputs. Generators and binary buffers are unsupport
 
 An explicit ``output`` selects each result's representation. Without it, a
 Qiskit target or Qiskit payload environment selects QuantumCircuit. A QDMI
-backend, device or other target environment selects :class:`CompiledProgram`
-for :func:`submit_program`. Otherwise, each input
-retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
+backend, device or other device target environment selects :class:`CompiledProgram`
+for :func:`submit_program`. Otherwise, each input retains its format family:
+OpenQASM source returns :class:`OpenQASMProgram`,
 QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
 QCO inputs return optimized QCO.
+
+A target created by ``CompilerTarget.for_gate_set`` synthesizes gates without device placement.
+It preserves program-qubit order and idle qubits, including terminal permutations,
+and retains the input format family by default. Inputs must have fixed-width
+entry-block allocations and no static qubits or layout metadata. Site-specific
+capabilities are rejected; ``NativeOperations.from_qiskit`` imports gates
+without physical placement.
 
 Typed MLIR inputs are consumed; set ``copy=True`` to preserve them. Source text,
 paths, Qiskit circuits and OpenQASM programs remain reusable. Sequence input

@@ -11,6 +11,16 @@
 
 include "mlir/Pass/PassBase.td"
 
+def RemoveUnusedQubits : Pass<"remove-unused-qubits", "mlir::ModuleOp"> {
+  let summary = "Remove unused quantum allocation and release pairs";
+  let description = [{
+    Removes unused QC and QCO qubits and QTensor registers. Gate-set targets
+    retain their program qubits. Run after canonicalization and before device
+    placement to avoid counting idle allocations against device capacity.
+    Register shrinking is handled by the corresponding QC and QTensor passes.
+  }];
+}
+
 def LowerQuantumModifiers : Pass<"lower-quantum-modifiers"> {
   let dependentDialects = ["mlir::arith::ArithDialect",
                            "mlir::math::MathDialect", "mlir::qc::QCDialect",

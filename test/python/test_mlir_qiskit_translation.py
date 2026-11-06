@@ -50,6 +50,7 @@ from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
     CompilationOptions,
+    CompiledProgram,
     CompilerTarget,
     MappingOptions,
     OutputFormat,
@@ -4749,6 +4750,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str, 
         target=TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY)),
         options=None,
     )
+    assert isinstance(payload, CompiledProgram)
     assert isinstance(payload.payload, bytes)
     restored = qpy.load(BytesIO(payload.payload))[0]
     assert restored.layout is not None
@@ -4773,6 +4775,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str, 
     if disabled_site:
         environment = TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY))
         artifact = compile_program(circuit, target=environment)
+        assert isinstance(artifact, CompiledProgram)
         payload = artifact.payload
         assert isinstance(payload, bytes)
         restored = qpy.load(BytesIO(payload))[0]
@@ -5263,6 +5266,7 @@ def test_zero_readout_retains_known_classical_outputs(program_format: ProgramFor
     target = CompilerTarget.from_device(open_device("mqt.ddsim.default"))
     environment = TargetEnvironment(target, PayloadSpecification.from_program_format(program_format))
     program = serialize_program(circuit, target=environment) if native else compile_program(circuit, target=environment)
+    assert isinstance(program, CompiledProgram)
     assert program.result_width == 2
     assert program.result_layout is None
     if program_format == ProgramFormat.QPY:

@@ -27,6 +27,7 @@
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QC/Translation/MeasurementStores.h"
+#include "mqt/Dialect/QC/Translation/QubitReferences.h"
 #include "mqt/Support/IntegerExpressions.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 #include "mqt/Target/OpenQASM/GateCatalog.h"
@@ -325,6 +326,7 @@ private:
   func::FuncOp function;
   raw_indented_ostream* output = nullptr;
   DenseMap<Value, Resource> resources;
+  DenseSet<Value> qubitReferenceStorage_;
   SmallVector<Value> resourceOrder;
   DenseMap<Value, std::string> valueNames;
   DenseSet<Value> returnedRegisters;
@@ -1105,6 +1107,45 @@ private:
           continue;
         }
         auto type = alloc.getType();
+        if (isa<qc::QubitType>(type.getElementType())) {
+          auto elements = collectQubitReferences(alloc);
+          if (failed(elements)) {
+            return failure();
+          }
+          if (elements->empty()) {
+            return fail(alloc, "qubit reference storage must not be empty");
+          }
+          auto* begin = llvm::find(resourceOrder, elements->front());
+          if (begin == resourceOrder.end() ||
+              static_cast<size_t>(resourceOrder.end() - begin) <
+                  elements->size() ||
+              !llvm::equal(*elements,
+                           ArrayRef<Value>(begin, elements->size())) ||
+              llvm::any_of(*elements, [&](Value qubit) {
+                return !qubit.getDefiningOp<qc::AllocOp>() ||
+                       !resources.at(qubit).scalar;
+              })) {
+            return fail(
+                alloc,
+                "qubit reference storage requires consecutive program qubits");
+          }
+          const auto attr = alloc->getAttrOfType<StringAttr>(
+              mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+          const auto name =
+              qubitRegisterName(attr ? attr.getValue() : StringRef{});
+          resources.try_emplace(alloc, Resource{
+                                           .kind = ResourceKind::Qubit,
+                                           .name = name,
+                                           .width = type.getDimSize(0),
+                                       });
+          for (auto [index, qubit] : llvm::enumerate(*elements)) {
+            valueNames[qubit] = (Twine(name) + "[" + Twine(index) + "]").str();
+          }
+          auto* position = resourceOrder.erase(begin, begin + elements->size());
+          resourceOrder.insert(position, alloc);
+          qubitReferenceStorage_.insert(alloc);
+          continue;
+        }
         if (!type.hasStaticShape() || type.getRank() < 1 ||
             type.getRank() > 7 || !type.getLayout().isIdentity() ||
             type.getMemorySpace() ||
@@ -1464,6 +1505,14 @@ private:
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
     llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
+    if (auto store = dyn_cast<memref::StoreOp>(&operation);
+        store && qubitReferenceStorage_.contains(store.getMemRef())) {
+      return success();
+    }
+    if (auto storage = dyn_cast<memref::AllocaOp>(&operation);
+        storage && qubitReferenceStorage_.contains(storage)) {
+      return success();
+    }
     if (version2_ && isa<scf::ForOp, scf::WhileOp, scf::IndexSwitchOp,
                          cbit::WriteOp, memref::StoreOp, memref::CopyOp,
                          memref::AllocaOp, tensor::ExtractOp>(&operation)) {
@@ -3061,13 +3110,15 @@ private:
     if (nativeTarget_ && callee.isExternal()) {
       SmallVector<CompilerTarget::SiteId> sites;
       SmallVector<std::optional<double>> parameters;
+      size_t arity = 0;
       for (auto operand : operands) {
         if (operand.getType().isF64()) {
           parameters.push_back(mqt::valueToDouble(operand));
         } else if (auto site = operand.getDefiningOp<StaticOp>()) {
           sites.push_back(static_cast<CompilerTarget::SiteId>(site.getIndex()));
+          ++arity;
         } else {
-          return fail(operation, "native gates require static target sites");
+          ++arity;
         }
       }
       StringRef canonical = call.symbol;
@@ -3081,8 +3132,11 @@ private:
         canonical = "r";
       }
       const auto selected = nativeTarget_->findOperation(
-          canonical, sites.size(), parameters, sites, 0,
-          [this, &call, nativePulse](const auto& capability) {
+          canonical, arity, parameters,
+          sites.size() == arity
+              ? std::optional<ArrayRef<CompilerTarget::SiteId>>(sites)
+              : std::nullopt,
+          0, [this, &call, nativePulse](const auto& capability) {
             return (!nativePulse || capability.name() == call.symbol) &&
                    hasCompatibleNativeMeaning(capability);
           });
@@ -3115,17 +3169,18 @@ private:
     if (!nativeTarget_) {
       return success();
     }
-    auto physical = qubit.getDefiningOp<StaticOp>();
-    if (physical) {
-      const std::array sites{
-          static_cast<CompilerTarget::SiteId>(physical.getIndex()),
-      };
-      const auto match = nativeTarget_->findOperation(
-          name, 1, {}, sites, 0,
-          [name](const auto& capability) { return capability.name() == name; });
-      if (match.capability != nullptr) {
-        return success();
-      }
+    SmallVector<CompilerTarget::SiteId, 1> sites;
+    if (auto physical = qubit.getDefiningOp<StaticOp>()) {
+      sites.push_back(static_cast<CompilerTarget::SiteId>(physical.getIndex()));
+    }
+    const auto match = nativeTarget_->findOperation(
+        name, 1, {},
+        sites.empty() ? std::nullopt
+                      : std::optional<ArrayRef<CompilerTarget::SiteId>>(sites),
+        0,
+        [name](const auto& capability) { return capability.name() == name; });
+    if (match.capability != nullptr) {
+      return success();
     }
     return fail(operation,
                 "target operation cannot be emitted as native OpenQASM");
@@ -3154,11 +3209,15 @@ private:
     SmallVector<CompilerTarget::SiteId> sites;
     for (auto qubit : qubits) {
       auto physical = qubit.getDefiningOp<StaticOp>();
-      if (!physical) {
-        return fail(unitary, "native OpenQASM gates require physical qubits");
+      if (physical) {
+        sites.push_back(
+            static_cast<CompilerTarget::SiteId>(physical.getIndex()));
       }
-      sites.push_back(static_cast<CompilerTarget::SiteId>(physical.getIndex()));
     }
+    const auto knownSites =
+        sites.size() == qubits.size()
+            ? std::optional<ArrayRef<CompilerTarget::SiteId>>(sites)
+            : std::nullopt;
     SmallVector<std::optional<double>> parameters;
     for (auto parameter : body.getParameters()) {
       parameters.push_back(mqt::valueToDouble(parameter));
@@ -3172,15 +3231,15 @@ private:
              (openqasm::frontend::isValidIdentifier(operation.name()) ||
               (symbol == "gphase" && operation.name() == "gphase"));
     };
-    auto selected =
-        nativeTarget_->findOperation(symbol, qubits.size(), parameters, sites,
-                                     controlCount, compatibleSpelling);
+    auto selected = nativeTarget_->findOperation(
+        symbol, qubits.size(), parameters, knownSites, controlCount,
+        compatibleSpelling);
     const bool promoteU2 = selected.capability == nullptr && symbol == "u2";
     if (promoteU2) {
       parameters.insert(parameters.begin(), std::numbers::pi / 2);
-      selected =
-          nativeTarget_->findOperation("u", qubits.size(), parameters, sites,
-                                       controlCount, compatibleSpelling);
+      selected = nativeTarget_->findOperation("u", qubits.size(), parameters,
+                                              knownSites, controlCount,
+                                              compatibleSpelling);
     }
     const auto [capability, genericControls] = selected;
     if (capability == nullptr) {

@@ -2500,7 +2500,7 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
                    MQT_NAMED_BUILDER(staticQubitsCanonical)},
         QCTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
-                   MQT_NAMED_BUILDER(emptyQC)}));
+                   MQT_NAMED_BUILDER(allocDeallocPair)}));
 
 // UnrollModifiers
 static LogicalResult runUnrollModifiers(ModuleOp moduleOp) {

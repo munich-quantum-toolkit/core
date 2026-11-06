@@ -28,7 +28,7 @@ __lazy_modules__ = {
 
 from math import pi
 from numbers import Integral
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from qiskit.circuit import (
     Barrier,
@@ -522,7 +522,12 @@ class QDMIBackend(BackendV2):
             if isinstance(circuits, QuantumCircuit)
             else [self._preprocess_circuit(circuit) for circuit in circuits]
         )
-        return compile_program(circuits, target=self._environment, options=options)
+        result = compile_program(circuits, target=self._environment, options=options)
+        if isinstance(result, list):
+            assert all(isinstance(program, CompiledProgram) for program in result)
+            return cast("list[CompiledProgram]", result)
+        assert isinstance(result, CompiledProgram)
+        return result
 
     def run(
         self,

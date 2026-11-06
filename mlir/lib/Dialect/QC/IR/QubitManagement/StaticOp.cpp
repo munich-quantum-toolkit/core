@@ -21,30 +21,6 @@ using namespace mlir::qc;
 
 namespace {
 
-/// Remove matching allocation-deallocation pairs.
-struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(DeallocOp op,
-                                PatternRewriter& rewriter) const override {
-    // Get the AllocOp defining the qubit
-    auto allocOp = op.getQubit().getDefiningOp<AllocOp>();
-    if (!allocOp) {
-      return failure();
-    }
-
-    // Check if the qubit has no other uses
-    if (!op.getQubit().hasOneUse()) {
-      return failure();
-    }
-
-    // Remove the AllocOp and the DeallocOp
-    rewriter.eraseOp(op);
-    rewriter.eraseOp(allocOp);
-    return success();
-  }
-};
-
 struct HoistStaticQubit final : OpRewritePattern<StaticOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -63,11 +39,6 @@ struct HoistStaticQubit final : OpRewritePattern<StaticOp> {
 };
 
 } // namespace
-
-void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                            MLIRContext* context) {
-  results.add<RemoveAllocDeallocPair>(context);
-}
 
 void StaticOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
