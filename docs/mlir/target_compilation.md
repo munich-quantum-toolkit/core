@@ -445,11 +445,12 @@ attaches available placement and routing information, including unused sites, as
 a `TranspileLayout`. Apply the layout when remapping observables. See
 [transpiler layouts](qiskit.md#transpiler-layouts) for layout options.
 
-For lower-level export with `to_qiskit(target=compiler_target)`, static site IDs
-map to positions in `compiler_target.sites`. The result has one `q` register
-with `compiler_target.num_sites` qubits. Passing the recorded target is required
-to reconstruct its layout. Target-free export keeps static IDs but omits layout
-metadata.
+When `to_qiskit(target=compiler_target)` exports for a device, static site IDs
+are physical wire indices. The `q` register extends through the highest site ID
+in the compiler target, with idle wires at gaps. For example, sites `1` and `3`
+produce a four-qubit register with operations on wires `1` and `3`. Pass the
+recorded target to reconstruct the device layout. Target-free export retains
+static site IDs and omits the device layout.
 
 ## Layout metadata
 
