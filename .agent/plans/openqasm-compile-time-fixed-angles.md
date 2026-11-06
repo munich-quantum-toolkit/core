@@ -46,9 +46,8 @@ OpenQASM-specific metadata to MLIR.
 
 ## Decisions
 
-- Support fixed-width angles only as compile-time values. Rationale: the
-  requested use case does not require runtime angle storage, and the existing
-  backend interfaces use binary64 gate parameters.
+- Support fixed-width angles only as compile-time values. Rationale: backend
+  interfaces use binary64 gate parameters rather than fixed-width storage.
 
 - Keep fixed-angle state private to
   `mlir/lib/Target/OpenQASM/OpenQASMSemantics.cpp`. Rationale: no other format

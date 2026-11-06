@@ -168,7 +168,3 @@ requires stronger alias reasoning and remains outside this cleanup.
 
 C++ lint passes with zero findings, and general lint passes. No remote state was
 changed.
-
-Revision note (2026-09-03): Consolidated the superseded comparison plan,
-recorded the specialist and adversarial review, and made cleanup validation
-explicit.

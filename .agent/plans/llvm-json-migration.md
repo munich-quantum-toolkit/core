@@ -49,10 +49,9 @@ peak RSS is a separate measure and does not establish a memory saving.
 Local validation passed 4,089 native tests, 2,036 Python tests, full
 changed-file C++ lint, repository lint, executable documentation and local link
 checks, and an installed CMake consumer without CoreJSON. The trimmed benchmark
-section was inspected in Chrome. One specialist Ponytail review found a
-numeric-spelling test that no longer exercised a floating token; the test now
-supplies that token directly. Mutants for locale-sensitive IQM output, rounded
-large parameters, and a zero-allocation DD usage ratio each fail their targeted
+section was inspected in Chrome. The numeric-spelling test supplies a floating
+token directly. Mutants for locale-sensitive IQM output, rounded large
+parameters, and a zero-allocation DD usage ratio each fail their targeted
 regression. DD reports also match 12 independently parsed pre-change reports;
 the comma-locale regression fails against the previous installed library.
 

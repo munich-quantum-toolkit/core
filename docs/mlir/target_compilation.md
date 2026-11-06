@@ -46,8 +46,8 @@ representation. For a `CompilerTarget` or a non-Qiskit gate-set environment, the
 default preserves the input's program family.
 
 Use `TargetEnvironment.from_qiskit(target, strict=True)` to reject applicable
-gates or constraints Core cannot represent. It imports control flow as payload
-capabilities. For native synthesis, pass the circuit's width as
+gates or constraints MQT Core cannot represent. It imports control flow as
+payload capabilities. For native synthesis, pass the circuit's width as
 `native_num_qubits` to import a gate-set target and skip wider gates.
 
 A list or tuple of one input kind returns results in input order. Typed MLIR
@@ -69,7 +69,7 @@ Target compilation places qubits only on sites with a supported single-qubit
 gate. If the target supports measurement, these sites must also support readout.
 With explicit couplings, it uses their largest connected component, including
 connections through resonators. Targets with ordered `move(qubit, resonator)`
-placements can route CZ gates through idle resonators. Core emits closed
+placements can route CZ gates through idle resonators. MQT Core emits closed
 `move; cz; move` sandwiches before readout. Use
 `compile_program(circuit, target=device)` with `submit_program`,
 `backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.
@@ -461,7 +461,7 @@ snapshots for staged compilation with a `TargetEnvironment`.
 Providers can report parameter constraints as a NUL-terminated UTF-8 JSON string
 in `QDMI_OPERATION_PROPERTY_CUSTOM2`, queried without sites or parameter values.
 This versioned contract is temporary and is **not part of the QDMI standard**.
-Core reads it for native compiler targets and the generic Qiskit backend.
+MQT Core reads it for native compiler targets and the generic Qiskit backend.
 
 For example, an RX operation restricted to two angles reports:
 
@@ -492,9 +492,10 @@ custom property when QDMI provides a standard parameter-domain contract; see
 
 ## Qiskit export
 
-`compile_program(circuit, target=...)` returns physical device indices and
-preserves the full Qiskit `TranspileLayout`, including routing and unused sites.
-Apply that layout when remapping observables.
+Qiskit output for a device uses physical qubit indices. By default, Core
+attaches available placement and routing information, including unused sites, as
+a `TranspileLayout`. Apply the layout when remapping observables. See
+[transpiler layouts](qiskit.md#transpiler-layouts) for layout options.
 
 For lower-level export with `to_qiskit(target=compiler_target)`, static site IDs
 map to positions in `compiler_target.sites`. The result has one `q` register
@@ -507,9 +508,9 @@ metadata.
 Dynamic target compilation attaches placement and routing metadata when the
 input has fixed-size entry-block allocations. Static programs already name
 physical sites; compilation preserves those IDs and does not attach a layout.
-Static and dynamic qubits cannot be mixed. Compilation rejects an already
-attached layout. See [custom pass sequences](#custom-pass-sequences) for layout
-preservation between passes and
+Static and dynamic qubits cannot be mixed. Native target compilation rejects an
+already attached layout. See [custom pass sequences](#custom-pass-sequences) for
+layout preservation between passes and
 [transpiler layouts](qiskit.md#transpiler-layouts) for the import and export
 contract.
 

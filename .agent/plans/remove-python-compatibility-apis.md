@@ -54,7 +54,6 @@ MQT Core now exposes the QDMI API through the `qdmi` C++ namespace,
 no compatibility-module file, and exposes no Python `Session` class. Installed
 C++ packages contain no FoMaC header, namespace, library, or target.
 
-The final review removed an unrelated ownership statement from the driver guide.
 The migration guide is the single place that explains the removed APIs and their
 replacements. No compatibility tombstone or duplicate runtime path remains.
 

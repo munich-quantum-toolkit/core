@@ -210,6 +210,12 @@ existing explanation or example first. Include behavior, usage, and limits that
 help the reader. Keep internal representation and validation details in the
 owning reference and link to it instead of repeating them in user guides.
 
+Keep conversations, prompts, and iteration history out of code comments, pull
+request descriptions, and other maintainer-facing prose. Write for readers who
+have not seen the conversation. Prefer comments that explain current behavior
+and rationale. Instead of "preserve the existing behavior", state the actual
+backwards-compatibility constraint.
+
 Apply [Orwell's six rules for writing][orwell] to documentation, comments,
 diagnostics, tests, commit messages, and review communication:
 

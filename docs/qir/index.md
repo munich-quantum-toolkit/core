@@ -104,11 +104,11 @@ and bounded Base loop unrolling. It also consumes typed MLIR programs unless
 ## Execute LLVM text or bitcode
 
 For a synchronous result, pass LLVM text as `str` or bitcode as `bytes` to
-`sample` or `simulate`. Core reads the entry point's Base or Adaptive profile
-and the QIR version from module metadata. QIR supports seed `0` for randomness
-and positive signed 32-bit seeds. Reproducibility requires the same program,
-build, execution path, and worker configuration. A profile declaration is not
-LLVM conformance validation. Use the QDMI job API below for asynchronous
+`sample` or `simulate`. MQT Core reads the entry point's Base or Adaptive
+profile and the QIR version from module metadata. QIR supports seed `0` for
+randomness and positive signed 32-bit seeds. Reproducibility requires the same
+program, build, execution path, and worker configuration. A profile declaration
+is not LLVM conformance validation. Use the QDMI job API below for asynchronous
 execution and additional result types.
 
 ```{code-cell} ipython3
@@ -342,8 +342,8 @@ accepts one exact LLVM type for each runtime declaration, so unsupported or
 outdated overloads fail before execution. Present version flags must be
 nonnegative integers with major version 2. Future minor versions are accepted
 assuming existing constructs and runtime ABIs remain compatible; unsupported
-runtime calls still fail. Authored programs without version flags retain their
-existing behavior.
+runtime calls still fail. Authored programs without version flags are accepted;
+their runtime declarations still undergo the same type checks.
 
 Classical array copies require ranked memrefs. Fixed contiguous copies use
 [LLVM array loads and stores](https://github.com/qir-alliance/qir-spec/blob/2.1/specification/Memory_Management.md#supported-llvm-array-operations);

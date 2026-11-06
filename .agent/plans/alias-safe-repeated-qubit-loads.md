@@ -195,11 +195,6 @@ width-dependent `scf.index_switch`.
   dialect conversion prevents assertion and dominance failures without adding
   alias analysis.
 
-- After the complete release build, CTest matrix, hooks, and one Python session
-  passed, limit the final iterations to the affected conversion binary,
-  changed-line clang-tidy, and compiler smokes. Rationale: The user explicitly
-  requested shorter iterations once the broad validation was working.
-
 - Keep both pre- and post-mapping QCO cleanup in target compilation. Rationale:
   The existing cleanup canonicalizes operation-local QTensor access into the
   mapper's supported form without adding a bespoke transformation, while the

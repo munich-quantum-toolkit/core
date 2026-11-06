@@ -877,8 +877,8 @@ public:
       // Array-valued parameters specialize the definition, not its scalar
       // call signature. Compare those definitions in one fallback bucket.
     }
-    // ponytail: use a structural circuit hash if many same-signature Gate
-    // definitions become common.
+    // Definitions with equal signatures can have different bodies; compare
+    // them within each hash bucket.
     auto& bucket =
         definitions_[llvm::StringRef(name.data(), name.size())][parameterHash];
     for (const auto& entry : bucket) {

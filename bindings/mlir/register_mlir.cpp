@@ -564,9 +564,9 @@ programFromString(const std::string_view input) {
 ///
 /// Consume typed MLIR programs unless @p copy requests an independent copy.
 /// Text, paths and external circuit objects remain borrowed.
-[[nodiscard]] static ImportedProgram programFromInput(PythonInputTypes& types,
-                                                      const nb::handle program,
-                                                      const bool copy) {
+[[nodiscard]] static ImportedProgram
+programFromInput(PythonInputTypes& types, const nb::handle program,
+                 const bool copy, const bool ignoreInputLayout = false) {
   if (nb::isinstance<nb::str>(program)) {
     const auto input = nb::cast<std::string_view>(program);
     const nb::gil_scoped_release release;
@@ -610,7 +610,8 @@ programFromString(const std::string_view input) {
   if (const auto type = types.quantumCircuit();
       type && nb::isinstance(program, type)) {
     return {
-        .program = bindings::qiskit::importCircuit(program),
+        .program = bindings::qiskit::importCircuit(program, /*native=*/false,
+                                                   ignoreInputLayout),
         .format = OutputFormat::Qiskit,
     };
   }
@@ -733,10 +734,29 @@ qpyCircuit(mlir::QCProgram program,
     const std::optional<mlir::TargetEnvironment>& targetEnvironment,
     std::optional<mlir::TargetEnvironment>& outputEnvironment,
     std::optional<OutputFormat> output, bool copy,
-    const std::string& qcoPipeline, const mlir::CompilationOptions& options) {
-  auto input = programFromInput(types, program, copy);
-  if (targetEnvironment && targetEnvironment->target().hasDeviceConstraints() &&
-      !output) {
+    const std::string& qcoPipeline, const mlir::CompilationOptions& options,
+    const bool ignoreInputLayout, const bool includeOutputLayout) {
+  const bool compiledOutput =
+      !output && targetEnvironment &&
+      targetEnvironment->target().hasDeviceConstraints();
+  if (ignoreInputLayout || !includeOutputLayout) {
+    const auto circuitType = types.quantumCircuit();
+    const bool qiskitInput =
+        circuitType && types.inputType(program).is(circuitType);
+    if (ignoreInputLayout && !qiskitInput) {
+      throw nb::value_error(
+          "ignore_input_layout=True requires a Qiskit circuit input");
+    }
+    const bool qiskitOutput =
+        output ? *output == OutputFormat::Qiskit || *output == OutputFormat::QPY
+               : !compiledOutput && qiskitInput;
+    if (!includeOutputLayout && !qiskitOutput) {
+      throw nb::value_error(
+          "include_output_layout=False requires Qiskit or explicit QPY output");
+    }
+  }
+  auto input = programFromInput(types, program, copy, ignoreInputLayout);
+  if (compiledOutput) {
     auto compiled = [&] {
       const nb::gil_scoped_release release;
       return unwrap(mlir::CompiledProgram::compile(
@@ -808,6 +828,9 @@ qpyCircuit(mlir::QCProgram program,
   }();
   if (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
+    if (!includeOutputLayout) {
+      qc.module()->removeAttr("mqt.layout");
+    }
     auto result = [&] {
       if (selected == OutputFormat::QPY) {
         return qpyCircuit(std::move(qc),
@@ -832,12 +855,12 @@ qpyCircuit(mlir::QCProgram program,
 }
 
 /// Compile a scalar input or a homogeneous sequence using one target snapshot.
-[[nodiscard]] static nb::object
-compilePythonProgram(PythonInputTypes& types, const nb::handle program,
-                     const nb::handle target,
-                     std::optional<OutputFormat> output, bool copy,
-                     const std::string& qcoPipeline,
-                     std::optional<mlir::CompilationOptions> suppliedOptions) {
+[[nodiscard]] static nb::object compilePythonProgram(
+    PythonInputTypes& types, const nb::handle program, const nb::handle target,
+    std::optional<OutputFormat> output, bool copy,
+    const std::string& qcoPipeline,
+    std::optional<mlir::CompilationOptions> suppliedOptions,
+    const bool ignoreInputLayout, const bool includeOutputLayout) {
   const auto options = suppliedOptions.value_or(mlir::CompilationOptions{});
   if (!target.is_none() && qcoPipeline != "mqt-qco-default") {
     throw nb::value_error(
@@ -909,15 +932,15 @@ compilePythonProgram(PythonInputTypes& types, const nb::handle program,
 
   std::optional<mlir::TargetEnvironment> outputEnvironment;
   if (!programs) {
-    return compileSingleProgram(types, program, target, targetEnvironment,
-                                outputEnvironment, output, copy, qcoPipeline,
-                                options);
+    return compileSingleProgram(
+        types, program, target, targetEnvironment, outputEnvironment, output,
+        copy, qcoPipeline, options, ignoreInputLayout, includeOutputLayout);
   }
   nb::list_builder results(programs->size());
   for (const auto item : *programs) {
-    results.put(compileSingleProgram(types, item, target, targetEnvironment,
-                                     outputEnvironment, output, copy,
-                                     qcoPipeline, options));
+    results.put(compileSingleProgram(
+        types, item, target, targetEnvironment, outputEnvironment, output, copy,
+        qcoPipeline, options, ignoreInputLayout, includeOutputLayout));
   }
   return results.commit();
 }
@@ -2160,8 +2183,11 @@ Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
 
 Accepts versionless input and versions 2.0, 3.0, and 3.1.)pb")
       .def_static(
-          "from_qiskit", &bindings::qiskit::importCircuit, "circuit"_a,
-          nb::kw_only(), "native"_a = false,
+          "from_qiskit",
+          [](const nb::handle circuit, const bool native) {
+            return bindings::qiskit::importCircuit(circuit, native);
+          },
+          "circuit"_a, nb::kw_only(), "native"_a = false,
           nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit, *, "
                   "native: bool = False) -> QCProgram"),
           R"pb(Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
@@ -2946,6 +2972,7 @@ and error contracts.)pb");
       "program"_a, nb::kw_only(), "target"_a = nb::none(),
       "output"_a = nb::none(), "copy"_a = false,
       "qco_pipeline"_a = "mqt-qco-default", "options"_a = nb::none(),
+      "ignore_input_layout"_a = false, "include_output_layout"_a = true,
       R"pb(Compile a program or a homogeneous sequence for a gate set or hardware target.
 
 A sequence returns a list in input order, including for empty and singleton
@@ -2984,6 +3011,12 @@ Args:
     qco_pipeline: The QCO pipeline, defaulting to "mqt-qco-default".
         Custom pipelines require no target.
     options: Shared compilation controls.
+    ignore_input_layout: Treat the current wires of a Qiskit input as fresh
+        program qubits. Defaults to False. True requires a Qiskit circuit input.
+    include_output_layout: Attach layout metadata to Qiskit and explicit QPY
+        outputs when available. Defaults to True. Physical wire indices and
+        measurement destinations are preserved either way. False requires
+        Qiskit or explicit QPY output.
 
 Device defaults prefer QPY, OpenQASM 3, Adaptive QIR (binary, text), IQM JSON, then Base QIR
 (binary, text). Use a ``TargetEnvironment`` to select an exact execution format.
