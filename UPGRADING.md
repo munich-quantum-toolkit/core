@@ -6,16 +6,21 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### DD identity tolerance
+### DD matrix comparisons
 
-`dd::Package::isCloseToIdentity` bounds the complex distance of normalized edge
-weights from zero or one by `tol`. The lower diagonal weight may be close to
-either value to allow ancillary qubits. This replaces squared-magnitude zero
-checks and separate squared-magnitude and phase checks near one. Small
-off-diagonal deviations previously accepted up to `sqrt(tol)` can now be
-rejected. Near one, radial errors may now pass while combined radial and phase
-errors may now fail. The tolerance remains local to DD edges; it does not bound
-a matrix norm.
+Include `dd/MatrixComparison.hpp` to compare complete matrices without ancillary
+input projection. `dd::compareToIdentity` reports whether the Frobenius distance
+from identity meets the tolerance, both with and without a global phase.
+`dd::isCloseToDiagonal` tests the Frobenius weight outside diagonal blocks
+defined by the measured outputs; a garbage mask selects ignored outputs. Both
+distances are divided by the square root of the matrix dimension and include
+root weights. Adding idle qubits preserves these distances. Errors confined to a
+small input subspace can be diluted by this normalization.
+
+`dd::Package::isCloseToIdentity` remains a structural check for ancillary
+callers. It bounds complex edge-weight distances from zero or one, allowing a
+zero lower diagonal. Off-diagonal amplitudes formerly accepted up to `sqrt(tol)`
+can now be rejected. This structural tolerance does not bound a matrix norm.
 
 ### DD error handling
 

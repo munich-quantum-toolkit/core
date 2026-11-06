@@ -23,8 +23,9 @@ releases may include breaking changes.
 
 ### Fixed
 
-- 🐛 Use complex distance from zero or one for DD identity checks, including
-  ancillary diagonals ([#2942]) ([**@burgholzer**])
+- 🐛 Add normalized Frobenius comparisons for DD identity and measured-output
+  diagonal blocks, with conservative early rejection; use complex distance for
+  structural ancillary checks ([#2942]) ([**@burgholzer**])
 - 🐛 Ship one copy of each shared library in Linux and macOS wheels while
   retaining the ABI-versioned library names ([#2923]) ([**@burgholzer**])
 - 🐛 Keep DD states and permutation mappings valid when allocation fails during
