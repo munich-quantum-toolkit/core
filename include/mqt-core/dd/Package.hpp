@@ -1376,7 +1376,8 @@ public:
   /// @param tol The accepted complex distance of normalized edge weights from
   /// zero or one. The lower diagonal weight may be close to either value to
   /// allow ancillary qubits. This is a local DD tolerance, not a bound on a
-  /// matrix norm.
+  /// matrix norm. Use dd::compareToIdentity for complete matrix comparisons
+  /// without ancillary input projection.
   /// @param garbage A vector of boolean values that defines which qubits are
   /// considered garbage qubits. If it's empty, then no qubit is considered to
   /// be a garbage qubit.
