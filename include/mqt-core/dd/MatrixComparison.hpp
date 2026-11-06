@@ -13,7 +13,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 
-#include <vector>
+#include "llvm/ADT/ArrayRef.h"
 
 namespace dd {
 /// Whether the normalized Frobenius distance meets the comparison tolerance.
@@ -23,6 +23,7 @@ struct IdentityComparison {
 };
 
 /// Compare a matrix with identity, with and without one global phase.
+///
 /// Distances are divided by the square root of the matrix dimension. Root
 /// weights are included; adding idle qubits leaves the distances unchanged.
 /// A bounded lower-bound traversal rejects obvious failures before computing
@@ -34,7 +35,9 @@ struct IdentityComparison {
                                                    fp tolerance = 1e-10);
 
 /// Test the normalized Frobenius weight outside measured-output diagonal
-/// blocks. Entries whose row and column differ on a non-garbage qubit
+/// blocks.
+///
+/// Entries whose row and column differ on a non-garbage qubit
 /// contribute to the distance. All other entries are unrestricted. For a
 /// relative unitary UV-dagger without ancillary inputs, zero distance means
 /// equal measurement probabilities for every input. This is not a
@@ -44,5 +47,5 @@ struct IdentityComparison {
 /// @param garbage Qubits ignored in the output comparison; missing entries are
 /// measured qubits.
 [[nodiscard]] bool isCloseToDiagonal(const mEdge& matrix, fp tolerance = 1e-10,
-                                     const std::vector<bool>& garbage = {});
+                                     llvm::ArrayRef<bool> garbage = {});
 } // namespace dd

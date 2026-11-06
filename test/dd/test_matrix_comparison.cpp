@@ -17,6 +17,8 @@
 
 #include "support/TestSupport.hpp"
 
+#include "llvm/ADT/SmallVector.h"
+
 #include <array>
 #include <cmath>
 #include <complex>
@@ -24,7 +26,6 @@
 #include <gtest/gtest.h>
 #include <numbers>
 #include <random>
-#include <vector>
 
 using mqt::test::value;
 
@@ -34,15 +35,15 @@ TEST(MatrixComparison, IndependentDenseMatrices) {
   std::mt19937_64 rng(1134);
   std::uniform_real_distribution<double> random(-1., 1.);
   for (const auto qubits : {1U, 2U, 3U, 4U}) {
-    const auto dimension = std::size_t{1} << qubits;
-    for (std::size_t sample = 0; sample < 40; ++sample) {
+    const auto dimension = size_t{1} << qubits;
+    for (size_t sample = 0; sample < 40; ++sample) {
       SCOPED_TRACE(qubits);
       SCOPED_TRACE(sample);
       auto package = value(Package::create(qubits));
       CMat matrix(dimension, CVec(dimension));
       std::complex<double> trace{};
-      for (std::size_t i = 0; i < dimension; ++i) {
-        for (std::size_t j = 0; j < dimension; ++j) {
+      for (size_t i = 0; i < dimension; ++i) {
+        for (size_t j = 0; j < dimension; ++j) {
           matrix[i][j] = std::complex<double>{random(rng), random(rng)} *
                          (sample < 20 ? 1. : 1e-8);
           if (i == j) {
@@ -53,14 +54,14 @@ TEST(MatrixComparison, IndependentDenseMatrices) {
       }
       const auto phase = std::abs(trace) == 0. ? std::complex<double>{1., 0.}
                                                : trace / std::abs(trace);
-      const auto measured = std::size_t{1} << (sample % qubits);
-      std::vector<bool> garbage(qubits, true);
+      const auto measured = size_t{1} << (sample % qubits);
+      llvm::SmallVector<bool> garbage(qubits, true);
       garbage[sample % qubits] = false;
       double fixed = 0.;
       double projective = 0.;
       double leakage = 0.;
-      for (std::size_t i = 0; i < dimension; ++i) {
-        for (std::size_t j = 0; j < dimension; ++j) {
+      for (size_t i = 0; i < dimension; ++i) {
+        for (size_t j = 0; j < dimension; ++j) {
           fixed =
               std::hypot(fixed, std::abs(matrix[i][j] - (i == j ? 1. : 0.)));
           projective = std::hypot(
@@ -136,7 +137,7 @@ TEST(MatrixComparison, MeasuredAndGarbageBlocks) {
                                                 mEdge::zero(),
                                             });
   EXPECT_FALSE(isCloseToDiagonal(flip));
-  std::vector<bool> garbage(60);
+  llvm::SmallVector<bool> garbage(60);
   garbage[59] = true;
   EXPECT_TRUE(isCloseToDiagonal(flip, 1e-10, garbage));
   const auto phase =

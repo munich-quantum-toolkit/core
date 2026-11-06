@@ -4,24 +4,6 @@ This document describes breaking changes and how to upgrade. For a complete list
 of changes including minor and patch releases, please refer to the
 [changelog](CHANGELOG.md).
 
-## [Unreleased]
-
-### DD matrix comparisons
-
-Include `dd/MatrixComparison.hpp` to compare complete matrices without ancillary
-input projection. `dd::compareToIdentity` reports whether the Frobenius distance
-from identity meets the tolerance, both with and without a global phase.
-`dd::isCloseToDiagonal` tests the Frobenius weight outside diagonal blocks
-defined by the measured outputs; a garbage mask selects ignored outputs. Both
-distances are divided by the square root of the matrix dimension and include
-root weights. Adding idle qubits preserves these distances. Errors confined to a
-small input subspace can be diluted by this normalization.
-
-`dd::Package::isCloseToIdentity` remains a structural check for ancillary
-callers. It bounds complex edge-weight distances from zero or one, allowing a
-zero lower diagonal. Off-diagonal amplitudes formerly accepted up to `sqrt(tol)`
-can now be rejected. This structural tolerance does not bound a matrix norm.
-
 ## [4.1.0]
 
 ### Compilation options and device targets

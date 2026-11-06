@@ -8,14 +8,6 @@ The format is based on a mixture of [Keep a Changelog] and [Common Changelog].
 This project adheres to [Semantic Versioning], with the exception that minor
 releases may include breaking changes.
 
-## [Unreleased]
-
-### Fixed
-
-- 🐛 Add normalized Frobenius comparisons for DD identity and measured-output
-  diagonal blocks, with conservative early rejection; use complex distance for
-  structural ancillary checks ([#2943]) ([**@burgholzer**])
-
 ## [4.1.1] - 2026-10-13
 
 ### Fixed
@@ -1353,7 +1345,6 @@ for previous changelogs._
 
 <!-- PR links -->
 
-[#2943]: https://github.com/munich-quantum-toolkit/core/pull/2943
 [#2758]: https://github.com/munich-quantum-toolkit/core/pull/2758
 [#2757]: https://github.com/munich-quantum-toolkit/core/pull/2757
 [#2756]: https://github.com/munich-quantum-toolkit/core/pull/2756

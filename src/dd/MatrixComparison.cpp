@@ -14,6 +14,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 
 #include <algorithm>
@@ -23,7 +24,6 @@
 #include <cstddef>
 #include <limits>
 #include <numbers>
-#include <vector>
 
 namespace dd {
 namespace {
@@ -63,10 +63,10 @@ public:
   }
 
 private:
-  llvm::DenseMap<const mNode*, FrobeniusSummary> cache;
+  llvm::SmallDenseMap<const mNode*, FrobeniusSummary> cache_;
 
   FrobeniusSummary summarizeNode(const mNode* node) {
-    if (const auto it = cache.find(node); it != cache.end()) {
+    if (const auto it = cache_.find(node); it != cache_.end()) {
       return it->second;
     }
     const auto a = summarize(node->e[0]);
@@ -80,7 +80,7 @@ private:
         .mean = (a.mean + d.mean) * 0.5,
         .residual = std::hypot(within, std::abs(a.mean - d.mean) * 0.5),
     };
-    cache.try_emplace(node, result);
+    cache_.try_emplace(node, result);
     return result;
   }
 };
@@ -89,28 +89,28 @@ private:
 /// Requires finite weights, IEEE arithmetic, and gradual underflow.
 class BoundedFrobeniusTraversal {
 public:
-  [[nodiscard]] bool rejects(const mEdge& edge, const double tolerance,
-                             const std::vector<bool>& garbage) {
+  [[nodiscard]] bool rejects(const mEdge& edge, double tolerance,
+                             llvm::ArrayRef<bool> garbage) {
     const auto limit = std::nextafter(tolerance * tolerance,
                                       std::numeric_limits<double>::infinity());
     return !edge.isTerminal() && probe(edge, 1., false, limit, garbage);
   }
 
 private:
-  std::size_t probes = 0;
-  double mass = 0.;
+  size_t probes_ = 0;
+  double mass_ = 0.;
 
   // Round nonnegative arithmetic down, including overflow and underflow.
-  static double lower(const double value) {
+  static double lower(double value) {
     return value == 0. ? 0. : std::nextafter(value, 0.);
   }
 
-  bool probe(const mEdge& edge, const double scale, const bool offDiagonal,
-             const double limit, const std::vector<bool>& garbage) {
-    if (probes == 32) {
+  bool probe(const mEdge& edge, double scale, bool offDiagonal, double limit,
+             llvm::ArrayRef<bool> garbage) {
+    if (probes_ == 32) {
       return false;
     }
-    ++probes;
+    ++probes_;
     const auto weight = static_cast<ComplexValue>(edge.w);
     const auto squared =
         lower(lower(weight.r * weight.r) + lower(weight.i * weight.i));
@@ -120,9 +120,9 @@ private:
     }
     if (edge.isTerminal()) {
       if (offDiagonal) {
-        mass = lower(mass + contribution);
+        mass_ = lower(mass_ + contribution);
       }
-      return mass > limit;
+      return mass_ > limit;
     }
     const auto childScale = lower(contribution * 0.5);
     const auto measured = edge.p->v >= garbage.size() || !garbage[edge.p->v];
@@ -144,8 +144,8 @@ struct PartialSummary {
 /// Compute the weight outside measured-output diagonal blocks.
 class PartialTraversal {
 public:
-  explicit PartialTraversal(const std::vector<bool>& garbageQubits)
-      : garbage(garbageQubits) {}
+  explicit PartialTraversal(llvm::ArrayRef<bool> garbageQubits)
+      : garbage_(garbageQubits) {}
 
   [[nodiscard]] PartialSummary summarize(const mEdge& edge) {
     const auto weight = static_cast<ComplexValue>(edge.w).mag();
@@ -160,18 +160,18 @@ public:
   }
 
 private:
-  std::vector<bool> garbage;
-  llvm::DenseMap<const mNode*, PartialSummary> cache;
+  llvm::ArrayRef<bool> garbage_;
+  llvm::SmallDenseMap<const mNode*, PartialSummary> cache_;
 
   PartialSummary summarizeNode(const mNode* node) {
-    if (const auto it = cache.find(node); it != cache.end()) {
+    if (const auto it = cache_.find(node); it != cache_.end()) {
       return it->second;
     }
     const auto a = summarize(node->e[0]);
     const auto b = summarize(node->e[1]);
     const auto c = summarize(node->e[2]);
     const auto d = summarize(node->e[3]);
-    const auto ignored = node->v < garbage.size() && garbage[node->v];
+    const auto ignored = node->v < garbage_.size() && garbage_[node->v];
     const PartialSummary result{
         .norm =
             std::hypot(std::hypot(a.norm, d.norm), std::hypot(b.norm, c.norm)) /
@@ -181,14 +181,14 @@ private:
                                          ignored ? c.leakage : c.norm)) /
                    std::numbers::sqrt2,
     };
-    cache.try_emplace(node, result);
+    cache_.try_emplace(node, result);
     return result;
   }
 };
 
 } // namespace
 
-IdentityComparison compareToIdentity(const mEdge& matrix, const fp tolerance) {
+IdentityComparison compareToIdentity(const mEdge& matrix, fp tolerance) {
   if (BoundedFrobeniusTraversal{}.rejects(matrix, tolerance, {})) {
     return {};
   }
@@ -199,8 +199,8 @@ IdentityComparison compareToIdentity(const mEdge& matrix, const fp tolerance) {
   };
 }
 
-bool isCloseToDiagonal(const mEdge& matrix, const fp tolerance,
-                       const std::vector<bool>& garbage) {
+bool isCloseToDiagonal(const mEdge& matrix, fp tolerance,
+                       llvm::ArrayRef<bool> garbage) {
   if (BoundedFrobeniusTraversal{}.rejects(matrix, tolerance, garbage)) {
     return false;
   }
