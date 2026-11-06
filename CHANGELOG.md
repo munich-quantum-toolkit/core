@@ -23,8 +23,8 @@ releases may include breaking changes.
 
 ### Fixed
 
-- 🐛 Apply DD identity zero checks to edge amplitudes, including ancillary
-  diagonals, instead of squared amplitudes ([#2942]) ([**@burgholzer**])
+- 🐛 Use complex distance from zero or one for DD identity checks, including
+  ancillary diagonals ([#2942]) ([**@burgholzer**])
 - 🐛 Ship one copy of each shared library in Linux and macOS wheels while
   retaining the ABI-versioned library names ([#2923]) ([**@burgholzer**])
 - 🐛 Keep DD states and permutation mappings valid when allocation fails during

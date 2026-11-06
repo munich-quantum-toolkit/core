@@ -8,11 +8,14 @@ of changes including minor and patch releases, please refer to the
 
 ### DD identity tolerance
 
-`dd::Package::isCloseToIdentity` applies `tol` to the magnitude of normalized
-edge weights close to zero, including the diagonal zero allowed for ancillary
-qubits. Small deviations previously accepted up to `sqrt(tol)` can now be
-rejected. Diagonal phase and near-one checks retain their existing tolerances.
-The tolerance remains local to DD edges; it does not bound a matrix norm.
+`dd::Package::isCloseToIdentity` bounds the complex distance of normalized edge
+weights from zero or one by `tol`. The lower diagonal weight may be close to
+either value to allow ancillary qubits. This replaces squared-magnitude zero
+checks and separate squared-magnitude and phase checks near one. Small
+off-diagonal deviations previously accepted up to `sqrt(tol)` can now be
+rejected. Near one, radial errors may now pass while combined radial and phase
+errors may now fail. The tolerance remains local to DD edges; it does not bound
+a matrix norm.
 
 ### DD error handling
 
