@@ -89,10 +89,10 @@ Core now has one concrete serializer with two entry points:
 
 `QuantumComputation` retains its existing C++ and Python export API. The five
 operation subclasses contain no OpenQASM formatting code, and the generic
-register header no longer exposes serialization-only aliases. The ponytail
-constraint kept the design to one class and implementation-local dispatch; there
-is no visitor hierarchy, extension registry, friend access, or new dependency.
-An optional leaf callback lets downstream serializers reuse the same traversal.
+register header no longer exposes serialization-only aliases. The serializer
+uses one class and implementation-local dispatch; there is no visitor hierarchy,
+extension registry, friend access, or new dependency. An optional leaf callback
+lets downstream serializers reuse the same traversal.
 
 Validation completed successfully: the release IR target and MinSizeRel Python
 bindings build; all 287 IR tests pass; all three focused Python IR tests pass;

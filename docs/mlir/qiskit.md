@@ -165,9 +165,9 @@ combined declared size in one translated circuit are each limited to 65,536
 elements. Parameter-expression trees support at most 64 levels and 32,768 nodes.
 Import balances addition and subtraction chains before applying the depth limit.
 Fusing runtime rotations can expand these expressions. For repeated numerical
-runs, bind parameters in Core before export to avoid Qiskit's symbolic binding
-cost and stack limits on long addition chains. The limits above bound conversion
-work; they do not bound Qiskit's internal expression depth.
+runs, bind parameters in MQT Core before export to avoid Qiskit's symbolic
+binding cost and stack limits on long addition chains. The limits above bound
+conversion work; they do not bound Qiskit's internal expression depth.
 
 Import and export support real addition, subtraction, multiplication, division,
 power, negation, trigonometric and inverse trigonometric functions, exponential,
@@ -178,7 +178,7 @@ are supported and remain distinct from free symbols. Parameterized
 custom-instruction definitions are expanded after their symbols and expressions
 are resolved. Definition expansion rejects missing definitions, cycles, operand
 arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
-operations. Permutation patterns lower directly to SWAPs in Core, including
+operations. Permutation patterns lower directly to SWAPs in MQT Core, including
 inside nested definitions and gate modifiers. Other array-valued custom
 parameters are represented by the circuit definition rather than scalar program
 inputs. Operations without a supported definition are rejected with a Python

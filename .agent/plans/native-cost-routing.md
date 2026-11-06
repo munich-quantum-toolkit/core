@@ -85,11 +85,10 @@ validation now accept zero iterations, matching the mapping pass. Each trial
 retains only its initial layout and score; its temporary routing state and cost
 tracker remain local to the active traversal.
 
-One independent specialist completed a full ponytail review. Both findings were
-incorporated: routing returns statistics directly instead of propagating
-failures with no source, and trial construction calls `emplace_back` directly.
-Input validation, unavailable-cost fallback, deterministic first-minimum
-selection, and final synthesis diagnostics remain intact.
+Routing returns statistics directly because it has no failure path. Trial
+construction calls `emplace_back` directly. Input validation, unavailable-cost
+fallback, deterministic first-minimum selection, and final synthesis diagnostics
+remain intact.
 
 The rebuilt implementation passes all 997 affected C++ tests, 24 Python mapping
 tests, and three CLI CTest checks. Binding stubs were regenerated. The mapper

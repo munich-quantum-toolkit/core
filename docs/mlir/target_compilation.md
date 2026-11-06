@@ -46,8 +46,8 @@ representation. For a `CompilerTarget` or a non-Qiskit gate-set environment, the
 default preserves the input's program family.
 
 Use `TargetEnvironment.from_qiskit(target, strict=True)` to reject applicable
-gates or constraints Core cannot represent. It imports control flow as payload
-capabilities. For native synthesis, pass the circuit's width as
+gates or constraints MQT Core cannot represent. It imports control flow as
+payload capabilities. For native synthesis, pass the circuit's width as
 `native_num_qubits` to import a gate-set target and skip wider gates.
 
 A list or tuple of one input kind returns results in input order. Typed MLIR
@@ -69,7 +69,7 @@ Target compilation places qubits only on sites with a supported single-qubit
 gate. If the target supports measurement, these sites must also support readout.
 With explicit couplings, it uses their largest connected component, including
 connections through resonators. Targets with ordered `move(qubit, resonator)`
-placements can route CZ gates through idle resonators. Core emits closed
+placements can route CZ gates through idle resonators. MQT Core emits closed
 `move; cz; move` sandwiches before readout. Use
 `compile_program(circuit, target=device)` with `submit_program`,
 `backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.
@@ -409,7 +409,7 @@ snapshots for staged compilation with a `TargetEnvironment`.
 Providers can report parameter constraints as a NUL-terminated UTF-8 JSON string
 in `QDMI_OPERATION_PROPERTY_CUSTOM2`, queried without sites or parameter values.
 This versioned contract is temporary and is **not part of the QDMI standard**.
-Core reads it for native compiler targets and the generic Qiskit backend.
+MQT Core reads it for native compiler targets and the generic Qiskit backend.
 
 For example, an RX operation restricted to two angles reports:
 

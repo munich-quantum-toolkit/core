@@ -165,7 +165,7 @@ floating-point evaluation order.
 
 - Registry indexing remains declined for the expected couple dozen devices.
 - Eager child initialization and construction-time failures remain unchanged.
-- IQM timeout configuration remains excluded as requested.
+- IQM timeout configuration is outside this audit's scope.
 - Job destruction can still block Python; it remains the previously recorded
   lifetime-design question, not a newly established easy optimization.
 - Sparse result parsing still uses an `istringstream`, but replacing it has not

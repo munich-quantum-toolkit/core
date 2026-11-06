@@ -93,8 +93,8 @@ instead of reverse-engineering the importer machinery.
   Unsupported operations must not leave a syntactically truncated output file.
 
 - Treat dynamic memory indices, `cf.assert`, live `ub.poison`, and checked-index
-  scaffolding as unsupported. Rationale: The user explicitly prefers a focused
-  practical exporter over reconstruction of importer safety machinery.
+  scaffolding as unsupported. Rationale: These importer safety operations have
+  no supported OpenQASM representation.
 
 - Make `OpenQASMProgram` an owned textual value rather than an MLIR `Program`
   subclass, and accept that value directly as compiler input. Rationale:

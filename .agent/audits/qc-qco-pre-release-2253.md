@@ -11,9 +11,8 @@ canonicalization, and compiler/export boundaries, following
 ## Result
 
 All four confirmed findings are fixed, including the additional index-provenance
-bug found during the final audit. The final review confirmed no further defect
-in these changed paths. This does not clear the whole MLIR issue or extend the
-builder's supported control-flow subset.
+bug found during the final audit. This does not clear the whole MLIR issue or
+extend the builder's supported control-flow subset.
 
 ## Applied finding 4: preserve tensor indices across structured results
 
@@ -150,10 +149,9 @@ contracts, redundant conversion checks, and QTensor helper/shrinking cleanup.
 Those are not counted as new findings. This report does not clear the whole MLIR
 issue or replace the outstanding contract work.
 
-## Ponytail review
+## Shared scalar construction
 
-The review found two duplicated scalar implementations and their now-unused
-single-argument preparation helper. Both findings were applied:
+Two scalar implementations share their range-based construction helpers:
 
 - `QCOProgramBuilder::qcoIndexSwitch: shrink:` duplicated scalar construction.
   Delegate to the range overload with locally owned callback adapters.
