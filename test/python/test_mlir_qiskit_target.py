@@ -1356,8 +1356,6 @@ def test_gate_set_synthesis_restores_borrowed_ancillas() -> None:
 @pytest.mark.parametrize("output", [OutputFormat.OPENQASM2, OutputFormat.OPENQASM3])
 def test_gate_set_qasm_owns_program_qubits(output: OutputFormat) -> None:
     """Standalone QASM preserves program-qubit order and trailing idle wires."""
-    from qiskit import qasm2, qasm3  # ruff:ignore[import-outside-top-level]
-
     source = QuantumCircuit(4)
     source.x(2)
     source.cx(2, 0)
@@ -1371,7 +1369,7 @@ def test_gate_set_qasm_owns_program_qubits(output: OutputFormat) -> None:
     result = compile_program(source, target=CompilerTarget.for_gate_set(gates), output=output)
     assert isinstance(result, OpenQASMProgram)
     assert "$" not in result.source
-    restored = qasm2.loads(result.source) if output == OutputFormat.OPENQASM2 else qasm3.loads(result.source)
+    restored = QCProgram.from_openqasm_str(result.source).to_qiskit()
     assert restored.num_qubits == source.num_qubits
     assert Operator(restored).equiv(Operator(source))
 
@@ -1433,3 +1431,20 @@ def test_gate_set_preserves_register_inputs(output: OutputFormat, *, active: boo
     assert isinstance(result, QuantumCircuit)
     assert result.num_qubits == 5
     np.testing.assert_allclose(Operator(result).data, Operator(expected).data, atol=1e-12)
+
+
+def test_device_capacity_counts_active_qubits() -> None:
+    """Idle scalar and tensor allocations do not consume device capacity."""
+    target = Target(num_qubits=1)
+    target.add_instruction(SXGate())
+    target.add_instruction(RZGate(Parameter("theta")))
+    for source in [
+        'OPENQASM 3.0; include "stdgates.inc"; qubit idle; qubit active; x active;',
+        'OPENQASM 3.0; include "stdgates.inc"; qubit[3] idle; qubit[3] active; x active[2];',
+    ]:
+        result = compile_program(source, target=target, output=OutputFormat.QISKIT)
+        assert isinstance(result, QuantumCircuit)
+        assert result.num_qubits == 1
+        expected = QuantumCircuit(1)
+        expected.x(0)
+        assert Operator(result).equiv(Operator(expected))

@@ -83,6 +83,14 @@ IQM execution requires its default
 [full MOVE frame tracking](https://docs.iqm.tech/iqm-client/api/iqm.iqm_client.models.CircuitCompilationOptions.html)
 to correct MOVE frames.
 
+### Unused qubits
+
+Canonicalization retains owned qubit allocations. The `remove-unused-qubits`
+pass removes unused allocation/release pairs; QC and QTensor register-shrinking
+passes remove unused register slots. These transformations retain program qubits
+when a gate-set target is attached. Device compilation performs this cleanup
+before placement checks device capacity.
+
 ### Choose a format
 
 ```{code-cell} ipython3

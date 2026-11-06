@@ -249,6 +249,7 @@ static void populateDecompositionAndPlacement(OpPassManager& pm,
     return;
   }
   // Drop unused slots before placement checks target capacity.
+  pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(qco::createElideTerminalSwapsPass());
   if (target.connectivityKind() ==

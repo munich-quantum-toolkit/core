@@ -73,8 +73,6 @@ def DeallocOp : QCOp<"dealloc", [MemoryEffects<[MemFree<QubitResource>]>]> {
 
   let arguments = (ins QubitType:$qubit);
   let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
-
-  let hasCanonicalizer = 1;
 }
 
 def StaticOp : QCOp<"static", [Pure]> {

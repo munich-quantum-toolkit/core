@@ -86,6 +86,7 @@ void registerMQTCompilerPasses() {
     qco::registerTargetNativeSynthesis();
     qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();
+    mqt::registerRemoveUnusedQubits();
     mqt::registerSimplifyQuantum();
     mqt::registerLowerQuantumModifiers();
     mqt::registerDropGlobalPhases();
@@ -116,6 +117,7 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createCombineControlledGates());
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
+  pm.addPass(mqt::createRemoveUnusedQubits());
 }
 
 void populateOpenQASM2PreparationPipeline(OpPassManager& pm,
@@ -220,6 +222,7 @@ void populateQCExportPipeline(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass(GreedyRewriteConfig{}
                                          .enableCSEBetweenIterations()
                                          .setUseTopDownTraversal()));
+  pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createSymbolDCEPass());
 }
@@ -238,6 +241,7 @@ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeUnusedValues) {
           .enableCSEBetweenIterations()
           .setUseTopDownTraversal()
           .setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+  pm.addPass(mqt::createRemoveUnusedQubits());
   if (removeUnusedValues) {
     pm.addPass(qtensor::createShrinkQTensorToFitPass());
   }

@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
 #include "mlir/IR/MLIRContext.h"
@@ -22,19 +21,15 @@ using namespace mlir::qco;
 
 namespace {
 
-/// Remove matching alloc/static and sink pairs without operations
+/// Remove matching static and sink pairs without operations
 /// between them.
-struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
+struct RemoveStaticSinkPair final : OpRewritePattern<SinkOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(SinkOp op,
                                 PatternRewriter& rewriter) const override {
-    if (mqt::preservesProgramQubits(op)) {
-      return failure();
-    }
-
     auto* defOp = op.getQubit().getDefiningOp();
-    if (!isa_and_nonnull<AllocOp, StaticOp>(defOp)) {
+    if (!isa_and_nonnull<StaticOp>(defOp)) {
       return failure();
     }
 
@@ -51,5 +46,5 @@ struct RemoveAllocSinkPair final : OpRewritePattern<SinkOp> {
 
 void SinkOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
-  results.add<RemoveAllocSinkPair>(context);
+  results.add<RemoveStaticSinkPair>(context);
 }

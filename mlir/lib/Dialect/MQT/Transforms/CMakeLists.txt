@@ -8,6 +8,7 @@
 
 add_mlir_library(
   MLIRMQTTransforms
+  RemoveUnusedQubits.cpp
   SimplifyQuantum.cpp
   DropGlobalPhases.cpp
   NormalizeGlobalPhases.cpp
@@ -28,8 +29,10 @@ add_mlir_library(
   MLIRMathDialect
   MLIRMemorySlotInterfaces
   MLIRLLVMIRTransforms
+  MLIRMQTDialect
   MLIRMQTUtils
   MLIRPass
+  MLIRQTensorDialect
   MLIRQCDialect
   MLIRQCODialect
   MLIRSCFDialect

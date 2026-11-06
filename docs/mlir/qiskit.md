@@ -142,10 +142,9 @@ the supported subset below.
 
 Export folds scalar expressions in the consumed QC program. Constant arithmetic,
 casts, and idempotent expressions can therefore disappear; expression-tree shape
-is not preserved. Quantum-resource and classical-snapshot canonicalization
-patterns are not applied, because they can change circuit width or introduce
-scratch bits. Call `cleanup()` explicitly when those broader transformations are
-wanted.
+is not preserved. Qubit-resource cleanup and classical-snapshot canonicalization
+are not applied, because they can change circuit width or introduce scratch
+bits. Call `cleanup()` explicitly when those broader transformations are wanted.
 
 Imported free parameters and vectors retain their identities through QC/QCO
 conversion, optimization, and MLIR serialization, so exported circuits can be
