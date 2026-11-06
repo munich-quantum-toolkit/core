@@ -2451,6 +2451,37 @@ TEST(DDPackageTest, CloseToIdentityUsesAmplitudeTolerance) {
   }
 }
 
+TEST(DDPackageTest, CloseToIdentityUsesComplexDistance) {
+  auto dd = value(Package::create(1));
+  for (const auto tol : {1e-6, 1e-8, 1e-10}) {
+    SCOPED_TRACE(tol);
+    for (const auto successor : {0U, 3U}) {
+      SCOPED_TRACE(successor);
+      for (const auto& [offset, accepted] : {
+               std::pair{ComplexValue{-0.6, 0.6}, true},
+               std::pair{ComplexValue{-0.4, 0.95}, false},
+           }) {
+        SCOPED_TRACE(accepted);
+        for (const auto sign : {-1.0, 1.0}) {
+          SCOPED_TRACE(sign);
+          auto edges = std::array{
+              mEdge::one(),
+              mEdge::zero(),
+              mEdge::zero(),
+              mEdge::one(),
+          };
+          edges[successor].w =
+              dd->cn.lookup(1.0 + (offset.r * tol), sign * offset.i * tol);
+          const auto matrix = dd->makeDDNode(0, edges);
+          EXPECT_EQ(Package::isCloseToIdentity(matrix, tol), accepted);
+          EXPECT_TRUE(Package::isCloseToIdentity(matrix, tol, {}, false));
+          EXPECT_TRUE(Package::isCloseToIdentity(matrix, tol, {true}));
+        }
+      }
+    }
+  }
+}
+
 TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheBeginning) {
   constexpr fp tol = 1.0E-10;
   constexpr auto nqubits = 3U;

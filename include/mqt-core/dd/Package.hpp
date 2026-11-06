@@ -1373,10 +1373,10 @@ public:
   /// matrix, while ignoring any potential garbage qubits and ignoring the
   /// diagonal weights if `checkCloseToOne` is set to false.
   /// @param m An mEdge that represents the DD of the matrix.
-  /// @param tol The accepted magnitude of normalized edge weights close to
-  /// zero. For diagonal weights close to one, bounds both the deviation of the
-  /// squared magnitude from one and the phase angle in radians. This is a local
-  /// DD tolerance, not a bound on a matrix norm.
+  /// @param tol The accepted complex distance of normalized edge weights from
+  /// zero or one. The lower diagonal weight may be close to either value to
+  /// allow ancillary qubits. This is a local DD tolerance, not a bound on a
+  /// matrix norm.
   /// @param garbage A vector of boolean values that defines which qubits are
   /// considered garbage qubits. If it's empty, then no qubit is considered to
   /// be a garbage qubit.

@@ -1401,26 +1401,15 @@ bool Package::isCloseToIdentityRecursive(
 
   if (checkCloseToOne) {
     // check whether  m = [ ~1 0 0 y ]
-    const auto mag0 = dd::ComplexNumbers::mag2(m.p->e[0U].w);
-    if (std::abs(mag0 - 1.0) > tol) {
-      return false;
-    }
-    const auto arg0 = dd::ComplexNumbers::arg(m.p->e[0U].w);
-    if (std::abs(arg0) > tol) {
+    const auto weight0 = static_cast<ComplexValue>(m.p->e[0U].w);
+    if (std::hypot(weight0.r - 1.0, weight0.i) > tol) {
       return false;
     }
 
-    // check whether m = [ x 0 0 ~1 ] or m = [ x 0 0 ~0 ] (the last case is
-    // true for an ancillary qubit)
-    if (dd::ComplexNumbers::mag(m.p->e[3U].w) > tol) {
-      const auto mag3 = dd::ComplexNumbers::mag2(m.p->e[3U].w);
-      if (std::abs(mag3 - 1.0) > tol) {
-        return false;
-      }
-      const auto arg3 = dd::ComplexNumbers::arg(m.p->e[3U].w);
-      if (std::abs(arg3) > tol) {
-        return false;
-      }
+    // Ancillary qubits also permit a zero lower diagonal weight.
+    const auto weight3 = static_cast<ComplexValue>(m.p->e[3U].w);
+    if (weight3.mag() > tol && std::hypot(weight3.r - 1.0, weight3.i) > tol) {
+      return false;
     }
   }
   // m either has the form [ ~1 0 0 ~1 ] or [ ~1 0 0 ~0 ]
