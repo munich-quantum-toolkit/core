@@ -21,6 +21,8 @@ and return computational-basis samples or counts. The examples use the local
 [DD-based simulator device](ddsim_device.md) and require no credentials or
 remote resources.
 
+## Install
+
 Install MQT Core with the optional PennyLane dependency:
 
 ```bash
@@ -41,24 +43,30 @@ header drift. See the
 [Catalyst installation guide](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/installation.html)
 for platform requirements.
 
-## Quickstart
+## Configure a device
 
-A Bell-state circuit illustrates device discovery by stable ID, circuit
-conversion, execution, and finite-shot result reconstruction.
+Select the local simulator by its stable device ID. The seed makes sampling
+reproducible.
 
 ```{code-cell} ipython3
 import pennylane as qp
 
-bell_device = qp.device("mqt.ddsim.default", wires=2, job_parameters={"custom1": 7})
+device = qp.device("mqt.ddsim.default", wires=2, job_parameters={"custom1": 7})
+```
 
+## Run a QNode
 
-@qp.qnode(bell_device, shots=1000)
+Define a Bell-state circuit and set the number of shots when calling it:
+
+```{code-cell} ipython3
+@qp.qnode(device)
 def bell_state():
     qp.Hadamard(0)
     qp.CNOT(wires=[0, 1])
     return qp.counts(wires=[0, 1])
 
 
+bell_state = qp.set_shots(bell_state, shots=1000)
 bell_counts = bell_state()
 print({str(key): int(value) for key, value in sorted(bell_counts.items())})
 ```
@@ -318,7 +326,7 @@ PennyLane's
 
 ```{code-cell} ipython3
 tapes, postprocess = qp.workflow.construct_batch(bell_state, level="device")()
-job = bell_device.submit(tapes)
+job = device.submit(tapes)
 # Accepted QDMI handles are available before waiting for results.
 job_ids = [attempt.handle.id for entry in job.entries for attempt in entry.attempts if attempt.handle is not None]
 counts = postprocess(job.result())[0]
@@ -333,7 +341,7 @@ connection or result-read problem, recover the measurement values from the
 retained jobs:
 
 ```{code-cell} ipython3
-job = bell_device.last_job
+job = device.last_job
 assert job is not None  # A batch was prepared by submit().
 entries = job.collect()
 counts = postprocess(job.result())[0]
