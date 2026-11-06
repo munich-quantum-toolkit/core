@@ -196,13 +196,15 @@ mqt\.core\.mlir\.__prefix__$:
     _ProgramT = TypeVar("_ProgramT", qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
     _CompilerInputT = TypeVar("_CompilerInputT", str, os.PathLike[str], qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
     _SourceT = TypeVar("_SourceT", str, os.PathLike[str])
-    _TargetResult: TypeAlias = qiskit.circuit.QuantumCircuit | CompiledProgram
+    _TargetResult: TypeAlias = _CompilerOutput | CompiledProgram
     _TargetResultT_co = TypeVar("_TargetResultT_co", bound=_TargetResult, default=_TargetResult, covariant=True)
 
     class _CompileOptions(TypedDict, total=False, closed=True):
         copy: bool
         qco_pipeline: str
         options: CompilationOptions | None
+        ignore_input_layout: bool
+        include_output_layout: bool
 
 mqt\.core\.mlir\.PayloadSpecification\.__init__$:
     def __new__(
@@ -210,7 +212,7 @@ mqt\.core\.mlir\.PayloadSpecification\.__init__$:
         payload_format: PayloadFormat,
         capabilities: Sequence[ProgramCapability] = (),
         optional_capabilities_known: bool = False,
-    ) -> PayloadSpecification[_TargetResult]: ...
+    ) -> PayloadSpecification[qiskit.circuit.QuantumCircuit | CompiledProgram]: ...
 
 mqt\.core\.mlir\.PayloadSpecification\.from_program_format$:
     @staticmethod
@@ -218,7 +220,11 @@ mqt\.core\.mlir\.PayloadSpecification\.from_program_format$:
         \doc
 
 mqt\.core\.mlir\.TargetEnvironment\.__init__$:
-    def __init__(self, target: CompilerTarget, payload_specification: PayloadSpecification[_TargetResultT_co]) -> None: ...
+    \from typing import overload
+    @overload
+    def __new__(cls, target: CompilerTarget, payload_specification: PayloadSpecification[qiskit.circuit.QuantumCircuit]) -> TargetEnvironment[qiskit.circuit.QuantumCircuit]: ...
+    @overload
+    def __new__(cls, target: CompilerTarget, payload_specification: PayloadSpecification) -> TargetEnvironment[_TargetResult]: ...
 
 mqt\.core\.mlir\.TargetEnvironment\.payload_specification$:
     @property

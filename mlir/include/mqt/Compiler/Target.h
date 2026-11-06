@@ -33,6 +33,7 @@ class Operation;
 
 /// Immutable description of an MQT compiler target.
 ///
+/// Gate-set targets have no device sites or placement constraints.
 /// Hardware sites retain their target-defined nonnegative i64
 /// identifiers. Routing algorithms use dense zero-based vertices in site order.
 /// Connectivity is either all-to-all or explicitly enumerated. Native-operation
@@ -371,6 +372,13 @@ public:
                            const SynthesisBasis&) = default;
   };
 
+  /// Create a gate-set target without device sites or placement constraints.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  forGateSet(NativeOperations nativeOperations);
+
+  /// Whether this target constrains placement on device sites.
+  [[nodiscard]] bool hasDeviceConstraints() const noexcept;
+
   /// Create an unnamed target with dense site IDs `0..numSites-1`.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   create(size_t numSites, Connectivity connectivity,
@@ -571,7 +579,8 @@ private:
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   createImpl(std::optional<std::string> name, std::vector<Site> sites,
              Connectivity connectivity, NativeOperations nativeOperations,
-             std::optional<DurationUnit> durationUnit);
+             std::optional<DurationUnit> durationUnit,
+             bool deviceConstraints = true);
 
   [[nodiscard]] bool
   supportsImpl(::mlir::Operation* operation,

@@ -988,6 +988,77 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
   EXPECT_EQ(reconstructed.synthesisBasis(), target.synthesisBasis());
 }
 
+TEST(CompilerTargetTest, GateSetHasNoDeviceCapacity) {
+  const auto target =
+      valid(Target::forGateSet(NativeOperations::fromOperations({
+          valid(OperationCapability::create("u", 1, 3)),
+          valid(OperationCapability::create("cx", 2, 0)),
+          valid(OperationCapability::create("ccx", 3, 0)),
+      })));
+  EXPECT_FALSE(target.hasDeviceConstraints());
+  EXPECT_EQ(target.numSites(), 0);
+  EXPECT_TRUE(target.sites().empty());
+  EXPECT_EQ(target.maxDegree(), 0);
+  EXPECT_TRUE(target.supportsOperation("ccx", 3, 0));
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {4, 19}));
+  EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {4, 4}));
+  EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {-1, 4}));
+  ASSERT_TRUE(target.synthesisBasis());
+  ASSERT_TRUE(target.synthesisBasis()->entangler);
+  EXPECT_EQ(target.synthesisBasis()->entangler->gate, GateKind::CX);
+  EXPECT_EQ(target.synthesisEntanglers().size(), 1);
+
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto attribute = target.materialize(context);
+  EXPECT_TRUE(attribute.getGateSet());
+  const auto reconstructed = valid(Target::create(attribute));
+  EXPECT_FALSE(reconstructed.hasDeviceConstraints());
+  EXPECT_EQ(reconstructed.materialize(context), attribute);
+  EXPECT_EQ(reconstructed.synthesisBasis(), target.synthesisBasis());
+
+  const auto unary = valid(Target::forGateSet(NativeOperations::fromOperations({
+      valid(OperationCapability::create("u", 1, 3)),
+  })));
+  EXPECT_TRUE(unary.synthesisEntanglers().empty());
+  const auto unrestricted =
+      valid(Target::forGateSet(NativeOperations::unrestricted()));
+  EXPECT_TRUE(unrestricted.supportsOperation("x", 100, 0));
+  const auto parsed =
+      mlir::dyn_cast<mlir::mqt::CompilationTargetAttr>(mlir::parseAttribute(
+          "#mqt.compilation_target<sites = [], connectivity = all_to_all, "
+          "couplings = [], native_operations = unrestricted, operations = [], "
+          "gate_set = unit>",
+          &context));
+  ASSERT_TRUE(parsed);
+  EXPECT_EQ(parsed, unrestricted.materialize(context));
+}
+
+TEST(CompilerTargetTest, GateSetRejectsDeviceConstraints) {
+  expectInvalid(Target::forGateSet(NativeOperations::fromOperations({
+                    valid(OperationCapability::create(
+                        "x", 1, 0, {valid(SiteTuple::create({0}))})),
+                })),
+                "Gate-set target cannot contain site-specific operations");
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  mlir::ScopedDiagnosticHandler handler(
+      &context, [](mlir::Diagnostic&) { return mlir::success(); });
+  for (const auto* source : {
+           "#mqt.compilation_target<sites = [], connectivity = all_to_all, "
+           "couplings = [], native_operations = unrestricted, operations = []>",
+           "#mqt.compilation_target<sites = [<id = 0>], connectivity = "
+           "all_to_all, "
+           "couplings = [], native_operations = unrestricted, operations = [], "
+           "gate_set = unit>",
+           "#mqt.compilation_target<sites = [], connectivity = explicit, "
+           "couplings = [], native_operations = unrestricted, operations = [], "
+           "gate_set = unit>",
+       }) {
+    EXPECT_FALSE(mlir::parseAttribute(source, &context));
+  }
+}
+
 TEST(CompilerTargetTest, SupportsMaximumSiteIds) {
   constexpr auto maxSite = std::numeric_limits<SiteId>::max();
   constexpr auto nextSite = maxSite - 1;
@@ -1044,7 +1115,7 @@ TEST(CompilerTargetTest, RoundTripsSupportedTargetStates) {
   expectInvalid(Target::create(mlir::mqt::CompilationTargetAttr::get(
                     &context, {}, {site, secondSite}, {},
                     mlir::mqt::ConnectivityKind::Explicit, {},
-                    mlir::mqt::NativeOperationsKind::Unrestricted, {})),
+                    mlir::mqt::NativeOperationsKind::Unrestricted, {}, {})),
                 "Compiler target topology must be connected");
 }
 

@@ -82,7 +82,7 @@ and shares its session between compilation and submission. See the
 [CLI guide](../installation.md#run-on-a-qdmi-device).
 
 The Qiskit `QDMIBackend.from_device_id` factory and PennyLane's
-`qml.device("mqt.ddsim.default", wires=4)` use this opening API. Python
+`qp.device("mqt.ddsim.default", wires=4)` use this opening API. Python
 {py:class}`mqt.core.typing.QDMISessionParameters` describes the supported
 overrides for device session parameters. To use another driver with these SDKs,
 pass an already-open `Device` to the backend constructor.

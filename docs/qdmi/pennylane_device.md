@@ -21,6 +21,8 @@ and return computational-basis samples or counts. The examples use the local
 [DD-based simulator device](ddsim_device.md) and require no credentials or
 remote resources.
 
+## Install
+
 Install MQT Core with the optional PennyLane dependency:
 
 ```bash
@@ -34,31 +36,37 @@ uv pip install "mqt-core[pennylane,catalyst]"
 ```
 
 Catalyst is optional for ordinary QNodes. The extra installs a stable Catalyst
-release from 0.15 and below 1.0 on supported Python versions and platforms. Core
-tests the 0.15.0 device interface and warns once when loading a newer minor
+release from 0.15 and below 1.0 on supported Python versions and platforms. MQT
+Core tests the 0.15.0 device interface and warns once when loading a newer minor
 version; an ABI change can crash the process. The upstream canary checks for
 header drift. See the
 [Catalyst installation guide](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/installation.html)
 for platform requirements.
 
-## Quickstart
+## Configure a device
 
-A Bell-state circuit illustrates device discovery by stable ID, circuit
-conversion, execution, and finite-shot result reconstruction.
+Select the local simulator by its stable device ID. The seed makes sampling
+reproducible.
 
 ```{code-cell} ipython3
 import pennylane as qp
 
-bell_device = qp.device("mqt.ddsim.default", wires=2, job_parameters={"custom1": 7})
+device = qp.device("mqt.ddsim.default", wires=2, job_parameters={"custom1": 7})
+```
 
+## Run a QNode
 
-@qp.qnode(bell_device, shots=1000)
+Define a Bell-state circuit and set the number of shots when calling it:
+
+```{code-cell} ipython3
+@qp.qnode(device)
 def bell_state():
     qp.Hadamard(0)
     qp.CNOT(wires=[0, 1])
     return qp.counts(wires=[0, 1])
 
 
+bell_state = qp.set_shots(bell_state, shots=1000)
 bell_counts = bell_state()
 print({str(key): int(value) for key, value in sorted(bell_counts.items())})
 ```
@@ -100,14 +108,14 @@ unsupported target configurations fail before submission; all programs in an
 ordinary QNode batch are prepared before any jobs are submitted. The device
 retains one target snapshot for its lifetime.
 
-The compiler uses Core's
+The compiler uses MQT Core's
 [format preference](../mlir/target_compilation.md#choose-a-format). IQM targets
 must provide physical site names and supported gate metadata. Terminal readout
-follows ascending physical site IDs; the compiled result layout restores logical
-output order. Results follow PennyLane's wire order regardless of physical
-placement. If the provider returns only counts, samples are reconstructed
-without temporal shot order. Terminal measurements of a compiled circuit share
-one provider readout.
+follows ascending physical site IDs; the compiled result layout restores the
+input circuit's output order. Results follow PennyLane's wire order regardless
+of physical placement. If the provider returns only counts, samples are
+reconstructed without temporal shot order. Terminal measurements of a compiled
+circuit share one provider readout.
 
 Ordinary QNodes compile only the tape's wires, unless a measurement requests all
 device wires. Both paths omit readout of untouched wires and supply their known
@@ -285,7 +293,7 @@ Catalyst's capabilities with
 and pass `set(capabilities.operations)` as the `gate_set` of
 `qp.transforms.decompose` on the QNode.
 
-ECR, SX, U1, U2, and U3 use native Core gates in ordinary QNodes. Catalyst
+ECR, SX, U1, U2, and U3 use native MQT Core gates in ordinary QNodes. Catalyst
 lowers them through decomposition; program capture currently requires the
 explicit transform. The default `qp.qjit` mode applies decomposition
 automatically.
@@ -318,7 +326,7 @@ PennyLane's
 
 ```{code-cell} ipython3
 tapes, postprocess = qp.workflow.construct_batch(bell_state, level="device")()
-job = bell_device.submit(tapes)
+job = device.submit(tapes)
 # Accepted QDMI handles are available before waiting for results.
 job_ids = [attempt.handle.id for entry in job.entries for attempt in entry.attempts if attempt.handle is not None]
 counts = postprocess(job.result())[0]
@@ -333,7 +341,7 @@ connection or result-read problem, recover the measurement values from the
 retained jobs:
 
 ```{code-cell} ipython3
-job = bell_device.last_job
+job = device.last_job
 assert job is not None  # A batch was prepared by submit().
 entries = job.collect()
 counts = postprocess(job.result())[0]

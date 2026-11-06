@@ -91,6 +91,7 @@ namespace mlir::qco {
 using namespace mlir::qtensor;
 
 #define GEN_PASS_DEF_MAPPINGPASS
+#define GEN_PASS_DEF_PLACEMENTPASS
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
@@ -522,14 +523,7 @@ static bool needsPlacement(func::FuncOp func) {
 
 namespace {
 
-struct PlacementPass final
-    : PassWrapper<PlacementPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PlacementPass)
-
-  void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, qtensor::QTensorDialect>();
-  }
-
+struct PlacementPass final : impl::PlacementPassBase<PlacementPass> {
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
@@ -2382,9 +2376,5 @@ private:
 };
 
 } // namespace
-
-std::unique_ptr<Pass> createPlacementPass() {
-  return std::make_unique<PlacementPass>();
-}
 
 } // namespace mlir::qco

@@ -142,10 +142,9 @@ the supported subset below.
 
 Export folds scalar expressions in the consumed QC program. Constant arithmetic,
 casts, and idempotent expressions can therefore disappear; expression-tree shape
-is not preserved. Quantum-resource and classical-snapshot canonicalization
-patterns are not applied, because they can change circuit width or introduce
-scratch bits. Call `cleanup()` explicitly when those broader transformations are
-wanted.
+is not preserved. Qubit-resource cleanup and classical-snapshot canonicalization
+are not applied, because they can change circuit width or introduce scratch
+bits. Call `cleanup()` explicitly when those broader transformations are wanted.
 
 Imported free parameters and vectors retain their identities through QC/QCO
 conversion, optimization, and MLIR serialization, so exported circuits can be
@@ -166,9 +165,9 @@ combined declared size in one translated circuit are each limited to 65,536
 elements. Parameter-expression trees support at most 64 levels and 32,768 nodes.
 Import balances addition and subtraction chains before applying the depth limit.
 Fusing runtime rotations can expand these expressions. For repeated numerical
-runs, bind parameters in Core before export to avoid Qiskit's symbolic binding
-cost and stack limits on long addition chains. The limits above bound conversion
-work; they do not bound Qiskit's internal expression depth.
+runs, bind parameters in MQT Core before export to avoid Qiskit's symbolic
+binding cost and stack limits on long addition chains. The limits above bound
+conversion work; they do not bound Qiskit's internal expression depth.
 
 Import and export support real addition, subtraction, multiplication, division,
 power, negation, trigonometric and inverse trigonometric functions, exponential,
@@ -179,7 +178,7 @@ are supported and remain distinct from free symbols. Parameterized
 custom-instruction definitions are expanded after their symbols and expressions
 are resolved. Definition expansion rejects missing definitions, cycles, operand
 arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
-operations. Permutation patterns lower directly to SWAPs in Core, including
+operations. Permutation patterns lower directly to SWAPs in MQT Core, including
 inside nested definitions and gate modifiers. Other array-valued custom
 parameters are represented by the circuit definition rather than scalar program
 inputs. Operations without a supported definition are rejected with a Python
@@ -275,20 +274,27 @@ Other powers require explicit modifier lowering or synthesis.
 A complete Qiskit `TranspileLayout` maps program qubits to device qubits and
 records routing. Import stores those numeric maps as `mqt.layout` on the program
 module; export constructs a Qiskit layout from them. Copies, MLIR serialization,
-and QC/QCO conversions preserve the metadata. Other compiler transformations
-clear it.
+and QC/QCO conversions preserve the metadata. Pass pipelines clear it by
+default. Use `preserve_layout=True` for
+[custom pass sequences](target_compilation.md#custom-pass-sequences) only when
+the passes keep wire and site identities or update the layout.
 
 ```python
 program = QCProgram.from_qiskit(transpiled_circuit)
 restored = program.to_qco().to_qc().to_qiskit()
 ```
 
-Target compilation and compilation to a Qiskit circuit require inputs without an
-attached layout. Use the conversion methods above to preserve an existing
-layout. The numeric mapping does not retain Qiskit input register names or input
-ancilla labels; incomplete layouts are unsupported. See {doc}`MQT dialect <MQT>`
-for the metadata schema and {doc}`target compilation <target_compilation>` for
-placement.
+Use the conversion methods above to preserve an existing layout. To recompile a
+mapped Qiskit circuit, pass `ignore_input_layout=True` to `compile_program`.
+Core treats the current wires as inputs and may place them again. Pass
+`include_output_layout=False` to omit the layout from a Qiskit circuit or
+explicit `OutputFormat.QPY` result while keeping the physical wires and
+measurement destinations. Core raises `ValueError` if the input or output format
+does not support the requested option.
+
+The numeric mapping requires complete layouts and omits Qiskit input register
+names and ancilla labels. See {doc}`MQT dialect <MQT>` for the metadata schema
+and {doc}`target compilation <target_compilation>` for placement.
 
 Names passed between Qiskit and the compiler must not contain NUL characters.
 Loop lists with jumps and switch cases with variables are supported within the

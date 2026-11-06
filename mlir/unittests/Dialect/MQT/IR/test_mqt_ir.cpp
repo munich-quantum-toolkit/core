@@ -1248,24 +1248,34 @@ TEST_F(MQTIRTest, RejectsInvalidPayloadContracts) {
       optional_capabilities_known = true>)mlir"));
 }
 
-TEST_F(MQTIRTest, RejectsTargetEnvironmentOutsideModule) {
-  EXPECT_FALSE(parse(R"mlir(
-    module attributes {mqt.target_env = "invalid"} {}
-  )mlir"));
-  EXPECT_FALSE(parse(R"mlir(
-    module {
-      func.func @main() attributes {
-        mqt.target_env = #mqt.target_env<
-            compilation_target = #mqt.compilation_target<
-                sites = [<id = 0>], connectivity = all_to_all, couplings = [],
-                native_operations = unrestricted, operations = []>,
-            payload_specification = #mqt.payload_spec<
-                format = #mqt.payload_format<id = "qir",
-                    version = "2.1.0", profile = "base", encoding = binary>,
-                capabilities = [], optional_capabilities_known = false>>
-      } { return }
-    }
-  )mlir"));
+TEST_F(MQTIRTest, TargetEnvironmentsRequireTypedModuleAttributes) {
+  auto environment = parseAttr(R"mlir(#mqt.target_env<
+      compilation_target = #mqt.compilation_target<
+          sites = [<id = 0>], connectivity = all_to_all, couplings = [],
+          native_operations = unrestricted, operations = []>,
+      payload_specification = #mqt.payload_spec<
+          format = #mqt.payload_format<id = "qir",
+              version = "2.1.0", profile = "base", encoding = binary>,
+          capabilities = [], optional_capabilities_known = false>>
+  )mlir");
+  ASSERT_TRUE(environment);
+  for (const StringRef name :
+       {mqt::TargetEnvAttr::name, mqt::ORIGINAL_TARGET_ENV_ATTR}) {
+    SCOPED_TRACE(name.str());
+    auto moduleOp = parse("module { func.func @main() { return } }");
+    ASSERT_TRUE(moduleOp);
+    (*moduleOp)->setAttr(name, environment);
+    auto reparsed = roundTrip(*moduleOp);
+    ASSERT_TRUE(reparsed);
+    EXPECT_EQ((*reparsed)->getAttr(name), environment);
+
+    (*moduleOp)->setAttr(name, StringAttr::get(context.get(), "invalid"));
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+    (*moduleOp)->removeAttr(name);
+    auto function = *moduleOp->getOps<func::FuncOp>().begin();
+    function->setAttr(name, environment);
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+  }
 }
 
 } // namespace

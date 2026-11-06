@@ -4079,7 +4079,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(staticQubitsWithInv),
                     MQT_NAMED_BUILDER(staticQubitsWithInv)},
         QCOTestCase{"AllocSinkPair", MQT_NAMED_BUILDER(allocSinkPair),
-                    MQT_NAMED_BUILDER(allocQubitNoMeasure)}));
+                    MQT_NAMED_BUILDER(allocSinkPair)}));
 
 // UnrollModifiers
 static LogicalResult runUnrollModifiers(ModuleOp moduleOp) {

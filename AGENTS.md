@@ -45,8 +45,13 @@ Use relevant sections of the [development policy](docs/development.md) and the
   owning reference for details. Follow the
   [prose policy](docs/development.md#prose-and-terminology). Remove repetition
   of code, boilerplate parameters, change narration, and unsupported assurances.
-  Use symbol references instead of brittle line pointers. Keep prompts and
-  review history out of code and API docs.
+  Use symbol references instead of brittle line pointers.
+- Do not leak conversations, prompts, or iteration history into code comments,
+  pull request descriptions, or other maintainer-facing prose. Write for readers
+  who have not seen the conversation.
+- Prefer comments that explain current behavior and rationale. Avoid past-facing
+  wording such as "preserve the existing behavior"; explain the actual
+  backwards-compatibility constraint instead.
 - Test changed behavior and concrete regressions, not implementation details.
   Low-impact edits need no new tests. Before weakening a test, check history,
   callers, invariants, and resource limits; equal line coverage or a shared

@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -128,9 +129,9 @@ struct LoweringState {
   DenseMap<RegisterId, llvm::MapVector<int64_t, RegisterQubit>>
       scalarRegisterQubits;
 
-  /// Immutable physical reference buffers, in slot order.
-  DenseMap<Value, SmallVector<std::pair<Value, uint64_t>>> referenceBuffers;
-  /// Local physical tensors released at function return, in allocation order.
+  /// Immutable qubit reference buffers, in slot order.
+  DenseMap<Value, SmallVector<Value>> referenceBuffers;
+  /// Local tensors released at function return, in allocation order.
   DenseMap<Region*, SmallVector<RegisterId>> localReferenceRegisters;
 
   /// Original QC capture order for source and converted structured operations.
@@ -616,37 +617,43 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       if (store.getMemref() != allocation) {
         continue;
       }
-      auto qubit = store.getValue().getDefiningOp<qc::StaticOp>();
+      auto qubit = store.getValue();
       const auto index = getConstantIntValue(store.getIndices().front());
-      if (!qubit || !index || *index < 0 || *index >= type.getDimSize(0) ||
-          elements[*index].first) {
+      if (!isa_and_nonnull<qc::StaticOp, qc::AllocOp>(qubit.getDefiningOp()) ||
+          !index || *index < 0 || *index >= type.getDimSize(0) ||
+          elements[*index]) {
         continue;
       }
       if (!state.registerAccesses
-               .try_emplace(qubit.getResult(),
+               .try_emplace(qubit,
                             RegisterAccess{
                                 .reg = reg,
                                 .index = store.getIndices().front(),
                             })
                .second) {
-        store.emitOpError("physical reference buffers require distinct static "
-                          "qubits initialized once per slot");
+        store.emitOpError("reference buffers require distinct qubits "
+                          "initialized once per slot");
         return WalkResult::interrupt();
       }
-      elements[*index] = {qubit.getResult(), qubit.getIndex()};
+      elements[*index] = qubit;
       finalInitialization = store;
     }
-    if (llvm::any_of(elements,
-                     [](const auto& element) { return !element.first; })) {
-      allocation.emitOpError(
-          "physical reference buffers must be fully initialized");
+    if (llvm::any_of(elements, [](Value element) { return !element; })) {
+      allocation.emitOpError("reference buffers must be fully initialized");
       return WalkResult::interrupt();
     }
     DominanceInfo dominance(function);
-    for (auto reference : llvm::make_first_range(elements)) {
+    for (auto reference : elements) {
+      if (auto owned = reference.getDefiningOp<qc::AllocOp>();
+          owned && !dominance.properlyDominates(owned.getOperation(),
+                                                allocation.getOperation())) {
+        allocation.emitOpError(
+            "owned reference buffers require qubit allocations before storage");
+        return WalkResult::interrupt();
+      }
       for (auto* user : reference.getUsers()) {
         if (!dominance.properlyDominates(allocation.getOperation(), user)) {
-          user->emitOpError("physical reference buffers must precede uses of "
+          user->emitOpError("reference buffers must precede uses of "
                             "their qubits");
           return WalkResult::interrupt();
         }
@@ -658,7 +665,7 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       }
       if (!isa<memref::LoadOp, func::CallOp>(user) ||
           !dominance.properlyDominates(finalInitialization, user)) {
-        user->emitOpError("physical reference initialization must precede "
+        user->emitOpError("reference initialization must precede "
                           "all register loads and helper calls");
         return WalkResult::interrupt();
       }
@@ -698,7 +705,13 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
 
   for (auto qubit : llvm::make_first_range(state.registerAccesses)) {
     for (auto* user : qubit.getUsers()) {
-      if (!isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, func::CallOp,
+      auto load = qubit.getDefiningOp<memref::LoadOp>();
+      const bool consumesReference =
+          isa<qc::DeallocOp>(user) &&
+          (qubit.getDefiningOp<qc::AllocOp>() ||
+           (load && load.getMemref().getDefiningOp<memref::AllocaOp>()));
+      if (!consumesReference &&
+          !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, func::CallOp,
                memref::StoreOp>(user)) {
         return user->emitOpError("cannot consume or return a register-backed "
                                  "qubit reference");
@@ -1190,7 +1203,7 @@ struct ConvertMemRefAllocOp final : LoweringPattern<memref::AllocOp> {
   }
 };
 
-/// Rebuild an immutable buffer of physical references as a qubit tensor.
+/// Rebuild an immutable reference buffer as a qubit tensor.
 struct ConvertMemRefAllocaOp final : LoweringPattern<memref::AllocaOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1201,16 +1214,20 @@ struct ConvertMemRefAllocaOp final : LoweringPattern<memref::AllocaOp> {
     if (buffer == state.referenceBuffers.end()) {
       return failure();
     }
-    if (failed(state.ensureAllocationMode(AllocationMode::Static, op))) {
-      return failure();
-    }
     SmallVector<Value> qubits;
     for (auto [index, element] : llvm::enumerate(buffer->second)) {
-      qubits.push_back(
-          qco::StaticOp::create(rewriter, op.getLoc(), element.second));
-      state.registerAccesses[element.first].index =
-          arith::ConstantIndexOp::create(rewriter, op.getLoc(),
-                                         static_cast<int64_t>(index));
+      if (auto physical = element.getDefiningOp<qc::StaticOp>()) {
+        if (failed(state.ensureAllocationMode(AllocationMode::Static, op))) {
+          return failure();
+        }
+        qubits.push_back(
+            qco::StaticOp::create(rewriter, op.getLoc(), physical.getIndex()));
+      } else {
+        qubits.push_back(lookupMappedQubit(state, op, element));
+        assignMappedQubit(state, op, element, nullptr);
+      }
+      state.registerAccesses[element].index = arith::ConstantIndexOp::create(
+          rewriter, op.getLoc(), static_cast<int64_t>(index));
     }
     auto tensor =
         qtensor::FromElementsOp::create(rewriter, op.getLoc(), qubits);
@@ -1288,9 +1305,16 @@ struct ConvertQCDeallocOp final : LoweringPattern<DeallocOp> {
     auto* operation = op.getOperation();
 
     auto qcQubit = op.getQubit();
-    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    if (mqt::preservesProgramQubits(op) &&
+        state.registerAccesses.contains(qcQubit)) {
+      // Program allocations share the reference buffer's function lifetime.
+      rewriter.eraseOp(op);
+      return success();
+    }
+    const SmallVector<Value, 1> qcQubits{qcQubit};
+    auto materialized = materializeQubits(state, operation, qcQubits, rewriter);
 
-    rewriter.replaceOpWithNewOp<SinkOp>(op, qcoQubit);
+    rewriter.replaceOpWithNewOp<SinkOp>(op, materialized.values.front());
 
     // Retain the slot so deallocation does not shift the ordered map.
     qubitMap[qcQubit] = nullptr;

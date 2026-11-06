@@ -12,6 +12,8 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
@@ -42,6 +44,7 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
@@ -677,8 +680,10 @@ TEST_P(AncillaFamilyTest, FallsBackWithoutAvailableAncillas) {
 }
 
 TEST_P(AncillaFamilyTest, RespectsNativeGatesAndWidthWithAvailableAncillas) {
+  context()->loadDialect<mlir::mqt::MQTDialect>();
   const auto family = GetParam();
-  for (const bool native : {false, true}) {
+  for (const StringRef mode : {"width", "target", "environment"}) {
+    SCOPED_TRACE(mode.str());
     auto module =
         QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
           SmallVector<Value> wires;
@@ -690,7 +695,7 @@ TEST_P(AncillaFamilyTest, RespectsNativeGatesAndWidthWithAvailableAncillas) {
         });
     ASSERT_TRUE(succeeded(verify(*module)));
     ASSERT_TRUE(succeeded(verifyLinearity(*module)));
-    if (native) {
+    if (mode != "width") {
       using Capability = CompilerTarget::OperationCapability;
       const bool phase =
           family == AncillaFamily::Phase || family == AncillaFamily::PhasePi;
@@ -710,8 +715,18 @@ TEST_P(AncillaFamilyTest, RespectsNativeGatesAndWidthWithAvailableAncillas) {
       const auto target = llvm::cantFail(CompilerTarget::create(
           9, CompilerTarget::Connectivity::allToAll(),
           CompilerTarget::NativeOperations::fromOperations(operations)));
+      if (mode == "environment") {
+        attachTargetEnvironment(
+            *module,
+            TargetEnvironment(target,
+                              llvm::cantFail(PayloadSpecification::create(
+                                  PayloadFormat{.id = "mqt.test.payload"}))));
+      }
       PassManager pm(context());
-      pm.addPass(createDecomposeMultiControlled(target));
+      pm.addPass(mode == "target"
+                     ? createDecomposeMultiControlled(target)
+                     : createDecomposeMultiControlled(
+                           DecomposeMultiControlledOptions{.useTarget = true}));
       ASSERT_TRUE(succeeded(pm.run(*module)));
       ASSERT_TRUE(succeeded(verifyLinearity(*module)));
     } else {
@@ -727,6 +742,64 @@ TEST_P(AncillaFamilyTest, RespectsNativeGatesAndWidthWithAvailableAncillas) {
     ASSERT_TRUE(succeeded(actual));
     EXPECT_EQ(*actual, ancillaFamilyReference(*package, family, 5));
     package->decRef(*actual);
+  }
+}
+
+TEST_F(MultiControlledDecompositionTest, TargetLimitsAncillaBorrowing) {
+  context()->loadDialect<mlir::mqt::MQTDialect>();
+  using Capability = CompilerTarget::OperationCapability;
+  for (const bool preplaced : {false, true}) {
+    SCOPED_TRACE(preplaced);
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        preplaced ? 9 : 8,
+        preplaced ? CompilerTarget::Connectivity::fromCouplings({
+                        {0, 1},
+                        {1, 2},
+                        {2, 3},
+                        {3, 4},
+                        {4, 5},
+                        {5, 6},
+                        {6, 7},
+                        {7, 8},
+                    })
+                  : CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations(
+            {llvm::cantFail(Capability::create("x", 2, 0))})));
+    const TargetEnvironment environment(
+        target, llvm::cantFail(PayloadSpecification::create(
+                    PayloadFormat{.id = "mqt.test.payload"})));
+    for (const bool useEnvironment : {false, true}) {
+      SCOPED_TRACE(useEnvironment);
+      auto moduleOp =
+          QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& builder) {
+            SmallVector<Value> wires;
+            for (size_t site = 0; site < 9; ++site) {
+              wires.push_back(preplaced ? builder.staticQubit(site)
+                                        : builder.allocQubit());
+            }
+            builder.mcx(ValueRange(wires).take_front(5), wires[5]);
+            return SmallVector<Value>{};
+          });
+      ASSERT_TRUE(moduleOp);
+      if (useEnvironment) {
+        attachTargetEnvironment(*moduleOp, environment);
+      }
+      PassManager pm(context());
+      pm.addPass(useEnvironment
+                     ? createDecomposeMultiControlled(
+                           DecomposeMultiControlledOptions{.useTarget = true})
+                     : createDecomposeMultiControlled(target));
+      ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+      ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+      // Capacity and fixed connectivity can forbid borrowing spare wires.
+      EXPECT_EQ(countEffectiveCxOps(*moduleOp), expectedMcxCx(5));
+      auto package = llvm::cantFail(dd::Package::create(9));
+      auto actual = buildFunctionality(
+          *moduleOp->getOps<func::FuncOp>().begin(), *package);
+      ASSERT_TRUE(succeeded(actual));
+      EXPECT_EQ(*actual, ancillaFamilyReference(*package, AncillaFamily::X, 5));
+      package->decRef(*actual);
+    }
   }
 }
 

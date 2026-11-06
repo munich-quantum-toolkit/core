@@ -1019,6 +1019,10 @@ Expected<CompiledProgram>
 CompiledProgram::compile(CompilerInput program,
                          const TargetEnvironment& environment,
                          const CompilationOptions& options) {
+  if (!environment.target().hasDeviceConstraints()) {
+    return createStringError(std::errc::invalid_argument,
+                             "Executable programs require a device target");
+  }
   auto native = runDefaultPipeline(std::move(program), ProgramFormat::QC,
                                    environment, options);
   if (!native) {
@@ -1032,6 +1036,10 @@ Expected<CompiledProgram>
 CompiledProgram::serialize(QCProgram program,
                            const TargetEnvironment& environment,
                            const CompilationOptions& options) {
+  if (!environment.target().hasDeviceConstraints()) {
+    return createStringError(std::errc::invalid_argument,
+                             "Executable programs require a device target");
+  }
   auto format = qdmiFormatForPayload(environment.payloadSpecification());
   if (!format) {
     return format.takeError();

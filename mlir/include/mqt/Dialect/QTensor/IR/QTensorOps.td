@@ -80,8 +80,6 @@ def DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {
 
   let arguments = (ins 1DTensorOf<[QubitType]>:$tensor);
   let assemblyFormat = "$tensor attr-dict `:` type($tensor)";
-
-  let hasCanonicalizer = 1;
 }
 
 def FromElementsOp

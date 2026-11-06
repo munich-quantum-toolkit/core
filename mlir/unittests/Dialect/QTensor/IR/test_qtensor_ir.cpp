@@ -75,8 +75,7 @@ protected:
 
   /// Build a module using the QCOProgramBuilder and run the cleanup pipeline.
   template <typename BuildFn>
-  [[nodiscard]] OwningOpRef<ModuleOp>
-  buildAndCanonicalize(BuildFn&& buildFn) const {
+  [[nodiscard]] OwningOpRef<ModuleOp> buildAndCleanup(BuildFn&& buildFn) const {
     auto module =
         QCOProgramBuilder::build(context.get(), std::forward<BuildFn>(buildFn));
     if (!module) {
@@ -229,9 +228,9 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
 // DeallocOp
 // ============================================================================
 
-// An alloc immediately followed by dealloc should be eliminated entirely.
+// Explicit cleanup removes an unused allocation and its release.
 TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
-  auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
+  auto canonicalized = buildAndCleanup([](QCOProgramBuilder& b) {
     b.qtensorAlloc(3);
     return SmallVector<Value>{};
   });

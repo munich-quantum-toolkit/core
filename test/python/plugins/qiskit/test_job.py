@@ -622,6 +622,7 @@ def test_generic_compiled_header(recording_backend: RecordingBackend, width: int
     backend, _, _ = recording_backend
     source = "OPENQASM 3; qubit q;" + (f"bit[{width}] c = 0; c[0] = measure q;" if width else "")
     program = compile_program(source, target=TargetEnvironment.from_device(backend.device))
+    assert isinstance(program, CompiledProgram)
     result = backend.run(program, shots=0).result()
     assert result.results is not None
     assert result.results[0].header["memory_slots"] == width
@@ -694,6 +695,7 @@ def test_job_requires_bit_results(recording_backend: RecordingBackend) -> None:
         "OPENQASM 3; output int[32] result; result = 7;",
         target=TargetEnvironment.from_device(backend.device),
     )
+    assert isinstance(program, CompiledProgram)
     assert program.result_width is None
     with pytest.raises(JobError, match="Boolean or classical-bit outputs"):
         backend.run(program)

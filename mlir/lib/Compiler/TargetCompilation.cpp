@@ -12,6 +12,7 @@
 
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
@@ -25,19 +26,25 @@
 
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/PassRegistry.h"
+#include "mlir/Support/LLVM.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <utility>
 
 namespace mlir {
@@ -102,6 +109,13 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
   return success();
 }
 
+static void populateTargetPreparationCleanup(OpPassManager& pm) {
+  // The module cleanup owns canonicalization and dead symbols.
+  pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
+  // Defer tensor shrinking until decomposition and placement.
+  populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
+}
+
 namespace {
 
 class PrepareTargetCompilationPass
@@ -156,7 +170,11 @@ protected:
       if (environment_.target().vertexForSite(site)) {
         return WalkResult::advance();
       }
-      op.emitError() << "target does not contain static site " << site;
+      if (!target.hasDeviceConstraints()) {
+        op.emitError("gate-set synthesis requires allocated program qubits");
+      } else {
+        op.emitError() << "target does not contain static site " << site;
+      }
       return WalkResult::interrupt();
     });
     if (staticSites.wasInterrupted()) {
@@ -187,7 +205,38 @@ protected:
       signalPassFailure();
       return;
     }
-    if (hasStatic) {
+    if (!target.hasDeviceConstraints()) {
+      auto entry = mqt::getEntryPoint(getOperation());
+      if (!entry || !entry.getBody().hasOneBlock() ||
+          llvm::any_of(entry.getArgumentTypes(), qco::isLinearQubitType)) {
+        getOperation().emitError(
+            "gate-set synthesis requires fixed-width entry-block allocations");
+        signalPassFailure();
+        return;
+      }
+      const auto allocations = getOperation().walk([&](Operation* op) {
+        if (!isa<qco::AllocOp, qtensor::AllocOp>(op)) {
+          return WalkResult::advance();
+        }
+        if (op->getBlock() != &entry.getBody().front()) {
+          op->emitError("gate-set synthesis requires entry-block allocations");
+          return WalkResult::interrupt();
+        }
+        if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
+          const auto extent = getConstantIntValue(tensor.getSize());
+          if (!extent || *extent < 0) {
+            tensor.emitError(
+                "gate-set synthesis requires fixed-width allocations");
+            return WalkResult::interrupt();
+          }
+        }
+        return WalkResult::advance();
+      });
+      if (allocations.wasInterrupted()) {
+        signalPassFailure();
+        return;
+      }
+    } else if (hasStatic) {
       getOperation()->removeAttr(mqt::kSourceQubitCountAttr);
     } else if (failed(prepareLayout(getOperation(), environment_))) {
       signalPassFailure();
@@ -202,7 +251,122 @@ private:
   MappingOptions mapping_;
 };
 
+class PrepareStagedTargetCompilationPass final
+    : public PassWrapper<PrepareStagedTargetCompilationPass,
+                         OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(
+      PrepareStagedTargetCompilationPass)
+
+  [[nodiscard]] StringRef getArgument() const override {
+    return "mqt-target-prepare";
+  }
+  [[nodiscard]] StringRef getDescription() const override {
+    return "Prepare source wire order and the routing target for custom QCO "
+           "compilation";
+  }
+
+  void getDependentDialects(DialectRegistry& registry) const override {
+    registry.insert<mqt::MQTDialect>();
+    OpPassManager pm(ModuleOp::getOperationName());
+    populateTargetPreparationCleanup(pm);
+    pm.getDependentDialects(registry);
+  }
+
+protected:
+  void runOnOperation() override {
+    auto moduleOp = getOperation();
+    if (moduleOp->hasAttr(mqt::ORIGINAL_TARGET_ENV_ATTR)) {
+      moduleOp.emitError("target compilation is already prepared");
+      signalPassFailure();
+      return;
+    }
+    const auto& analysis = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!analysis) {
+      moduleOp.emitError() << "expected a valid mqt.target_env: "
+                           << analysis.error();
+      signalPassFailure();
+      return;
+    }
+    const TargetEnvironment environment = analysis.environment();
+    auto compilationEnvironment =
+        createTargetCompilationEnvironment(moduleOp, environment);
+    if (!compilationEnvironment) {
+      moduleOp.emitError() << llvm::toString(
+          compilationEnvironment.takeError());
+      signalPassFailure();
+      return;
+    }
+    OpPassManager pm(ModuleOp::getOperationName());
+    pm.addPass(std::make_unique<PrepareTargetCompilationPass>(
+        *compilationEnvironment));
+    populateTargetPreparationCleanup(pm);
+    if (failed(runPipeline(pm, moduleOp))) {
+      signalPassFailure();
+      return;
+    }
+    moduleOp->setAttr(mqt::ORIGINAL_TARGET_ENV_ATTR,
+                      environment.materialize(getContext()));
+  }
+};
+
+class FinalizeStagedTargetCompilationPass final
+    : public PassWrapper<FinalizeStagedTargetCompilationPass,
+                         OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(
+      FinalizeStagedTargetCompilationPass)
+
+  [[nodiscard]] StringRef getArgument() const override {
+    return "mqt-target-finalize";
+  }
+  [[nodiscard]] StringRef getDescription() const override {
+    return "Synthesize native QCO operations, verify conformance, and restore "
+           "the execution target";
+  }
+
+  void getDependentDialects(DialectRegistry& registry) const override {
+    OpPassManager pm(ModuleOp::getOperationName());
+    qco::populateTargetNativeSynthesisPipeline(pm);
+    pm.getDependentDialects(registry);
+  }
+
+protected:
+  void runOnOperation() override {
+    auto moduleOp = getOperation();
+    std::optional<TargetEnvironment> originalEnvironment;
+    if (auto attribute = moduleOp->getAttrOfType<mqt::TargetEnvAttr>(
+            mqt::ORIGINAL_TARGET_ENV_ATTR)) {
+      auto environment = TargetEnvironment::create(attribute);
+      if (!environment) {
+        moduleOp.emitError() << llvm::toString(environment.takeError());
+        signalPassFailure();
+        return;
+      }
+      originalEnvironment = std::move(*environment);
+    }
+    OpPassManager pm(ModuleOp::getOperationName());
+    qco::populateTargetNativeSynthesisPipeline(pm);
+    if (failed(runPipeline(pm, moduleOp))) {
+      signalPassFailure();
+      return;
+    }
+    if (originalEnvironment) {
+      attachTargetEnvironment(moduleOp, *originalEnvironment);
+    }
+  }
+};
+
 } /* namespace */
+
+void registerTargetCompilationPasses() {
+  static const auto REGISTERED = [] {
+    PassRegistration<PrepareStagedTargetCompilationPass>();
+    PassRegistration<FinalizeStagedTargetCompilationPass>();
+    return true;
+  }();
+  static_cast<void>(REGISTERED);
+}
 
 /// Borrow before placement while allocations still prove clean states.
 static void populateDecompositionAndPlacement(OpPassManager& pm,
@@ -217,7 +381,11 @@ static void populateDecompositionAndPlacement(OpPassManager& pm,
   if (!needsSites) {
     pm.addPass(qco::createDecomposeMultiControlled(target));
   }
+  if (!target.hasDeviceConstraints()) {
+    return;
+  }
   // Drop unused slots before placement checks target capacity.
+  pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   qco::ElidePermutationsOptions permutationOptions;
   permutationOptions.trackOutputPermutation = true;
@@ -239,10 +407,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
                                                             mapping));
   const auto& target = environment.target();
-  // The module cleanup below owns canonicalization and dead symbols.
-  pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
-  // Fold tensor accesses before SCCP; defer liveness until after placement.
-  populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
+  populateTargetPreparationCleanup(pm);
   pm.addPass(qco::createCombineControlledGates(target));
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
@@ -286,10 +451,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
                                                             mapping));
   const auto& target = environment.target();
-  // The module cleanup below owns canonicalization and dead symbols.
-  pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
-  // Placement changes region results; run liveness once afterwards.
-  populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
+  populateTargetPreparationCleanup(pm);
   pm.addPass(qco::createCombineControlledGates(target));
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());

@@ -89,7 +89,8 @@ scikit-build-core builds. CMake supplies the default batch size of eight. The
 lint preset disables unity and enables interface-header verification. Jeff and
 its complete dependency subtree compile without unity through one
 function-scoped variable. Header verification defaults to off for ordinary
-builds. Interprocedural optimization retains its pre-existing behavior.
+builds. `ENABLE_IPO` controls interprocedural optimization when the compiler
+supports it.
 
 The routine C++ workflow has six rows: Linux ARM Release and x64 Debug, macOS
 Intel Release and ARM Debug, and Windows ARM Release and x64 Debug. The five

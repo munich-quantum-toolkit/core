@@ -636,7 +636,7 @@ struct CompilerTarget::Storage {
           SmallVector<OperationCapability> targetOperations,
           std::optional<DurationUnit> targetDurationUnit);
 
-  [[nodiscard]] llvm::Error initialize();
+  [[nodiscard]] llvm::Error initialize(bool deviceConstraints);
   void computeDistances(size_t source, MutableArrayRef<size_t> row) const;
 
   [[nodiscard]] bool supportsOperation(
@@ -708,12 +708,17 @@ void CompilerTarget::Storage::computeDistances(
   }
 }
 
-llvm::Error CompilerTarget::Storage::initialize() {
+llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
   if (name && name->empty()) {
     return invalidTarget("Compiler target name must not be empty when present");
   }
-  if (sites.empty()) {
+  if (deviceConstraints && sites.empty()) {
     return invalidTarget("Compiler target must contain at least one site");
+  }
+  if (!deviceConstraints &&
+      (!sites.empty() || connectivityKind != Connectivity::Kind::AllToAll ||
+       !couplings.empty() || durationUnit)) {
+    return invalidTarget("Gate-set target cannot contain device constraints");
   }
 
   siteIds.reserve(sites.size());
@@ -765,13 +770,17 @@ llvm::Error CompilerTarget::Storage::initialize() {
       return invalidTarget("Compiler target topology must be connected");
     }
   } else {
-    maximumDegree = sites.size() - 1;
+    maximumDegree = sites.empty() ? 0 : sites.size() - 1;
   }
 
   if (nativeOperationsKind == NativeOperations::Kind::Explicit) {
     operationSites.resize(operations.size());
     for (const auto& [index, operation] : llvm::enumerate(operations)) {
-      if (operation.arity().value() > sites.size()) {
+      if (!deviceConstraints && !operation.siteTuples().empty()) {
+        return invalidTarget(
+            "Gate-set target cannot contain site-specific operations");
+      }
+      if (deviceConstraints && operation.arity().value() > sites.size()) {
         if (operation.arity().kind() ==
             OperationCapability::Arity::Kind::Variadic) {
           return invalidTarget("Compiler target operation variadic minimum "
@@ -911,13 +920,13 @@ bool CompilerTarget::Storage::supportsOperation(
     function_ref<std::optional<double>(size_t)> parameterAt,
     function_ref<bool(const OperationCapability&)> capabilityFilter) const {
   const auto canonical = canonicalOperationName(operationName);
-  if (canonical.empty() || arity > sites.size() ||
+  if (canonical.empty() || (!sites.empty() && arity > sites.size()) ||
       (orderedSites && orderedSites->size() != arity)) {
     return false;
   }
   if (orderedSites) {
     for (const auto [index, site] : llvm::enumerate(*orderedSites)) {
-      if (!siteToVertex.contains(site) ||
+      if (site < 0 || (!sites.empty() && !siteToVertex.contains(site)) ||
           llvm::is_contained(orderedSites->take_front(index), site)) {
         return false;
       }
@@ -1096,7 +1105,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
 
   const auto supportsOnEveryCoupling =
       [&](GateKind gate, AngleSupport angles = AngleSupport::Fixed) {
-        if (sites.size() < 2) {
+        if (!sites.empty() && sites.size() < 2) {
           return false;
         }
         if ((gate == GateKind::CX && supportsEveryPlacement("x", 2, 0, true)) ||
@@ -1114,6 +1123,9 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
                                    specification->numParameters, false, gate,
                                    angles)) {
           return true;
+        }
+        if (sites.empty()) {
+          return false;
         }
         const auto supportsPair = [&](SiteId source, SiteId target) {
           const std::array forward{source, target};
@@ -1168,6 +1180,16 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
       .hasHalfTurn = hasHalfTurn,
       .phaseRotation = phaseRotation,
   };
+}
+
+llvm::Expected<CompilerTarget>
+CompilerTarget::forGateSet(NativeOperations nativeOperations) {
+  return createImpl(std::nullopt, {}, Connectivity::allToAll(),
+                    std::move(nativeOperations), std::nullopt, false);
+}
+
+bool CompilerTarget::hasDeviceConstraints() const noexcept {
+  return !storage_->sites.empty();
 }
 
 llvm::Expected<CompilerTarget>
@@ -1358,19 +1380,19 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
   }
 
   return createImpl(std::move(name), std::move(sites), std::move(connectivity),
-                    std::move(nativeOperations), std::move(durationUnit));
+                    std::move(nativeOperations), std::move(durationUnit),
+                    !attribute.getGateSet());
 }
 
-llvm::Expected<CompilerTarget>
-CompilerTarget::createImpl(std::optional<std::string> name,
-                           std::vector<Site> sites, Connectivity connectivity,
-                           NativeOperations nativeOperations,
-                           std::optional<DurationUnit> durationUnit) {
+llvm::Expected<CompilerTarget> CompilerTarget::createImpl(
+    std::optional<std::string> name, std::vector<Site> sites,
+    Connectivity connectivity, NativeOperations nativeOperations,
+    std::optional<DurationUnit> durationUnit, bool deviceConstraints) {
   auto storage = std::make_shared<Storage>(
       std::move(name), std::move(sites), connectivity.kind_,
       std::move(connectivity.couplings_), nativeOperations.kind_,
       std::move(nativeOperations.operations_), std::move(durationUnit));
-  if (auto error = storage->initialize()) {
+  if (auto error = storage->initialize(deviceConstraints)) {
     return std::move(error);
   }
   return CompilerTarget(std::move(storage));
@@ -1848,7 +1870,8 @@ CompilerTarget::materialize(MLIRContext& context) const {
           : mqt::NativeOperationsKind::Explicit;
   return mqt::CompilationTargetAttr::get(
       &context, nameAttr, siteAttrs, durationUnitAttr, connectivity,
-      couplingAttrs, nativeOperations, operationAttrs);
+      couplingAttrs, nativeOperations, operationAttrs,
+      hasDeviceConstraints() ? UnitAttr{} : builder.getUnitAttr());
 }
 
 } // namespace mlir

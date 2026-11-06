@@ -102,10 +102,8 @@ provide complete execution support.
 
 Local validation on the revised implementation passed 985 native tests (254
 compiler, 86 native synthesis, 126 mapping, 315 decomposition, 204 optimization)
-and 631 Python MLIR/Qiskit tests. Binding stubs were regenerated. Independent
-correctness and Ponytail reviews found a missing `canonical_name` stub override
-and obsolete includes; both were corrected. No remaining design or correctness
-finding was identified. Repository lint and full changed-file C++ lint passed.
+and 631 Python MLIR/Qiskit tests. Binding stubs were regenerated. Repository
+lint and full changed-file C++ lint passed.
 
 The docs session now rebuilds the local package with documentation generation
 enabled, preventing cached builds from omitting MLIR reference pages. The full

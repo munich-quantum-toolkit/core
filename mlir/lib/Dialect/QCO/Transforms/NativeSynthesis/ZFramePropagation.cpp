@@ -96,9 +96,14 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
   const bool equatorial =
       target.synthesisBasis() &&
       target.synthesisBasis()->singleQubit == SingleQubitBasis::R;
-  const bool nativeRZ = llvm::all_of(target.siteIds(), [&](auto site) {
-    return target.supports(CompilerTarget::GateKind::RZ, ArrayRef(&site, 1));
-  });
+  const bool nativeRZ =
+      target.hasDeviceConstraints()
+          ? llvm::all_of(target.siteIds(),
+                         [&](auto site) {
+                           return target.supports(CompilerTarget::GateKind::RZ,
+                                                  ArrayRef(&site, 1));
+                         })
+          : target.supports(CompilerTarget::GateKind::RZ);
   if (!equatorial && !nativeRZ) {
     return success();
   }

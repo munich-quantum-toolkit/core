@@ -2139,6 +2139,61 @@ TEST_F(QCToQCORegressionTest, RoundTripsStableBorrowedRegister) {
   }
 }
 
+TEST_F(QCToQCORegressionTest, ConvertsOwnedReferenceBufferWithDynamicAccess) {
+  context.getOrLoadDialect<cbit::CBitDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(
+      R"mlir(module attributes {mqt.target_env = #mqt.target_env<
+      compilation_target = #mqt.compilation_target<sites = [],
+          connectivity = all_to_all, couplings = [], native_operations = unrestricted,
+          operations = [], gate_set = unit>,
+      payload_specification = #mqt.payload_spec<format = <id = "openqasm",
+          version = "3.0", profile = "", encoding = text>, capabilities = [],
+          optional_capabilities_known = false>>} {
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %idle = qc.alloc : !qc.qubit
+      %q0 = qc.alloc : !qc.qubit
+      %q1 = qc.alloc : !qc.qubit
+      %reg = memref.alloca() : memref<2x!qc.qubit>
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      memref.store %q0, %reg[%zero] : memref<2x!qc.qubit>
+      memref.store %q1, %reg[%one] : memref<2x!qc.qubit>
+      scf.for %i = %zero to %two step %one {
+        %q = memref.load %reg[%i] : memref<2x!qc.qubit>
+        qc.x %q : !qc.qubit
+      }
+      %loaded = memref.load %reg[%one] : memref<2x!qc.qubit>
+      %value = qc.measure %loaded : !qc.qubit -> i1
+      %bits = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
+      cbit.store %value, %bits[%zero] : !cbit.reg<1>
+      qc.dealloc %loaded : !qc.qubit
+      qc.dealloc %q0 : !qc.qubit
+      qc.dealloc %idle : !qc.qubit
+      return %bits : !cbit.reg<1>
+    }
+  })mlir",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto function = mlir::mqt::getEntryPoint(*moduleOp);
+  EXPECT_EQ(llvm::range_size(function.getOps<qco::AllocOp>()), 3);
+  EXPECT_TRUE(function.getOps<qco::StaticOp>().empty());
+  auto counts = qco::sample(function, 8, 17);
+  ASSERT_TRUE(succeeded(counts));
+  ASSERT_EQ(counts->size(), 1U);
+  EXPECT_EQ(counts->at("1"), 8U);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  function = mlir::mqt::getEntryPoint(*moduleOp);
+  EXPECT_EQ(llvm::range_size(function.getOps<qc::AllocOp>()), 3);
+  EXPECT_EQ(llvm::range_size(function.getOps<qc::DeallocOp>()), 3);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
 TEST_F(QCToQCORegressionTest,
        RoundTripsPhysicalReferencesAcrossIdentityStores) {
   context.getOrLoadDialect<cbit::CBitDialect>();
@@ -2392,4 +2447,39 @@ TEST_F(QCToQCORegressionTest, RejectsBorrowedRegisterAliasingBeforeRewriting) {
         moduleOp->getOperation(), original->getOperation(),
         OperationEquivalence::Flags::None));
   }
+}
+
+TEST_F(QCToQCORegressionTest, RoundTripsConstantExtentWithDynamicTensorShape) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module attributes {mqt.target_env = #mqt.target_env<
+    compilation_target = #mqt.compilation_target<sites = [],
+        connectivity = all_to_all, couplings = [],
+        native_operations = unrestricted, operations = [], gate_set = unit>,
+    payload_specification = #mqt.payload_spec<
+        format = <id = "openqasm", version = "3.0", profile = "", encoding = text>,
+        capabilities = [], optional_capabilities_known = false>>} {
+  func.func @main(%index: index) attributes {mqt.entry_point} {
+    %size = arith.constant 4 : index
+    %reg = qtensor.alloc(%size) : tensor<?x!qco.qubit>
+    %rest, %qubit = qtensor.extract %reg[%index] : tensor<?x!qco.qubit>
+    %updated = qco.x %qubit : !qco.qubit
+    %full = qtensor.insert %updated into %rest[%index] : tensor<?x!qco.qubit>
+    qtensor.dealloc %full : tensor<?x!qco.qubit>
+    return
+  }
+}
+)mlir";
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  size_t allocations = 0;
+  size_t releases = 0;
+  moduleOp->walk([&](qc::AllocOp) { ++allocations; });
+  moduleOp->walk([&](qc::DeallocOp) { ++releases; });
+  EXPECT_EQ(allocations, 4);
+  EXPECT_EQ(releases, 4);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }

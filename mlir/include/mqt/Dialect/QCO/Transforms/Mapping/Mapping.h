@@ -11,17 +11,3 @@
 #pragma once
 
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
-
-#include "mlir/Pass/Pass.h"
-
-#include <memory>
-
-namespace mlir {
-
-namespace qco {
-
-/// Create a deterministic placement pass for a compiler target.
-std::unique_ptr<Pass> createPlacementPass();
-
-} // namespace qco
-} // namespace mlir

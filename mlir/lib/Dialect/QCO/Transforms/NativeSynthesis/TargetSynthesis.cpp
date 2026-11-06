@@ -80,6 +80,7 @@ using decomposition::emitUnitary2QWeyl;
 
 #define GEN_PASS_DEF_TARGETNATIVESYNTHESIS
 #define GEN_PASS_DEF_VERIFYTARGETCONFORMANCE
+#define GEN_PASS_DEF_FUSETWOQUBITGATES
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
@@ -451,10 +452,11 @@ static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
                                                 const SiteMap& sites) {
   SmallVector<SiteId, 2> result;
   for (Value qubit : getQubitValues(operation->getOperands())) {
-    if (!sites.at(qubit)) {
+    const auto found = sites.find(qubit);
+    if (found == sites.end() || !found->second) {
       return {};
     }
-    result.push_back(*sites.at(qubit));
+    result.push_back(*found->second);
   }
   return result;
 }
@@ -1368,35 +1370,42 @@ fuseGateRuns(IRRewriter& rewriter, ModuleOp moduleOp,
 namespace {
 
 struct FuseTwoQubitGatesPass final
-    : PassWrapper<FuseTwoQubitGatesPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FuseTwoQubitGatesPass)
+    : impl::FuseTwoQubitGatesBase<FuseTwoQubitGatesPass> {
+  using Base::Base;
 
   FuseTwoQubitGatesPass() = default;
   explicit FuseTwoQubitGatesPass(const CompilerTarget& target)
       : target_(target) {}
 
-  void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, arith::ArithDialect>();
-  }
-
 protected:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
+    const auto* target = target_ ? &*target_ : nullptr;
+    if (useTarget) {
+      const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+      if (!environment) {
+        moduleOp.emitError()
+            << "expected a valid mqt.target_env: " << environment.error();
+        signalPassFailure();
+        return;
+      }
+      target = &environment.environment().target();
+    }
     const std::optional defaultBasis{CompilerTarget::SynthesisBasis{
         .singleQubit = CompilerTarget::SingleQubitBasis::U,
         .entangler =
             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::CZ},
     }};
-    const auto& basis = target_ ? target_->synthesisBasis() : defaultBasis;
+    const auto& basis =
+        target != nullptr ? target->synthesisBasis() : defaultBasis;
     if (!basis || !basis->entangler) {
       return;
     }
     IRRewriter rewriter(&getContext());
     decomposition::mergeDiagonalRotations(rewriter, moduleOp);
     NativeCostAnalysis analysis(compilationSeed(moduleOp, 2023));
-    const auto changed =
-        fuseGateRuns(rewriter, moduleOp, *basis, analysis,
-                     target_ ? &*target_ : nullptr, nullptr, true);
+    const auto changed = fuseGateRuns(rewriter, moduleOp, *basis, analysis,
+                                      target, nullptr, true);
     if (failed(changed) ||
         (*changed && failed(mlir::mqt::normalizeGlobalPhases(moduleOp)))) {
       signalPassFailure();
@@ -1542,7 +1551,9 @@ protected:
           return capability.id == ProgramCapability::FORWARD_BRANCHING &&
                  capability.value == 0 && capability.constraints.empty();
         });
-    auto sites = collectStaticSites(moduleOp, indexed);
+    auto sites = target.hasDeviceConstraints()
+                     ? collectStaticSites(moduleOp, indexed)
+                     : FailureOr<SiteMap>(SiteMap{});
     if (failed(sites)) {
       signalPassFailure();
       return;
@@ -1655,7 +1666,9 @@ protected:
     }
     const CompilerTarget& target = environment.environment().target();
     const bool indexed = environment.environment().supportsIndexedQubits();
-    auto sites = collectStaticSites(moduleOp, indexed);
+    auto sites = target.hasDeviceConstraints()
+                     ? collectStaticSites(moduleOp, indexed)
+                     : FailureOr<SiteMap>(SiteMap{});
     if (failed(sites)) {
       signalPassFailure();
       return;
@@ -1756,16 +1769,12 @@ protected:
 
 } // namespace
 
-std::unique_ptr<Pass> createFuseTwoQubitGates() {
-  return std::make_unique<FuseTwoQubitGatesPass>();
-}
-
 std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
   return std::make_unique<FuseTwoQubitGatesPass>(target);
 }
 
 void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
-  // Placement consumes allocations; native synthesis normalizes phases.
+  // Device placement consumes allocations; gate-set targets retain them.
   pm.addPass(createCanonicalizerPass(
       GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
   // Reuse unchanged classical reads before native synthesis splits their uses.

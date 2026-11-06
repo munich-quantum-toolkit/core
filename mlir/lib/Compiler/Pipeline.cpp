@@ -22,6 +22,7 @@
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Support/Passes.h"
@@ -57,6 +58,7 @@
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -207,6 +209,7 @@ LogicalResult QCOProgram::runPassPipeline(std::string_view pipeline,
                                           const CompilationOptions& options,
                                           const TargetEnvironment* environment,
                                           bool preservesLayout) {
+  registerTargetCompilationPasses();
   if (failed(qco::verifyLinearity(mod())) ||
       failed(::runPassPipeline(mod(), pipeline, options, environment,
                                preservesLayout))) {
@@ -489,20 +492,36 @@ static void insertResonatorMoves(ModuleOp module,
   scheduleTerminalReadout(module);
 }
 
-LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
-                                           const CompilationOptions& options) {
-  auto routing = inspect().numQubits == 0
+Expected<TargetEnvironment>
+createTargetCompilationEnvironment(ModuleOp moduleOp,
+                                   const TargetEnvironment& environment) {
+  if (!environment.target().hasDeviceConstraints()) {
+    return environment;
+  }
+  auto routing = QuantumProgramAnalysis(moduleOp).info().numQubits == 0
                      ? Expected<CompilerTarget>(environment.target())
                      : placementTarget(environment.target());
   if (!routing) {
-    return mod().emitError() << llvm::toString(routing.takeError());
+    return routing.takeError();
   }
-  const TargetEnvironment compilationEnvironment(
-      *routing, environment.payloadSpecification());
+  return TargetEnvironment(*routing, environment.payloadSpecification());
+}
+
+LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
+                                           const CompilationOptions& options) {
+  if (!environment.target().hasDeviceConstraints()) {
+    return synthesizeForTarget(environment, options);
+  }
+  auto compilationEnvironment =
+      createTargetCompilationEnvironment(mod(), environment);
+  if (!compilationEnvironment) {
+    return mod().emitError()
+           << llvm::toString(compilationEnvironment.takeError());
+  }
   if (failed(runQCOTransformPasses(
           mod(),
           [&](OpPassManager& pm) {
-            populateTargetCompilationPipeline(pm, compilationEnvironment,
+            populateTargetCompilationPipeline(pm, *compilationEnvironment,
                                               options.mapping);
           },
           "failed to compile the QCO program for the target", options, true))) {
@@ -880,6 +899,7 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
                   const CompilationOptions& options) {
   if (output == ProgramFormat::IQMJSON &&
       (environment == nullptr ||
+       !environment->target().hasDeviceConstraints() ||
        environment->target().nativeOperationsKind() ==
            CompilerTarget::NativeOperations::Kind::Unrestricted)) {
     return createStringError(std::errc::invalid_argument,

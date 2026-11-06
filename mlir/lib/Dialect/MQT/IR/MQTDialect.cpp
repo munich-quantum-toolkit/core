@@ -474,8 +474,9 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     auto count = dyn_cast<IntegerAttr>(attribute.getValue());
     if (!isa<ModuleOp>(operation) || !count ||
         !count.getType().isSignlessInteger(64) || count.getInt() < 0) {
-      return operation->emitError(
-          "source qubit count requires a nonnegative i64 on a module");
+      return operation->emitError()
+             << attribute.getName()
+             << " requires a nonnegative i64 on a module";
     }
     llvm::SmallDenseSet<int64_t> seen;
     const auto result = operation->walk([&](Operation* nested) {
@@ -543,7 +544,8 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     return success(succeeded(QubitLayout::fromAttr(
         attribute.getValue(), [&] { return operation->emitError(); })));
   }
-  if (attribute.getName() == TargetEnvAttr::name) {
+  if (attribute.getName() == TargetEnvAttr::name ||
+      attribute.getName() == ORIGINAL_TARGET_ENV_ATTR) {
     if (!isa<ModuleOp>(operation)) {
       return operation->emitError()
              << "attribute '" << attribute.getName().getValue()
