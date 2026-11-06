@@ -23,6 +23,9 @@ releases may include breaking changes.
 
 ### Fixed
 
+- 🐛 Add normalized Frobenius comparisons for DD identity and measured-output
+  diagonal blocks, with conservative early rejection; use complex distance for
+  structural ancillary checks ([#2942]) ([**@burgholzer**])
 - 🐛 Ship one copy of each shared library in Linux and macOS wheels while
   retaining the ABI-versioned library names ([#2923]) ([**@burgholzer**])
 - 🐛 Keep DD states and permutation mappings valid when allocation fails during
@@ -933,6 +936,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2942]: https://github.com/munich-quantum-toolkit/core/pull/2942
 [#2923]: https://github.com/munich-quantum-toolkit/core/pull/2923
 [#2831]: https://github.com/munich-quantum-toolkit/core/pull/2831
 [#2826]: https://github.com/munich-quantum-toolkit/core/pull/2826
