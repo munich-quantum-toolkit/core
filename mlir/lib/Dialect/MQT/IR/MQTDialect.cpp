@@ -508,7 +508,8 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     return success(succeeded(QubitLayout::fromAttr(
         attribute.getValue(), [&] { return operation->emitError(); })));
   }
-  if (attribute.getName() == TargetEnvAttr::name) {
+  if (attribute.getName() == TargetEnvAttr::name ||
+      attribute.getName() == ORIGINAL_TARGET_ENV_ATTR) {
     if (!isa<ModuleOp>(operation)) {
       return operation->emitError()
              << "attribute '" << attribute.getName().getValue()

@@ -426,6 +426,7 @@ mqt::TargetEnvAttr TargetEnvironment::materialize(MLIRContext& context) const {
 void attachTargetEnvironment(ModuleOp moduleOp,
                              const TargetEnvironment& environment) {
   MLIRContext& context = *moduleOp.getContext();
+  moduleOp->removeAttr(mqt::ORIGINAL_TARGET_ENV_ATTR);
   moduleOp->setAttr(mqt::TargetEnvAttr::name, environment.materialize(context));
 }
 

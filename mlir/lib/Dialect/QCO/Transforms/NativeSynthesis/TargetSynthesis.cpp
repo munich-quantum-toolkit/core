@@ -80,6 +80,7 @@ using decomposition::emitUnitary2QWeyl;
 
 #define GEN_PASS_DEF_TARGETNATIVESYNTHESIS
 #define GEN_PASS_DEF_VERIFYTARGETCONFORMANCE
+#define GEN_PASS_DEF_FUSETWOQUBITGATES
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
@@ -1369,35 +1370,42 @@ fuseGateRuns(IRRewriter& rewriter, ModuleOp moduleOp,
 namespace {
 
 struct FuseTwoQubitGatesPass final
-    : PassWrapper<FuseTwoQubitGatesPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FuseTwoQubitGatesPass)
+    : impl::FuseTwoQubitGatesBase<FuseTwoQubitGatesPass> {
+  using Base::Base;
 
   FuseTwoQubitGatesPass() = default;
   explicit FuseTwoQubitGatesPass(const CompilerTarget& target)
       : target_(target) {}
 
-  void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, arith::ArithDialect>();
-  }
-
 protected:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
+    const auto* target = target_ ? &*target_ : nullptr;
+    if (useTarget) {
+      const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+      if (!environment) {
+        moduleOp.emitError()
+            << "expected a valid mqt.target_env: " << environment.error();
+        signalPassFailure();
+        return;
+      }
+      target = &environment.environment().target();
+    }
     const std::optional defaultBasis{CompilerTarget::SynthesisBasis{
         .singleQubit = CompilerTarget::SingleQubitBasis::U,
         .entangler =
             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::CZ},
     }};
-    const auto& basis = target_ ? target_->synthesisBasis() : defaultBasis;
+    const auto& basis =
+        target != nullptr ? target->synthesisBasis() : defaultBasis;
     if (!basis || !basis->entangler) {
       return;
     }
     IRRewriter rewriter(&getContext());
     decomposition::mergeDiagonalRotations(rewriter, moduleOp);
     NativeCostAnalysis analysis(compilationSeed(moduleOp, 2023));
-    const auto changed =
-        fuseGateRuns(rewriter, moduleOp, *basis, analysis,
-                     target_ ? &*target_ : nullptr, nullptr, true);
+    const auto changed = fuseGateRuns(rewriter, moduleOp, *basis, analysis,
+                                      target, nullptr, true);
     if (failed(changed) ||
         (*changed && failed(mlir::mqt::normalizeGlobalPhases(moduleOp)))) {
       signalPassFailure();
@@ -1760,10 +1768,6 @@ protected:
 };
 
 } // namespace
-
-std::unique_ptr<Pass> createFuseTwoQubitGates() {
-  return std::make_unique<FuseTwoQubitGatesPass>();
-}
 
 std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
   return std::make_unique<FuseTwoQubitGatesPass>(target);

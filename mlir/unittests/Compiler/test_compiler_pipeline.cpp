@@ -5942,6 +5942,118 @@ x q;
   EXPECT_NE(qco->str().find("qco.static"), std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest, StagedPreparationRetainsIdleSourceWireOrder) {
+  auto qc = QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; include \"stdgates.inc\"; qubit[4] q; x q[1];");
+  MQT_ASSERT_SUCCESS(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(succeeded(program));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(4, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  const TargetEnvironment environment(target, makePayloadSpecification());
+  ASSERT_TRUE(succeeded(
+      program->runPassPipeline("mqt-target-prepare", {}, &environment, true)));
+  auto moduleOp = program->module();
+  const auto sourceCount =
+      moduleOp->getAttrOfType<IntegerAttr>(mlir::mqt::kSourceQubitCountAttr);
+  ASSERT_TRUE(sourceCount);
+  EXPECT_EQ(sourceCount.getInt(), 4);
+
+  const auto prepared = program->str();
+  EXPECT_TRUE(failed(
+      program->runPassPipeline("mqt-target-prepare", {}, nullptr, true)));
+  EXPECT_EQ(program->str(), prepared);
+  ASSERT_TRUE(succeeded(program->runPassPipeline(
+      "place-qubits,mqt-target-finalize", {}, nullptr, true)));
+  auto layout = mlir::mqt::QubitLayout::fromAttr(
+      moduleOp->getAttr("mqt.layout"), [&] { return moduleOp.emitError(); });
+  ASSERT_TRUE(succeeded(layout));
+  EXPECT_EQ(layout->inputCount, 4);
+  EXPECT_EQ(layout->initial.size(), 4);
+  auto gates = mlir::mqt::getEntryPoint(moduleOp).getOps<qco::XOp>();
+  ASSERT_TRUE(llvm::hasSingleElement(gates));
+  auto x = *gates.begin();
+  auto site = x.getQubitIn().getDefiningOp<qco::StaticOp>();
+  ASSERT_TRUE(site);
+  EXPECT_EQ(layout->initial[1], site.getIndex());
+  EXPECT_FALSE(moduleOp->hasAttr(mlir::mqt::ORIGINAL_TARGET_ENV_ATTR));
+  EXPECT_EQ(program->str().find("source_qubit_"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, StagedCompilationRestoresExecutionTarget) {
+  using Capability = CompilerTarget::OperationCapability;
+  using SiteTuple = CompilerTarget::SiteTuple;
+  const std::vector sites{
+      llvm::cantFail(SiteTuple::create({0})),
+      llvm::cantFail(SiteTuple::create({1})),
+  };
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("u", 1, 3, sites)),
+          llvm::cantFail(Capability::create("measure", 1, 0, sites)),
+          llvm::cantFail(Capability::create(
+              "cz", 2, 0, {llvm::cantFail(SiteTuple::create({0, 1}))})),
+      })));
+  const TargetEnvironment environment(target, makePayloadSpecification());
+  auto qc = QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; include \"stdgates.inc\"; qubit[2] q; "
+      "h q[0]; cx q[0], q[1];");
+  MQT_ASSERT_SUCCESS(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(succeeded(program));
+  ASSERT_TRUE(succeeded(
+      program->runPassPipeline("mqt-target-prepare", {}, &environment, true)));
+  const auto original =
+      environment.materialize(*program->module().getContext());
+  EXPECT_EQ(program->module()->getAttr(mlir::mqt::ORIGINAL_TARGET_ENV_ATTR),
+            original);
+  const TargetEnvironmentAnalysis prepared(program->module());
+  ASSERT_TRUE(prepared);
+  EXPECT_EQ(prepared.environment().target().numSites(), 2);
+
+  auto unplaced = program->copy();
+  EXPECT_TRUE(failed(
+      unplaced.runPassPipeline("mqt-target-finalize", {}, nullptr, true)));
+  EXPECT_EQ(unplaced.module()->getAttr(mlir::mqt::ORIGINAL_TARGET_ENV_ATTR),
+            original);
+
+  ASSERT_TRUE(succeeded(program->runPassPipeline(
+      "place-qubits,mqt-target-finalize", {}, nullptr, true)));
+  EXPECT_EQ(program->module()->getAttr(mlir::mqt::TargetEnvAttr::name),
+            original);
+  EXPECT_FALSE(program->module()->hasAttr(mlir::mqt::ORIGINAL_TARGET_ENV_ATTR));
+  EXPECT_TRUE(succeeded(program->runPassPipeline("verify-target-conformance",
+                                                 {}, nullptr, true)));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+}
+
+TEST_F(CompilerPipelineTest, ExplicitRetargetAbandonsStagedTargetRestoration) {
+  auto qc = QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; x q;");
+  MQT_ASSERT_SUCCESS(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(succeeded(program));
+  const auto originalTarget = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  const TargetEnvironment original(originalTarget, makePayloadSpecification());
+  ASSERT_TRUE(succeeded(
+      program->runPassPipeline("mqt-target-prepare", {}, &original, true)));
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  const TargetEnvironment replacement(target, makePayloadSpecification());
+  ASSERT_TRUE(succeeded(
+      program->runPassPipeline("place-qubits", {}, &replacement, true)));
+  EXPECT_FALSE(program->module()->hasAttr(mlir::mqt::ORIGINAL_TARGET_ENV_ATTR));
+  ASSERT_TRUE(succeeded(
+      program->runPassPipeline("mqt-target-finalize", {}, nullptr, true)));
+  EXPECT_EQ(program->module()->getAttr(mlir::mqt::TargetEnvAttr::name),
+            replacement.materialize(*program->module().getContext()));
+}
+
 TEST_F(CompilerPipelineTest, TargetPipelinesCompileControlledComposites) {
   using Capability = CompilerTarget::OperationCapability;
   const auto target = llvm::cantFail(CompilerTarget::create(

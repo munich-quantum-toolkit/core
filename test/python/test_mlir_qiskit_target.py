@@ -1420,8 +1420,9 @@ def test_gate_set_synthesis_preserves_program_qubits(*, with_environment: bool) 
     np.testing.assert_allclose(Operator(repeated).data, Operator(source).data, atol=1e-12)
 
 
-def test_gate_set_synthesis_restores_borrowed_ancillas() -> None:
-    """Borrow idle input wires before placement and restore their clean state."""
+@pytest.mark.parametrize("staged", [False, True])
+def test_gate_set_synthesis_restores_borrowed_ancillas(*, staged: bool) -> None:
+    """Default and staged gate-set synthesis restore borrowed input wires."""
     source = QuantumCircuit(7)
     source.h([1, 2, 3, 4])
     source.ry(0.37, 5)
@@ -1432,12 +1433,26 @@ def test_gate_set_synthesis_restores_borrowed_ancillas() -> None:
     target.add_instruction(CXGate())
     gates = CompilerTarget.NativeOperations.from_qiskit(target)
 
-    result = compile_program(source, target=CompilerTarget.for_gate_set(gates))
+    compiler_target = CompilerTarget.for_gate_set(gates)
+    if staged:
+        program = QCProgram.from_qiskit(source).to_qco()
+        program.run_pass_pipeline(
+            "mqt-target-prepare",
+            target_environment=TargetEnvironment(
+                compiler_target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))
+            ),
+        )
+        program.run_pass_pipeline("decompose-multi-controlled{use-target=true}")
+        program.run_pass_pipeline("mqt-target-finalize")
+        result = program.to_qiskit(target=compiler_target)
+    else:
+        result = compile_program(source, target=compiler_target)
 
     assert result.layout is None
     assert result.num_qubits == source.num_qubits
     assert any(result.find_bit(qubit).index in {0, 6} for item in result.data for qubit in item.qubits)
-    np.testing.assert_allclose(Statevector(result).data, Statevector(source).data, atol=1e-12)
+    # Compare every logical input with borrowed wires 0 and 6 initialized to zero.
+    np.testing.assert_allclose(Operator(result).data[:, :64:2], Operator(source).data[:, :64:2], atol=1e-12)
 
 
 @pytest.mark.parametrize("output", [OutputFormat.OPENQASM2, OutputFormat.OPENQASM3])

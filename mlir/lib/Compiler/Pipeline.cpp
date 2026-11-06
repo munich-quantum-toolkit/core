@@ -209,6 +209,7 @@ LogicalResult QCOProgram::runPassPipeline(std::string_view pipeline,
                                           const CompilationOptions& options,
                                           const TargetEnvironment* environment,
                                           bool preservesLayout) {
+  registerTargetCompilationPasses();
   if (failed(qco::verifyLinearity(mod())) ||
       failed(::runPassPipeline(mod(), pipeline, options, environment,
                                preservesLayout))) {
@@ -491,23 +492,36 @@ static void insertResonatorMoves(ModuleOp module,
   scheduleTerminalReadout(module);
 }
 
+Expected<TargetEnvironment>
+createTargetCompilationEnvironment(ModuleOp moduleOp,
+                                   const TargetEnvironment& environment) {
+  if (!environment.target().hasDeviceConstraints()) {
+    return environment;
+  }
+  auto routing = QuantumProgramAnalysis(moduleOp).info().numQubits == 0
+                     ? Expected<CompilerTarget>(environment.target())
+                     : placementTarget(environment.target());
+  if (!routing) {
+    return routing.takeError();
+  }
+  return TargetEnvironment(*routing, environment.payloadSpecification());
+}
+
 LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
                                            const CompilationOptions& options) {
   if (!environment.target().hasDeviceConstraints()) {
     return synthesizeForTarget(environment, options);
   }
-  auto routing = inspect().numQubits == 0
-                     ? Expected<CompilerTarget>(environment.target())
-                     : placementTarget(environment.target());
-  if (!routing) {
-    return mod().emitError() << llvm::toString(routing.takeError());
+  auto compilationEnvironment =
+      createTargetCompilationEnvironment(mod(), environment);
+  if (!compilationEnvironment) {
+    return mod().emitError()
+           << llvm::toString(compilationEnvironment.takeError());
   }
-  const TargetEnvironment compilationEnvironment(
-      *routing, environment.payloadSpecification());
   if (failed(runQCOTransformPasses(
           mod(),
           [&](OpPassManager& pm) {
-            populateTargetCompilationPipeline(pm, compilationEnvironment,
+            populateTargetCompilationPipeline(pm, *compilationEnvironment,
                                               options.mapping);
           },
           "failed to compile the QCO program for the target", options, true))) {

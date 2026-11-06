@@ -15,6 +15,7 @@ import re
 import sys
 from functools import partial
 from gc import collect
+from itertools import starmap
 from pathlib import Path
 from threading import Event, Thread
 from typing import assert_type
@@ -2206,33 +2207,66 @@ def test_qco_program_runs_textual_pipeline(capfd: pytest.CaptureFixture[str]) ->
     assert not capfd.readouterr().err
 
 
-def test_qco_program_runs_target_passes_in_stages() -> None:
-    """Route and synthesize using an environment retained between calls."""
-    source = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
-    program = source.copy()
-    program.cleanup()
+@requires_qiskit_translation
+@pytest.mark.parametrize("topology", ["line", "all_to_all"])
+@pytest.mark.parametrize("basis", ["u_cz", "zsxx_cx"])
+def test_qco_program_runs_target_passes_in_stages(topology: str, basis: str) -> None:
+    """Search pass orders while retaining idle inputs and routed wire identity."""
+    source = QuantumCircuit(4)
+    source.h(1)
+    source.rx(0.3, 1)
+    source.rz(0.7, 2)
+    source.cx(1, 3)
+    source.ccx(1, 2, 3)
+    source.swap(1, 3)
+    gates = (
+        [("u", 1, 3), ("cz", 2, 0)]
+        if basis == "u_cz"
+        else [
+            ("rz", 1, 1),
+            ("sx", 1, 0),
+            ("x", 1, 0),
+            ("cx", 2, 0),
+        ]
+    )
+    gates += [("gphase", 0, 1), ("measure", 1, 0)]
     target = CompilerTarget(
-        2,
-        connectivity=CompilerTarget.Connectivity([(0, 1)]),
-        native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.OperationCapability("u", 1, 3),
-            CompilerTarget.OperationCapability("cz", 2, 0),
-            CompilerTarget.OperationCapability("gphase", 0, 1),
-            CompilerTarget.OperationCapability("measure", 1, 0),
-        ]),
+        4,
+        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)])
+        if topology == "line"
+        else CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations(list(starmap(CompilerTarget.OperationCapability, gates))),
     )
-
-    program.run_pass_pipeline(
-        "place-and-route{ntrials=1}",
+    prepared = QCProgram.from_qiskit(source).to_qco()
+    prepared.run_pass_pipeline(
+        "mqt-target-prepare",
         target_environment=_test_target_environment(target),
-        options=CompilationOptions(seed=7),
     )
-    program.run_pass_pipeline("target-native-synthesis,verify-target-conformance", target_environment=None)
+    checkpoint = prepared.ir
+    actions = (
+        "combine-controlled-gates{use-target=true}",
+        "decompose-multi-controlled{use-target=true}",
+        "fuse-single-qubit-unitary-runs{use-target=true}",
+        "fuse-two-qubit-gates{use-target=true}",
+    )
+    placement = "place-and-route{ntrials=1 niterations=1}" if topology == "line" else "place-qubits"
+    expected = Operator(source).data
+    for candidate, order in (
+        (prepared.copy(), actions),
+        (QCOProgram.from_mlir_str(checkpoint), tuple(reversed(actions))),
+    ):
+        for action in (*order, "unroll-modifiers", "elide-terminal-swaps", placement, "mqt-target-finalize"):
+            candidate.run_pass_pipeline(action, options=CompilationOptions(seed=7), preserve_layout=True)
+        candidate.run_pass_pipeline("verify-target-conformance", target_environment=None, preserve_layout=True)
+        result = candidate.to_qiskit(target=target, copy=True)
+        assert result.layout is not None
+        assert len(result.layout.final_index_layout()) == source.num_qubits
+        assert np.allclose(Operator.from_circuit(result).data, expected, atol=1e-10, rtol=0)
+        inspection = candidate.inspect()
+        assert set(inspection.gate_counts) <= {name for name, _, _ in gates}
+        assert inspection.num_two_qubit_gates == sum(len(instruction.qubits) == 2 for instruction in result.data)
 
-    assert program.gate_counts().get("cz") == 1
-    assert set(program.gate_counts()) <= {"u", "cz", "gphase", "measure"}
-    assert set(sample(program, shots=32, seed=1)) == {"00", "11"}
-    assert "mqt.target_env" not in source.ir
+    assert prepared.ir == checkpoint
 
 
 @requires_qiskit_translation

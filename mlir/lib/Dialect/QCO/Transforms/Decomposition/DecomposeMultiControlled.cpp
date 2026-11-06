@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/Transforms/UnrollModifiers.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
@@ -1735,13 +1736,25 @@ protected:
       return;
     }
 
+    const auto* target = target_ ? &*target_ : nullptr;
+    if (useTarget) {
+      const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+      if (!environment) {
+        getOperation().emitError()
+            << "expected a valid mqt.target_env: " << environment.error();
+        signalPassFailure();
+        return;
+      }
+      target = &environment.environment().target();
+    }
     bool hasStatic = false;
     getOperation().walk([&](StaticOp) { hasStatic = true; });
     const CompilerTarget* nativeTarget =
-        target_ && (target_->connectivityKind() ==
-                        CompilerTarget::Connectivity::Kind::AllToAll ||
-                    hasStatic)
-            ? &*target_
+        target != nullptr &&
+                (target->connectivityKind() ==
+                     CompilerTarget::Connectivity::Kind::AllToAll ||
+                 hasStatic)
+            ? target
             : nullptr;
 
     const bool traceStaticSites =
@@ -1751,21 +1764,21 @@ protected:
                  capability.arity().value() >= minQubits;
         });
     // Fixed sites are not routed. Borrowing could add unsupported edges.
-    const bool canBorrow = !target_ || !hasStatic ||
-                           target_->connectivityKind() ==
+    const bool canBorrow = target == nullptr || !hasStatic ||
+                           target->connectivityKind() ==
                                CompilerTarget::Connectivity::Kind::AllToAll;
     // Choose ancillas once using the cost of each complete original gate.
     if (canBorrow &&
-        (!target_ || !target_->hasDeviceConstraints() ||
-         allocationsFitTarget(getOperation(), target_->numSites()))) {
+        (target == nullptr || !target->hasDeviceConstraints() ||
+         allocationsFitTarget(getOperation(), target->numSites()))) {
       StaticSites candidateSites;
       SmallVector<CtrlOp> candidates;
       getOperation().walk([&](CtrlOp op) {
         // Ancillas cannot improve three-qubit gates or fit beside a full
         // target.
         if (op.getNumQubits() < std::max<uint64_t>(minQubits, 4) ||
-            (target_ && target_->hasDeviceConstraints() &&
-             op.getNumQubits() >= target_->numSites())) {
+            (target != nullptr && target->hasDeviceConstraints() &&
+             op.getNumQubits() >= target->numSites())) {
           return;
         }
         auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());

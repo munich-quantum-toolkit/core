@@ -241,46 +241,98 @@ passes in a custom sequence. The environment replaces any stored environment
 after the pipeline parses successfully and remains available to later calls.
 Omitting it, or passing `None`, keeps the stored environment.
 
-Using the target defined above:
+For pass-order experiments, prepare the source once, then compile independent
+copies. For device targets, `mqt-target-prepare` records source qubit identities
+before inlining and cleanup, preserving idle inputs in the
+[layout](#layout-metadata) for supported allocation shapes. It uses the same
+routing target as `compile_for_target`, restricting placement to usable sites
+and adding virtual resonator couplings. Gate-set targets keep allocated program
+qubits and need no placement. `mqt-target-finalize` cleans up, synthesizes
+native gates, verifies the result, and restores the saved execution environment
+on success. Copies and IR checkpoints retain this state. Passing an environment
+again discards the saved value; start from the source when changing targets.
+
+The following example compares two pass orders with the default compiler using a
+fixed seed and routing trial count:
 
 ```{code-cell} ipython3
-from mqt.core.mlir import CompilationOptions, PayloadFormat, PayloadSpecification, QCProgram, TargetEnvironment
+import numpy as np
+from qiskit import QuantumCircuit
+from qiskit.quantum_info import Operator
 
-environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.1")))
-source = QCProgram.from_openqasm_str(bell_qasm).to_qco()
-candidate = source.copy()
-candidate.cleanup()
-candidate.run_pass_pipeline(
-    "place-and-route{ntrials=1},target-native-synthesis,drop-global-phases",
-    target_environment=environment,
-    options=CompilationOptions(seed=7),
+from mqt.core.mlir import (
+    CompilationOptions, CompilerTarget, MappingOptions, PayloadFormat,
+    PayloadSpecification, QCOProgram, QCProgram, TargetEnvironment,
 )
-candidate.run_pass_pipeline("verify-target-conformance")
+
+circuit = QuantumCircuit(4)  # Input qubit 0 stays idle.
+circuit.h(1)
+circuit.rx(0.3, 1)
+circuit.cx(1, 3)
+circuit.swap(1, 3)
+search_target = CompilerTarget(
+    4,
+    connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
+    native_operations=CompilerTarget.NativeOperations([
+        CompilerTarget.OperationCapability(name, arity, parameters)
+        for name, arity, parameters in [
+            ("u", 1, 3), ("cz", 2, 0), ("gphase", 0, 1), ("measure", 1, 0)
+        ]
+    ]),
+)
+search_environment = TargetEnvironment(
+    search_target, PayloadSpecification(PayloadFormat("openqasm", "3.1"))
+)
+options = CompilationOptions(seed=7, mapping=MappingOptions(trials=1, iterations=1))
+prepared = QCProgram.from_qiskit(circuit).to_qco()
+baseline = prepared.copy()
+baseline.compile_for_target(search_environment, options=options)
+prepared.run_pass_pipeline("mqt-target-prepare", target_environment=search_environment)
+checkpoint = prepared.ir
+actions = (
+    "combine-controlled-gates{use-target=true}",
+    "decompose-multi-controlled{use-target=true}",
+    "fuse-single-qubit-unitary-runs{use-target=true}",
+    "fuse-two-qubit-gates{use-target=true}",
+)
+results = {"default": baseline}
+for number, order in enumerate((actions, tuple(reversed(actions)))):
+    candidate = QCOProgram.from_mlir_str(checkpoint)
+    for action in (*order, "unroll-modifiers", "elide-terminal-swaps",
+                   "place-and-route{ntrials=1 niterations=1}", "mqt-target-finalize"):
+        candidate.run_pass_pipeline(action, options=options, preserve_layout=True)
+    results[f"order {number}"] = candidate
+
+for name, result in results.items():
+    exported = result.to_qiskit(target=search_target, copy=True)
+    assert exported.layout is not None
+    assert np.allclose(Operator.from_circuit(exported).data, Operator(circuit).data)
+    count = result.inspect().num_two_qubit_gates
+    depth = exported.depth(filter_function=lambda instruction: len(instruction.qubits) == 2)
+    print(f"{name}: {count} two-qubit gates, two-qubit depth {depth}")
 ```
 
-The runner executes only the requested passes; it does not add the preparation
-or verification stages of the full target compiler. Choose an order that meets
-each pass's input requirements. The example drops unobservable global phases
-because this target does not support them. Set mapping controls in the textual
-`place-and-route` options; `CompilationOptions.mapping` configures the full
-target pipeline.
+The `use-target=true` option selects the target-aware form of each optimization;
+omitting it keeps the target-independent behavior. For all-to-all device
+targets, use `place-qubits` instead of `place-and-route`. For gate-set targets,
+omit placement and terminal-SWAP elision to retain logical wire order. Set
+custom routing controls in the textual pass options;
+`CompilationOptions.mapping` configures the default target compiler.
+`unroll-modifiers` distributes composite gates before placement and native
+synthesis. The runner executes only the requested passes, so each sequence must
+meet its passes' input requirements.
 
-The default `preserve_layout=False` clears existing layout metadata. Use
-`preserve_layout=True` only for passes that preserve wire identity and site
-order. For example, continue from a program compiled with layout metadata:
+The default `preserve_layout=False` clears existing layout metadata. Set
+`preserve_layout=True` throughout the sequence above: terminal-SWAP elision and
+mapping maintain the layout, while synthesis and verification preserve it. Use
+this flag only when passes keep wire and site identities or update the layout
+themselves. The flag does not create or validate a mapping; qubit reuse, wire
+reordering, or retargeting must not leave stale metadata.
 
-```{code-cell} ipython3
-placed = source.copy()
-placed.compile_for_target(environment)
-placed.run_pass_pipeline("target-native-synthesis,drop-global-phases", preserve_layout=True)
-placed.run_pass_pipeline("verify-target-conformance", preserve_layout=True)
-```
-
-This option retains existing metadata; it does not generate a layout or remap
-wires. Do not enable it for qubit reuse, wire reordering, or retargeting. A
-failed pass can leave the supplied environment and earlier changes on the
-program; copy the input before trying another sequence. A pipeline parsing error
-leaves the program unchanged.
+Use `copy()` or an IR checkpoint before trying another sequence: a failed pass
+can leave the supplied environment and partial changes on the program. A
+pipeline parsing error leaves the program unchanged. Native inspection counts
+are static; Qiskit depth and the unitary check above apply to flat circuits.
 
 ### Gate-set synthesis
 
@@ -457,9 +509,10 @@ Dynamic target compilation attaches placement and routing metadata when the
 input has fixed-size entry-block allocations. Static programs already name
 physical sites; compilation preserves those IDs and does not attach a layout.
 Static and dynamic qubits cannot be mixed. Native target compilation rejects an
-already attached layout. Custom pipelines clear it unless `preserve_layout=True`
-is set for passes that preserve wire identity and site order. See
-[transpiler layouts](qiskit.md#transpiler-layouts) for the full contract.
+already attached layout. See [custom pass sequences](#custom-pass-sequences) for
+layout preservation between passes and
+[transpiler layouts](qiskit.md#transpiler-layouts) for the import and export
+contract.
 
 ### Temporary QDMI payload contract
 
