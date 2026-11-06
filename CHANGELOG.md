@@ -935,6 +935,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2942]: https://github.com/munich-quantum-toolkit/core/pull/2942
 [#2923]: https://github.com/munich-quantum-toolkit/core/pull/2923
 [#2831]: https://github.com/munich-quantum-toolkit/core/pull/2831
 [#2826]: https://github.com/munich-quantum-toolkit/core/pull/2826
@@ -1238,5 +1239,3 @@ for previous changelogs._
 [munich-quantum-toolkit/workflows]: https://github.com/munich-quantum-toolkit/workflows
 [MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
 [MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
-
-[#2942]: https://github.com/munich-quantum-toolkit/core/pull/2942

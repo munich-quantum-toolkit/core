@@ -1132,9 +1132,9 @@ bool Package::isCloseToIdentityRecursive(
 
   // check whether any of the middle successors is non-zero, i.e., m = [ x 0 0
   // y ]
-  const auto mag1 = dd::ComplexNumbers::mag2(m.p->e[1U].w);
-  const auto mag2 = dd::ComplexNumbers::mag2(m.p->e[2U].w);
-  if (mag1 > tol * tol || mag2 > tol * tol) {
+  const auto mag1 = dd::ComplexNumbers::mag(m.p->e[1U].w);
+  const auto mag2 = dd::ComplexNumbers::mag(m.p->e[2U].w);
+  if (mag1 > tol || mag2 > tol) {
     return false;
   }
 
@@ -1151,8 +1151,8 @@ bool Package::isCloseToIdentityRecursive(
 
     // check whether m = [ x 0 0 ~1 ] or m = [ x 0 0 ~0 ] (the last case is
     // true for an ancillary qubit)
-    const auto mag3 = dd::ComplexNumbers::mag2(m.p->e[3U].w);
-    if (mag3 > tol * tol) {
+    if (dd::ComplexNumbers::mag(m.p->e[3U].w) > tol) {
+      const auto mag3 = dd::ComplexNumbers::mag2(m.p->e[3U].w);
       if (std::abs(mag3 - 1.0) > tol) {
         return false;
       }
