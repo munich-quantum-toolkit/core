@@ -138,9 +138,6 @@ def test_recompile_qiskit_physical_wires() -> None:
     circuit.x(1)
     circuit.measure([0, 1], [1, 0])
     mapped = transpile(circuit, backend, initial_layout=[2, 3], optimization_level=0)
-    layout = mapped.layout
-    assert layout is not None
-    assert layout.final_index_layout() == [2, 3]
 
     target = TargetEnvironment.from_qiskit(backend, strict=True)
     physical = QuantumCircuit(*mapped.qregs, *mapped.cregs)
@@ -171,7 +168,8 @@ def test_recompile_qiskit_physical_wires() -> None:
     (restored,) = qpy.load(BytesIO(payload))
     assert restored == expected
     assert restored.layout is None
-    assert mapped.layout is layout
+    assert mapped.layout is not None
+    assert mapped.layout.final_index_layout() == [2, 3]
 
 
 def test_layout_options_require_qiskit_input_or_output() -> None:
@@ -187,12 +185,6 @@ def test_layout_options_require_qiskit_input_or_output() -> None:
 
     with pytest.raises(ValueError, match="include_output_layout=False"):
         compile_program(circuit, output=OutputFormat.QC, include_output_layout=False)
-
-    backend = GenericBackendV2(1, basis_gates=["u"], seed=1)
-    payload = PayloadSpecification.from_program_format(ProgramFormat.QPY)
-    target = TargetEnvironment(CompilerTarget.from_qiskit(backend), payload)
-    with pytest.raises(ValueError, match="include_output_layout=False"):
-        compile_program([circuit], target=target, include_output_layout=False)
 
 
 def test_compile_program_target_without_measurement() -> None:
@@ -521,6 +513,10 @@ def test_environment_result_types() -> None:
     device = TargetEnvironment(qiskit.target, payload)
     assert isinstance(compile_program(circuit, target=device), CompiledProgram)
     assert all(isinstance(result, CompiledProgram) for result in compile_program([circuit], target=device))
+    qpy_device = TargetEnvironment(qiskit.target, PayloadSpecification.from_program_format(ProgramFormat.QPY))
+    with pytest.raises(ValueError, match="include_output_layout=False"):
+        compile_program([circuit], target=qpy_device, include_output_layout=False)
+
     gate_set = CompilerTarget.for_gate_set(CompilerTarget.NativeOperations.unrestricted())
     program_environment = TargetEnvironment[CompiledProgram](gate_set, payload)
     program_result = assert_type(

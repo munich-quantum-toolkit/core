@@ -440,9 +440,10 @@ custom property when QDMI provides a standard parameter-domain contract; see
 
 ## Qiskit export
 
-`compile_program(circuit, target=...)` returns physical device indices and
-preserves the full Qiskit `TranspileLayout`, including routing and unused sites.
-Apply that layout when remapping observables.
+Qiskit output for a device uses physical qubit indices. By default, Core
+attaches available placement and routing information, including unused sites, as
+a `TranspileLayout`. Apply the layout when remapping observables. See
+[transpiler layouts](qiskit.md#transpiler-layouts) for layout options.
 
 For lower-level export with `to_qiskit(target=compiler_target)`, static site IDs
 map to positions in `compiler_target.sites`. The result has one `q` register
@@ -455,9 +456,9 @@ metadata.
 Dynamic target compilation attaches placement and routing metadata when the
 input has fixed-size entry-block allocations. Static programs already name
 physical sites; compilation preserves those IDs and does not attach a layout.
-Static and dynamic qubits cannot be mixed. Compilation rejects an already
-attached layout. Custom pipelines clear it unless `preserve_layout=True` is set
-for passes that preserve wire identity and site order. See
+Static and dynamic qubits cannot be mixed. Native target compilation rejects an
+already attached layout. Custom pipelines clear it unless `preserve_layout=True`
+is set for passes that preserve wire identity and site order. See
 [transpiler layouts](qiskit.md#transpiler-layouts) for the full contract.
 
 ### Temporary QDMI payload contract

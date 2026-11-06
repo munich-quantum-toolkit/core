@@ -676,22 +676,19 @@ payloadForOutput(OutputFormat output) {
 /// Export using the target environment retained by native compilation.
 [[nodiscard]] static nb::object
 qpyCircuit(mlir::QCProgram program,
-           const mlir::TargetEnvironment* environment = nullptr,
-           const bool includeOutputLayout = true) {
+           const mlir::TargetEnvironment* environment = nullptr) {
   if (environment != nullptr) {
-    return bindings::qiskit::exportCircuit(std::move(program), *environment,
-                                           includeOutputLayout);
+    return bindings::qiskit::exportCircuit(std::move(program), *environment);
   }
   if (program.module()->hasAttr(mlir::mqt::TargetEnvAttr::name)) {
     const mlir::TargetEnvironmentAnalysis attached(program.module());
     if (!attached) {
       throw nb::value_error(attached.error().str().c_str());
     }
-    return bindings::qiskit::exportCircuit(
-        std::move(program), attached.environment(), includeOutputLayout);
+    return bindings::qiskit::exportCircuit(std::move(program),
+                                           attached.environment());
   }
-  return bindings::qiskit::exportCircuit(std::move(program), nullptr,
-                                         includeOutputLayout);
+  return bindings::qiskit::exportCircuit(std::move(program), nullptr);
 }
 
 [[nodiscard]] static nb::object compiledResult(mlir::CompiledProgram compiled,
@@ -831,17 +828,18 @@ qpyCircuit(mlir::QCProgram program,
   }();
   if (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
+    if (!includeOutputLayout) {
+      qc.module()->removeAttr("mqt.layout");
+    }
     auto result = [&] {
       if (selected == OutputFormat::QPY) {
         return qpyCircuit(std::move(qc),
-                          outputEnvironment ? &*outputEnvironment : nullptr,
-                          includeOutputLayout);
+                          outputEnvironment ? &*outputEnvironment : nullptr);
       }
       return outputEnvironment
-                 ? bindings::qiskit::exportCircuit(
-                       std::move(qc), *outputEnvironment, includeOutputLayout)
-                 : bindings::qiskit::exportCircuit(std::move(qc), nullptr,
-                                                   includeOutputLayout);
+                 ? bindings::qiskit::exportCircuit(std::move(qc),
+                                                   *outputEnvironment)
+                 : bindings::qiskit::exportCircuit(std::move(qc), nullptr);
     }();
     if (input.format == OutputFormat::Qiskit) {
       result.attr("name") = program.attr("name");
