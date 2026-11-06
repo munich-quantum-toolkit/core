@@ -1529,6 +1529,32 @@ TEST(DDPackageTest, CloseToIdentity) {
   EXPECT_FALSE(dd->isCloseToIdentity(notClose3));
 }
 
+TEST(DDPackageTest, CloseToIdentityUsesAmplitudeTolerance) {
+  auto dd = std::make_unique<Package>(1);
+  for (const auto tol : {1e-6, 1e-8, 1e-10}) {
+    SCOPED_TRACE(tol);
+    for (const auto successor : {1U, 2U, 3U}) {
+      SCOPED_TRACE(successor);
+      for (const auto factor : {0.5, 2.0}) {
+        SCOPED_TRACE(factor);
+        for (const auto imaginary : {false, true}) {
+          SCOPED_TRACE(imaginary);
+          auto edges = std::array{mEdge::one(), mEdge::zero(), mEdge::zero(),
+                                  mEdge::one()};
+          const auto amplitude = factor * tol;
+          edges[successor].w = dd->cn.lookup(imaginary ? 0.0 : amplitude,
+                                             imaginary ? amplitude : 0.0);
+          const auto matrix = dd->makeDDNode(0, edges);
+          EXPECT_EQ(dd->isCloseToIdentity(matrix, tol), factor < 1.0);
+          EXPECT_EQ(dd->isCloseToIdentity(matrix, tol, {}, false),
+                    successor == 3U || factor < 1.0);
+          EXPECT_TRUE(dd->isCloseToIdentity(matrix, tol, {true}, false));
+        }
+      }
+    }
+  }
+}
+
 TEST(DDPackageTest, CloseToIdentityWithGarbageAtTheBeginning) {
   constexpr fp tol = 1.0E-10;
   constexpr auto nqubits = 3U;
