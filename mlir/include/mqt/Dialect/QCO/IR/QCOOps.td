@@ -1136,8 +1136,8 @@ def BarrierOp
         ```
     }];
 
-  let arguments =
-      (ins Arg<Variadic<QubitType>, "the target qubits">:$qubits_in);
+  let arguments = (ins Arg<Variadic<QubitType>, "the target qubits">:$qubits_in,
+      OptionalAttr<StrAttr>:$label);
   let results = (outs Variadic<QubitType>:$qubits_out);
   let assemblyFormat = "$qubits_in attr-dict `:` type($qubits_in)";
 
@@ -1167,7 +1167,8 @@ def BarrierOp
         [[nodiscard]] DynamicMatrix getUnitaryMatrix();
     }];
 
-  let builders = [OpBuilder<(ins "ValueRange":$qubits)>];
+  let builders = [OpBuilder<(ins "ValueRange":$qubits,
+      CArg<"StringAttr", "{}">:$label)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;

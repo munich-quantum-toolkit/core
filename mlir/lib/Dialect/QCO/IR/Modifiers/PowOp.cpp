@@ -557,8 +557,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                     return mqt::getValueFromBlockArgument(input,
                                                           op.getQubitsIn());
                   });
-              auto replacement =
-                  BarrierOp::create(rewriter, op.getLoc(), inputs);
+              auto replacement = BarrierOp::create(rewriter, op.getLoc(),
+                                                   inputs, gate.getLabelAttr());
               replacePowResults(op, gate, replacement.getOutputQubits(),
                                 rewriter);
               return success();

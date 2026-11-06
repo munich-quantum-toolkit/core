@@ -18,6 +18,7 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 #include "mqt/Support/IntegerExpressions.h"
 
@@ -2080,7 +2081,10 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
       for (const auto qubit : instruction.qubits) {
         operands.push_back(getQubit(qubit));
       }
-      builder.barrier(operands);
+      const auto label = instruction.barrierLabel
+                             ? builder.getStringAttr(*instruction.barrierLabel)
+                             : mlir::StringAttr{};
+      mlir::qc::BarrierOp::create(builder, operands, label);
       break;
     }
     case OperationKind::Measure: {

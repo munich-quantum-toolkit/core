@@ -1423,8 +1423,8 @@ struct ConvertQCBarrierOp final : LoweringPattern<qc::BarrierOp> {
     auto qcQubits = op.getQubits();
     auto materialized = materializeQubits(state, operation, qcQubits, rewriter);
 
-    auto qcoOp =
-        qco::BarrierOp::create(rewriter, op.getLoc(), materialized.values);
+    auto qcoOp = qco::BarrierOp::create(rewriter, op.getLoc(),
+                                        materialized.values, op.getLabelAttr());
 
     commitQubits(state, operation, qcQubits, qcoOp.getQubitsOut(), materialized,
                  rewriter);
