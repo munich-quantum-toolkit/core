@@ -1539,8 +1539,12 @@ TEST(DDPackageTest, CloseToIdentityUsesAmplitudeTolerance) {
         SCOPED_TRACE(factor);
         for (const auto imaginary : {false, true}) {
           SCOPED_TRACE(imaginary);
-          auto edges = std::array{mEdge::one(), mEdge::zero(), mEdge::zero(),
-                                  mEdge::one()};
+          auto edges = std::array{
+              mEdge::one(),
+              mEdge::zero(),
+              mEdge::zero(),
+              mEdge::one(),
+          };
           const auto amplitude = factor * tol;
           edges[successor].w = dd->cn.lookup(imaginary ? 0.0 : amplitude,
                                              imaginary ? amplitude : 0.0);
