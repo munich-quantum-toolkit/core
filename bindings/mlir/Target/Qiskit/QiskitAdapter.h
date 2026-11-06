@@ -1218,6 +1218,12 @@ public:
       }
 #endif
     }
+    if (kind == OperationKind::Barrier) {
+      const nb::object label = pythonOperation(index).attr("label");
+      if (!label.is_none()) {
+        result.barrierLabel = nb::cast<std::string>(label);
+      }
+    }
     result.standardGate = standardGateMapping(result.name);
     return result;
   }
@@ -2436,6 +2442,10 @@ public:
         }
       }
     }
+    const auto extraControls = gate == nullptr ? mapping.controls : 0;
+    if (extraControls != 0) {
+      gate = versionGate({mapping.gate, 0});
+    }
     if (gate == nullptr) {
       const auto& descriptor =
           mlir::qc::getStandardGateDescriptor(mapping.gate);
@@ -2444,7 +2454,7 @@ public:
                                descriptor.operationSymbol.str() + "' with " +
                                std::to_string(mapping.controls) + " controls");
     }
-    if (qk_gate_num_qubits(gate->native) != qubits.size() ||
+    if (qk_gate_num_qubits(gate->native) + extraControls != qubits.size() ||
         qk_gate_num_params(gate->native) != parameters.size()) {
       throw std::runtime_error("Qiskit gate '" + std::string(gate->name) +
                                "' has incompatible arity");
@@ -2476,7 +2486,8 @@ public:
       pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
       return;
     }
-    if (!nativeName.empty() && nativeName != gate->name) {
+    if (extraControls != 0 ||
+        (!nativeName.empty() && nativeName != gate->name)) {
       if (!standardGates_.is_valid()) {
         standardGates_ = nb::module_::import_("qiskit.circuit.library")
                              .attr("get_standard_gate_name_mapping")();
@@ -2489,8 +2500,22 @@ public:
         values.append(pythonParameter(parameter));
       }
       operation.attr("params") = values;
-      operation.attr("name") = nb::str(nativeName.data(), nativeName.size());
-      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      if (extraControls != 0) {
+        operation = operation.attr("control")(extraControls,
+                                              nb::arg("annotated") = false);
+      } else {
+        // QPY restores renamed standard gates under their standard names.
+        const auto circuitModule = nb::module_::import_("qiskit.circuit");
+        auto definition = circuitModule.attr("QuantumCircuit")(qubits.size());
+        definition.attr("append")(operation, definition.attr("qubits"),
+                                  nb::arg("copy") = false);
+        auto alias =
+            circuitModule.attr("Gate")(nativeName, qubits.size(), values);
+        alias.attr("definition") = definition;
+        operation = std::move(alias);
+      }
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits),
+                                    nb::arg("copy") = false);
       return;
     }
     if (std::ranges::all_of(parameters, [](const Parameter& parameter) {
@@ -2628,7 +2653,15 @@ public:
     checkExitCode(qk_circuit_reset(circuit_, qubit), "adding reset");
   }
 
-  void addBarrier(const std::vector<uint32_t>& qubits) override {
+  void addBarrier(const std::vector<uint32_t>& qubits,
+                  const std::optional<std::string>& label) override {
+    if (label) {
+      auto operation =
+          nb::module_::import_("qiskit.circuit")
+              .attr("Barrier")(qubits.size(), nb::arg("label") = *label);
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      return;
+    }
     checkExitCode(qk_circuit_barrier(circuit_, qubits.data(),
                                      static_cast<uint32_t>(qubits.size())),
                   "adding barrier");
@@ -3061,7 +3094,8 @@ public:
   }
   [[nodiscard]] bool
   supportsGate(const StandardGateMapping gate) const override {
-    return versionGate(gate) != nullptr;
+    return versionGate(gate) != nullptr ||
+           (gate.controls != 0 && versionGate({gate.gate, 0}) != nullptr);
   }
 
   static nb::object targetObject(nb::handle source) {
@@ -3078,9 +3112,10 @@ public:
     return target;
   }
 
-  static mlir::CompilerTarget::NativeOperations readOperations(
-      nb::handle source, nb::handle operationNames, bool placements,
-      std::set<mlir::CompilerTarget::SiteId>* activeSites = nullptr) {
+  static mlir::CompilerTarget::NativeOperations
+  readOperations(nb::handle source, nb::handle operationNames, bool strict,
+                 std::set<mlir::CompilerTarget::SiteId>* activeSites,
+                 std::optional<size_t> nativeWidth = std::nullopt) {
     using Target = mlir::CompilerTarget;
     auto target = targetObject(source);
     const auto circuit = nb::module_::import_("qiskit.circuit");
@@ -3114,6 +3149,10 @@ public:
       }
       const auto instruction =
           target.attr("operation_from_name")(operationName);
+      if (nativeWidth && !instruction.is_type() &&
+          nb::cast<size_t>(instruction.attr("num_qubits")) > *nativeWidth) {
+        continue;
+      }
       auto qargs = target.attr("qargs_for_operation_name")(operationName);
       const auto instructionType =
           instruction.is_type() ? nb::handle(instruction) : instruction.type();
@@ -3231,7 +3270,7 @@ public:
         auto message = "Cannot represent " + reason;
         message += " for ";
         message += quotedName;
-        if (!operationNames.is_none()) {
+        if (strict || !operationNames.is_none()) {
           throw nb::value_error(message.c_str());
         }
         message += "; omitting it from the compiler target";
@@ -3246,7 +3285,7 @@ public:
 
       const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
       std::vector<Target::SiteTuple> siteTuples;
-      if (placements && !qargs.is_none()) {
+      if (activeSites != nullptr && !qargs.is_none()) {
         std::vector<std::vector<Target::SiteId>> sites;
         for (auto tuple : nb::borrow<nb::iterable>(qargs)) {
           sites.push_back(nb::cast<std::vector<Target::SiteId>>(tuple));
@@ -3273,9 +3312,10 @@ public:
   }
 
   [[nodiscard]] mlir::CompilerTarget::NativeOperations
-  importNativeOperations(nb::handle source,
-                         nb::handle operationNames) const override {
-    return readOperations(source, operationNames, false);
+  importNativeOperations(nb::handle source, nb::handle operationNames,
+                         bool strict,
+                         std::optional<size_t> nativeWidth) const override {
+    return readOperations(source, operationNames, strict, nullptr, nativeWidth);
   }
 
   [[nodiscard]] mlir::PayloadSpecification
@@ -3315,7 +3355,8 @@ public:
 
   [[nodiscard]] mlir::CompilerTarget
   importTarget(nb::handle source, nb::handle operationNames,
-               const std::optional<std::string>& name) const override {
+               const std::optional<std::string>& name,
+               bool strict) const override {
     using Target = mlir::CompilerTarget;
     auto target = targetObject(source);
     auto targetName = name;
@@ -3329,7 +3370,7 @@ public:
     }
     std::set<Target::SiteId> activeSites;
     const auto nativeOperations =
-        readOperations(target, operationNames, true, &activeSites);
+        readOperations(target, operationNames, strict, &activeSites);
     std::vector<Target::Site> sites;
     sites.reserve(activeSites.size());
     for (const auto site : activeSites) {

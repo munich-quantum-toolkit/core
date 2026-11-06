@@ -157,7 +157,16 @@ def test_native_api_initialization_supports_concurrent_translation() -> None:
         assert list(executor.map(_round_trip, range(32))) == ["x"] * 32
 
 
-@pytest.mark.parametrize("gate", STANDARD_GATES, ids=lambda gate: gate.name)
+@pytest.mark.parametrize(
+    "gate",
+    [
+        *STANDARD_GATES,
+        library.PhaseGate(0.25).control(2, annotated=False),
+        library.RXGate(0.2).control(2, annotated=False),
+        library.SwapGate().control(2, annotated=False),
+    ],
+    ids=lambda gate: gate.name,
+)
 def test_standard_gates_round_trip(gate: Gate) -> None:
     """Translate each supported gate family in both directions."""
     circuit = QuantumCircuit(gate.num_qubits)
@@ -302,18 +311,24 @@ def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
     assert set(restored.count_ops()) <= {"u", "cx"}
 
 
-def test_symbolic_multi_controlled_rotations_decompose_and_bind() -> None:
-    """Export and bind angle expressions produced by decomposition."""
+@pytest.mark.parametrize("decompose", [False, True])
+@pytest.mark.parametrize("gate", [library.PhaseGate, library.RYGate])
+def test_symbolic_multi_controlled_rotations_bind(
+    gate: type[library.PhaseGate | library.RYGate], *, decompose: bool
+) -> None:
+    """Export and bind controlled rotations, with and without decomposition."""
     theta = Parameter("theta")
     circuit = QuantumCircuit(3)
-    circuit.append(AnnotatedOperation(library.RYGate(theta), ControlModifier(2)), circuit.qubits)
+    circuit.append(AnnotatedOperation(gate(theta), ControlModifier(2)), circuit.qubits)
     program = QCProgram.from_qiskit(circuit).to_qco()
 
-    program.decompose_multi_controlled()
+    if decompose:
+        program.decompose_multi_controlled()
     restored = program.to_qiskit()
 
     assert {parameter.name for parameter in restored.parameters} == {theta.name}
-    assert all(item.operation.num_qubits <= 2 for item in restored.data)
+    if decompose:
+        assert all(item.operation.num_qubits <= 2 for item in restored.data)
     expected = circuit.assign_parameters({theta: -0.61})
     actual = restored.assign_parameters({theta: -0.61})
     assert np.allclose(Operator(actual).data, Operator(expected).data, atol=1e-10, rtol=0)
@@ -2796,6 +2811,26 @@ def test_measurement_snapshot_survives_overwritten_destination(overwrite: str) -
     assert sample(restored, shots=1, seed=1) == {expected: 1}
 
 
+@pytest.mark.parametrize("compiled", [False, True], ids=["round-trip", "compiled"])
+def test_qiskit_barrier_labels(*, compiled: bool) -> None:
+    """Keep interior, consecutive, and trailing barrier labels on their wires."""
+    label = "phase \N{GREEK SMALL LETTER ALPHA}"
+    circuit = QuantumCircuit(2)
+    circuit.h(0)
+    circuit.barrier(0, label=label)
+    circuit.barrier(0, label="")
+    circuit.cx(0, 1)
+    circuit.barrier(0)
+    circuit.barrier(1, label="output")
+
+    result = compile_program(circuit) if compiled else QCProgram.from_qiskit(circuit).to_qiskit()
+    assert [
+        (item.operation.label, [result.find_bit(qubit).index for qubit in item.qubits])
+        for item in result.data
+        if item.operation.name == "barrier"
+    ] == [(label, [0]), ("", [0]), (None, [0]), ("output", [1])]
+
+
 @pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
 @pytest.mark.parametrize("gate", ["x", "swap", "reset", "barrier", "inv"])
 def test_delayed_measurement_store_across_quantum_operations(gate: str, *, via_qco: bool) -> None:
@@ -4966,6 +5001,59 @@ def test_qiskit_native_opaque_gate_has_no_invented_definition() -> None:
         sample(source, shots=1)
 
 
+@pytest.mark.parametrize(
+    "gate",
+    [library.XGate(), library.UGate(Parameter("z"), Parameter("a"), Parameter("m")), library.CRXGate(0.37)],
+    ids=["fixed", "symbolic", "controlled"],
+)
+def test_target_gate_alias_survives_qpy(gate: Gate) -> None:
+    """Native aliases retain names, parameter order, wires, and exact phases."""
+    name = f"device_{gate.name}"
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability(name, gate.num_qubits, len(gate.params), canonical_name=gate.name),
+        ]),
+    )
+    source = QuantumCircuit(2, global_phase=0.29)
+    source.append(gate, [1, 0][: gate.num_qubits])
+    exported = QCProgram.from_qiskit(source, native=True).to_qiskit(target=target)
+    buffer = BytesIO()
+    qpy.dump(exported, buffer, version=17)
+    buffer.seek(0)
+    restored = qpy.load(buffer)[0]
+    bindings = dict(zip(source.parameters, [0.17, -0.31, 0.53], strict=False))
+    expected = Operator(source.assign_parameters(bindings)).data
+    for circuit in (exported, restored):
+        assert circuit.count_ops() == {name: 1}
+        assert circuit.data[0].operation.name == name
+        assert circuit.data[0].operation.params == gate.params
+        np.testing.assert_allclose(Operator(circuit.assign_parameters(bindings)).data, expected, atol=1e-12)
+
+
+def test_symbolic_gate_aliases_own_their_parameters() -> None:
+    """Mutating an exported alias leaves other occurrences and the input intact."""
+    theta = Parameter("theta")
+    source = QuantumCircuit(2)
+    source.u(theta, 0, 0, 0)
+    source.u(theta, 0, 0, 1)
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("device_u", 1, 3, canonical_name="u"),
+        ]),
+    )
+    exported = QCProgram.from_qiskit(source, native=True).to_qiskit(target=target)
+    first, second = (item.operation for item in exported.data)
+    first.params[0] = 0.25
+    first.definition.data[0].operation.params[0] = 0.5
+    assert second.params[0] == theta
+    assert second.definition.data[0].operation.params[0] == theta
+    assert source.data[0].operation.params[0] == theta
+
+
 @pytest.mark.parametrize("name", ["bad;gate", "if"])
 def test_qiskit_native_export_rejects_invalid_gate_names(name: str) -> None:
     """Opaque names cannot introduce OpenQASM syntax or keywords."""
@@ -5226,11 +5314,19 @@ def installed(name):
         raise importlib.metadata.PackageNotFoundError(name)
     return {version!r}
 importlib.metadata.version = installed
-from mqt.core.mlir import PayloadSpecification
+from mqt.core.mlir import CompilerTarget, PayloadSpecification, QCProgram, TargetEnvironment, serialize_program
 from mqt.core.qdmi import ProgramFormat
 assert 'qiskit' not in sys.modules
+payload = PayloadSpecification.from_program_format(ProgramFormat.QPY)
+target = CompilerTarget(
+    1, connectivity=CompilerTarget.Connectivity.all_to_all(),
+    native_operations=CompilerTarget.NativeOperations([
+        CompilerTarget.OperationCapability("x", 1, 0),
+    ]),
+)
 try:
-    PayloadSpecification.from_program_format(ProgramFormat.QPY)
+    serialize_program(QCProgram.from_openqasm_str("OPENQASM 3; x $0;"),
+                      target=TargetEnvironment(target, payload))
 except RuntimeError:
     assert not {supported!r}
 else:

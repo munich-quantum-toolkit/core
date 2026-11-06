@@ -17,16 +17,24 @@
 #include "helpers/circuits.hpp"
 #include "helpers/controlled_job.hpp"
 #include "helpers/test_utils.hpp"
+#include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Threading.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <barrier>
 #include <charconv>
+#include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
@@ -39,6 +47,41 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#ifndef _WIN32
+// SIGXFSZ is a POSIX extension, not part of <csignal>.
+#include <signal.h> // NOLINT(modernize-deprecated-headers)
+#include <sys/resource.h>
+#endif
+
+namespace {
+
+std::vector<std::array<uint64_t, 5>> readProgramTrace(const std::string& path) {
+  const auto buffer = llvm::MemoryBuffer::getFile(path);
+  EXPECT_TRUE(buffer);
+  if (!buffer) {
+    return {};
+  }
+  llvm::SmallVector<llvm::StringRef> lines;
+  (*buffer)->getBuffer().split(lines, '\n', -1, false);
+  std::vector<std::array<uint64_t, 5>> records;
+  for (const auto line : lines) {
+    llvm::SmallVector<llvm::StringRef> fields;
+    line.split(fields, '\t');
+    EXPECT_EQ(fields.size(), 5);
+    if (fields.size() != 5) {
+      return {};
+    }
+    std::array<uint64_t, 5> values{};
+    for (size_t i = 0; i < fields.size(); ++i) {
+      EXPECT_FALSE(fields[i].getAsInteger(10, values[i]));
+    }
+    records.push_back(values);
+  }
+  return records;
+}
+
+} // namespace
 
 using ColdVectorReads = testing::TestWithParam<QDMI_Job_Result>;
 
@@ -164,6 +207,10 @@ TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
 }
 
 TEST(Concurrency, NativeProgramsRunConcurrentlyAndCancelQueuedWork) {
+  const mqt::test::TemporaryDirectory directory;
+  const auto path = (directory.path() / "canceled.tsv").string();
+  const mqt::test::ScopedEnvironmentVariable trace(
+      "MQT_CORE_DDSIM_PROGRAM_TRACE", path);
   auto limit = llvm::heavyweight_hardware_concurrency().compute_thread_count();
   if (const char* raw = std::getenv("MQT_CORE_DD_WORKER_BUDGET")) {
     unsigned configured = 0;
@@ -197,4 +244,136 @@ TEST(Concurrency, NativeProgramsRunConcurrentlyAndCancelQueuedWork) {
   EXPECT_TRUE(std::ranges::all_of(statuses, [](auto status) {
     return status == QDMI_JOB_STATUS_CANCELED;
   }));
+  const auto records = readProgramTrace(path);
+  ASSERT_EQ(records.size(), count);
+  std::vector<bool> seen(count);
+  for (const auto& record : records) {
+    ASSERT_LT(record[1], count);
+    EXPECT_FALSE(seen[record[1]]);
+    seen[record[1]] = true;
+    EXPECT_EQ(record[2], QDMI_JOB_STATUS_CANCELED);
+    EXPECT_EQ(record[3], limit);
+    EXPECT_EQ(record[4], record[1] == count - 1 ? 0U : 1U);
+  }
+}
+
+TEST(Concurrency, ProgramTraceRecordsTerminalTransitionsWithoutOverwriting) {
+  const mqt::test::TemporaryDirectory directory;
+  const auto path = (directory.path() / "programs.tsv").string();
+  const mqt::test::ScopedEnvironmentVariable trace(
+      "MQT_CORE_DDSIM_PROGRAM_TRACE", path);
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  const auto* program = qdmi_test::QASM3_BELL_SAMPLING;
+  const std::array<const void*, 2> programs{program, program};
+  const std::array<size_t, 2> sizes{
+      std::strlen(program) + 1,
+      std::strlen(program) + 1,
+  };
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
+                job.job, QDMI_PROGRAM_FORMAT_QASM3, programs.size(),
+                sizes.data(), programs.data()),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 64), QDMI_SUCCESS);
+  const auto now = [] {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+  };
+  const auto before = now();
+  ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+  const auto after = now();
+  const auto buffer = llvm::MemoryBuffer::getFile(path);
+  ASSERT_TRUE(buffer);
+  const auto records = readProgramTrace(path);
+  ASSERT_EQ(records.size(), programs.size());
+  std::array<bool, 2> seen{};
+  auto previous = before;
+  for (const auto& values : records) {
+    EXPECT_GE(values[0], previous);
+    EXPECT_LE(values[0], after);
+    previous = values[0];
+    ASSERT_LT(values[1], seen.size());
+    EXPECT_FALSE(seen[values[1]]);
+    seen[values[1]] = true;
+    EXPECT_EQ(values[2], QDMI_JOB_STATUS_DONE);
+    EXPECT_GE(values[3], 1U);
+    EXPECT_GE(values[4], 1U);
+    EXPECT_LE(values[4], values[3]);
+  }
+  const auto probabilities = qdmi_test::getDenseProbabilities(job.job);
+  ASSERT_EQ(probabilities.size(), 4);
+  for (size_t i = 0; i < probabilities.size(); ++i) {
+    EXPECT_NEAR(probabilities[i], i == 0 || i == 3 ? 0.5 : 0.0, 1e-12);
+  }
+
+  const qdmi_test::JobGuard another{session.session};
+  ASSERT_EQ(
+      qdmi_test::setProgram(another.job, QDMI_PROGRAM_FORMAT_QASM3, program),
+      QDMI_SUCCESS);
+  QDMI_Job_Status status = QDMI_JOB_STATUS_RUNNING;
+  for (const auto* invalidPath : {"", "-"}) {
+    const mqt::test::ScopedEnvironmentVariable invalidTrace(
+        "MQT_CORE_DDSIM_PROGRAM_TRACE", invalidPath);
+    // The Windows CRT removes a variable when assigned an empty value.
+    if (*invalidPath == '\0' &&
+        std::getenv("MQT_CORE_DDSIM_PROGRAM_TRACE") == nullptr) {
+      continue;
+    }
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_submit(another.job),
+              QDMI_ERROR_INVALIDARGUMENT);
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(another.job, &status),
+              QDMI_SUCCESS);
+    EXPECT_EQ(status, QDMI_JOB_STATUS_CREATED);
+  }
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_submit(another.job), QDMI_ERROR_FATAL);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(another.job, &status),
+            QDMI_SUCCESS);
+  EXPECT_EQ(status, QDMI_JOB_STATUS_CREATED);
+  const auto unchanged = llvm::MemoryBuffer::getFile(path);
+  ASSERT_TRUE(unchanged);
+  EXPECT_EQ((*unchanged)->getBuffer(), (*buffer)->getBuffer());
+}
+
+TEST(Concurrency, TraceWriteFailurePreservesQuantumResults) {
+#ifdef _WIN32
+  GTEST_SKIP() << "Requires POSIX file-size limits";
+#else
+  const mqt::test::TemporaryDirectory directory;
+  const auto path = (directory.path() / "failed.tsv").string();
+  const mqt::test::ScopedEnvironmentVariable trace(
+      "MQT_CORE_DDSIM_PROGRAM_TRACE", path);
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  ASSERT_EQ(qdmi_test::setProgram(job.job, QDMI_PROGRAM_FORMAT_QASM3,
+                                  qdmi_test::QASM3_BELL_STATE),
+            QDMI_SUCCESS);
+  rlimit previous{};
+  ASSERT_EQ(getrlimit(RLIMIT_FSIZE, &previous), 0);
+  int result = QDMI_ERROR_FATAL;
+  {
+    const auto handler = ::signal(SIGXFSZ, SIG_IGN);
+    ASSERT_NE(handler, SIG_ERR);
+    const llvm::scope_exit restore([&] {
+      EXPECT_EQ(setrlimit(RLIMIT_FSIZE, &previous), 0);
+      EXPECT_NE(::signal(SIGXFSZ, handler), SIG_ERR);
+    });
+    const rlimit limited{.rlim_cur = 0, .rlim_max = previous.rlim_max};
+    ASSERT_EQ(setrlimit(RLIMIT_FSIZE, &limited), 0);
+    result = qdmi_test::submitAndWait(job.job, 0);
+  }
+  ASSERT_EQ(result, QDMI_SUCCESS);
+  QDMI_Job_Status status = QDMI_JOB_STATUS_CREATED;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(job.job, &status), QDMI_SUCCESS);
+  EXPECT_EQ(status, QDMI_JOB_STATUS_DONE);
+  const auto probabilities = qdmi_test::getDenseProbabilities(job.job);
+  ASSERT_EQ(probabilities.size(), 4);
+  for (size_t i = 0; i < probabilities.size(); ++i) {
+    EXPECT_NEAR(probabilities[i], i == 0 || i == 3 ? 0.5 : 0.0, 1e-12);
+  }
+  const auto buffer = llvm::MemoryBuffer::getFile(path);
+  ASSERT_TRUE(buffer);
+  EXPECT_TRUE((*buffer)->getBuffer().empty());
+#endif
 }

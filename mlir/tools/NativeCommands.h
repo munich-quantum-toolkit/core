@@ -10,7 +10,21 @@
 
 #pragma once
 
-int mqtCoreRunCompiler(int argc, char** argv);
+#include "llvm/Support/Error.h"
+
+#include <string>
+
+namespace mlir {
+class QCProgram;
+class TargetEnvironment;
+} // namespace mlir
+
+/// Optional file serializer; receives compiled QC without execution
+/// preparation.
+using MQTQPYWriter = llvm::Expected<std::string> (*)(
+    mlir::QCProgram, const mlir::TargetEnvironment*);
+
+int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter = nullptr);
 int mqtCoreRunBench(int argc, char** argv);
 int mqtCoreRunProgram(int argc, char** argv);
 int mqtCoreRunWorker(const char* socketPath);

@@ -39,10 +39,15 @@ print(f"Counts: {job.get_counts()}")
 `target` accepts a device, registered device ID,
 {py:class}`~mqt.core.mlir.CompilerTarget`,
 {py:class}`~mqt.core.mlir.TargetEnvironment`, or Qiskit backend/target. Device,
-environment, and `QDMIBackend` targets return a `CompiledProgram`; other Qiskit
-backends and targets return a `QuantumCircuit`. An explicit `output` selects
-another representation. For a `CompilerTarget`, the default preserves the
-input's program family.
+`QDMIBackend`, and non-Qiskit environment targets return a `CompiledProgram`.
+Other Qiskit backends, targets, and Qiskit payload environments return a
+`QuantumCircuit`. An explicit `output` selects another representation. For a
+`CompilerTarget`, the default preserves the input's program family.
+
+Use `TargetEnvironment.from_qiskit(target, strict=True)` to reject applicable
+gates or constraints Core cannot represent. It imports control flow as payload
+capabilities. For native synthesis, pass `native_num_qubits` to use an
+all-to-all target of that width and skip gates that cannot fit.
 
 A list or tuple of one input kind returns results in input order. Typed MLIR
 inputs are consumed unless `copy=True`; source text and Qiskit circuits remain
@@ -60,10 +65,11 @@ internally and export as one-parameter OpenQASM pulses with their phase
 correction.
 
 Target compilation places qubits only on sites with a supported single-qubit
-gate and measurement. With explicit couplings, it uses their largest connected
-component, including connections through resonators. Targets with ordered
-`move(qubit, resonator)` placements can route CZ gates through idle resonators.
-Core emits closed `move; cz; move` sandwiches before readout. Use
+gate. If the target supports measurement, these sites must also support readout.
+With explicit couplings, it uses their largest connected component, including
+connections through resonators. Targets with ordered `move(qubit, resonator)`
+placements can route CZ gates through idle resonators. Core emits closed
+`move; cz; move` sandwiches before readout. Use
 `compile_program(circuit, target=device)` with `submit_program`,
 `backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.
 Qiskit `transpile` does not support these targets. Native circuits that already
@@ -162,6 +168,12 @@ input, target, seed, and explicit trial count. Sampling uses a separate seed.
 For routing costs, search limits, and synthesis behavior, see the
 `place-and-route` pass in {doc}`QCO`.
 
+Controlled-gate decomposition can borrow other allocated qubits as ancilla
+qubits when this reduces estimated entangling cost. It restores their states and
+correlations and allocates no additional qubits. See
+`decompose-multi-controlled` in {doc}`QCO` for eligibility and target
+restrictions.
+
 ### Define a target
 
 A {py:class}`~mqt.core.mlir.CompilerTarget` describes hardware without
@@ -217,6 +229,55 @@ routes, using depth to break ties, without adding routing passes. Each trial has
 a bounded search-memory budget, configured with
 `MappingOptions.search_memory_limit`; this does not cap total process memory.
 See {doc}`QCO` for routing and synthesis details.
+
+### Custom pass sequences
+
+Pass a `target_environment` to
+{py:meth}`~mqt.core.mlir.QCOProgram.run_pass_pipeline` to use target-aware
+passes in a custom sequence. The environment replaces any stored environment
+after the pipeline parses successfully and remains available to later calls.
+Omitting it, or passing `None`, keeps the stored environment.
+
+Using the target defined above:
+
+```{code-cell} ipython3
+from mqt.core.mlir import CompilationOptions, PayloadFormat, PayloadSpecification, QCProgram, TargetEnvironment
+
+environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.1")))
+source = QCProgram.from_openqasm_str(bell_qasm).to_qco()
+candidate = source.copy()
+candidate.cleanup()
+candidate.run_pass_pipeline(
+    "place-and-route{ntrials=1},target-native-synthesis,drop-global-phases",
+    target_environment=environment,
+    options=CompilationOptions(seed=7),
+)
+candidate.run_pass_pipeline("verify-target-conformance")
+```
+
+The runner executes only the requested passes; it does not add the preparation
+or verification stages of the full target compiler. Choose an order that meets
+each pass's input requirements. The example drops unobservable global phases
+because this target does not support them. Set mapping controls in the textual
+`place-and-route` options; `CompilationOptions.mapping` configures the full
+target pipeline.
+
+The default `preserve_layout=False` clears existing layout metadata. Use
+`preserve_layout=True` only for passes that preserve wire identity and site
+order. For example, continue from a program compiled with layout metadata:
+
+```{code-cell} ipython3
+placed = source.copy()
+placed.compile_for_target(environment)
+placed.run_pass_pipeline("target-native-synthesis,drop-global-phases", preserve_layout=True)
+placed.run_pass_pipeline("verify-target-conformance", preserve_layout=True)
+```
+
+This option retains existing metadata; it does not generate a layout or remap
+wires. Do not enable it for qubit reuse, wire reordering, or retargeting. A
+failed pass can leave the supplied environment and earlier changes on the
+program; copy the input before trying another sequence. A pipeline parsing error
+leaves the program unchanged.
 
 ### Synthesis without routing
 
@@ -371,7 +432,8 @@ Dynamic target compilation attaches placement and routing metadata when the
 input has fixed-size entry-block allocations. Static programs already name
 physical sites; compilation preserves those IDs and does not attach a layout.
 Static and dynamic qubits cannot be mixed. Compilation rejects an already
-attached layout; later transformations clear it. See
+attached layout. Custom pipelines clear it unless `preserve_layout=True` is set
+for passes that preserve wire identity and site order. See
 [transpiler layouts](qiskit.md#transpiler-layouts) for the full contract.
 
 ### Temporary QDMI payload contract

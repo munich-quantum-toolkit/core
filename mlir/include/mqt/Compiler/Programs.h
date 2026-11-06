@@ -437,9 +437,18 @@ public:
   [[nodiscard]] LogicalResult normalizeGlobalPhases();
 
   /// Run an MLIR textual QCO pass pipeline in place.
+  ///
+  /// A supplied environment replaces the module's target environment after
+  /// parsing succeeds and remains attached for subsequent passes. Otherwise,
+  /// retain the existing environment. Set preservesLayout only when the passes
+  /// and target preserve wire identity and order; otherwise clear the layout.
+  /// Execution failure can leave partial changes; copy the program to preserve
+  /// the input.
   [[nodiscard]] LogicalResult
   runPassPipeline(std::string_view pipeline,
-                  const CompilationOptions& options = {});
+                  const CompilationOptions& options = {},
+                  const TargetEnvironment* environment = nullptr,
+                  bool preservesLayout = false);
 
   /// Merge consecutive single-qubit rotation gates.
   [[nodiscard]] LogicalResult mergeSingleQubitRotationGates();
@@ -462,9 +471,10 @@ public:
 
   /// Decompose gates that act on at least @p minQubits qubits.
   ///
-  /// Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, `qco.rccx`, and
-  /// constant-angle phase gates. @p minQubits must be at least 3; default 3
-  /// means wider than two-qubit.
+  /// Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and `qco.rccx`.
+  /// Phase and rotation angles may be constants or runtime values.
+  /// @p minQubits must be at least 3. The pass borrows and restores ancilla
+  /// qubits when this reduces the estimated entangling cost.
   [[nodiscard]] LogicalResult decomposeMultiControlled(uint64_t minQubits = 3);
 
   /// Compile for a target and attach layout metadata when possible.

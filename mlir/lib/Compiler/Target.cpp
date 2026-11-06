@@ -1431,7 +1431,7 @@ std::vector<SiteId> CompilerTarget::placeableSites() const {
   }
   std::vector<SiteId> result;
   for (const auto site : siteIds()) {
-    if (unary.contains(site) && measured.contains(site)) {
+    if (unary.contains(site) && (measured.empty() || measured.contains(site))) {
       result.push_back(site);
     }
   }

@@ -106,6 +106,7 @@ struct ExportedInstruction {
   StandardGateMapping gate;
   std::string customGate;
   std::vector<uint32_t> qubits;
+  std::optional<std::string> barrierLabel = std::nullopt;
   uint32_t clbit = 0;
   std::vector<Parameter> parameters;
   std::vector<std::complex<double>> matrix;
@@ -2595,9 +2596,12 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         continue;
       }
       if (auto barrier = llvm::dyn_cast<mlir::qc::BarrierOp>(operation)) {
+        const auto label = barrier.getLabelAttr();
         circuit.instructions.push_back({
             .kind = ExportedInstruction::Kind::Barrier,
             .qubits = mapQubits(barrier.getQubits(), state.qubits),
+            .barrierLabel =
+                label ? std::optional(label.getValue().str()) : std::nullopt,
         });
         continue;
       }
@@ -2754,7 +2758,7 @@ static void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer) {
       writer.addReset(instruction.qubits.at(0));
       break;
     case ExportedInstruction::Kind::Barrier:
-      writer.addBarrier(instruction.qubits);
+      writer.addBarrier(instruction.qubits, instruction.barrierLabel);
       break;
     case ExportedInstruction::Kind::Unitary:
       writer.addUnitary(instruction.matrix, instruction.qubits,

@@ -43,6 +43,7 @@
 #include "qdmi/QDMI.hpp"
 
 #include "Array.hpp"
+#include "NativeCommands.h"
 #include "Result.hpp"
 #include "Target/PennyLane/PennyLane.h"
 #include "Target/Qiskit/Qiskit.h"
@@ -81,6 +82,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
+#include <atomic>
 #include <cassert>
 #include <cctype>
 #include <complex>
@@ -670,6 +672,24 @@ payloadForOutput(OutputFormat output) {
   return buffer.attr("getvalue")();
 }
 
+/// Export using the target environment retained by native compilation.
+[[nodiscard]] static nb::object
+qpyCircuit(mlir::QCProgram program,
+           const mlir::TargetEnvironment* environment = nullptr) {
+  if (environment != nullptr) {
+    return bindings::qiskit::exportCircuit(std::move(program), *environment);
+  }
+  if (program.module()->hasAttr(mlir::mqt::TargetEnvAttr::name)) {
+    const mlir::TargetEnvironmentAnalysis attached(program.module());
+    if (!attached) {
+      throw nb::value_error(attached.error().str().c_str());
+    }
+    return bindings::qiskit::exportCircuit(std::move(program),
+                                           attached.environment());
+  }
+  return bindings::qiskit::exportCircuit(std::move(program), nullptr);
+}
+
 [[nodiscard]] static nb::object compiledResult(mlir::CompiledProgram compiled,
                                                nb::handle program,
                                                nb::handle target) {
@@ -787,10 +807,16 @@ payloadForOutput(OutputFormat output) {
   }();
   if (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
-    auto result =
-        outputEnvironment
-            ? bindings::qiskit::exportCircuit(std::move(qc), *outputEnvironment)
-            : bindings::qiskit::exportCircuit(std::move(qc), nullptr);
+    auto result = [&] {
+      if (selected == OutputFormat::QPY) {
+        return qpyCircuit(std::move(qc),
+                          outputEnvironment ? &*outputEnvironment : nullptr);
+      }
+      return outputEnvironment
+                 ? bindings::qiskit::exportCircuit(std::move(qc),
+                                                   *outputEnvironment)
+                 : bindings::qiskit::exportCircuit(std::move(qc), nullptr);
+    }();
     if (input.format == OutputFormat::Qiskit) {
       result.attr("name") = program.attr("name");
       result.attr("metadata") = nb::module_::import_("copy").attr("deepcopy")(
@@ -873,8 +899,10 @@ compilePythonProgram(PythonInputTypes& types, const nb::handle program,
         nb::cast<const mlir::TargetEnvironment&>(target.attr("_environment"));
   } else if (!target.is_none() && !compilerTarget) {
     targetEnvironment.emplace(
-        bindings::qiskit::importTarget(target, nb::none(), std::nullopt),
-        bindings::qiskit::payloadSpecification(target));
+        bindings::qiskit::importTargetEnvironment(target, std::nullopt, false));
+  }
+  if (targetEnvironment &&
+      targetEnvironment->payloadSpecification().format().id == "qiskit") {
     output = output.value_or(OutputFormat::Qiskit);
   }
 
@@ -1232,11 +1260,11 @@ generateBenchmark(const Benchmark& benchmark) {
 }
 
 [[nodiscard]] static llvm::Expected<std::string>
-exportQPY(mlir::QCProgram program, const mlir::TargetEnvironment& environment) {
+exportQPYFile(mlir::QCProgram program,
+              const mlir::TargetEnvironment* environment) {
   const nb::gil_scoped_acquire acquire;
   try {
-    auto circuit =
-        bindings::qiskit::exportCircuit(std::move(program), environment);
+    auto circuit = qpyCircuit(std::move(program), environment);
     auto data = nb::cast<nb::bytes>(writeQPY(circuit));
     return std::string(data.c_str(), data.size());
   } catch (const std::exception& error) {
@@ -1245,16 +1273,22 @@ exportQPY(mlir::QCProgram program, const mlir::TargetEnvironment& environment) {
   }
 }
 
+[[nodiscard]] static llvm::Expected<std::string>
+exportQPY(mlir::QCProgram program, const mlir::TargetEnvironment& environment) {
+  return exportQPYFile(std::move(program), &environment);
+}
+
 // NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
 void registerMLIR(nb::module_& m) {
-
   m.doc() = "MQT Core MLIR compiler bindings.";
   const auto metadata = nb::module_::import_("importlib.metadata");
+  bool qpyAvailable = false;
   try {
     const auto version = metadata.attr("version")("qiskit");
     if (nb::isinstance<nb::str>(version) &&
         bindings::qiskit::supportsVersion(nb::cast<std::string>(version))) {
       mlir::setQPYExporter(&exportQPY);
+      qpyAvailable = true;
     }
   } catch (const nb::python_error& error) {
     if (!error.matches(metadata.attr("PackageNotFoundError"))) {
@@ -1347,8 +1381,10 @@ void registerMLIR(nb::module_& m) {
   programCapability.attr("MULTIWAY_BRANCHING") =
       mlir::ProgramCapability::MULTIWAY_BRANCHING.str();
 
-  nb::class_<mlir::PayloadSpecification>(m, "PayloadSpecification",
-                                         "Selected payload execution contract.")
+  nb::class_<mlir::PayloadSpecification>(
+      m, "PayloadSpecification", nb::is_generic(),
+      nb::sig("class PayloadSpecification(typing.Generic[_TargetResultT_co])"),
+      "Selected payload execution contract.")
       .def(
           "__init__",
           [](mlir::PayloadSpecification& self, mlir::PayloadFormat format,
@@ -1869,9 +1905,11 @@ Raises:
           "The target name, if available.")
       .def_prop_ro("duration_unit", &mlir::CompilerTarget::durationUnit,
                    "The target timing unit, if available.")
-      .def_prop_ro("placeable_sites", &mlir::CompilerTarget::placeableSites,
-                   "Sites supporting a compiler-targetable single-qubit gate "
-                   "and measurement.")
+      .def_prop_ro(
+          "placeable_sites", &mlir::CompilerTarget::placeableSites,
+          "Sites supporting a compiler-targetable single-qubit gate.\n\n"
+          "If the target supports measurement, these sites must also "
+          "support readout.")
       .def_prop_ro("num_sites", &mlir::CompilerTarget::numSites,
                    "The number of target sites.")
       .def_prop_ro(
@@ -1935,10 +1973,31 @@ Args:
         unrestricted support.)pb");
 
   nb::class_<mlir::TargetEnvironment>(
-      m, "TargetEnvironment",
+      m, "TargetEnvironment", nb::is_generic(),
+      nb::sig("class TargetEnvironment(typing.Generic[_TargetResultT_co])"),
       "A compiler target and its selected payload specification.")
       .def(nb::init<mlir::CompilerTarget, mlir::PayloadSpecification>(),
            "target"_a, "payload_specification"_a)
+      .def_static(
+          "from_qiskit", &bindings::qiskit::importTargetEnvironment, "source"_a,
+          nb::kw_only(), "native_num_qubits"_a = nb::none(), "strict"_a = false,
+          nb::sig(
+              "def from_qiskit(source: qiskit.transpiler.Target | "
+              "qiskit.providers.BackendV2, *, native_num_qubits: int | None "
+              "= None, strict: bool = False) -> "
+              "TargetEnvironment[qiskit.circuit.QuantumCircuit]"),
+          R"pb(Snapshot a Qiskit target and its output capabilities.
+
+Args:
+    source: Qiskit Target or BackendV2.
+    native_num_qubits: Use an all-to-all target of this positive width for
+        native synthesis. Ignore device placement and gates wider than this
+        width. None retains the device topology.
+    strict: Raise ValueError for an applicable gate or constraint that Core
+        cannot represent. By default, warn and omit unsupported gates.
+
+Returns:
+    The compiler target and the Qiskit payload it supports.)pb")
       .def_static(
           "from_device",
           [](const nb::handle device,
@@ -1951,7 +2010,7 @@ Args:
           "device"_a, nb::kw_only(), "program_format"_a = nb::none(),
           nb::sig("def from_device(device: mqt.core.qdmi.Device | str, *, "
                   "program_format: mqt.core.qdmi.ProgramFormat | None = None) "
-                  "-> TargetEnvironment"),
+                  "-> TargetEnvironment[CompiledProgram]"),
           "Snapshot a QDMI device and select its executable payload.")
       .def_prop_ro("target", &mlir::TargetEnvironment::target,
                    "The compiler target.")
@@ -2270,14 +2329,23 @@ cancel, fuse, or specialize gates.)pb")
       .def(
           "run_pass_pipeline",
           [](mlir::QCOProgram& program, const std::string& pipeline,
-             mlir::CompilationOptions options) {
-            requireValid(program);
-            withDiagnostics<nb::exception_type::runtime_error>(
-                program.context().get(), "Compiler action failed",
-                [&] { return program.runPassPipeline(pipeline, options); });
+             const mlir::TargetEnvironment* environment,
+             mlir::CompilationOptions options, bool preserveLayout) {
+            FallibleMemberAdapter<&mlir::QCOProgram::runPassPipeline>::call(
+                program, pipeline, options, environment, preserveLayout);
           },
-          "pipeline"_a, nb::kw_only(), "options"_a = mlir::CompilationOptions{},
-          "Run a textual MLIR pass pipeline in place.")
+          "pipeline"_a, nb::kw_only(), "target_environment"_a = nb::none(),
+          "options"_a = mlir::CompilationOptions{}, "preserve_layout"_a = false,
+          nb::call_guard<nb::gil_scoped_release>(),
+          R"pb(Run a textual MLIR pass pipeline in place.
+
+The supplied target environment replaces the existing one after parsing succeeds
+and remains attached for subsequent passes. None retains the existing environment.
+Only the requested passes run; no default target compilation stages are added.
+Layout metadata is cleared unless ``preserve_layout=True``. Set this only when
+the passes and target preserve qubit identity and order. It retains existing
+metadata; it does not create or validate a mapping. Execution failure can leave
+partial changes; use ``copy()`` to preserve the input.)pb")
       .def("merge_single_qubit_rotation_gates",
            &FallibleMemberAdapter<
                &mlir::QCOProgram::mergeSingleQubitRotationGates>::call,
@@ -2308,8 +2376,9 @@ cancel, fuse, or specialize gates.)pb")
            nb::kw_only(), "min_qubits"_a = 3,
            R"pb(Decompose gates that act on at least min_qubits qubits.
 
-Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates. min_qubits must be
-at least 3; default 3 means wider than two-qubit.)pb")
+Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
+at least 3. The pass borrows and restores ancilla qubits when this reduces the
+estimated entangling cost. It allocates no additional qubits.)pb")
       .def(
           "compile_for_target",
           [](mlir::QCOProgram& program,
@@ -2872,8 +2941,9 @@ inputs. Elements must share one supported input kind; subclasses are accepted.
 Strings and paths are single inputs. Generators and binary buffers are unsupported.
 
 An explicit ``output`` selects each result's representation. Without it, a
-Qiskit target selects QuantumCircuit and a QDMI backend, device or target environment selects
-:class:`CompiledProgram` for :func:`submit_program`. Otherwise, each input
+Qiskit target or Qiskit payload environment selects QuantumCircuit. A QDMI
+backend, device or other target environment selects :class:`CompiledProgram`
+for :func:`submit_program`. Otherwise, each input
 retains its format family: OpenQASM source returns :class:`OpenQASMProgram`,
 QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
 QCO inputs return optimized QCO.
@@ -2933,6 +3003,32 @@ Args:
 binary QIR; omitting it selects a supported native format. A compiled program
 retains its payload and must match the destination contract. Job results are raw;
 apply ``compiled.result_layout.decode_bits`` when a result layout is present.)pb");
+
+  m.def(
+      "_run_compiler",
+      [qpyAvailable](std::vector<std::string> arguments) {
+        if (arguments.empty()) {
+          throw nb::value_error(
+              "Compiler arguments must include the command name");
+        }
+        // LLVM command-line state cannot be reused or called concurrently.
+        static std::atomic<bool> invoked = false;
+        if (invoked.exchange(true)) {
+          throw std::runtime_error(
+              "The compiler command can only run once per process");
+        }
+        std::vector<char*> argv;
+        argv.reserve(arguments.size() + 1);
+        for (auto& argument : arguments) {
+          argv.push_back(argument.data());
+        }
+        argv.push_back(nullptr);
+        return mqtCoreRunCompiler(static_cast<int>(arguments.size()),
+                                  argv.data(),
+                                  qpyAvailable ? &exportQPYFile : nullptr);
+      },
+      "arguments"_a, nb::call_guard<nb::gil_scoped_release>(),
+      "Run the compiler command once. LLVM options can terminate the process.");
 
   bindings::pennylane::registerBindings(m);
 }

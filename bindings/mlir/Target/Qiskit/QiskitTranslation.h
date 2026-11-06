@@ -222,6 +222,7 @@ struct Instruction {
   std::optional<StandardGateMapping> standardGate;
   /// Output position i carries input position permutation[i].
   std::optional<std::vector<uint32_t>> permutation = std::nullopt;
+  std::optional<std::string> barrierLabel = std::nullopt;
 };
 
 enum class ClassicalType : uint8_t {
@@ -419,7 +420,8 @@ public:
                              const std::vector<GateModifier>& modifiers) = 0;
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
-  virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;
+  virtual void addBarrier(const std::vector<uint32_t>& qubits,
+                          const std::optional<std::string>& label) = 0;
   virtual void addStore(ClassicalTarget target,
                         std::unique_ptr<Expression> value) = 0;
   virtual void addUnitary(const std::vector<std::complex<double>>& matrix,
@@ -449,10 +451,11 @@ public:
   [[nodiscard]] virtual bool supportsGate(StandardGateMapping gate) const = 0;
   [[nodiscard]] virtual mlir::CompilerTarget
   importTarget(nb::handle target, nb::handle operationNames,
-               const std::optional<std::string>& name) const = 0;
+               const std::optional<std::string>& name, bool strict) const = 0;
   [[nodiscard]] virtual mlir::CompilerTarget::NativeOperations
-  importNativeOperations(nb::handle target,
-                         nb::handle operationNames) const = 0;
+  importNativeOperations(nb::handle target, nb::handle operationNames,
+                         bool strict,
+                         std::optional<size_t> nativeWidth) const = 0;
   [[nodiscard]] virtual mlir::PayloadSpecification
   payloadSpecification(nb::handle target) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>

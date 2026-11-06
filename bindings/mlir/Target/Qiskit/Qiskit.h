@@ -53,6 +53,14 @@ importTarget(nb::handle target, nb::handle operationNames,
 [[nodiscard]] mlir::CompilerTarget::NativeOperations
 importNativeOperations(nb::handle target, nb::handle operationNames);
 
+/// Import a Qiskit target and its output capabilities together.
+///
+/// A native width selects gates that fit and ignores device placement.
+/// Strict import rejects unsupported applicable gates.
+[[nodiscard]] mlir::TargetEnvironment
+importTargetEnvironment(nb::handle target, std::optional<size_t> nativeWidth,
+                        bool strict);
+
 /// Describe Qiskit output capabilities, restricted to a target when supplied.
 [[nodiscard]] mlir::PayloadSpecification
 payloadSpecification(nb::handle target = nb::none());

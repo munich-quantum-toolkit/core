@@ -56,6 +56,7 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/Path.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ToolOutputFile.h"
 #include "llvm/Support/raw_ostream.h"
@@ -286,7 +287,14 @@ writeOutput(OwningOpRef<ModuleOp> mod, StringRef filename,
   return success();
 }
 
-int mqtCoreRunCompiler(int argc, char** argv) {
+int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
+  llvm::cl::list<std::string> manifests(
+      "qdmi-manifest", llvm::cl::Hidden,
+      llvm::cl::desc("Register a QDMI provider manifest"),
+      llvm::cl::callback([](const std::string& path) {
+        llvm::ExitOnError("mqt-core: ")(
+            qdmi::builtin_driver::addManifest(path));
+      }));
 
   // Command-line options
   llvm::cl::opt<std::string> inputFilename(
@@ -391,6 +399,9 @@ int mqtCoreRunCompiler(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
+  const bool emitQPY = outputFormat == "qpy" ||
+                       (outputFormat.getNumOccurrences() == 0 &&
+                        llvm::sys::path::extension(outputFilename) == ".qpy");
   const bool hasExplicitTarget = explicitTarget.getNumOccurrences() != 0;
   const bool hasTarget = !qdmiDevice.empty() || hasExplicitTarget;
   if ((mappingTrials.getNumOccurrences() != 0 ||
@@ -447,11 +458,11 @@ int mqtCoreRunCompiler(int argc, char** argv) {
                         "--qdmi-device or --target and --payload-spec must be "
                         "provided together.")
           .failed() ||
-      reportQDMIErrorIf(
-          hasTarget && outputFormat.getNumOccurrences() != 0 &&
-              outputFormat != "qco-optimized",
-          "Only --emit=qco-optimized can be combined with target compilation; "
-          "--payload-spec selects the executable output.")
+      reportQDMIErrorIf(hasTarget && outputFormat.getNumOccurrences() != 0 &&
+                            outputFormat != "qco-optimized" && !emitQPY,
+                        "Only --emit=qco-optimized or qpy can be combined with "
+                        "target compilation; "
+                        "--payload-spec selects the executable output.")
           .failed() ||
       reportQDMIErrorIf(
           !qdmiConfig.empty() && !qdmiListDevices && qdmiDevice.empty(),
@@ -482,11 +493,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     llvm::errs() << "Isolated pipeline execution requires MLIR input.\n";
     return 1;
   }
-  if (outputFormat == "qpy" ||
-      (outputFormat.getNumOccurrences() == 0 &&
-       llvm::sys::path::extension(outputFilename) == ".qpy")) {
-    llvm::errs() << "QPY export requires the Python mqt-core command with the "
-                    "qiskit extra.\n";
+  if (emitQPY && qpyWriter == nullptr) {
+    llvm::errs() << "QPY output requires Qiskit: install mqt-core[qiskit].\n";
     return 1;
   }
   const auto extension = llvm::sys::path::extension(outputFilename);
@@ -498,7 +506,8 @@ int mqtCoreRunCompiler(int argc, char** argv) {
           .Case(".json", ProgramFormat::IQMJSON)
           .Default(std::nullopt);
   auto parsedOutputFormat =
-      outputFormat.getNumOccurrences() == 0 && inferredOutput
+      emitQPY ? std::optional{ProgramFormat::QC}
+      : outputFormat.getNumOccurrences() == 0 && inferredOutput
           ? inferredOutput
           : parseOutputFormat(outputFormat);
   if (!parsedOutputFormat) {
@@ -561,7 +570,9 @@ int mqtCoreRunCompiler(int argc, char** argv) {
           llvm_unreachable("Unexpected inferred output format");
         }
       }
-      auto environment = targetEnvironmentFromDevice(*device, format);
+      auto environment = outputFormat == "qco-optimized"
+                             ? inspectTargetEnvironment(*device, format)
+                             : targetEnvironmentFromDevice(*device, format);
       if (!environment) {
         return environment.takeError();
       }
@@ -627,12 +638,12 @@ int mqtCoreRunCompiler(int argc, char** argv) {
 
   std::optional<TargetEnvironment> targetEnvironment;
   if (compilerTarget) {
-    auto compilerOutput = selectedPayload->compilerOutput();
-    if (!compilerOutput) {
-      llvm::errs() << llvm::toString(compilerOutput.takeError()) << '\n';
-      return 1;
-    }
-    if (outputFormat.getNumOccurrences() == 0) {
+    if (outputFormat.getNumOccurrences() == 0 && !emitQPY) {
+      auto compilerOutput = selectedPayload->compilerOutput();
+      if (!compilerOutput) {
+        llvm::errs() << llvm::toString(compilerOutput.takeError()) << '\n';
+        return 1;
+      }
       parsedOutputFormat = *compilerOutput;
     }
     targetEnvironment.emplace(std::move(*compilerTarget),
@@ -770,7 +781,9 @@ int mqtCoreRunCompiler(int argc, char** argv) {
                    *parsedOutputFormat == ProgramFormat::QIRAdaptive) {
                  pm.addPass(createInlinerPass());
                }
-               populateQCOCleanupPipeline(pm);
+               // Keep potential ancilla qubits until decomposition.
+               populateQCOCleanupPipeline(
+                   pm, /*removeUnusedValues=*/!enableDecomposeMultiControlled);
                if (passPipeline.getNumOccurrences() != 0) {
                  if (failed(parseCustomPipeline(pm))) {
                    return failure();
@@ -804,11 +817,15 @@ int mqtCoreRunCompiler(int argc, char** argv) {
        *parsedOutputFormat == ProgramFormat::IQMJSON ||
        *parsedOutputFormat == ProgramFormat::QIRBase ||
        *parsedOutputFormat == ProgramFormat::QIRAdaptive) &&
-      failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(createQCOToQC());
-        populateQCCleanupPipeline(pm);
-        return success();
-      }))) {
+      failed(runPasses(
+          [emitQPY](OpPassManager& pm) {
+            pm.addPass(createQCOToQC());
+            if (!emitQPY) {
+              populateQCCleanupPipeline(pm);
+            }
+            return success();
+          },
+          /*preservesLayout=*/emitQPY))) {
     return 1;
   }
 
@@ -839,8 +856,39 @@ int mqtCoreRunCompiler(int argc, char** argv) {
     return 1;
   }
 
-  // Write the output
-  if (*parsedOutputFormat == ProgramFormat::Jeff) {
+  // Serialize before opening the destination so exporter failures preserve it.
+  if (emitQPY) {
+    auto qc = QCProgram::fromModule(context, std::move(program.mod));
+    if (failed(qc)) {
+      return 1;
+    }
+    auto payload = qpyWriter(std::move(*qc),
+                             targetEnvironment ? &*targetEnvironment : nullptr);
+    if (!payload) {
+      llvm::errs() << "QPY export failed: "
+                   << llvm::toString(payload.takeError()) << '\n';
+      return 1;
+    }
+    if (outputFilename == "-") {
+      if (auto error = llvm::sys::ChangeStdoutToBinary()) {
+        llvm::errs() << error.message() << '\n';
+        return 1;
+      }
+    }
+    std::string errorMessage;
+    auto output = openOutputFile(outputFilename, &errorMessage);
+    if (!output) {
+      llvm::errs() << errorMessage << '\n';
+      return 1;
+    }
+    output->os() << *payload;
+    output->os().flush();
+    if (output->os().has_error()) {
+      llvm::errs() << "I/O error while writing QPY output\n";
+      return 1;
+    }
+    output->keep();
+  } else if (*parsedOutputFormat == ProgramFormat::Jeff) {
     if (failed(writeJeffOutput(*program.mod, outputFilename))) {
       return 1;
     }

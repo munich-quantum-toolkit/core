@@ -204,9 +204,12 @@ LogicalResult QCOProgram::normalizeGlobalPhases() {
 }
 
 LogicalResult QCOProgram::runPassPipeline(std::string_view pipeline,
-                                          const CompilationOptions& options) {
+                                          const CompilationOptions& options,
+                                          const TargetEnvironment* environment,
+                                          bool preservesLayout) {
   if (failed(qco::verifyLinearity(mod())) ||
-      failed(::runPassPipeline(mod(), pipeline, options))) {
+      failed(::runPassPipeline(mod(), pipeline, options, environment,
+                               preservesLayout))) {
     return failure();
   }
   return qco::verifyLinearity(mod());
@@ -313,7 +316,7 @@ static Expected<CompilerTarget> placementTarget(const CompilerTarget& target) {
   if (placeable.empty()) {
     return createStringError(
         std::errc::invalid_argument,
-        "no site supports both a single-qubit gate and measure");
+        "no site supports the operations required for qubit placement");
   }
   if (placeable.size() == target.numSites()) {
     return target;
