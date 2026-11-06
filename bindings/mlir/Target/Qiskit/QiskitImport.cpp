@@ -2916,7 +2916,8 @@ static void validateGeneratedControlFlow(mlir::Operation* operation,
   }
 }
 
-mlir::QCProgram importCircuit(const nb::handle circuit, const bool native) {
+mlir::QCProgram importCircuit(const nb::handle circuit, const bool native,
+                              const bool ignoreLayout) {
   auto translation = selectTranslation();
   auto view = translation->openCircuit(circuit);
   const auto freeParameters = view->parameters();
@@ -2969,7 +2970,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit, const bool native) {
       classicalRegisters, view->numClbits(), "classical");
 
   auto context = mlir::createCompilerContext();
-  const auto layout = view->layout();
+  const auto layout = ignoreLayout ? std::nullopt : view->layout();
   mlir::qc::QCProgramBuilder builder(context.get());
   builder.initialize();
   auto function = llvm::cast<mlir::func::FuncOp>(

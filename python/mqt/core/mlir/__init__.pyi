@@ -60,6 +60,8 @@ class _CompileOptions(TypedDict, total=False, closed=True):
     copy: bool
     qco_pipeline: str
     options: CompilationOptions | None
+    ignore_input_layout: bool
+    include_output_layout: bool
 
 class QIRProfile(enum.Enum):
     """QIR target profiles."""
@@ -1951,6 +1953,11 @@ def compile_program(
         qco_pipeline: The QCO pipeline, defaulting to "mqt-qco-default".
             Custom pipelines require no target.
         options: Shared compilation controls.
+        ignore_input_layout: Treat the current wires of a Qiskit input as fresh
+            program qubits. Defaults to False.
+        include_output_layout: Attach layout metadata to Qiskit and explicit QPY
+            outputs when available. Defaults to True. Physical wire indices and
+            measurement destinations are preserved either way.
 
     Device defaults prefer QPY, OpenQASM 3, Adaptive QIR (binary, text), IQM JSON, then Base QIR
     (binary, text). Use a ``TargetEnvironment`` to select an exact execution format.

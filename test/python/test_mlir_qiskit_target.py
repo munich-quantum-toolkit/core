@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, assert_type, cast
 
 import numpy as np
 import pytest
-from qiskit import QuantumCircuit, qpy
+from qiskit import QuantumCircuit, qpy, transpile
 from qiskit.circuit import Barrier, Gate, Measure, Parameter, Reset, library
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import IfElseOp, WhileLoopOp
@@ -127,6 +127,51 @@ def test_compile_program_qiskit_output(target_kind: str | None) -> None:
     expected = QuantumCircuit(3 if target_kind is None else 5)
     expected.compose(circuit.assign_parameters({theta: 0.7}), range(circuit.num_qubits), inplace=True)
     assert np.allclose(Operator.from_circuit(compiled.assign_parameters({theta: 0.7})).data, Operator(expected).data)
+
+
+def test_recompile_qiskit_physical_wires() -> None:
+    """Recompile a laid-out circuit and control layout export independently."""
+    backend = GenericBackendV2(4, basis_gates=["sx", "x", "rz", "cx"], coupling_map=[[0, 1], [1, 2], [2, 3]], seed=1)
+    circuit = QuantumCircuit(2, 2)
+    circuit.x(0)
+    circuit.cx(0, 1)
+    circuit.x(1)
+    circuit.measure([0, 1], [1, 0])
+    mapped = transpile(circuit, backend, initial_layout=[2, 3], optimization_level=0)
+    layout = mapped.layout
+    assert layout is not None
+    assert layout.final_index_layout() == [2, 3]
+
+    target = TargetEnvironment.from_qiskit(backend, strict=True)
+    physical = QuantumCircuit(*mapped.qregs, *mapped.cregs)
+    physical.compose(mapped, inplace=True)
+    options = CompilationOptions(seed=7)
+    expected = compile_program(physical, target=target, options=options)
+    assert expected.layout is not None
+
+    recompiled = compile_program(mapped, target=target, options=options, ignore_input_layout=True)
+    assert recompiled == expected
+    assert recompiled.layout is not None
+    assert recompiled.layout.final_index_layout() == expected.layout.final_index_layout()
+
+    result = compile_program(
+        mapped, target=target, options=options, ignore_input_layout=True, include_output_layout=False
+    )
+    assert result == expected
+    assert result.layout is None
+
+    (payload,) = compile_program(
+        [mapped],
+        target=target,
+        options=options,
+        output=OutputFormat.QPY,
+        ignore_input_layout=True,
+        include_output_layout=False,
+    )
+    (restored,) = qpy.load(BytesIO(payload))
+    assert restored == expected
+    assert restored.layout is None
+    assert mapped.layout is layout
 
 
 def test_compile_program_target_without_measurement() -> None:

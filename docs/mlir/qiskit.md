@@ -282,11 +282,15 @@ program = QCProgram.from_qiskit(transpiled_circuit)
 restored = program.to_qco().to_qc().to_qiskit()
 ```
 
-Target compilation and compilation to a Qiskit circuit require inputs without an
-attached layout. Use the conversion methods above to preserve an existing
-layout. The numeric mapping does not retain Qiskit input register names or input
-ancilla labels; incomplete layouts are unsupported. See {doc}`MQT dialect <MQT>`
-for the metadata schema and {doc}`target compilation <target_compilation>` for
+By default, target compilation and compilation to a Qiskit circuit require
+inputs without an attached layout. Set `ignore_input_layout=True` on
+`compile_program` to recompile a Qiskit circuit using its current wire order as
+the new input order. Set `include_output_layout=False` to omit the new layout
+from Qiskit or explicit QPY output while keeping its physical wires and
+measurement destinations. Use the conversion methods above to preserve an
+existing layout. The numeric mapping omits Qiskit input register names and input
+ancilla labels and requires complete layouts. See {doc}`MQT dialect <MQT>` for
+the metadata schema and {doc}`target compilation <target_compilation>` for
 placement.
 
 Names passed between Qiskit and the compiler must not contain NUL characters.

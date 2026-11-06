@@ -2936,10 +2936,9 @@ collectGateDefinition(mlir::func::FuncOp function) {
   };
 }
 
-[[nodiscard]] static nb::object
-exportCircuitImpl(mlir::QCProgram program,
-                  const mlir::CompilerTarget* const target,
-                  const mlir::PayloadSpecification* const payload) {
+[[nodiscard]] static nb::object exportCircuitImpl(
+    mlir::QCProgram program, const mlir::CompilerTarget* const target,
+    const mlir::PayloadSpecification* const payload, const bool includeLayout) {
   const bool deviceTarget = target != nullptr && target->hasDeviceConstraints();
   auto moduleOp = program.module();
   auto function = mlir::mqt::getEntryPoint(moduleOp);
@@ -3058,7 +3057,10 @@ exportCircuitImpl(mlir::QCProgram program,
                                  static_cast<uint32_t>(reg.bits.size()));
   }
   emitCircuit(circuit, *writer);
-  if (layout && layout->sites && target != nullptr &&
+  if (!includeLayout || !layout) {
+    return writer->finish();
+  }
+  if (layout->sites && target != nullptr &&
       llvm::all_of(*layout->sites, [&](auto site) {
         return target->vertexForSite(site).has_value();
       })) {
@@ -3082,22 +3084,24 @@ exportCircuitImpl(mlir::QCProgram program,
     }
     layout->sites.reset();
     writer->setLayout(*layout);
-  } else if (layout && layout->initial.size() == state.numQubits &&
-             !layout->sites && target == nullptr) {
+  } else if (layout->initial.size() == state.numQubits && !layout->sites &&
+             target == nullptr) {
     writer->setLayout(*layout);
   }
   return writer->finish();
 }
 
 nb::object exportCircuit(mlir::QCProgram program,
-                         const mlir::CompilerTarget* target) {
-  return exportCircuitImpl(std::move(program), target, nullptr);
+                         const mlir::CompilerTarget* target,
+                         const bool includeLayout) {
+  return exportCircuitImpl(std::move(program), target, nullptr, includeLayout);
 }
 
 nb::object exportCircuit(mlir::QCProgram program,
-                         const mlir::TargetEnvironment& environment) {
+                         const mlir::TargetEnvironment& environment,
+                         const bool includeLayout) {
   return exportCircuitImpl(std::move(program), &environment.target(),
-                           &environment.payloadSpecification());
+                           &environment.payloadSpecification(), includeLayout);
 }
 
 } // namespace mqt::bindings::qiskit
