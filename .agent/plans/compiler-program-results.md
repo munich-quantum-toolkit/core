@@ -12,14 +12,12 @@ absence, and ordinary predicates. Remove the private boolean linearity wrapper
 so its callers use the verifier's result directly.
 
 Keep native exception handling and Target/TargetEnvironment error ownership on
-main's contracts. Do not introduce the native diagnostic bridge from #2545.
-Include the requested QDMI configuration paragraph removal and the XDG-specific
-HOME fallback for an unset or empty `XDG_CONFIG_HOME`.
+main's contracts. Do not introduce the native diagnostic bridge from #2545. Use
+the XDG-specific HOME fallback for an unset or empty `XDG_CONFIG_HOME`.
 
 ## Completion
 
 - [x] Update the APIs and all callers without changing supported behavior.
-- [x] Run the ponytail review and address its findings: no actionable findings.
 - [x] Validate native and Python consumers, regenerate stubs, and run lint.
 
 ## Validation

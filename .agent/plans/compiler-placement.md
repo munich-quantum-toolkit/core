@@ -13,8 +13,7 @@ fix and safe placement diagnostics. Update the compiler PR and keep the
 documentation PR stacked on its final head. Apply the accepted upstream
 reassessment: reuse qubit-store role metadata, retain upstream routing and
 modifier contracts, and remove the superseded mapper guard and unreachable
-tensor-lifetime alternatives. Run the requested ponytail review before
-publication.
+tensor-lifetime alternatives.
 
 ## Contracts
 
@@ -53,10 +52,10 @@ device-compilation tests also pass after formatting. Generated MLIR
 documentation builds successfully. Full-file C++ lint against the fixed
 integration base and general lint pass.
 
-The ponytail review removed unused conversion state, mask-only memref legality
-and alias exceptions, and mask-filtering test helpers. QC has no net dialect
-change against the integration base. Temporary benchmark artifacts remain
-excluded; regression tests retain coverage.
+Conversion state, memref legality, and alias handling track allocation ownership
+without runtime masks. QC has no net dialect change against the integration
+base. Temporary benchmark artifacts remain excluded; regression tests retain
+coverage.
 
 The separate README/RtD plan owns the stacked documentation checks and PR #2509.
 PR #2506 contains the compiler implementation and its supported-input limits.

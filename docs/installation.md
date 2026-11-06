@@ -198,10 +198,10 @@ Without a recognized extension, untargeted compilation defaults to QC MLIR and
 device compilation selects a supported payload.
 
 `--with=qiskit` installs the optional serializer directly. Installing
-`mqt-core[qiskit]` instead also applies Core's Qiskit dependency requirements.
-QPY output preserves target gate aliases, physical qubit addresses, and layout
-metadata. QPY submission does not require Qiskit on the client when the
-destination device accepts QPY directly.
+`mqt-core[qiskit]` instead also applies MQT Core's Qiskit dependency
+requirements. QPY output preserves target gate aliases, physical qubit
+addresses, and layout metadata. QPY submission does not require Qiskit on the
+client when the destination device accepts QPY directly.
 
 The Python command runs the shared native compiler and Qiskit's serializer in
 one process. Native compilation options also apply to QPY output. Reoptimizing
@@ -209,7 +209,7 @@ previously mapped MLIR discards its existing layout metadata.
 
 ### Building from source
 
-Build from source to tune Core for the machine that will run it:
+Build from source to tune MQT Core for the machine that will run it:
 
 ::::{tab-set}
 :sync-group: installer
@@ -275,10 +275,10 @@ policy. Linux LLD builds also fold identical code outside Debug builds.
 precedence over compiler-cache detection, including an empty value to disable it
 for one language.
 
-Native tuning and LTO apply to the Core code being compiled. Prebuilt LLVM/MLIR
-SDK libraries retain their own build settings, and LTO does not optimize across
-separate shared libraries. Benchmark your application before changing the
-compiler or LTO settings.
+Native tuning and LTO apply to the MQT Core code being compiled. Prebuilt
+LLVM/MLIR SDK libraries retain their own build settings, and LTO does not
+optimize across separate shared libraries. Benchmark your application before
+changing the compiler or LTO settings.
 
 ## Integrating MQT Core into Your Project
 

@@ -39,7 +39,7 @@ resolving classical block arguments. An explicit converted-modifier parent check
 preserves graceful rejection. The frozen baseline exits 1, the intermediate
 prototype aborts, and the final CLI exits 1 again. One small regression test
 covers this; an existing wire-call test now checks two wires and a leading
-classical operand. Final specialist reviews found no remaining issue.
+classical operand.
 
 This follow-up removes 73 net production lines, including 58 in `QCToQCO.cpp`.
 The complete PR removes 219 production and 409 test lines against its refreshed

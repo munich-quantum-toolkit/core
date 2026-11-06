@@ -8,8 +8,8 @@ MQT target compilation produces programs whose static qubits refer to sites of a
 `CompilerTarget`. A caller can now pass that target to `QCProgram.to_qiskit`.
 The exporter then returns a canonical physical Qiskit circuit with one register
 named `q`, one qubit for every target site, and dense Qiskit indices that match
-the order of `CompilerTarget.sites`. Generic export without a target keeps its
-existing behavior.
+the order of `CompilerTarget.sites`. Generic export without a target does not
+add target placement metadata.
 
 ## Constraints
 

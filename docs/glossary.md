@@ -109,8 +109,7 @@ Munich Quantum Software Stack
 MQT
 Munich Quantum Toolkit
   **Preferred term:** Munich Quantum Toolkit. **Accepted abbreviation:** MQT.
-  The [open-source software toolkit](https://mqt.readthedocs.io/) of which MQT
-  Core is the shared foundation.
+  The [open-source software toolkit](https://mqt.readthedocs.io/) of which MQT Core is the shared foundation.
 
 MQT Compiler Collection
   **Preferred term:** MQT Compiler Collection. **Accepted aliases:** none.

@@ -2546,7 +2546,7 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
         sys.setswitchinterval(60)
         thread.start()
         start.set()
-        # ponytail: ten calls allow scheduling; add a native barrier if this remains flaky.
+        # Repeated calls give the worker thread time to be scheduled.
         for _ in range(10):
             if mode == "targetless":
                 compile_program(program, output=OutputFormat.OPENQASM3, copy=True)

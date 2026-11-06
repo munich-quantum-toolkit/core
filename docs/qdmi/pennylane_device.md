@@ -34,8 +34,8 @@ uv pip install "mqt-core[pennylane,catalyst]"
 ```
 
 Catalyst is optional for ordinary QNodes. The extra installs a stable Catalyst
-release from 0.15 and below 1.0 on supported Python versions and platforms. Core
-tests the 0.15.0 device interface and warns once when loading a newer minor
+release from 0.15 and below 1.0 on supported Python versions and platforms. MQT
+Core tests the 0.15.0 device interface and warns once when loading a newer minor
 version; an ABI change can crash the process. The upstream canary checks for
 header drift. See the
 [Catalyst installation guide](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/installation.html)
@@ -100,14 +100,14 @@ unsupported target configurations fail before submission; all programs in an
 ordinary QNode batch are prepared before any jobs are submitted. The device
 retains one target snapshot for its lifetime.
 
-The compiler uses Core's
+The compiler uses MQT Core's
 [format preference](../mlir/target_compilation.md#choose-a-format). IQM targets
 must provide physical site names and supported gate metadata. Terminal readout
-follows ascending physical site IDs; the compiled result layout restores logical
-output order. Results follow PennyLane's wire order regardless of physical
-placement. If the provider returns only counts, samples are reconstructed
-without temporal shot order. Terminal measurements of a compiled circuit share
-one provider readout.
+follows ascending physical site IDs; the compiled result layout restores the
+input circuit's output order. Results follow PennyLane's wire order regardless
+of physical placement. If the provider returns only counts, samples are
+reconstructed without temporal shot order. Terminal measurements of a compiled
+circuit share one provider readout.
 
 Ordinary QNodes compile only the tape's wires, unless a measurement requests all
 device wires. Both paths omit readout of untouched wires and supply their known
@@ -285,7 +285,7 @@ Catalyst's capabilities with
 and pass `set(capabilities.operations)` as the `gate_set` of
 `qp.transforms.decompose` on the QNode.
 
-ECR, SX, U1, U2, and U3 use native Core gates in ordinary QNodes. Catalyst
+ECR, SX, U1, U2, and U3 use native MQT Core gates in ordinary QNodes. Catalyst
 lowers them through decomposition; program capture currently requires the
 explicit transform. The default `qp.qjit` mode applies decomposition
 automatically.

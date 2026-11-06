@@ -63,21 +63,22 @@ Discovery opens fresh sessions without explicit authentication parameters.
 
 ## Device Capabilities and Target
 
-`backend.target` projects Core's device snapshot into Qiskit instructions,
+`backend.target` projects MQT Core's device snapshot into Qiskit instructions,
 ordered placements, parameter constraints, and calibration. Qubit indices remain
 physical site IDs. Only sites with single-qubit gates and measurement are
 placeable; disabled sites leave holes. Durations and coherence times use the
 snapshot's timing unit and scale factor.
 
-Core resolves device aliases. Fixed parameter variants retain separate Target
-names, and unrecognized native operations become opaque Qiskit gates. Control
-flow and classical assignment follow the selected payload's capabilities.
-All-to-all devices do not materialize a coupling map.
+MQT Core resolves device aliases. Fixed parameter variants retain separate
+Target names, and unrecognized native operations become opaque Qiskit gates.
+Control flow and classical assignment follow the selected payload's
+capabilities. All-to-all devices do not materialize a coupling map.
 
-Star-topology devices expose single-qubit gates and measurement in the Qiskit
-target. Use `backend.run(backend.compile(qc))` for circuits with two-qubit
-gates; Core inserts the required MOVE operations. Qiskit `transpile` and
-primitives with two-qubit gates are unsupported on these devices. See
+Devices with computational resonators expose single-qubit gates and measurement
+in the Qiskit target. Use `backend.run(backend.compile(qc))` for circuits with
+two-qubit gates; MQT Core inserts the required MOVE operations. Qiskit
+`transpile` and primitives with two-qubit gates are unsupported on these
+devices. See
 [resonator routing](../mlir/target_compilation.md).
 
 ## Circuit Execution
@@ -111,8 +112,8 @@ shots.
 Results use Qiskit's classical-bit order (`clbits[0]` on the right), preserving
 leading zeros and correlations across registers. Classical registers must
 partition `circuit.clbits` in register order; loose, aliased, and reordered bits
-are rejected. Compiled programs retain a result layout for physical-to-logical
-readout conversion; see
+are rejected. Compiled programs retain a result layout that maps measured site
+results to the input circuit's classical bits; see
 [terminal readout](../mlir/target_compilation.md#terminal-readout-and-results).
 
 ### Recovering a failed batch
@@ -163,10 +164,11 @@ require `HIST_KEYS` / `HIST_VALUES`. DDSIM supports both.
 ### Exact local expectations
 
 {py:class}`~mqt.core.plugins.qiskit.estimator.DDEstimator` evaluates real sparse
-Pauli sums with Core's local DD engine. It imports each PUB once, then prepares
-one state per parameter binding for all its broadcast observables without
-materializing a dense state or observable matrix. This entry point does not use
-a QDMI device; `backend.estimator()` remains the sampled estimator above.
+Pauli sums with MQT Core's local DD engine. It imports each PUB once, then
+prepares one state per parameter binding for all its broadcast observables
+without materializing a dense state or observable matrix. This entry point does
+not use a QDMI device; `backend.estimator()` remains the sampled estimator
+above.
 
 ```{code-cell} ipython3
 from mqt.core.plugins.qiskit import DDEstimator
@@ -191,7 +193,7 @@ all program wires; the rightmost character acts on wire zero.
 
 ## Compiled programs
 
-The backend keeps one device environment and uses Core's format selection.
+The backend keeps one device environment and uses MQT Core's format selection.
 `backend.compile(circuit)` returns a {py:class}`~mqt.core.mlir.CompiledProgram`;
 `backend.run(backend.compile(circuit))` compiles and submits it. A sequence
 returns an ordered list of programs. The lower-level

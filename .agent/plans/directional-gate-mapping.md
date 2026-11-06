@@ -17,14 +17,12 @@ adjacent sites must not introduce routing SWAPs.
 - [x] (2026-09-04) Replace ambiguous-site analysis with a checked staged walk.
 - [x] (2026-09-04) Remove whole-module cloning for failed synthesis.
 - [x] (2026-09-04) Add focused regressions and align public pass documentation.
-- [x] (2026-09-04) Apply specialist, adversarial, and Ponytail Review feedback.
 - [x] (2026-09-04) Pass 303 focused tests, documentation, and repository lint.
 - [x] (2026-09-04) Attempt full C++ lint and analyze changed sources directly;
       record the unrelated build blocker below.
 - [x] (2026-09-04) Unify site tuples across the target, attributes, QDMI, and
       Python.
 - [x] (2026-09-04) Remove synthesis planning and repeated matrix extraction.
-- [x] (2026-09-04) Validate the revised model and obtain adversarial review.
 - [x] (2026-09-04) Accept plain Python placements and positional MLIR tuple
       sites.
 - [x] (2026-09-04) Consolidate target lookups and restore LLVM containers.
@@ -33,25 +31,24 @@ adjacent sites must not introduce routing SWAPs.
 
 ## Decision Log
 
-On 2026-09-03 the maintainer approved adjacency-only routing. Direction repair
-belongs to synthesis. Weighted routing edges remain possible future work; there
-is no current need for an extra cost wrapper.
+Routing checks adjacency only. Direction repair belongs to synthesis. Weighted
+routing edges remain possible future work; there is no current need for an extra
+cost wrapper.
 
-On 2026-09-03 the maintainer approved requiring one known physical site per
-quantum value, equal branch-result sites, and site-preserving loop backedges.
-These conditions are checked, including for all-to-all placement and standalone
-passes. Ordinary structured control flow remains supported.
+Native synthesis requires one known physical site per quantum value, equal
+branch-result sites, and site-preserving loop backedges. These conditions are
+checked, including for all-to-all placement and standalone passes. Ordinary
+structured control flow remains supported.
 
-On 2026-09-03 the maintainer approved removing synthesis rollback. Compilation
-runs in place; callers must not rely on program contents after failure. Generic
-capability tuples and constant-time ordered-pair support queries remain part of
-the target model.
+Compilation runs in place; callers must not rely on program contents after
+failure. Generic capability tuples and constant-time ordered-pair support
+queries remain part of the target model.
 
-On 2026-09-04 the maintainer approved one `site_tuples` list and no
-applicability enum. An empty list means general applicability; a nonempty list
-contains every supported ordered placement with optional calibration. Missing
-values inherit operation defaults. The QDMI adapter omits operations reported
-with no supported placements and retains uncalibrated supported tuples.
+A single `site_tuples` list represents applicability. An empty list means
+general applicability; a nonempty list contains every supported ordered
+placement with optional calibration. Missing values inherit operation defaults.
+The QDMI adapter omits operations reported with no supported placements and
+retains uncalibrated supported tuples.
 
 Plain Python tuples and lists denote uncalibrated placements. Explicit
 `SiteTuple` values remain available for calibration. MLIR prints positional
@@ -100,8 +97,7 @@ directional synthesis and direct symmetric operand reordering.
 
 Finally update `docs/mlir/target_compilation.md`, pass descriptions, and the
 existing changelog entry. Keep regression tests in the established native
-synthesis and compiler test suites. Obtain independent reviews after the first
-implementation, then incorporate the separate Ponytail Review findings.
+synthesis and compiler test suites.
 
 ## Concrete Steps and Validation
 
@@ -156,11 +152,9 @@ a shared LLVM tuple cache, fewer single-use wrappers, and direct reverse fusion.
 Python accepts plain tuples or lists; explicit `SiteTuple` values add
 calibration. MLIR prints positional tuple sites.
 
-Specialist and adversarial review found no remaining blockers. Adversarial
-review retained a compact shared matrix guard for unsupported multi-target
-control shells; its regression verifies that the input is valid and linear
-before checking the diagnostic. Ordinary dependent rewrites retain semantic
-equivalence.
+A compact shared matrix guard rejects unsupported multi-target control shells;
+its regression verifies that the input is valid and linear before checking the
+diagnostic. Ordinary dependent rewrites retain semantic equivalence.
 
 All 307 focused C++ tests pass: compiler 153, mapping 94, target synthesis 44,
 and MQT IR 16. All 51 Python MLIR tests pass. Python stubs are regenerated, and
@@ -170,13 +164,9 @@ symbols. Building the ten changed C++ translation units directly succeeds; the
 same whole-file linter reports zero findings across all ten files. No lint
 configuration or unrelated build wiring was changed.
 
-The final specialist, adversarial, and Ponytail reviews found no further useful
-deletion within the supported contract. The new fusion regression cancels
-`CX01, CX02, CX02, CX01` and checks decision-diagram equivalence. Compact syntax
-checks cover mixed calibrated placements and calibration roundtrips. Cache
-checks cover maximum site IDs and retained target copies. The initial Python run
-reused a package without the test device; rebuilding with
-`BUILD_MQT_CORE_QDMI_SC_DEVICE=ON` resolves both device fixture errors.
-
-Revision note: aligned the scope with the approved routing, site, and failure
-contracts while retaining exact device metadata.
+The new fusion regression cancels `CX01, CX02, CX02, CX01` and checks
+decision-diagram equivalence. Compact syntax checks cover mixed calibrated
+placements and calibration roundtrips. Cache checks cover maximum site IDs and
+retained target copies. The initial Python run reused a package without the test
+device; rebuilding with `BUILD_MQT_CORE_QDMI_SC_DEVICE=ON` resolves both device
+fixture errors.

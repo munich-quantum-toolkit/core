@@ -9,8 +9,8 @@ The audit follows
 [issue #2251](https://github.com/munich-quantum-toolkit/core/issues/2251),
 including its proposed changes and the linked
 [PR #2149 discussion](https://github.com/munich-quantum-toolkit/core/pull/2149#issuecomment-5330271608).
-The naming decisions below were approved for implementation without aliases.
-Terminology follows `docs/glossary.md` and the
+The naming changes do not retain compatibility aliases. Terminology follows
+`docs/glossary.md` and the
 [MLIR glossary](https://mlir.llvm.org/getting_started/Glossary/).
 
 Reviewed the compiler headers and implementations, Python bindings and stub
@@ -134,7 +134,6 @@ These are local results; hosted CI is separate.
 
 ## Complexity review
 
-The Ponytail review found one redundant forwarding helper in the touched gate
-emitter. Removed `emitPrimitive` and called `qc::emitStandardGate` directly at
-all three call sites, saving six lines. No new abstraction or dependency is
-needed. The final pass found no further complexity to remove.
+The gate emitter calls `qc::emitStandardGate` directly at all three call sites.
+The `emitPrimitive` forwarding helper is unnecessary. No new abstraction or
+dependency is needed.
