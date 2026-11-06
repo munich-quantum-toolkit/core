@@ -112,7 +112,7 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
 static void populateTargetPreparationCleanup(OpPassManager& pm) {
   // The module cleanup owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
-  // Keep clean allocation roots for ancilla borrowing and source wire order.
+  // Defer tensor shrinking until decomposition and placement.
   populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
 }
 
@@ -163,7 +163,11 @@ protected:
       if (environment_.target().vertexForSite(site)) {
         return WalkResult::advance();
       }
-      op.emitError() << "target does not contain static site " << site;
+      if (!target.hasDeviceConstraints()) {
+        op.emitError("gate-set synthesis requires allocated program qubits");
+      } else {
+        op.emitError() << "target does not contain static site " << site;
+      }
       return WalkResult::interrupt();
     });
     if (staticSites.wasInterrupted()) {
@@ -194,7 +198,38 @@ protected:
       signalPassFailure();
       return;
     }
-    if (hasStatic) {
+    if (!target.hasDeviceConstraints()) {
+      auto entry = mqt::getEntryPoint(getOperation());
+      if (!entry || !entry.getBody().hasOneBlock() ||
+          llvm::any_of(entry.getArgumentTypes(), qco::isLinearQubitType)) {
+        getOperation().emitError(
+            "gate-set synthesis requires fixed-width entry-block allocations");
+        signalPassFailure();
+        return;
+      }
+      const auto allocations = getOperation().walk([&](Operation* op) {
+        if (!isa<qco::AllocOp, qtensor::AllocOp>(op)) {
+          return WalkResult::advance();
+        }
+        if (op->getBlock() != &entry.getBody().front()) {
+          op->emitError("gate-set synthesis requires entry-block allocations");
+          return WalkResult::interrupt();
+        }
+        if (auto tensor = dyn_cast<qtensor::AllocOp>(op)) {
+          const auto extent = getConstantIntValue(tensor.getSize());
+          if (!extent || *extent < 0) {
+            tensor.emitError(
+                "gate-set synthesis requires fixed-width allocations");
+            return WalkResult::interrupt();
+          }
+        }
+        return WalkResult::advance();
+      });
+      if (allocations.wasInterrupted()) {
+        signalPassFailure();
+        return;
+      }
+    } else if (hasStatic) {
       getOperation()->removeAttr(mqt::kSourceQubitCountAttr);
     } else if (failed(prepareLayout(getOperation(), environment_))) {
       signalPassFailure();
@@ -339,7 +374,11 @@ static void populateDecompositionAndPlacement(OpPassManager& pm,
   if (!needsSites) {
     pm.addPass(qco::createDecomposeMultiControlled(target));
   }
+  if (!target.hasDeviceConstraints()) {
+    return;
+  }
   // Drop unused slots before placement checks target capacity.
+  pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   pm.addPass(qco::createElideTerminalSwapsPass());
   if (target.connectivityKind() ==

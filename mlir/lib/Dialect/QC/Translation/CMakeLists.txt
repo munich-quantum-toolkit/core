@@ -10,10 +10,12 @@ add_mlir_library(
   MLIRQCTranslationSupport
   StandardGate.cpp
   MeasurementStores.cpp
+  QubitReferences.cpp
   LINK_LIBS
   MLIRQCDialect
   MLIRCBitDialect
   MLIRFuncDialect
+  MLIRMemRefDialect
   MLIRSCFDialect
   MLIRSideEffectInterfaces)
 
@@ -25,4 +27,5 @@ target_sources(
   FILE_SET HEADERS
     BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
     FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/StandardGate.h
-          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/MeasurementStores.h)
+          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/MeasurementStores.h
+          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/QubitReferences.h)

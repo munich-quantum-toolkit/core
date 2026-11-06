@@ -7753,4 +7753,35 @@ TEST_F(CompilerPipelineTest, OpenQASMReceiverVersionFloorAndFutureMinorInput) {
   llvm::consumeError(unsupported.takeError());
 }
 
+TEST_F(CompilerPipelineTest, GateSetSynthesisPreservesOwnedWireOrder) {
+  const auto gates = CompilerTarget::NativeOperations::unrestricted();
+  const auto payload = llvm::cantFail(
+      PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM3));
+  const TargetEnvironment environment(
+      llvm::cantFail(CompilerTarget::forGateSet(gates)), payload);
+  auto source = QCProgram::fromOpenQASMString(
+      "OPENQASM 3.1; include \"stdgates.inc\"; qubit[4] q; "
+      "x q[2]; h q[0]; swap q[0], q[2];");
+  MQT_ASSERT_SUCCESS(source);
+  auto expected = source->copy().intoQCO();
+  ASSERT_TRUE(succeeded(expected));
+  auto compiled = runDefaultPipeline(std::move(*source),
+                                     ProgramFormat::QCOOptimized, environment);
+  MQT_ASSERT_SUCCESS(compiled);
+  auto& actual = std::get<QCOProgram>(*compiled);
+  EXPECT_EQ(actual.inspect().numQubits, 4);
+  EXPECT_TRUE(actual.inspect().staticQubits.empty());
+  EXPECT_FALSE(actual.module()->hasAttr("mqt.layout"));
+  EXPECT_TRUE(succeeded(verify(actual.module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(actual.module())));
+  expectFullUnitaryEqual(expected->module(), actual.module(), 4);
+  auto repeated = runDefaultPipeline(std::move(actual),
+                                     ProgramFormat::QCOOptimized, environment);
+  MQT_ASSERT_SUCCESS(repeated);
+  auto& again = std::get<QCOProgram>(*repeated);
+  EXPECT_TRUE(succeeded(again.cleanup()));
+  EXPECT_EQ(again.inspect().numQubits, 4);
+  expectFullUnitaryEqual(expected->module(), again.module(), 4);
+}
+
 } // namespace mqt::test::compiler

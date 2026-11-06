@@ -50,6 +50,7 @@ from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
     CompilationOptions,
+    CompiledProgram,
     CompilerTarget,
     MappingOptions,
     OutputFormat,
@@ -2811,6 +2812,26 @@ def test_measurement_snapshot_survives_overwritten_destination(overwrite: str) -
     assert sample(restored, shots=1, seed=1) == {expected: 1}
 
 
+@pytest.mark.parametrize("compiled", [False, True], ids=["round-trip", "compiled"])
+def test_qiskit_barrier_labels(*, compiled: bool) -> None:
+    """Keep interior, consecutive, and trailing barrier labels on their wires."""
+    label = "phase \N{GREEK SMALL LETTER ALPHA}"
+    circuit = QuantumCircuit(2)
+    circuit.h(0)
+    circuit.barrier(0, label=label)
+    circuit.barrier(0, label="")
+    circuit.cx(0, 1)
+    circuit.barrier(0)
+    circuit.barrier(1, label="output")
+
+    result = compile_program(circuit) if compiled else QCProgram.from_qiskit(circuit).to_qiskit()
+    assert [
+        (item.operation.label, [result.find_bit(qubit).index for qubit in item.qubits])
+        for item in result.data
+        if item.operation.name == "barrier"
+    ] == [(label, [0]), ("", [0]), (None, [0]), ("output", [1])]
+
+
 @pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
 @pytest.mark.parametrize("gate", ["x", "swap", "reset", "barrier", "inv"])
 def test_delayed_measurement_store_across_quantum_operations(gate: str, *, via_qco: bool) -> None:
@@ -4729,6 +4750,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str, 
         target=TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY)),
         options=None,
     )
+    assert isinstance(payload, CompiledProgram)
     assert isinstance(payload.payload, bytes)
     restored = qpy.load(BytesIO(payload.payload))[0]
     assert restored.layout is not None
@@ -4753,6 +4775,7 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str, 
     if disabled_site:
         environment = TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY))
         artifact = compile_program(circuit, target=environment)
+        assert isinstance(artifact, CompiledProgram)
         payload = artifact.payload
         assert isinstance(payload, bytes)
         restored = qpy.load(BytesIO(payload))[0]
@@ -4981,6 +5004,59 @@ def test_qiskit_native_opaque_gate_has_no_invented_definition() -> None:
         sample(source, shots=1)
 
 
+@pytest.mark.parametrize(
+    "gate",
+    [library.XGate(), library.UGate(Parameter("z"), Parameter("a"), Parameter("m")), library.CRXGate(0.37)],
+    ids=["fixed", "symbolic", "controlled"],
+)
+def test_target_gate_alias_survives_qpy(gate: Gate) -> None:
+    """Native aliases retain names, parameter order, wires, and exact phases."""
+    name = f"device_{gate.name}"
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability(name, gate.num_qubits, len(gate.params), canonical_name=gate.name),
+        ]),
+    )
+    source = QuantumCircuit(2, global_phase=0.29)
+    source.append(gate, [1, 0][: gate.num_qubits])
+    exported = QCProgram.from_qiskit(source, native=True).to_qiskit(target=target)
+    buffer = BytesIO()
+    qpy.dump(exported, buffer, version=17)
+    buffer.seek(0)
+    restored = qpy.load(buffer)[0]
+    bindings = dict(zip(source.parameters, [0.17, -0.31, 0.53], strict=False))
+    expected = Operator(source.assign_parameters(bindings)).data
+    for circuit in (exported, restored):
+        assert circuit.count_ops() == {name: 1}
+        assert circuit.data[0].operation.name == name
+        assert circuit.data[0].operation.params == gate.params
+        np.testing.assert_allclose(Operator(circuit.assign_parameters(bindings)).data, expected, atol=1e-12)
+
+
+def test_symbolic_gate_aliases_own_their_parameters() -> None:
+    """Mutating an exported alias leaves other occurrences and the input intact."""
+    theta = Parameter("theta")
+    source = QuantumCircuit(2)
+    source.u(theta, 0, 0, 0)
+    source.u(theta, 0, 0, 1)
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("device_u", 1, 3, canonical_name="u"),
+        ]),
+    )
+    exported = QCProgram.from_qiskit(source, native=True).to_qiskit(target=target)
+    first, second = (item.operation for item in exported.data)
+    first.params[0] = 0.25
+    first.definition.data[0].operation.params[0] = 0.5
+    assert second.params[0] == theta
+    assert second.definition.data[0].operation.params[0] == theta
+    assert source.data[0].operation.params[0] == theta
+
+
 @pytest.mark.parametrize("name", ["bad;gate", "if"])
 def test_qiskit_native_export_rejects_invalid_gate_names(name: str) -> None:
     """Opaque names cannot introduce OpenQASM syntax or keywords."""
@@ -5190,6 +5266,7 @@ def test_zero_readout_retains_known_classical_outputs(program_format: ProgramFor
     target = CompilerTarget.from_device(open_device("mqt.ddsim.default"))
     environment = TargetEnvironment(target, PayloadSpecification.from_program_format(program_format))
     program = serialize_program(circuit, target=environment) if native else compile_program(circuit, target=environment)
+    assert isinstance(program, CompiledProgram)
     assert program.result_width == 2
     assert program.result_layout is None
     if program_format == ProgramFormat.QPY:
@@ -5241,11 +5318,19 @@ def installed(name):
         raise importlib.metadata.PackageNotFoundError(name)
     return {version!r}
 importlib.metadata.version = installed
-from mqt.core.mlir import PayloadSpecification
+from mqt.core.mlir import CompilerTarget, PayloadSpecification, QCProgram, TargetEnvironment, serialize_program
 from mqt.core.qdmi import ProgramFormat
 assert 'qiskit' not in sys.modules
+payload = PayloadSpecification.from_program_format(ProgramFormat.QPY)
+target = CompilerTarget(
+    1, connectivity=CompilerTarget.Connectivity.all_to_all(),
+    native_operations=CompilerTarget.NativeOperations([
+        CompilerTarget.OperationCapability("x", 1, 0),
+    ]),
+)
 try:
-    PayloadSpecification.from_program_format(ProgramFormat.QPY)
+    serialize_program(QCProgram.from_openqasm_str("OPENQASM 3; x $0;"),
+                      target=TargetEnvironment(target, payload))
 except RuntimeError:
     assert not {supported!r}
 else:

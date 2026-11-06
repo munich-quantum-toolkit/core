@@ -84,7 +84,8 @@ runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
 
 /// Populate a QC-oriented cleanup pipeline on the given pass manager.
 ///
-/// Adds generic cleanup, QC qubit-register shrinking, and dead-value removal.
+/// Adds generic cleanup, unused-qubit removal, register shrinking, and
+/// dead-value removal.
 void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 
 /// Run QC cleanup that preserves defined values on every syntactic loop edge.
@@ -99,8 +100,9 @@ void populateOpenQASM2PreparationPipeline(mlir::OpPassManager& pm,
 
 /// Populate a QCO-oriented cleanup pipeline on the given pass manager.
 ///
-/// Adds generic cleanup, tensor shrinking, and dead-value removal. Set
-/// @p removeUnusedValues to false to preserve potential ancilla qubits and
+/// Adds generic cleanup, unused-qubit removal, tensor shrinking, and
+/// dead-value removal. Set @p removeUnusedValues to false to retain unused
+/// tensor slots for potential ancillas and
 /// defer signature changes until after decomposition and placement.
 void populateQCOCleanupPipeline(mlir::OpPassManager& pm,
                                 bool removeUnusedValues = true);

@@ -75,7 +75,7 @@ run_command_expect_failure(
 )
 run_command_expect_failure(
   "mqt-core target with explicit output"
-  "Only --emit=qco-optimized can be combined with target compilation"
+  "Only --emit=qco-optimized or qpy can be combined with target compilation"
   "${MQT_CORE_CLI}"
   "${INPUT_FILE}"
   "--qdmi-device=mqt.sc.iqm.garnet"

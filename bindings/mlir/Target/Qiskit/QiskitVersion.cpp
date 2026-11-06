@@ -11,6 +11,7 @@
 #include "QiskitVersion.h"
 
 #include "Qiskit.h"
+#include "Result.hpp"
 
 // Keep the translation interface visible where the factory is instantiated.
 #include "QiskitTranslation.h" // IWYU pragma: keep
@@ -18,6 +19,7 @@
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/string.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -123,12 +125,29 @@ std::unique_ptr<VersionedTranslation> selectTranslation() {
 
 mlir::CompilerTarget importTarget(nb::handle target, nb::handle operationNames,
                                   const std::optional<std::string>& name) {
-  return selectTranslation()->importTarget(target, operationNames, name);
+  return selectTranslation()->importTarget(target, operationNames, name, false);
 }
 
 mlir::CompilerTarget::NativeOperations
 importNativeOperations(nb::handle target, nb::handle operationNames) {
-  return selectTranslation()->importNativeOperations(target, operationNames);
+  return selectTranslation()->importNativeOperations(target, operationNames,
+                                                     false, std::nullopt);
+}
+
+mlir::TargetEnvironment
+importTargetEnvironment(nb::handle source, std::optional<size_t> nativeWidth,
+                        bool strict) {
+  using Target = mlir::CompilerTarget;
+  if (nativeWidth == 0U) {
+    throw nb::value_error("native_num_qubits must be positive");
+  }
+  const auto translation = selectTranslation();
+  auto target =
+      nativeWidth
+          ? unwrap(Target::forGateSet(translation->importNativeOperations(
+                source, nb::none(), strict, nativeWidth)))
+          : translation->importTarget(source, nb::none(), std::nullopt, strict);
+  return {target, translation->payloadSpecification(source)};
 }
 
 mlir::PayloadSpecification payloadSpecification(nb::handle target) {

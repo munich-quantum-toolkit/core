@@ -12,6 +12,7 @@
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/PatternMatch.h"
@@ -30,13 +31,13 @@ using namespace mlir::qco;
 
 namespace {
 
-/// Merge subsequent barriers on the same qubits into a single barrier.
+/// Drop an unlabeled barrier followed by another on the same qubits.
 struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(BarrierOp op,
                                 PatternRewriter& rewriter) const override {
-    if (op.getQubitsOut().empty()) {
+    if (op.getLabelAttr() || op.getQubitsOut().empty()) {
       return failure();
     }
     auto next = dyn_cast<BarrierOp>(*op.getQubitsOut().front().user_begin());
@@ -75,13 +76,13 @@ Value BarrierOp::getOutputForInput(Value input) {
 }
 
 void BarrierOp::build(OpBuilder& odsBuilder, OperationState& odsState,
-                      ValueRange qubits) {
+                      ValueRange qubits, StringAttr label) {
   SmallVector<Type> resultTypes;
   resultTypes.reserve(qubits.size());
   for (auto qubit : qubits) {
     resultTypes.push_back(qubit.getType());
   }
-  build(odsBuilder, odsState, resultTypes, qubits);
+  build(odsBuilder, odsState, resultTypes, qubits, label);
 }
 
 void BarrierOp::getCanonicalizationPatterns(RewritePatternSet& results,

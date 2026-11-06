@@ -73,8 +73,6 @@ def DeallocOp : QCOp<"dealloc", [MemoryEffects<[MemFree<QubitResource>]>]> {
 
   let arguments = (ins QubitType:$qubit);
   let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
-
-  let hasCanonicalizer = 1;
 }
 
 def StaticOp : QCOp<"static", [Pure]> {
@@ -889,7 +887,8 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
   let summary = "Apply a barrier operation to a set of qubits";
   let description = [{
         Marks a barrier on the given qubit references without changing their quantum state.
-        Each operand must refer to a distinct qubit.
+        Each operand must refer to a distinct qubit. The optional label identifies
+        the barrier in circuit representations that support labels.
 
         Example:
         ```mlir
@@ -898,8 +897,13 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
     }];
 
   let arguments =
-      (ins QubitArg<Variadic<QubitType>, "the target qubits">:$qubits);
+      (ins QubitArg<Variadic<QubitType>, "the target qubits">:$qubits,
+          OptionalAttr<StrAttr>:$label);
   let assemblyFormat = "$qubits attr-dict `:` type($qubits)";
+
+  let builders = [OpBuilder<(ins "ValueRange":$qubits), [{
+    build($_builder, $_state, qubits, StringAttr{});
+  }]>];
 
   let extraClassDeclaration = [{
         size_t getNumQubits() { return getNumTargets(); }

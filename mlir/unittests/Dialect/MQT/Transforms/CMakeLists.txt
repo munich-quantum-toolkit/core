@@ -8,7 +8,7 @@
 
 set(mqt_transforms_target mqt-core-mlir-unittests-mqt-transforms)
 add_executable(${mqt_transforms_target} test_classical_simplification.cpp
-               test_global_phase_normalization.cpp)
+               test_global_phase_normalization.cpp test_unused_qubits.cpp)
 
 target_link_libraries(
   ${mqt_transforms_target}

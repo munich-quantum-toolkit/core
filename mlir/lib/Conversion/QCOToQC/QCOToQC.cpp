@@ -12,6 +12,7 @@
 
 #include "mqt/Conversion/ConversionUtils.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -49,6 +50,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <tuple>
 #include <utility>
 
 namespace mlir {
@@ -501,6 +503,32 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
     auto tensorType = op.getResult().getType();
     auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
 
+    if (mqt::preservesProgramQubits(op)) {
+      const auto width = getConstantIntValue(op.getSize());
+      if (!width || *width <= 0) {
+        return op.emitError("program qubit storage requires a fixed extent");
+      }
+      SmallVector<Value> qubits;
+      for (int64_t index = 0; index < *width; ++index) {
+        qubits.push_back(qc::AllocOp::create(rewriter, op.getLoc()));
+      }
+      auto storage = memref::AllocaOp::create(
+          rewriter, op.getLoc(), MemRefType::get({*width}, qubitType));
+      storage->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+      for (auto [index, qubit] : llvm::enumerate(qubits)) {
+        auto offset = arith::ConstantIndexOp::create(
+            rewriter, op.getLoc(), static_cast<int64_t>(index));
+        memref::StoreOp::create(rewriter, op.getLoc(), qubit, storage,
+                                ValueRange{offset});
+      }
+      Value result = storage;
+      if (storage.getType() != memrefType) {
+        result =
+            memref::CastOp::create(rewriter, op.getLoc(), memrefType, storage);
+      }
+      rewriter.replaceOp(op, result);
+      return success();
+    }
     memref::AllocOp alloc;
     if (tensorType.hasStaticShape()) {
       // Static size: no dynamic size operand needed
@@ -554,7 +582,9 @@ struct ConvertQTensorFromElementsOp final
     {
       OpBuilder::InsertionGuard guard(rewriter);
       auto function = op->getParentOfType<func::FuncOp>();
-      rewriter.setInsertionPointToStart(&function.getBody().front());
+      if (!mqt::preservesProgramQubits(op)) {
+        rewriter.setInsertionPointToStart(&function.getBody().front());
+      }
       storage = memref::AllocaOp::create(rewriter, op.getLoc(), type);
     }
     storage->setDiscardableAttrs(op->getDiscardableAttrDictionary());
@@ -599,7 +629,24 @@ struct ConvertQTensorDeallocOp final
   LogicalResult
   matchAndRewrite(qtensor::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (getState().allocationMode != AllocationMode::Dynamic) {
+    if (mqt::preservesProgramQubits(op)) {
+      Value storage = adaptor.getTensor();
+      while (auto cast = storage.getDefiningOp<memref::CastOp>()) {
+        storage = cast.getSource();
+      }
+      const auto type = cast<MemRefType>(storage.getType());
+      if (!type.hasStaticShape()) {
+        return op.emitError("program qubit storage requires a fixed extent");
+      }
+      for (int64_t index = 0; index < type.getDimSize(0); ++index) {
+        auto offset =
+            arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
+        auto qubit = memref::LoadOp::create(rewriter, op.getLoc(), storage,
+                                            ValueRange{offset});
+        qc::DeallocOp::create(rewriter, op.getLoc(), qubit);
+      }
+      rewriter.eraseOp(op);
+    } else if (getState().allocationMode != AllocationMode::Dynamic) {
       rewriter.eraseOp(op);
     } else {
       rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, adaptor.getTensor());
@@ -848,7 +895,7 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
     auto qcQubits = adaptor.getQubitsIn();
 
     // Create qc.barrier operation
-    qc::BarrierOp::create(rewriter, op.getLoc(), qcQubits);
+    qc::BarrierOp::create(rewriter, op.getLoc(), qcQubits, op.getLabelAttr());
 
     // Replace the output qubits with the same qc references
     rewriter.replaceOp(op, qcQubits);
@@ -1308,7 +1355,8 @@ protected:
     }
     const auto tensors = moduleOp.walk([&](Operation* op) {
       if (isa<qtensor::FromElementsOp>(op) &&
-          requirements->allocationMode != AllocationMode::Static) {
+          requirements->allocationMode != AllocationMode::Static &&
+          !mqt::preservesProgramQubits(op)) {
         op->emitOpError("QCO-to-QC requires static qubits in tensors of "
                         "existing qubits; run placement before conversion");
         return WalkResult::interrupt();
@@ -1403,6 +1451,18 @@ protected:
                                       config))) {
       signalPassFailure();
       return;
+    }
+    if (mqt::preservesProgramQubits(moduleOp)) {
+      // Keep fixed reference buffers directly visible to later conversions.
+      moduleOp.walk([](memref::LoadOp load) {
+        std::ignore = memref::foldMemRefCast(load);
+      });
+      moduleOp.walk([](memref::CastOp cast) {
+        if (cast->use_empty() &&
+            isa<qc::QubitType>(cast.getType().getElementType())) {
+          cast.erase();
+        }
+      });
     }
   }
 };

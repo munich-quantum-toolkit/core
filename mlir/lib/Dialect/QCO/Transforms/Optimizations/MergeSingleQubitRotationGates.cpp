@@ -956,10 +956,15 @@ namespace mlir::qco::decomposition {
 void populateRotationCompositionPatterns(RewritePatternSet& patterns,
                                          const CompilerTarget* target) {
   const auto unrestricted = [&](StringRef name, size_t parameters) {
-    return target == nullptr || llvm::all_of(target->siteIds(), [&](auto site) {
-             return target->supportsOperation(name, 1, parameters,
-                                              ArrayRef(&site, 1));
-           });
+    if (target == nullptr) {
+      return true;
+    }
+    if (!target->hasDeviceConstraints()) {
+      return target->supportsOperation(name, 1, parameters);
+    }
+    return llvm::all_of(target->siteIds(), [&](auto site) {
+      return target->supportsOperation(name, 1, parameters, ArrayRef(&site, 1));
+    });
   };
   if (target != nullptr && unrestricted("u", 3)) {
     patterns.add(mergeNativePhaseFactor);

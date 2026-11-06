@@ -109,7 +109,7 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 | ----------------------------------------------------------------------- | -------------------- | ---------------------------------- |
 | Standard gates, constructible numeric modifiers, and global phase       | Supported            | Supported                          |
 | Other finite numeric modifiers                                          | Supported            | Rejected                           |
-| Measurement, reset, and barrier                                         | Supported            | Supported                          |
+| Measurement, reset, and barriers with labels                            | Supported            | Supported                          |
 | Canonical named registers and leading loose bits                        | Supported            | Explicit registers                 |
 | Custom Gates with finite, acyclic definitions                           | Reusable functions   | Custom Gates                       |
 | Generic instructions with finite, acyclic definitions                   | Recursively expanded | Expanded operations                |
@@ -142,10 +142,9 @@ the supported subset below.
 
 Export folds scalar expressions in the consumed QC program. Constant arithmetic,
 casts, and idempotent expressions can therefore disappear; expression-tree shape
-is not preserved. Quantum-resource and classical-snapshot canonicalization
-patterns are not applied, because they can change circuit width or introduce
-scratch bits. Call `cleanup()` explicitly when those broader transformations are
-wanted.
+is not preserved. Qubit-resource cleanup and classical-snapshot canonicalization
+are not applied, because they can change circuit width or introduce scratch
+bits. Call `cleanup()` explicitly when those broader transformations are wanted.
 
 Imported free parameters and vectors retain their identities through QC/QCO
 conversion, optimization, and MLIR serialization, so exported circuits can be
