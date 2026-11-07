@@ -1942,6 +1942,30 @@ TEST(CompilerQDMIAdapterTest, ValidatesResultLayoutSamples) {
   }
 }
 
+TEST(CompilerQDMIAdapterTest, DecodesCountsAndOrderedShots) {
+  const mlir::ResultLayout layout{3, {size_t{2}, std::nullopt}};
+  const std::map<std::string, size_t> counts{{"10 0", 2}, {"101", 2}};
+  EXPECT_EQ(llvm::cantFail(mlir::decodeCounts(counts, 2, 4, layout)),
+            (std::map<std::string, size_t>{{"01", 4}}));
+  EXPECT_EQ(llvm::cantFail(mlir::decodeCounts(counts, 3, 4)),
+            (std::map<std::string, size_t>{{"100", 2}, {"101", 2}}));
+  const std::vector<std::string> samples{"10 0", "000", "101"};
+  EXPECT_EQ(llvm::cantFail(mlir::decodeShots(samples, 2, 3, layout)),
+            (std::vector<std::string>{"01", "00", "01"}));
+  for (const auto* raw : {"10", "10x", "10\t0"}) {
+    EXPECT_TRUE(
+        llvm::errorToBool(mlir::decodeCounts({{raw, 4}}, 3, 4).takeError()));
+    EXPECT_TRUE(llvm::errorToBool(mlir::decodeShots({raw}, 3, 1).takeError()));
+  }
+  EXPECT_TRUE(llvm::errorToBool(mlir::decodeCounts(counts, 3, 3).takeError()));
+  EXPECT_TRUE(llvm::errorToBool(mlir::decodeCounts(counts, 3, 5).takeError()));
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::decodeCounts(counts, 3, 4, layout).takeError()));
+  EXPECT_TRUE(llvm::errorToBool(mlir::decodeShots(samples, 3, 4).takeError()));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::decodeCounts({{"0", 1}, {"11", 1}}, std::nullopt, 2).takeError()));
+}
+
 TEST(CompilerQDMIAdapterTest, ExcludesUnsupportedIQMDynamicPrimitives) {
   const auto device =
       llvm::cantFail(qdmi::Session::openDevice("mqt.sc.default"));

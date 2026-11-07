@@ -1597,6 +1597,16 @@ class ResultLayout:
     def decode_bits(self, raw: str) -> str:
         """Decode one MSB-first binary sample to logical output order."""
 
+def decode_counts(
+    counts: Mapping[str, int], width: int | None, shots: int, layout: ResultLayout | None = None
+) -> dict[str, int]:
+    """Validate binary counts and reconstruct logical outcomes, ignoring ASCII spaces."""
+
+def decode_shots(
+    samples: Sequence[str], width: int | None, shots: int, layout: ResultLayout | None = None
+) -> list[str]:
+    """Validate and reconstruct logical samples in shot order, ignoring ASCII spaces."""
+
 class CompiledProgram:
     """A compiled program ready for QDMI submission."""
 

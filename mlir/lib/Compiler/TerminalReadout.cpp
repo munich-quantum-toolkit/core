@@ -68,6 +68,75 @@ ResultLayout::decodeBits(llvm::StringRef raw) const {
   return result;
 }
 
+static llvm::Expected<std::string>
+decodeSample(std::string raw, std::optional<size_t>& width,
+             const std::optional<ResultLayout>& layout) {
+  std::erase(raw, ' ');
+  if (layout) {
+    auto decoded = layout->decodeBits(raw);
+    if (!decoded) {
+      return decoded.takeError();
+    }
+    raw = std::move(*decoded);
+  }
+  if (!width) {
+    width = raw.size();
+  }
+  if (raw.size() != *width ||
+      raw.find_first_not_of("01") != std::string::npos) {
+    return llvm::createStringError("Invalid QDMI sample width or binary digit");
+  }
+  return raw;
+}
+
+llvm::Expected<std::map<std::string, size_t>>
+decodeCounts(const std::map<std::string, size_t>& counts,
+             std::optional<size_t> width, size_t shots,
+             const std::optional<ResultLayout>& layout) {
+  std::map<std::string, size_t> result;
+  size_t total = 0;
+  for (const auto& [bits, count] : counts) {
+    auto decoded = decodeSample(bits, width, layout);
+    if (!decoded) {
+      return decoded.takeError();
+    }
+    if (count > shots - total) {
+      return llvm::createStringError("Invalid QDMI histogram: too many shots");
+    }
+    total += count;
+    if (count != 0) {
+      result[std::move(*decoded)] += count;
+    }
+  }
+  if (total != shots) {
+    return llvm::createStringError(
+        "Invalid QDMI histogram: incorrect shot total");
+  }
+  return result;
+}
+
+llvm::Expected<std::vector<std::string>>
+decodeShots(std::vector<std::string> samples, std::optional<size_t> width,
+            size_t shots, const std::optional<ResultLayout>& layout) {
+  if (samples.size() != shots) {
+    return llvm::createStringError(
+        "Invalid QDMI SHOTS result: incorrect shot total");
+  }
+  std::map<std::string, std::string> cache;
+  for (auto& bits : samples) {
+    auto found = cache.find(bits);
+    if (found == cache.end()) {
+      auto decoded = decodeSample(bits, width, layout);
+      if (!decoded) {
+        return decoded.takeError();
+      }
+      found = cache.emplace(bits, std::move(*decoded)).first;
+    }
+    bits = found->second;
+  }
+  return samples;
+}
+
 namespace {
 
 struct TerminalReadoutPlan {

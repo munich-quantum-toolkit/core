@@ -149,19 +149,18 @@ programs requiring a layout: compile explicitly and retain the artifact instead.
 Direct decoding:
 
 ```python
-from collections import Counter
+from mqt.core.mlir import decode_counts, decode_shots
 
-counts = Counter()
-layout = compiled.result_layout
-for bits, count in job.get_counts().items():
-    counts[layout.decode_bits(bits) if layout is not None else bits] += count
+counts = decode_counts(job.get_counts(), compiled.result_width, 64, compiled.result_layout)
+samples = decode_shots(job.get_shots(), compiled.result_width, 64, compiled.result_layout)
 ```
 
-`decode_bits` checks binary digits and raw width. Map individual samples to
-preserve shot correlations. Qiskit's job adapter does this automatically,
-including register formatting and aggregation of equal projected outcomes.
-Retain the compiled program when persisting a job: its ID alone cannot recover
-the frontend mapping.
+These helpers ignore ASCII register-separator spaces, validate binary digits,
+width, and the requested shot total, and reconstruct logical output order.
+`decode_counts` merges equal outcomes; `decode_shots` preserves shot
+correlations. Qiskit's job adapter applies this decoding and register formatting
+automatically. Retain the compiled program when persisting a job: its ID alone
+cannot recover the frontend mapping.
 
 ### Compilation options
 
