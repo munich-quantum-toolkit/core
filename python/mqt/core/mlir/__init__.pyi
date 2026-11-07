@@ -672,6 +672,9 @@ class CompilerTarget:
                 unrestricted support.
         """
 
+def _native_r_gate(capability: CompilerTarget.OperationCapability) -> qiskit.circuit.Gate | None:
+    """Construct the Qiskit native pulse definition, if applicable."""
+
 class TargetEnvironment(Generic[_TargetResultT_co]):
     """A compiler target and its selected payload specification."""
 

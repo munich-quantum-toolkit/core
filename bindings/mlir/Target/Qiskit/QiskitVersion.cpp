@@ -25,9 +25,27 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace mqt::bindings::qiskit {
 namespace nb = nanobind;
+
+nb::object nativeRGate(const std::string_view name, nb::handle phase) {
+  const auto alias = mlir::nativeRAlias(name);
+  if (!alias) {
+    return nb::none();
+  }
+  const auto circuit = nb::module_::import_("qiskit.circuit");
+  nb::list parameters;
+  parameters.append(phase);
+  auto gate =
+      circuit.attr("Gate")(nb::str(name.data(), name.size()), 1, parameters);
+  auto definition = circuit.attr("QuantumCircuit")(1);
+  definition.attr("r")(alias->angle, phase, 0);
+  definition.attr("global_phase") = alias->globalPhase;
+  gate.attr("definition") = definition;
+  return gate;
+}
 
 namespace {
 using Factory = std::unique_ptr<VersionedTranslation> (*)();

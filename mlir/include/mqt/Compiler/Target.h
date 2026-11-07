@@ -31,6 +31,15 @@ namespace mlir {
 class MLIRContext;
 class Operation;
 
+/// A native pulse alias for a fixed-angle R gate, including its global phase.
+struct NativeRAlias {
+  double angle;
+  double globalPhase;
+};
+
+/// Return the fixed-angle R definition of a recognized native pulse name.
+[[nodiscard]] std::optional<NativeRAlias> nativeRAlias(llvm::StringRef name);
+
 /// Immutable description of an MQT compiler target.
 ///
 /// Gate-set targets have no device sites or placement constraints.
