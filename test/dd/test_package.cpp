@@ -566,6 +566,13 @@ TEST(DDPackageTest, MatrixSerializationTest) {
   std::filesystem::remove("bell_matrix_binary.dd");
 }
 
+TEST(DDPackageTest, SerializationReportsWriteFailures) {
+  if (!std::filesystem::exists("/dev/full")) {
+    GTEST_SKIP() << "Requires /dev/full to reject writes after opening";
+  }
+  EXPECT_THROW(serialize(vEdge::one(), "/dev/full"), std::runtime_error);
+}
+
 TEST(DDPackageTest, SerializationErrors) {
   auto dd = std::make_unique<Package>(2);
 
@@ -1479,6 +1486,8 @@ TEST(DDPackageTest, NormalizationNumericStabilityTest) {
 }
 
 TEST(DDPackageTest, FidelityOfMeasurementOutcomes) {
+  EXPECT_EQ(Package::fidelityOfMeasurementOutcomes(vEdge::one(), {{0, 1.}}),
+            1.);
   const auto dd = std::make_unique<Package>(3);
 
   const auto hGate = getDD(qc::StandardOperation(2, qc::H), *dd);
@@ -1494,6 +1503,9 @@ TEST(DDPackageTest, FidelityOfMeasurementOutcomes) {
   probs[7] = 0.5;
   const auto fidelity = Package::fidelityOfMeasurementOutcomes(ghzState, probs);
   EXPECT_NEAR(fidelity, 1.0, RealNumber::eps);
+  EXPECT_THROW(Package::fidelityOfMeasurementOutcomes(ghzState, probs,
+                                                      Permutation{{0, 3}}),
+               std::out_of_range);
 }
 
 TEST(DDPackageTest, CloseToIdentity) {
@@ -2782,6 +2794,12 @@ TEST(DDPackageTest, ComputeTableConfigurationAndClear) {
   for (const size_t buckets : {1U, 2U, 4U}) {
     BinaryTable binary(buckets);
     UnaryTable unary(buckets);
+    EXPECT_TRUE(binary.getTable().empty());
+    EXPECT_TRUE(unary.getTable().empty());
+    EXPECT_EQ(binary.lookup(1, 2), nullptr);
+    EXPECT_EQ(unary.lookup(1), nullptr);
+    binary.clear();
+    unary.clear();
     for (size_t value = 0; value < 2; ++value) {
       binary.insert(1, 2, value);
       unary.insert(1, value);
@@ -2801,6 +2819,7 @@ TEST(DDPackageTest, ComputeTableConfigurationAndClear) {
     ASSERT_NE(binary.lookup(1, 2), nullptr);
     EXPECT_EQ(*binary.lookup(1, 2), 7);
     binary.resize(8);
+    EXPECT_TRUE(binary.getTable().empty());
     EXPECT_EQ(binary.getStats().numBuckets, 8);
     EXPECT_EQ(binary.getStats().numEntries, 0);
     EXPECT_EQ(binary.lookup(1, 2), nullptr);

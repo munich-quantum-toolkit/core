@@ -36,12 +36,10 @@ public:
 
   /// Default constructor
   /// @param numBuckets Number of hash table buckets. Must be a power of two.
-  explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS)
-      : table(std::has_single_bit(numBuckets)
-                  ? numBuckets
-                  : throw std::invalid_argument(
-                        "Number of buckets must be a power of two.")),
-        valid(numBuckets, false) {
+  explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
+    if (!std::has_single_bit(numBuckets)) {
+      throw std::invalid_argument("Number of buckets must be a power of two.");
+    }
     stats.entrySize = sizeof(Entry);
     stats.numBuckets = numBuckets;
   }
@@ -68,7 +66,7 @@ public:
     return hash & mask;
   }
 
-  /// Get a reference to the underlying table
+  /// Get the underlying storage, empty until the first insertion.
   [[nodiscard]] const auto& getTable() const { return table; }
 
   /// Get a reference to the statistics
@@ -82,6 +80,7 @@ public:
   /// @param result The result of the operation
   void insert(const LeftOperandType& leftOperand,
               const RightOperandType& rightOperand, const ResultType& result) {
+    allocate();
     const auto key = hash(leftOperand, rightOperand);
     if (valid[key]) {
       ++stats.collisions;
@@ -100,6 +99,9 @@ public:
                      const RightOperandType& rightOperand) {
     ResultType* result = nullptr;
     ++stats.lookups;
+    if (table.empty()) {
+      return result;
+    }
     const auto key = hash(leftOperand, rightOperand);
     if (!valid[key]) {
       return result;
@@ -127,7 +129,7 @@ public:
 
   /// Replace the bucket storage and discard cached results.
   /// The capacity must be a power of two. Invalidates lookup result pointers.
-  /// Allocation failure leaves the table unchanged.
+  /// The replacement storage is allocated on its first insertion.
   void resize(const size_t numBuckets) {
     ComputeTable replacement(numBuckets);
     table.swap(replacement.table);
@@ -144,6 +146,16 @@ public:
   }
 
 private:
+  void allocate() {
+    if (!table.empty()) {
+      return;
+    }
+    std::vector<Entry> entries(stats.numBuckets);
+    std::vector<bool> occupied(stats.numBuckets, false);
+    table.swap(entries);
+    valid.swap(occupied);
+  }
+
   /// The actual table storing the entries
   std::vector<Entry> table;
   /// Dynamic bitset to mark valid entries

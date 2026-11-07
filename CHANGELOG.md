@@ -26,6 +26,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⚡ Allocate DD compute-table storage on the first insertion ([#2969], [#2821])
+  ([**@burgholzer**], [**@denialhaag**])
 - ⬆️ Update QDMI to 1.4.0 with the new job ABI and stable device IDs, and remove
   obsolete calibration APIs and program formats ([#2952]) ([**@burgholzer**],
   [**@denialhaag**])
@@ -39,6 +41,12 @@ releases may include breaking changes.
 
 ### Fixed
 
+- 🐛 Preserve imaginary DD weights, reject invalid or truncated serialized DDs,
+  and report file-write failures ([#2969], [#2854], [#2734], [#2731])
+  ([**@burgholzer**], [**@denialhaag**])
+- 🐛 Validate DD allocation sizes and measurement-fidelity indices, and handle
+  zero-qubit fidelity queries ([#2969], [#2841], [#2734]) ([**@burgholzer**],
+  [**@denialhaag**])
 - 🐛 Ship one copy of each shared library in Linux and macOS wheels while
   retaining the ABI-versioned library names ([#2923]) ([**@burgholzer**])
 - 🐛 Keep DD states and permutation mappings valid when allocation fails during
@@ -949,13 +957,19 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2969]: https://github.com/munich-quantum-toolkit/core/pull/2969
 [#2952]: https://github.com/munich-quantum-toolkit/core/pull/2952
 [#2942]: https://github.com/munich-quantum-toolkit/core/pull/2942
 [#2923]: https://github.com/munich-quantum-toolkit/core/pull/2923
+[#2854]: https://github.com/munich-quantum-toolkit/core/pull/2854
+[#2841]: https://github.com/munich-quantum-toolkit/core/pull/2841
 [#2831]: https://github.com/munich-quantum-toolkit/core/pull/2831
 [#2826]: https://github.com/munich-quantum-toolkit/core/pull/2826
+[#2821]: https://github.com/munich-quantum-toolkit/core/pull/2821
 [#2814]: https://github.com/munich-quantum-toolkit/core/pull/2814
 [#2760]: https://github.com/munich-quantum-toolkit/core/pull/2760
+[#2734]: https://github.com/munich-quantum-toolkit/core/pull/2734
+[#2731]: https://github.com/munich-quantum-toolkit/core/pull/2731
 [#2722]: https://github.com/munich-quantum-toolkit/core/pull/2722
 [#2714]: https://github.com/munich-quantum-toolkit/core/pull/2714
 [#2710]: https://github.com/munich-quantum-toolkit/core/pull/2710

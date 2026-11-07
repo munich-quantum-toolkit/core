@@ -72,6 +72,11 @@ can now be rejected. This structural tolerance does not bound a matrix norm.
 
 ### DD error handling
 
+Use positive initial memory-manager capacities. Zero raises
+`std::invalid_argument`, and allocation-size overflow raises `std::bad_alloc`.
+Measurement-fidelity queries accept zero-qubit states and reject widths or
+permutation indices that do not fit the result representation.
+
 Pass extraction widths that cover the DD and size `addToVector` destinations for
 the full vector. Dense dimensions and sparse basis indices must fit in `size_t`.
 Invalid requests now throw `std::out_of_range` in C++; Python
@@ -84,12 +89,24 @@ exceptions in wrappers that assumed these calls could not throw.
 
 ### DD export
 
+Invalid or truncated serialized DD inputs raise exceptions. Textual weights
+accept `i` and `I` as the imaginary unit. C++ file serialization reports write
+failures through `std::runtime_error`.
+
 Replace C++ calls to `dd::export2Dot` with `dd::exportToDot`.
 
 C++ `dd::exportToDot` and Python `to_svg` now report DOT file failures through
 exceptions. The native Graphviz fallback also throws when the executable cannot
 start or rendering fails; Python receives `RuntimeError`. Handle these failures
 at the call site. On Windows, put Graphviz's `dot.exe` on `PATH`.
+
+### DD compute tables
+
+Binary and unary compute tables allocate their bucket storage on the first
+insertion. `getTable()` can be empty before insertion or after `resize()`. Use
+`getStats().numBuckets` to inspect the configured capacity.
+`TableStatistics::getMemoryMiB()` estimates that capacity, including storage
+that a lazy table has not allocated yet.
 
 ## [3.11.0]
 

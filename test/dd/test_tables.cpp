@@ -29,6 +29,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <new>
 #include <stdexcept>
 #include <vector>
 
@@ -152,6 +153,10 @@ TEST(DDTableTest, RehashPreservesCanonicalNodesAndOwnedRoots) {
 }
 
 TEST(DDTableTest, InitialLevelsAndCapacityValidation) {
+  EXPECT_THROW(MemoryManager::create<vNode>(0), std::invalid_argument);
+  const auto overflow =
+      (std::numeric_limits<size_t>::max() / sizeof(vNode)) + 1;
+  EXPECT_THROW(MemoryManager::create<vNode>(overflow), std::bad_alloc);
   auto manager = MemoryManager::create<vNode>();
   EXPECT_THROW((UniqueTable(manager, {.nBuckets = 0})), std::invalid_argument);
   EXPECT_THROW((UniqueTable(manager, {.nBuckets = 3})), std::invalid_argument);
