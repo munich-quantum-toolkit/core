@@ -2410,10 +2410,12 @@ public:
     const auto* gate = versionGate(mapping);
     std::string nativeName;
     bool fixedExchange = false;
-    if (target_ != nullptr) {
-      std::vector<mlir::CompilerTarget::SiteId> sites(qubits.begin(),
-                                                      qubits.end());
-      std::vector<std::optional<double>> values;
+    if (target_ != nullptr &&
+        target_->nativeOperationsKind() ==
+            mlir::CompilerTarget::NativeOperations::Kind::Explicit) {
+      llvm::SmallVector<mlir::CompilerTarget::SiteId, 4> sites(qubits.begin(),
+                                                               qubits.end());
+      llvm::SmallVector<std::optional<double>, 4> values;
       values.reserve(parameters.size());
       for (const auto& parameter : parameters) {
         const auto* number = parameter.getNumber();
@@ -2435,7 +2437,9 @@ public:
       auto selected =
           target_->findOperation(descriptor.operationSymbol, qubits.size(),
                                  values, sites, mapping.controls, compatible);
-      if (selected.capability == nullptr && gate != nullptr) {
+      if (selected.capability == nullptr && gate != nullptr &&
+          (mapping.controls != 0 ||
+           llvm::StringRef(gate->name) != descriptor.operationSymbol)) {
         selected = target_->findOperation(gate->name, qubits.size(), values,
                                           sites, 0, compatible);
       }
@@ -2460,9 +2464,7 @@ public:
         }
         nativeName = operation.name().str();
       } else if (selected.capability == nullptr &&
-                 target_->hasDeviceConstraints() &&
-                 target_->nativeOperationsKind() ==
-                     mlir::CompilerTarget::NativeOperations::Kind::Explicit) {
+                 target_->hasDeviceConstraints()) {
         throw std::runtime_error(
             "target operation cannot be emitted as native Qiskit");
       }
@@ -2595,9 +2597,9 @@ public:
         throw std::runtime_error(
             "Qiskit native gates require an explicit target and no modifiers");
       }
-      std::vector<mlir::CompilerTarget::SiteId> sites(qubits.begin(),
-                                                      qubits.end());
-      std::vector<std::optional<double>> values;
+      llvm::SmallVector<mlir::CompilerTarget::SiteId, 4> sites(qubits.begin(),
+                                                               qubits.end());
+      llvm::SmallVector<std::optional<double>, 4> values;
       values.reserve(parameters.size());
       for (const auto& parameter : parameters) {
         const auto* number = parameter.getNumber();
