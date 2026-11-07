@@ -19,6 +19,11 @@ switch between these two modes, either set the
 `QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` parameter to the desired number of shots
 for weak simulation or to `0` for strong simulation.
 
+Each DDSIM job accepts one program. Pass a count of `1` to
+`QDMI_device_job_set_programs` and a program index of `0` when querying
+programs, program status, or results. Larger program lists return
+`QDMI_ERROR_NOTSUPPORTED`.
+
 Under the hood, the QDMI device uses the MQT Core OpenQASM parser (see
 {cpp:func}`qasm3::Importer::imports`) to parse the program into a
 {cpp:class}`qc::QuantumComputation` object. That circuit is then passed either

@@ -60,5 +60,15 @@ from mqt.core.qdmi.driver import open_device, registered_device_ids
 
 for device_id in registered_device_ids():
     device = open_device(device_id)
-    print(device.name())
+    print(device.id, device.name())
 ```
+
+The read-only {py:attr}`~mqt.core.qdmi.Device.id` property returns the stable ID
+of an opened device. Save this value to select the same configured device in a
+later call to {py:func}`~mqt.core.qdmi.driver.open_device`. The C++ equivalent
+is {cpp:func}`qdmi::Device::getId`.
+
+The driver implements QDMI 1.4.0 program submission through
+`QDMI_job_set_programs`. C clients use a zero-based program index when querying
+programs, program status, or results. MQT Core's C++ and Python clients continue
+to submit one program per job through their existing submission methods.
