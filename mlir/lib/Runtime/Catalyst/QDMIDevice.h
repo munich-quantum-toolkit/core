@@ -122,7 +122,7 @@ private:
   wireIndices(llvm::ArrayRef<QubitIdType> wires) const;
   [[nodiscard]] const ObservableWires& getObservable(ObsIdType id) const;
   ObsIdType addObservable(ObservableWires value);
-  const Readout& read();
+  const Readout& read(bool samples = false);
 
   std::shared_ptr<Context> context_;
   pennylane::CircuitRecorder recorder_;
@@ -132,6 +132,8 @@ private:
   size_t shots_ = 0;
   std::optional<mlir::CompiledProgram> compiled_;
   std::optional<Readout> result_;
+  std::optional<qdmi::Job> job_;
+  bool sampleReadout_ = false;
 };
 
 /// Decode all logical wires into a row-major shot-by-wire array.

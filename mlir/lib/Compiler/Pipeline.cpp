@@ -551,6 +551,14 @@ FailureOr<QCProgram> QCOProgram::intoQC() && {
           "failed to convert QCO to QC", {}, true))) {
     return failure();
   }
+  if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+    const TargetEnvironmentAnalysis environment(moduleOp);
+    if (!environment) {
+      moduleOp.emitError(environment.error());
+      return failure();
+    }
+    insertResonatorMoves(moduleOp, environment.environment().target());
+  }
   return QCProgram(std::move(storage));
 }
 
@@ -885,9 +893,6 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
   auto qc = std::move(*qco).intoQC();
   if (failed(qc)) {
     return failure();
-  }
-  if (environment != nullptr) {
-    insertResonatorMoves(qc->module(), environment->target());
   }
   return exportQCProgram(std::move(*qc), output, environment, options);
 }

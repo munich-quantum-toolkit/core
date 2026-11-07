@@ -75,9 +75,10 @@ placements can route CZ gates through idle resonators. MQT Core emits closed
 `backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.
 Qiskit `transpile` does not support these targets. Native circuits that already
 contain MOVE use `serialize_program` instead. QCO and Jeff compiler checkpoints
-retain virtual CZs; MOVE insertion happens when producing QC and executable
-payloads. The command-line target pass pipeline does not provide this placement
-reduction or MOVE insertion.
+retain virtual CZs. Conversion to QC expands them using the attached execution
+target, including after custom target stages. Native serialization consumes the
+result without routing. The command-line target pass pipeline does not provide
+this placement reduction or MOVE insertion.
 
 IQM execution requires its default
 [full MOVE frame tracking](https://docs.iqm.tech/iqm-client/api/iqm.iqm_client.models.CircuitCompilationOptions.html)

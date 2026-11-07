@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Compiler/Programs.h"
+#include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -197,6 +198,41 @@ INSTANTIATE_TEST_SUITE_P(Placements, ResonatorRouting,
                          [](const testing::TestParamInfo<Scenario>& info) {
                            return info.param.name;
                          });
+
+TEST_P(ResonatorRouting, ExportsTargetCompiledCheckpointsThroughQC) {
+  const auto& scenario = GetParam();
+  const TargetEnvironment environment(
+      starTarget(scenario), llvm::cantFail(PayloadSpecification::create(
+                                {.id = "iqm-json"}, {}, true)));
+  for (const bool staged : {false, true}) {
+    SCOPED_TRACE(staged);
+    auto source =
+        llvm::cantFail(QCProgram::fromOpenQASMString(scenario.source));
+    auto program = std::move(source).intoQCO();
+    ASSERT_TRUE(succeeded(program));
+    ASSERT_TRUE(succeeded(
+        staged ? program->runPassPipeline("mqt-target-prepare,place-qubits,"
+                                          "place-and-route,mqt-target-finalize",
+                                          {}, &environment, true)
+               : program->compileForTarget(environment)));
+    auto checkpoint =
+        llvm::cantFail(QCOProgram::fromMLIRString(program->str()));
+    auto qc = std::move(checkpoint).intoQC();
+    ASSERT_TRUE(succeeded(qc));
+    auto payload = CompiledProgram::serialize(std::move(*qc), environment);
+    ASSERT_TRUE(static_cast<bool>(payload))
+        << llvm::toString(payload.takeError());
+    auto json = llvm::cantFail(llvm::json::parse(payload->payload()));
+    size_t moves = 0;
+    for (const auto& instruction :
+         *json.getAsObject()->getArray("instructions")) {
+      if (instruction.getAsObject()->getString("name") == "move") {
+        ++moves;
+      }
+    }
+    EXPECT_EQ(moves, scenario.expectedMoves);
+  }
+}
 
 TEST(ResonatorRouting, RawAdaptiveQIRSchedulesReadoutAfterMoves) {
   const TargetEnvironment environment(

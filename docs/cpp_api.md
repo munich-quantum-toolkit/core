@@ -23,8 +23,6 @@ as `main.cpp`:
 ```cpp
 #include "qdmi/client.h"
 
-#include "llvm/Support/raw_ostream.h"
-
 #include <cstddef>
 #include <stdexcept>
 #include <string>
@@ -66,7 +64,6 @@ int main() {
   if (std::string(result) != "1") {
     return 1;
   }
-  llvm::outs() << "DDSIM result: " << result << '\n';
 }
 ```
 
@@ -78,15 +75,14 @@ project(qdmi-example LANGUAGES CXX)
 find_package(mqt-core CONFIG REQUIRED COMPONENTS Runtime)
 add_executable(qdmi-example main.cpp)
 target_compile_features(qdmi-example PRIVATE cxx_std_20)
-target_link_libraries(qdmi-example PRIVATE MQT::CoreQDMIDriver LLVMSupport)
+target_link_libraries(qdmi-example PRIVATE MQT::CoreQDMIDriver)
 mqt_copy_qdmi_runtime(qdmi-example MQT::CoreQDMI_DDSIM_Device)
 
 enable_testing()
 add_test(NAME qdmi-runtime COMMAND qdmi-example)
 ```
 
-With the wheel installed in the active environment and an LLVM SDK matching the
-major and minor version used to build MQT Core, run:
+With the wheel installed in the active environment, run:
 
 ```console
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(mqt-core --cmake-dir)"
@@ -94,7 +90,8 @@ cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The application prints `DDSIM result: 1`.
+The application returns success after checking that DDSIM measured `1`. The
+Runtime component requires no LLVM SDK.
 
 CMake provides the `MQT::mqt-core` imported executable target. Use
 `mqt-core compile` and `mqt-core bench` in custom commands or from the command

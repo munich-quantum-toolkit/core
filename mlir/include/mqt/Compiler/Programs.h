@@ -496,6 +496,8 @@ public:
                       const CompilationOptions& options = {});
 
   /// Consume this program and convert it to QC.
+  ///
+  /// Expand virtual resonator couplings using the attached execution target.
   [[nodiscard]] FailureOr<QCProgram> intoQC() &&;
 
   /// Consume this program and convert it to `jeff` MLIR.
