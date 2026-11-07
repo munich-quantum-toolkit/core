@@ -1204,17 +1204,11 @@ submitProgram(const qdmi::Device& device, CompilerInput program,
                         custom3, custom4, custom5, &compiled->environment()));
 }
 
-llvm::Expected<std::optional<qdmi::Job>>
-trySubmitPrograms(const qdmi::Device& device,
-                  ArrayRef<const CompiledProgram*> programs, int64_t numShots,
-                  const std::optional<qdmi::CustomJobParameter>& custom1,
-                  const std::optional<qdmi::CustomJobParameter>& custom2,
-                  const std::optional<qdmi::CustomJobParameter>& custom3,
-                  const std::optional<qdmi::CustomJobParameter>& custom4,
-                  const std::optional<qdmi::CustomJobParameter>& custom5,
-                  const TargetEnvironment* destination) {
-  if (numShots < 0 || programs.empty() ||
-      llvm::is_contained(programs, nullptr)) {
+Expected<TargetEnvironment>
+prepareProgramSubmission(const qdmi::Device& device,
+                         ArrayRef<const CompiledProgram*> programs,
+                         const TargetEnvironment* destination) {
+  if (programs.empty() || llvm::is_contained(programs, nullptr)) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument),
         "A program batch requires non-null programs and nonnegative num_shots");
@@ -1240,6 +1234,28 @@ trySubmitPrograms(const qdmi::Device& device,
       return error;
     }
   }
+  return *destination;
+}
+
+llvm::Expected<std::optional<qdmi::Job>>
+trySubmitPrograms(const qdmi::Device& device,
+                  ArrayRef<const CompiledProgram*> programs, int64_t numShots,
+                  const std::optional<qdmi::CustomJobParameter>& custom1,
+                  const std::optional<qdmi::CustomJobParameter>& custom2,
+                  const std::optional<qdmi::CustomJobParameter>& custom3,
+                  const std::optional<qdmi::CustomJobParameter>& custom4,
+                  const std::optional<qdmi::CustomJobParameter>& custom5,
+                  const TargetEnvironment* destination) {
+  if (numShots < 0) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "A program batch requires non-null programs and nonnegative num_shots");
+  }
+  auto prepared = prepareProgramSubmission(device, programs, destination);
+  if (!prepared) {
+    return prepared.takeError();
+  }
+  const auto format = programs.front()->programFormat();
   if (qdmi::isBinaryProgramFormat(format)) {
     std::vector<std::span<const std::byte>> payloads;
     payloads.reserve(programs.size());

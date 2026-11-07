@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Unpack, cast
 import pytest
 
 from mqt.core.mlir import CompilerTarget, PayloadSpecification, TargetEnvironment
-from mqt.core.mlir import _submission_environment as native_submission_environment  # ruff:ignore[import-private-name] Native-boundary device doubles.
+from mqt.core.mlir import _prepare_qdmi_programs as native_prepare  # ruff:ignore[import-private-name] Native-boundary device doubles.
 from mqt.core.mlir import _try_submit_programs as native_submit  # ruff:ignore[import-private-name] Native-boundary device doubles.
 from mqt.core.plugins.qiskit import job as job_module
 from mqt.core.qdmi import Device, Job, ProgramFormat
@@ -80,10 +80,21 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(TargetEnvironment, "from_device", environment)
 
-    def submission_environment(device: Device, program_format: ProgramFormat) -> TargetEnvironment:
+    def prepare(
+        device: Device, programs: tuple[CompiledProgram, ...], retained: TargetEnvironment
+    ) -> list[TargetEnvironment]:
         if isinstance(device, Device):
-            return native_submission_environment(device, program_format)
-        return environment(device, program_format=program_format)
+            return native_prepare(device, programs, retained)
+        destinations = {}
+        for program in programs:
+            if getattr(program, "_environment", None) is not retained and program.program_format not in destinations:
+                destinations[program.program_format] = TargetEnvironment.from_device(
+                    device, program_format=program.program_format
+                )
+        result = [destinations.get(program.program_format, retained) for program in programs]
+        for program, destination in zip(programs, result, strict=True):
+            program._validate_environment(destination)  # ruff:ignore[private-member-access] Exercise the native compatibility check for device doubles.
+        return result
 
     def submit_programs(
         device: Device,
@@ -104,5 +115,5 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
             **parameters,
         )
 
-    monkeypatch.setattr(job_module, "_submission_environment", submission_environment)
+    monkeypatch.setattr(job_module, "_prepare_qdmi_programs", prepare)
     monkeypatch.setattr(job_module, "_try_submit_programs", submit_programs)

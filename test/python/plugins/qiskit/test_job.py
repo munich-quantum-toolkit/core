@@ -25,7 +25,14 @@ from qiskit.providers import JobError
 from qiskit.quantum_info import SparsePauliOp
 from test_mock_backend import MockQDMIDevice
 
-from mqt.core.mlir import CompilationOptions, CompiledProgram, TargetEnvironment, compile_program, serialize_program
+from mqt.core.mlir import (
+    CompilationOptions,
+    CompiledProgram,
+    TargetEnvironment,
+    compile_program,
+    serialize_program,
+    submit_program,
+)
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     JobExecutionError,
@@ -645,7 +652,7 @@ def test_compiled_alternative_format_runs_on_ddsim(monkeypatch: pytest.MonkeyPat
     monkeypatch.setattr(
         TargetEnvironment, "from_device", MagicMock(side_effect=AssertionError("submission requested calibration"))
     )
-    assert backend.run(artifact, shots=4).result().get_counts() == {"1": 4}
+    assert backend.run([default, artifact], shots=4).result().get_counts() == [{"1": 4}, {"1": 4}]
 
 
 def test_compiled_unsupported_format_preflight(
@@ -730,3 +737,53 @@ def test_register_separator_spaces(recording_backend: RecordingBackend, *, memor
     assert job.result().get_counts() == {"100": 4}
     if memory:
         assert job.result().get_memory() == ["100"] * 4
+
+
+@pytest.mark.parametrize("decline_single", [False, True])
+def test_native_admission_decline_preserves_fallback(monkeypatch: pytest.MonkeyPatch, *, decline_single: bool) -> None:
+    """A declined list consumes no attempt; a declined single remains a failure."""
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default", custom1="1")
+    calls = []
+
+    def submit(device: Device, programs: Sequence[CompiledProgram], shots: int, **_kwargs: object) -> Job | None:
+        calls.append(len(programs))
+        if len(programs) > 1 or decline_single:
+            return None
+        return submit_program(programs[0], target=device, num_shots=shots)
+
+    monkeypatch.setattr("mqt.core.plugins.qiskit.job._try_submit_programs", submit)
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    if decline_single:
+        with pytest.raises(JobSubmissionError, match="declined") as failure:
+            backend.run([circuit, circuit], shots=2)
+        assert calls == [2, 1]
+        assert failure.value.job is not None
+        assert [len(entry.attempts) for entry in failure.value.job.entries] == [1, 0]
+    else:
+        job = backend.run([circuit, circuit], shots=2)
+        assert job.result().get_counts() == [{"0": 2}, {"0": 2}]
+        assert calls == [2, 1, 1]
+        assert [len(entry.attempts) for entry in job.entries] == [1, 1]
+
+
+@pytest.mark.parametrize("native_first", [False, True])
+def test_mixed_artifacts_check_a_fresh_destination(monkeypatch: pytest.MonkeyPatch, *, native_first: bool) -> None:
+    """A backend-native artifact cannot hide a foreign artifact's fresh preflight."""
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default", custom1="4")
+    other = QDMIBackend.from_device_id("mqt.ddsim.default", custom1="8")
+    stale = TargetEnvironment.from_device(other.device)
+    monkeypatch.setattr(backend, "_environment", stale)
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    native = backend.compile(circuit)
+    assert isinstance(native, CompiledProgram)
+    foreign = serialize_program(circuit, target=TargetEnvironment.from_device(other.device))
+
+    def unexpected_submission(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("submitted before checking the complete batch")
+
+    monkeypatch.setattr("mqt.core.plugins.qiskit.job._try_submit_programs", unexpected_submission)
+    programs = [native, foreign] if native_first else [foreign, native]
+    with pytest.raises(ValueError, match="ordered site mapping differs"):
+        backend.run(programs, shots=4)

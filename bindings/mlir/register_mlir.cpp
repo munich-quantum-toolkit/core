@@ -3065,14 +3065,47 @@ Args:
 )pb");
 
   m.def(
-      "_submission_environment",
-      [](const qdmi::Device& device, QDMI_Program_Format format) {
+      "_prepare_qdmi_programs",
+      [](const qdmi::Device& device, const nb::tuple& programs,
+         const nb::handle retainedEnvironment) {
+        struct Group {
+          std::vector<const mlir::CompiledProgram*> programs;
+          bool retained = true;
+          std::optional<mlir::TargetEnvironment> destination;
+        };
+        const auto& environment =
+            nb::cast<const mlir::TargetEnvironment&>(retainedEnvironment);
+        std::map<QDMI_Program_Format, Group> groups;
+        std::vector<QDMI_Program_Format> order;
+        for (const auto program : programs) {
+          const auto* compiled =
+              &nb::cast<const mlir::CompiledProgram&>(program);
+          const auto format = compiled->programFormat();
+          auto& group = groups[format];
+          group.programs.push_back(compiled);
+          group.retained &= nb::getattr(program, "_environment", nb::none())
+                                .is(retainedEnvironment);
+          order.push_back(format);
+        }
+        std::vector<mlir::TargetEnvironment> destinations;
         const nb::gil_scoped_release release;
-        return unwrap(mlir::inspectTargetEnvironment(device, format, false));
+        for (auto& entry : groups) {
+          auto& group = entry.second;
+          group.destination = unwrap(mlir::prepareProgramSubmission(
+              device, group.programs, group.retained ? &environment : nullptr));
+        }
+        destinations.reserve(order.size());
+        for (const auto format : order) {
+          destinations.push_back(*groups.at(format).destination);
+        }
+        return destinations;
       },
-      "device"_a, "program_format"_a,
-      "Snapshot a submission contract without calibration for whole-batch "
-      "preflight.");
+      "device"_a, "programs"_a, "environment"_a,
+      nb::sig("def _prepare_qdmi_programs(device: mqt.core.qdmi.Device, "
+              "programs: tuple[CompiledProgram, ...], environment: "
+              "TargetEnvironment) -> list[TargetEnvironment]"),
+      "Validate every format group and retain its destination for submission.");
+
   m.def(
       "_try_submit_programs",
       [](const qdmi::Device& device,

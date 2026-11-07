@@ -877,6 +877,11 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_EQ(compiled.programFormat(), QDMI_PROGRAM_FORMAT_QASM3);
   ASSERT_GE(compiled.payload().size(), 4);
   EXPECT_TRUE(compiled.payload().starts_with("OPENQASM 3;"));
+  const auto destination = llvm::cantFail(
+      mlir::prepareProgramSubmission(device, {&compiled, &compiled}));
+  EXPECT_EQ(creations, 0);
+  EXPECT_FALSE(llvm::errorToBool(
+      mlir::validateTargetCompatibility(compiled.environment(), destination)));
   auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 32));
   EXPECT_EQ(creations, 1);
   EXPECT_TRUE(llvm::cantFail(job.wait()));
@@ -1133,17 +1138,20 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
   const auto compiled = llvm::cantFail(
       mlir::compileProgram(mlir::OpenQASMProgram(source), device));
   siteLists = calibrationQueries = 0;
-  auto destination = llvm::cantFail(
-      mlir::inspectTargetEnvironment(device, compiled.programFormat(), false));
+  const auto destination = llvm::cantFail(
+      mlir::prepareProgramSubmission(device, {&compiled, &compiled}));
   EXPECT_EQ(siteLists, 1);
   EXPECT_EQ(calibrationQueries, 0);
-  siteLists = 0;
-  auto retained = llvm::cantFail(mlir::trySubmitPrograms(
+  siteLists = calibrationQueries = 0;
+  auto prepared = llvm::cantFail(mlir::trySubmitPrograms(
       device, {&compiled}, 4, {}, {}, {}, {}, {}, &destination));
-  ASSERT_TRUE(retained);
-  ASSERT_TRUE(llvm::cantFail(retained->wait()));
   EXPECT_EQ(siteLists, 0);
   EXPECT_EQ(calibrationQueries, 0);
+  ASSERT_TRUE(prepared);
+  ASSERT_TRUE(llvm::cantFail(prepared->wait()));
+  EXPECT_EQ(llvm::cantFail(prepared->getCounts()).at("0"), 4);
+
+  siteLists = calibrationQueries = 0;
   auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 4));
   EXPECT_EQ(siteLists, 1);
   EXPECT_EQ(calibrationQueries, 0);

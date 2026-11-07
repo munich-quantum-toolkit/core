@@ -34,7 +34,7 @@ from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
-from mqt.core.mlir import _submission_environment, _try_submit_programs, decode_counts, decode_shots
+from mqt.core.mlir import _prepare_qdmi_programs, _try_submit_programs, decode_counts, decode_shots
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 from mqt.core.plugins.qiskit.exceptions import JobExecutionError, JobSubmissionError
 from mqt.core.qdmi import Job as QDMIJobHandle
@@ -42,9 +42,8 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mqt.core.mlir import CompiledProgram, ResultLayout, TargetEnvironment
+    from mqt.core.mlir import CompiledProgram, ResultLayout
     from mqt.core.plugins.qiskit.backend import QDMIBackend
-    from mqt.core.qdmi import ProgramFormat
     from mqt.core.typing import QDMIJobParameters
 
 __all__ = ["QDMIJob"]
@@ -94,11 +93,6 @@ class QDMIJob(JobV1):
         self._backend: QDMIBackend = backend
         self._programs = tuple(programs)
         environment = backend._environment  # ruff:ignore[private-member-access] Shared immutable backend snapshot.
-        environments: dict[ProgramFormat, TargetEnvironment] = {
-            program.program_format: environment
-            for program in self._programs
-            if getattr(program, "_environment", None) is environment
-        }
         for program in self._programs:
             if getattr(program, "_qiskit_header", {}) is None:
                 msg = "Classical registers must partition circuit.clbits in register order for Qiskit results."
@@ -106,13 +100,6 @@ class QDMIJob(JobV1):
             if program.result_width is None:
                 msg = "Qiskit results require Boolean or classical-bit outputs."
                 raise JobError(msg)
-            if getattr(program, "_environment", None) is not environment:
-                if program.program_format not in environments:
-                    environments[program.program_format] = _submission_environment(
-                        backend.device, program.program_format
-                    )
-                program._validate_environment(environments[program.program_format])  # ruff:ignore[private-member-access] Preflight the entire batch.
-        self._environments = environments
         self._headers: list[dict[str, Any]] = [
             getattr(
                 program,
@@ -135,6 +122,7 @@ class QDMIJob(JobV1):
             if layout is not None and len(layout.bits) != header["memory_slots"]:
                 msg = "Serialized result layout does not match the circuit's classical width."
                 raise JobError(msg)
+        self._destinations = _prepare_qdmi_programs(backend.device, self._programs, environment)
         self._batch: Batch[ExperimentResult] = Batch(
             [BatchEntry(i) for i in range(len(programs))],
             submit=self._submit_entry,
@@ -166,7 +154,7 @@ class QDMIJob(JobV1):
             self._backend.device,
             programs,
             self._shots,
-            destination=self._environments[programs[0].program_format],
+            destination=self._destinations[indices[0]],
             **self._job_parameters,
         )
 
