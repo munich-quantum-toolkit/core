@@ -723,3 +723,15 @@ def test_compile_applies_provider_preprocessing(
     prepared = backend.compile([circuit] if sequence else circuit)
     assert isinstance(prepared, list if sequence else CompiledProgram)
     assert not jobs
+
+
+@pytest.mark.parametrize("memory", [False, True])
+def test_register_separator_spaces(recording_backend: RecordingBackend, *, memory: bool) -> None:
+    """Provider register separators have the same meaning in counts and memory."""
+    backend, jobs, _ = recording_backend
+    job = backend.run(QuantumCircuit(3, 3), shots=4, memory=memory)
+    jobs[0].get_counts.side_effect = lambda _program_index=0: {"10 0": 4}
+    jobs[0].get_shots.side_effect = lambda _program_index=0: ["10 0"] * 4
+    assert job.result().get_counts() == {"100": 4}
+    if memory:
+        assert job.result().get_memory() == ["100"] * 4

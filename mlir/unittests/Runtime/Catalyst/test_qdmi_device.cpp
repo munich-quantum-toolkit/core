@@ -154,7 +154,7 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
     EXPECT_THROW(decodeSamples(job, 3, 2), std::runtime_error);
   }
   returnedShots.reset();
-  returnedKeys = "100,001";
+  returnedKeys = "10 0,001";
   returnedCounts = {2, 3};
   const auto samples = decodeSamples(job, 3, 5);
   EXPECT_EQ(samples,

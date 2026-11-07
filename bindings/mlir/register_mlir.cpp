@@ -2923,6 +2923,27 @@ and error contracts.)pb");
           "raw"_a,
           "Decode one MSB-first binary sample to logical output order.");
 
+  m.def(
+      "decode_counts",
+      [](const std::map<std::string, size_t>& counts,
+         std::optional<size_t> width, size_t shots,
+         const std::optional<mlir::ResultLayout>& layout) {
+        return unwrap(mlir::decodeCounts(counts, width, shots, layout));
+      },
+      "counts"_a, "width"_a, "shots"_a, "layout"_a = nb::none(),
+      "Validate binary counts and reconstruct logical outcomes, ignoring ASCII "
+      "spaces.");
+  m.def(
+      "decode_shots",
+      [](std::vector<std::string> samples, std::optional<size_t> width,
+         size_t shots, const std::optional<mlir::ResultLayout>& layout) {
+        return unwrap(
+            mlir::decodeShots(std::move(samples), width, shots, layout));
+      },
+      "samples"_a, "width"_a, "shots"_a, "layout"_a = nb::none(),
+      "Validate and reconstruct logical samples in shot order, ignoring ASCII "
+      "spaces.");
+
   nb::class_<mlir::CompiledProgram>(
       m, "CompiledProgram", nb::dynamic_attr(),
       "A compiled program ready for QDMI submission.")

@@ -119,6 +119,11 @@ static Readout readout(const qdmi::Job& job, size_t width, size_t shots,
       if (!values) {
         return values.takeError();
       }
+      if (values->empty()) {
+        return result;
+      }
+      *values =
+          unwrap(mlir::decodeShots(std::move(*values), width, shots, layout));
       result.reserve(values->size());
       for (auto& bits : *values) {
         result.emplace_back(std::move(bits), 1);
@@ -128,6 +133,10 @@ static Readout readout(const qdmi::Job& job, size_t width, size_t shots,
       if (!counts) {
         return counts.takeError();
       }
+      if (counts->empty()) {
+        return result;
+      }
+      *counts = unwrap(mlir::decodeCounts(*counts, width, shots, layout));
       for (const auto& [bits, count] : *counts) {
         if (count != 0) {
           result.emplace_back(bits, count);
@@ -149,23 +158,10 @@ static Readout readout(const qdmi::Job& job, size_t width, size_t shots,
     }
   }
   auto result = std::move(*loaded);
-  size_t total = 0;
   for (auto& [bits, count] : result) {
-    std::erase(bits, ' ');
-    if (layout) {
-      bits = unwrap(layout->decodeBits(bits));
-    }
-    require(bits.size() == width &&
-                bits.find_first_not_of("01") == std::string::npos,
-            "QDMI returned a malformed " + llvm::Twine(width) + "-bit sample.");
-    require(count <= shots - total,
-            "QDMI returned more samples than requested.");
-    total += count;
     std::ranges::reverse(bits);
   }
-  require(total == shots, "QDMI returned " + std::to_string(total) +
-                              " samples for a " + std::to_string(shots) +
-                              "-shot job.");
+  require(!result.empty(), "QDMI returned no samples for a nonempty job.");
   return result;
 }
 
