@@ -35,6 +35,7 @@
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <bit>
@@ -176,7 +177,15 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
   PassManager pm(mod.getContext());
   std::string diagnostics;
   llvm::raw_string_ostream errorStream(diagnostics);
-  if (failed(parsePassPipeline(pipeline, pm, errorStream))) {
+  auto passes = pipeline.trim();
+  auto [anchor, body] = passes.split('(');
+  if (anchor.rtrim() == ModuleOp::getOperationName()) {
+    if (!body.consume_back(")")) {
+      return mod.emitError("unclosed builtin.module pass pipeline");
+    }
+    passes = body;
+  }
+  if (failed(parsePassPipeline(passes, pm, errorStream))) {
     return mod.emitError() << "failed to parse pass pipeline '" << pipeline
                            << "': " << diagnostics;
   }
@@ -189,6 +198,11 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
                                         const CompilationOptions& options,
                                         bool preservesLayout) {
+  // Embedders need not register command-line options.
+  if (llvm::cl::getRegisteredOptions().contains("mlir-print-ir-before-all") &&
+      failed(applyPassManagerCLOptions(pm))) {
+    return failure();
+  }
   if (!preservesLayout) {
     moduleOp->removeAttr("mqt.layout");
   }

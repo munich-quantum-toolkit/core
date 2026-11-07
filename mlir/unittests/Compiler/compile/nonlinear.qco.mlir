@@ -7,7 +7,7 @@
 // Licensed under the MIT License
 
 module {
-  func.func @main() {
+  func.func @main() attributes {mqt.entry_point} {
     %qubit = qco.alloc : !qco.qubit
     return
   }

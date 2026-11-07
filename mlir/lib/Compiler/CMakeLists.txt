@@ -89,6 +89,7 @@ add_mlir_library(
   MLIRQCDialect
   MLIRQCOpenQASMTranslation
   MLIRQCToQCO
+  MQT::MLIRSupport
   MLIRQCODialect
   MLIRQCOUtils
   MLIRQTensorDialect

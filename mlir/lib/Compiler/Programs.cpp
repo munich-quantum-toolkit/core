@@ -19,6 +19,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Support/Passes.h"
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
 
 #include "Diagnostics.h"
@@ -346,10 +347,9 @@ QCProgram QCProgram::copy() const { return QCProgram(cloneStorage()); }
 FailureOr<QCOProgram> QCProgram::intoQCO() && {
   auto storage = std::move(*this).releaseStorage();
   auto moduleOp = *storage.mod;
-  PassManager pm(moduleOp.getContext());
-  pm.addPass(createQCToQCO());
-  if (failed(pm.run(moduleOp))) {
-    moduleOp.emitError("failed to convert QC to QCO");
+  if (failed(runWithPassManager(
+          moduleOp, [](OpPassManager& pm) { pm.addPass(createQCToQCO()); },
+          "failed to convert QC to QCO", {}, /*preservesLayout=*/true))) {
     return failure();
   }
   if (failed(qco::verifyLinearity(moduleOp))) {
