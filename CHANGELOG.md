@@ -10,25 +10,27 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Add normalized Frobenius comparisons for DD identity and measured-output
+  diagonal blocks with conservative early rejection, and use complex distance
+  for structural ancillary checks ([#2942]) ([**@burgholzer**])
+
 ### Changed
 
-- 💥 Backport QDMI 1.4.0 integration with the new job ABI and stable device IDs;
-  remove obsolete calibration APIs and program formats ([#2952])
-  ([**@burgholzer**], [**@denialhaag**])
-- 💥 Rename C++ `dd::export2Dot` to `dd::exportToDot` ([#2826])
-  ([**@denialhaag**])
+- ⬆️ Update QDMI to 1.4.0 with the new job ABI and stable device IDs, and remove
+  obsolete calibration APIs and program formats ([#2952]) ([**@burgholzer**],
+  [**@denialhaag**])
+- 💥 Rename C++ `dd::export2Dot` to `dd::exportToDot` and propagate DD
+  allocation and table-index errors through exceptions instead of terminating
+  ([#2826], [#2814]) ([**@burgholzer**], [**@denialhaag**])
 - ⚡ Prefetch the next reusable DD entry during allocation ([#2826], [#2831])
   ([**@burgholzer**], [**@denialhaag**])
-- 💥 Propagate DD allocation and table-index errors through exceptions instead
-  of terminating ([#2826], [#2814]) ([**@burgholzer**], [**@denialhaag**])
-- ♻️ Defer selected Python imports until first use on Python 3.15. Older Python
-  versions retain eager imports. ([#2760]) ([**@denialhaag**])
+- ♻️ Defer selected Python imports until first use on Python 3.15 ([#2760])
+  ([**@denialhaag**])
 
 ### Fixed
 
-- 🐛 Add normalized Frobenius comparisons for DD identity and measured-output
-  diagonal blocks, with conservative early rejection; use complex distance for
-  structural ancillary checks ([#2942]) ([**@burgholzer**])
 - 🐛 Ship one copy of each shared library in Linux and macOS wheels while
   retaining the ABI-versioned library names ([#2923]) ([**@burgholzer**])
 - 🐛 Keep DD states and permutation mappings valid when allocation fails during
