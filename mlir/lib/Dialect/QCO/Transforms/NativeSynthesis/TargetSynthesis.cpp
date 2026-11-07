@@ -1774,9 +1774,7 @@ std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
 }
 
 void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
-  // Device placement consumes allocations; gate-set targets retain them.
-  // Limit repeated region sweeps to the default ten iterations.
-  pm.addPass(createCanonicalizerPass(GreedyRewriteConfig{}));
+  pm.addPass(createCanonicalizerPass());
   // Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
   pm.addPass(std::make_unique<TargetDeadValueCleanupPass>());

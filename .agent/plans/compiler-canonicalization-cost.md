@@ -5,11 +5,12 @@ Status: investigated, implemented and validated. Baseline revision:
 
 ## Goal and scope
 
-Reduce canonicalization time on compiler entry points without changing output,
-and repair the modifier merge/unroll cycle and QTensor false-success rewrite.
-Preserve failed-match immutability, verified output, deterministic ordering,
-quantum gate sequences during structural cleanup, and existing numerical
-semantics. Conversion patterns and boundary verification costs are excluded.
+Reduce canonicalization time on compiler entry points while preserving program
+semantics, and repair the modifier merge/unroll cycle and QTensor false-success
+rewrite. Equivalent IR forms may change. Preserve failed-match immutability,
+verified output, deterministic ordering, quantum gate sequences during
+structural cleanup, and existing numerical semantics. Conversion patterns and
+boundary verification costs are excluded.
 
 Read the prior
 [performance audit](../audits/canonicalization-performance-2253.md),
@@ -21,8 +22,9 @@ Read the prior
 
 - Fix Ctrl optimization/lowering mixing in multi-control decomposition and false
   rewrite success in graph-region tensor commuting.
-- Use the default ten outer iterations at both previously unlimited compiler
-  canonicalizers, preserving traversal, region simplification and CSE options.
+- Use default canonicalizers at both previously unlimited compiler sites. QCO
+  cleanup enables only CSE between iterations; other options use defaults.
+- Batch consecutive identity tensor extract/insert pairs in one rewrite.
 - Fold constant inverse angles and power phases when created. Isolated
   inverse-RX lowering uses less CPU; whole-compiler wall-time improvement is not
   established on the contended host.
@@ -76,9 +78,9 @@ Actual invocation counts are 5 for QCO, 13–15 for Adaptive QIR, and 8–68 for
 target compilation (Shor repeatedly promotes while unrolling). Timing reports
 aggregate repeated instances, so their row count is not the invocation count.
 The limit bounds outer region sweeps, not successful rewrite cycles within a
-sweep. Both unlimited sites retain their traversal/region/CSE configurations and
-use MLIR's default ten iterations. A compiler-corpus regression requests
-`test-convergence=true` for QCO cleanup.
+sweep. Both formerly unlimited sites now use MLIR's default ten iterations. QCO
+cleanup retains CSE between iterations; other options use factory defaults. A
+compiler-corpus regression requests `test-convergence=true` for QCO cleanup.
 
 ### Correctness results
 
@@ -235,3 +237,80 @@ change. The second rebase preserves the patch exactly (`git range-diff`).
 Both builds pass on the final base. The final native suite passes all 4,365
 tests; the final Python report records 2,268 passed and two optional Catalyst
 skips.
+
+## Algorithmic follow-up
+
+### Chosen design
+
+`FoldInsertAfterExtract` cancels a maximal consecutive identity chain in one
+rewrite. It finds the head from any matched pair, then erases the pairs forward.
+Each pair retains the existing tensor/scalar provenance and equal-index proof,
+including equal dynamic SSA indices. Nonidentity uses, uncertain indices and
+block boundaries stop extension. Graph-region order checks keep traversal
+monotonic. Both operations of each pair are erased, preserving linearity before
+the next rewrite.
+
+This prevents the greedy driver from revisiting the allocation between every
+pair cancellation. Finding and cancelling an N-pair chain takes O(N) work in
+SSACFG regions, with no mutable cache, new analysis, pass or pipeline option.
+The claim is specific to consecutive identity chains, not arbitrary tensor
+graphs. Moving fresh-slot analysis into another pass would change standalone
+canonicalization and introduce scheduling dependencies without helping this case
+further.
+
+Native synthesis uses `createCanonicalizerPass()` without custom options. QCO
+cleanup uses `CanonicalizerPassOptions{.cseBetweenIterations = true}`; all other
+options use the factory defaults, including Normal region simplification and ten
+iterations. CSE remains necessary for duplicate index computations in the jeff
+round-trip path. CSE before canonicalization misses equal nonlinear index
+expressions exposed by folding; CSE afterwards leaves comparisons and branches
+that require further folding. The existing fixed-point driver handles both
+orders without another pass or an implicit dependency on folding inside
+allocation cleanup. The two target post-optimization canonicalizers and full
+promotion/binding canonicalizers retain their demonstrated semantic
+dependencies.
+
+### Measurements
+
+Baseline: published commit `e7ec229c3e` with only the no-argument canonicalizer
+changes. Candidate: batched identity cancellation. The isolated probe runs the
+public `QCOProgram.run_pass_pipeline` with
+`canonicalize{test-convergence=true}`; compiler pipeline ordering is not
+involved in that comparison. Native extension builds use the toolchain and
+preset stated above, on DGX Spark CPU 19. Three alternating baseline/candidate
+process pairs each use two warmups and five timed runs; parsing and copying
+precede timing.
+
+| Identity pairs | Baseline CPU (ms) | Batched CPU (ms) | Baseline wall (ms) | Batched wall (ms) |
+| -------------- | ----------------: | ---------------: | -----------------: | ----------------: |
+| 1,000          |            43.069 |            1.158 |             43.069 |             1.158 |
+| 4,000          |           732.188 |            4.975 |            732.338 |             4.975 |
+
+Values are medians of process medians. The isolated workload improves about
+37x/147x; increasing input size fourfold costs 17.0x before and 4.3x after.
+Exact output agrees in every paired run. This removes the measured quadratic
+identity-prefix behavior, not all tensor-chain costs. Representative GHZ, QFT,
+Grover, QAOA and Shor paths are checked separately; no whole-compiler latency
+improvement is claimed from this isolated result. Raw data remain outside the
+repository in the existing evidence directory (`batch-pair-*`).
+
+### Regression coverage
+
+A direct-pattern test starts at the head, middle and tail and requires one
+rewrite to cancel the full chain; it fails on the previous implementation. A
+second test retains a changed-qubit barrier from either direction. Existing
+equal-dynamic-index, uncertain-index, graph-region and immediate-linearity
+checks remain.
+
+A cleanup regression requires sharing of nonlinear index expressions exposed by
+folding, then verifies QCO-to-QC conversion. The existing common-expression
+regression checks folding after expression sharing. A graph-region identity
+batch test checks that traversal stops at source-order boundaries while removing
+the original root and preserving linearity.
+
+Final validation: native and editable Python builds pass; all 4,369 native tests
+and 2,268 Python tests pass, with two optional Catalyst skips. All thirty
+representative compiler paths and repeated binding complete successfully; their
+outputs also happen to match the previous samples. Full-file C++ lint and
+repository lint pass. Hosted CI and Windows validation were not run for this
+follow-up.
