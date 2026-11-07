@@ -391,13 +391,9 @@ static bool isConstantParameter(const RotationParameter& value,
   return scalar && isNearZeroRotationAngle(*scalar - expected);
 }
 
-/// A finite rotation angle has an exact additive identity.
-///
-/// Keep this policy outside scalar arithmetic, where signed zero and nonfinite
-/// values matter.
-static RotationParameter addRotationParameters(OpBuilder& builder, Location loc,
-                                               const RotationParameter& lhs,
-                                               const RotationParameter& rhs) {
+RotationParameter addRotationParameters(OpBuilder& builder, Location loc,
+                                        const RotationParameter& lhs,
+                                        const RotationParameter& rhs) {
   const auto foldedLhs = mqt::foldParameter(lhs);
   const auto foldedRhs = mqt::foldParameter(rhs);
   const auto* a = std::get_if<double>(&foldedLhs);

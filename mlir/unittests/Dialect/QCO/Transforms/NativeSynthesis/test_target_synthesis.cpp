@@ -3260,6 +3260,78 @@ TEST_F(TargetSynthesisTest, EquatorialFrameAbsorptionPreservesScalarDominance) {
   }
 }
 
+TEST_F(TargetSynthesisTest, MixedZFramesPreservePhaseAndBalancedExpressions) {
+  context->loadDialect<mlir::math::MathDialect>();
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("r", 1, 2)),
+                         valid(OperationCapability::create("cz", 2, 0)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
+  Value parameter;
+  auto original = build([&](QCOProgramBuilder& builder) {
+    parameter = builder.floatConstant(0.37);
+    auto first = builder.h(builder.staticQubit(0));
+    auto second = builder.h(builder.staticQubit(1));
+    for (size_t i = 0; i < 16; ++i) {
+      first = builder.rz(
+          i % 2 == 0 ? builder.floatConstant(std::numbers::pi / 4.) : parameter,
+          first);
+      auto [a, b] = builder.cz(first, second);
+      first = a;
+      second = b;
+    }
+    builder.sink(first);
+    builder.sink(second);
+    return llvm::SmallVector<Value>{};
+  });
+  auto function = mainFunction(*original);
+  ASSERT_TRUE(mlir::succeeded(function.insertArgument(
+      0, mlir::Float64Type::get(context.get()), {}, function.getLoc())));
+  parameter.replaceAllUsesWith(function.getArgument(0));
+  auto propagated = OwningOpRef<ModuleOp>(original->clone());
+  mlir::IRRewriter rewriter(context.get());
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::decomposition::propagateZFrames(
+      rewriter, *propagated, target)));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*propagated)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*propagated)));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *propagated, target, mlir::qco::createVerifyTargetConformance())));
+  llvm::DenseMap<Value, size_t> depths;
+  size_t maxDepth = 0;
+  propagated->walk([&](mlir::Operation* op) {
+    if (op->getNumResults() != 1 || !op->getResult(0).getType().isF64()) {
+      return;
+    }
+    size_t depth = 0;
+    for (auto operand : op->getOperands()) {
+      depth = std::max(depth, depths.lookup(operand));
+    }
+    depth += mlir::isa<mlir::arith::AddFOp>(op) ? 1 : 0;
+    depths[op->getResult(0)] = depth;
+    maxDepth = std::max(maxDepth, depth);
+  });
+  EXPECT_LE(maxDepth, 6U);
+  // The constants sum to 2*pi and contribute phase at theta=0.
+  for (const double angle : {0., 0.371, -std::numbers::pi / 4., 1e300}) {
+    SCOPED_TRACE(angle);
+    auto expected = OwningOpRef<ModuleOp>(original->clone());
+    auto actual = OwningOpRef<ModuleOp>(propagated->clone());
+    for (auto moduleOp : {*expected, *actual}) {
+      auto main = mainFunction(moduleOp);
+      mlir::OpBuilder builder(context.get());
+      builder.setInsertionPointToStart(&main.getBody().front());
+      auto constant = mlir::arith::ConstantOp::create(
+          builder, main.getLoc(), builder.getF64FloatAttr(angle));
+      main.getArgument(0).replaceAllUsesWith(constant);
+      ASSERT_TRUE(
+          mlir::succeeded(runPass(moduleOp, mlir::createCanonicalizerPass())));
+    }
+    expectEquivalent(expected, actual);
+  }
+}
+
 TEST_F(TargetSynthesisTest, ParameterizedEntanglersUseCartanAngles) {
   using mlir::qco::Matrix4x4;
   using mlir::qco::decomposition::TwoQubitWeylDecomposition;
