@@ -1615,7 +1615,7 @@ class CompiledProgram:
         """Logical bit width, or None for non-bit outputs."""
 
     def _validate_environment(self, environment: TargetEnvironment) -> None:
-        """Check destination compatibility before submission."""
+        """Preflight every program before submitting any format group in a batch."""
 
     @property
     def result_layout(self) -> ResultLayout | None:
@@ -1990,6 +1990,25 @@ def serialize_program(
         program: A native Qiskit circuit or QC program with static target sites.
         target: The destination device, registered device ID, or TargetEnvironment.
     """
+
+def _submission_environment(
+    device: mqt.core.qdmi.Device, program_format: mqt.core.qdmi.ProgramFormat
+) -> TargetEnvironment:
+    """Snapshot a submission contract without calibration for whole-batch preflight."""
+
+def _try_submit_programs(
+    device: mqt.core.qdmi.Device,
+    programs: Sequence[CompiledProgram],
+    num_shots: int,
+    *,
+    custom1: str | bool | float | bytes | None = None,
+    custom2: str | bool | float | bytes | None = None,
+    custom3: str | bool | float | bytes | None = None,
+    custom4: str | bool | float | bytes | None = None,
+    custom5: str | bool | float | bytes | None = None,
+    destination: TargetEnvironment | None = None,
+) -> mqt.core.qdmi.Job | None:
+    """Submit compatible compiled programs, returning None only when a provider declines batching."""
 
 def submit_program(
     program: str

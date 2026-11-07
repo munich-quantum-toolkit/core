@@ -929,8 +929,9 @@ targetEnvironmentFromDevice(const qdmi::Device& device,
 
 Expected<TargetEnvironment>
 inspectTargetEnvironment(const qdmi::Device& device,
-                         std::optional<QDMI_Program_Format> format) {
-  return snapshotTargetEnvironment(device, format, true);
+                         std::optional<QDMI_Program_Format> format,
+                         bool includeCalibration) {
+  return snapshotTargetEnvironment(device, format, includeCalibration);
 }
 
 Error validateTargetCompatibility(const TargetEnvironment& compiled,

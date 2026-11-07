@@ -629,8 +629,8 @@ def test_generic_compiled_header(recording_backend: RecordingBackend, width: int
     assert result.results[0].header["creg_sizes"] == ([["c", width]] if width else [])
 
 
-def test_compiled_alternative_format_runs_on_ddsim() -> None:
-    """Artifacts use any supported transport, regardless of the backend default."""
+def test_compiled_alternative_format_runs_on_ddsim(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Foreign artifacts use supported transports without calibrated snapshots."""
     backend = QDMIBackend.from_device_id("mqt.ddsim.default")
     circuit = QuantumCircuit(1, 1)
     circuit.x(0)
@@ -642,6 +642,9 @@ def test_compiled_alternative_format_runs_on_ddsim() -> None:
     default = backend.compile(circuit, options=CompilationOptions(seed=42))
     assert isinstance(default, CompiledProgram)
     assert default.program_format != artifact.program_format
+    monkeypatch.setattr(
+        TargetEnvironment, "from_device", MagicMock(side_effect=AssertionError("submission requested calibration"))
+    )
     assert backend.run(artifact, shots=4).result().get_counts() == {"1": 4}
 
 
@@ -658,16 +661,8 @@ def test_compiled_unsupported_format_preflight(
         circuit,
         target=TargetEnvironment.from_device(backend.device, program_format=ProgramFormat.QASM2),
     )
-    original = TargetEnvironment.from_device
-
-    def snapshot(device: Device, *, program_format: ProgramFormat | None = None) -> TargetEnvironment:
-        if program_format == ProgramFormat.QASM2:
-            msg = "Device does not support QASM2"
-            raise ValueError(msg)
-        return original(device, program_format=program_format)
-
-    monkeypatch.setattr(TargetEnvironment, "from_device", snapshot)
-    with pytest.raises(ValueError, match="does not support QASM2"):
+    monkeypatch.setattr(backend.device, "supported_program_formats", lambda: [ProgramFormat.QASM3])
+    with pytest.raises(ValueError, match="does not support"):
         backend.run([valid, alternative], shots=4)
     assert not jobs
 

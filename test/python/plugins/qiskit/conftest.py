@@ -10,10 +10,21 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Unpack, cast
+
 import pytest
 
 from mqt.core.mlir import CompilerTarget, PayloadSpecification, TargetEnvironment
-from mqt.core.qdmi import Device, ProgramFormat
+from mqt.core.mlir import _submission_environment as native_submission_environment  # ruff:ignore[import-private-name] Native-boundary device doubles.
+from mqt.core.mlir import _try_submit_programs as native_submit  # ruff:ignore[import-private-name] Native-boundary device doubles.
+from mqt.core.plugins.qiskit import job as job_module
+from mqt.core.qdmi import Device, Job, ProgramFormat
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from mqt.core.mlir import CompiledProgram
+    from mqt.core.typing import QDMIJobParameters
 
 
 @pytest.fixture
@@ -62,6 +73,36 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
         if chosen is None:
             msg = "Device reports no supported program formats"
             raise ValueError(msg)
+        if chosen not in formats:
+            msg = "Device does not support the requested program format"
+            raise ValueError(msg)
         return TargetEnvironment(snapshot(device), PayloadSpecification.from_program_format(chosen))
 
     monkeypatch.setattr(TargetEnvironment, "from_device", environment)
+
+    def submission_environment(device: Device, program_format: ProgramFormat) -> TargetEnvironment:
+        if isinstance(device, Device):
+            return native_submission_environment(device, program_format)
+        return environment(device, program_format=program_format)
+
+    def submit_programs(
+        device: Device,
+        programs: Sequence[CompiledProgram],
+        num_shots: int,
+        *,
+        destination: TargetEnvironment | None = None,
+        **parameters: Unpack[QDMIJobParameters],
+    ) -> Job | None:
+        if isinstance(device, Device):
+            return native_submit(device, programs, num_shots, destination=destination, **parameters)
+        if len(programs) == 1:
+            return device.submit_job(programs[0].payload, programs[0].program_format, num_shots, **parameters)
+        return device.try_submit_job(
+            cast("Sequence[str] | Sequence[bytes]", [program.payload for program in programs]),
+            programs[0].program_format,
+            num_shots,
+            **parameters,
+        )
+
+    monkeypatch.setattr(job_module, "_submission_environment", submission_environment)
+    monkeypatch.setattr(job_module, "_try_submit_programs", submit_programs)
