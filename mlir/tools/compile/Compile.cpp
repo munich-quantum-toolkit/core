@@ -20,13 +20,9 @@
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
-#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Support/Passes.h"
-#include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
-#include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
-#include "mqt/Target/QIR/Export.h"
 #include "qdmi/QDMI.hpp"
 
 #include "NativeCommands.h"
@@ -50,8 +46,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/ADT/Twine.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -65,7 +59,9 @@
 #include <cstdlib>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <variant>
 
 using namespace mlir;
 
@@ -244,45 +240,50 @@ static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
   return success();
 }
 
-/// Write MLIR or encoded QIR to an output file.
-static LogicalResult
-writeOutput(OwningOpRef<ModuleOp> mod, StringRef filename,
-            std::optional<PayloadEncoding> qirEncoding = std::nullopt) {
-  std::string qirOutput;
-  if (qirEncoding) {
-    llvm::raw_string_ostream stream(qirOutput);
-    const auto result =
-        *qirEncoding == PayloadEncoding::Text
-            ? mlir::qir::translateQIRToLLVMIR(std::move(mod), stream)
-            : mlir::qir::translateQIRToBitcode(std::move(mod), stream);
-    if (failed(result)) {
-      return failure();
-    }
-  }
-
+/// Write MLIR assembly to stdout or bytecode to a file.
+static LogicalResult writeOutput(ModuleOp mod, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
     llvm::errs() << errorMessage << "\n";
     return failure();
   }
-
-  if (qirEncoding) {
-    output->os() << qirOutput;
-  } else if (filename == "-") {
-    // QIR export consumes mod only when qirEncoding is set.
-    // NOLINTNEXTLINE(bugprone-use-after-move)
-    mod->print(output->os());
-  } else if (failed(writeBytecodeToFile(*mod, output->os()))) {
+  if (filename == "-") {
+    mod.print(output->os());
+  } else if (failed(writeBytecodeToFile(mod, output->os()))) {
     return failure();
   }
-
   output->os().flush();
   if (output->os().has_error()) {
     llvm::errs() << "I/O error while writing output file: " << filename << "\n";
     return failure();
   }
+  output->keep();
+  return success();
+}
 
+/// Write a completed payload without truncating the destination on export
+/// failure.
+static LogicalResult writePayload(StringRef payload, StringRef filename,
+                                  bool binary = false) {
+  if (binary && filename == "-") {
+    if (auto error = llvm::sys::ChangeStdoutToBinary()) {
+      llvm::errs() << error.message() << '\n';
+      return failure();
+    }
+  }
+  std::string errorMessage;
+  auto output = openOutputFile(filename, &errorMessage);
+  if (!output) {
+    llvm::errs() << errorMessage << '\n';
+    return failure();
+  }
+  output->os() << payload;
+  output->os().flush();
+  if (output->os().has_error()) {
+    llvm::errs() << "I/O error while writing output file: " << filename << '\n';
+    return failure();
+  }
   output->keep();
   return success();
 }
@@ -692,9 +693,6 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
       [&](const function_ref<LogicalResult(OpPassManager&)> populate,
           bool preservesLayout = false) {
         PassManager pm(context.get());
-        if (failed(applyPassManagerCLOptions(pm))) {
-          return failure();
-        }
         if (failed(populate(pm))) {
           return failure();
         }
@@ -717,14 +715,13 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
                failed(qco::verifyLinearity(*program.mod))) {
       return 1;
     }
-    if (failed(applyPassManagerCLOptions(pm)) ||
-        failed(runWithCompilationOptions(pm, *program.mod, options))) {
+    if (failed(runWithCompilationOptions(pm, *program.mod, options))) {
       return 1;
     }
     if (!runReproducer && failed(qco::verifyLinearity(*program.mod))) {
       return 1;
     }
-    return failed(writeOutput(std::move(program.mod), outputFilename)) ? 1 : 0;
+    return failed(writeOutput(*program.mod, outputFilename)) ? 1 : 0;
   }
 
   if (*parsedOutputFormat == ProgramFormat::QCImport &&
@@ -748,205 +745,107 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
     return 1;
   }
 
-  if (*parsedOutputFormat != ProgramFormat::QCImport &&
-      program.dialect == InputDialect::QC &&
-      failed(runPasses(
-          [](OpPassManager& pm) {
-            pm.addPass(createQCToQCO());
-            return success();
-          },
-          true))) {
-    return 1;
-  }
-  if (*parsedOutputFormat != ProgramFormat::QCImport &&
-      failed(qco::verifyLinearity(*program.mod))) {
-    return 1;
+  if (passPipeline.getNumOccurrences() != 0) {
+    PassManager validation(context.get());
+    if (failed(parseCustomPipeline(validation))) {
+      return 1;
+    }
   }
 
-  const bool requiresPostQcoPasses =
+  if (enableDecomposeMultiControlled &&
       *parsedOutputFormat != ProgramFormat::QCImport &&
-      *parsedOutputFormat != ProgramFormat::QCO;
-  if (targetEnvironment) {
-    if (failed(runPasses(
-            [&](OpPassManager& pm) {
-              populateTargetCompilationPipeline(pm, *targetEnvironment,
-                                                options.mapping);
-              return success();
-            },
-            true)) ||
-        failed(qco::verifyLinearity(*program.mod))) {
+      *parsedOutputFormat != ProgramFormat::QCO &&
+      passPipeline.getNumOccurrences() == 0) {
+    if (failed(runPasses([&](OpPassManager& pm) {
+          if (program.dialect == InputDialect::QC) {
+            pm.addPass(createQCToQCO());
+          }
+          // Keep potential ancilla qubits until decomposition.
+          populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
+          populateDecomposeMultiControlledPipeline(
+              pm, decomposeMultiControlledMinQubits.getValue());
+          return success();
+        }))) {
       return 1;
     }
-  } else if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
-               if (*parsedOutputFormat == ProgramFormat::QIRBase ||
-                   *parsedOutputFormat == ProgramFormat::QIRAdaptive) {
-                 pm.addPass(createInlinerPass());
-               }
-               // Keep potential ancilla qubits until decomposition.
-               populateQCOCleanupPipeline(
-                   pm, /*removeUnusedValues=*/!enableDecomposeMultiControlled);
-               if (passPipeline.getNumOccurrences() != 0) {
-                 if (failed(parseCustomPipeline(pm))) {
-                   return failure();
-                 }
-               } else {
-                 if (enableDecomposeMultiControlled) {
-                   populateDecomposeMultiControlledPipeline(
-                       pm, decomposeMultiControlledMinQubits.getValue());
-                 }
-                 populateDefaultQCOOptimizationPipeline(pm);
-               }
-               populateQCOCleanupPipeline(pm);
-               return success();
-             }))) {
+    program.dialect = InputDialect::QCO;
+  }
+  auto input = [&]() -> FailureOr<CompilerInput> {
+    if (program.dialect == InputDialect::QC) {
+      auto qc = QCProgram::fromModule(context, std::move(program.mod));
+      if (failed(qc)) {
+        return failure();
+      }
+      return CompilerInput(std::move(*qc));
+    }
+    auto qco = QCOProgram::fromModule(context, std::move(program.mod));
+    if (failed(qco)) {
+      return failure();
+    }
+    return CompilerInput(std::move(*qco));
+  }();
+  if (failed(input)) {
+    return 1;
+  }
+  auto compiled =
+      targetEnvironment
+          ? runDefaultPipeline(std::move(*input), *parsedOutputFormat,
+                               *targetEnvironment, options)
+          : runDefaultPipeline(std::move(*input), *parsedOutputFormat,
+                               passPipeline.getNumOccurrences() != 0
+                                   ? std::string_view(passPipeline.getValue())
+                                   : "mqt-qco-default",
+                               options);
+  if (!compiled) {
+    llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
     return 1;
   }
 
-  if (*parsedOutputFormat == ProgramFormat::Jeff &&
-      failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(mlir::mqt::createUnrollModifiers());
-        pm.addPass(createQCOToJeff());
-        populateJeffCleanupPipeline(pm);
-        return success();
-      }))) {
-    return 1;
-  }
-
-  if ((*parsedOutputFormat == ProgramFormat::QC ||
-       *parsedOutputFormat == ProgramFormat::OpenQASM2 ||
-       *parsedOutputFormat == ProgramFormat::OpenQASM3 ||
-       *parsedOutputFormat == ProgramFormat::IQMJSON ||
-       *parsedOutputFormat == ProgramFormat::QIRBase ||
-       *parsedOutputFormat == ProgramFormat::QIRAdaptive) &&
-      failed(runPasses(
-          [emitQPY](OpPassManager& pm) {
-            pm.addPass(createQCOToQC());
-            if (!emitQPY) {
-              populateQCCleanupPipeline(pm);
-            }
-            return success();
-          },
-          /*preservesLayout=*/emitQPY))) {
-    return 1;
-  }
-
-  if ((*parsedOutputFormat == ProgramFormat::QIRBase ||
-       *parsedOutputFormat == ProgramFormat::QIRAdaptive ||
-       *parsedOutputFormat == ProgramFormat::IQMJSON) &&
-      failed(runPasses([&](OpPassManager& pm) {
-        const bool adaptive = *parsedOutputFormat == ProgramFormat::QIRAdaptive;
-        const auto payload =
-            llvm::cantFail(PayloadSpecification::forProgramFormat(
-                adaptive ? ProgramFormat::QIRAdaptive
-                         : ProgramFormat::QIRBase));
-        populateQIRPreparationPipeline(pm, payload.materialize(*context));
-        pm.addPass(adaptive ? createQCToQIRAdaptive() : createQCToQIRBase());
-        populateQIRCleanupPipeline(pm, adaptive);
-        return success();
-      }))) {
-    return 1;
-  }
-
-  if (*parsedOutputFormat == ProgramFormat::OpenQASM2 &&
-      failed(runPasses([&](OpPassManager& pm) {
-        const auto payload = llvm::cantFail(
-            PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM2));
-        populateOpenQASM2PreparationPipeline(pm, payload.materialize(*context));
-        return success();
-      }))) {
-    return 1;
-  }
-
-  // Serialize before opening the destination so exporter failures preserve it.
   if (emitQPY) {
-    auto qc = QCProgram::fromModule(context, std::move(program.mod));
-    if (failed(qc)) {
-      return 1;
-    }
-    auto payload = qpyWriter(std::move(*qc),
+    auto payload = qpyWriter(std::move(std::get<QCProgram>(*compiled)),
                              targetEnvironment ? &*targetEnvironment : nullptr);
     if (!payload) {
       llvm::errs() << "QPY export failed: "
                    << llvm::toString(payload.takeError()) << '\n';
       return 1;
     }
-    if (outputFilename == "-") {
-      if (auto error = llvm::sys::ChangeStdoutToBinary()) {
-        llvm::errs() << error.message() << '\n';
-        return 1;
-      }
-    }
-    std::string errorMessage;
-    auto output = openOutputFile(outputFilename, &errorMessage);
-    if (!output) {
-      llvm::errs() << errorMessage << '\n';
-      return 1;
-    }
-    output->os() << *payload;
-    output->os().flush();
-    if (output->os().has_error()) {
-      llvm::errs() << "I/O error while writing QPY output\n";
-      return 1;
-    }
-    output->keep();
-  } else if (*parsedOutputFormat == ProgramFormat::Jeff) {
-    if (failed(writeJeffOutput(*program.mod, outputFilename))) {
-      return 1;
-    }
-  } else if (*parsedOutputFormat == ProgramFormat::IQMJSON) {
-    llvm::LLVMContext llvmContext;
-    auto llvmModule = mlir::qir::translateQIRToLLVM(*program.mod, llvmContext);
-    if (!llvmModule) {
-      return 1;
-    }
-    auto source =
-        mlir::qir::exportIQMJSON(*llvmModule, targetEnvironment->target());
-    if (!source) {
-      llvm::errs() << llvm::toString(source.takeError()) << '\n';
-      return 1;
-    }
-    std::string errorMessage;
-    auto output = openOutputFile(outputFilename, &errorMessage);
-    if (!output) {
-      llvm::errs() << "Failed to open output file '" << outputFilename
-                   << "': " << errorMessage << "\n";
-      return 1;
-    }
-    output->os() << *source;
-    output->keep();
-  } else if (*parsedOutputFormat == ProgramFormat::OpenQASM3 ||
-             *parsedOutputFormat == ProgramFormat::OpenQASM2) {
-    std::string errorMessage;
-    auto output = openOutputFile(outputFilename, &errorMessage);
-    if (!output) {
-      llvm::errs() << "Failed to open output file '" << outputFilename
-                   << "': " << errorMessage << "\n";
-      return 1;
-    }
-    auto source = *parsedOutputFormat == ProgramFormat::OpenQASM2
-                      ? qc::translateQCToOpenQASM2(std::move(program.mod))
-                      : qc::translateQCToOpenQASM3(std::move(program.mod));
-    if (failed(source)) {
-      return 1;
-    }
-    output->os() << *source;
-    output->keep();
-  } else if (*parsedOutputFormat == ProgramFormat::QIRBase ||
-             *parsedOutputFormat == ProgramFormat::QIRAdaptive) {
-    const auto qirEncoding =
+    return failed(writePayload(*payload, outputFilename, true)) ? 1 : 0;
+  }
+  if (auto* jeff = std::get_if<JeffProgram>(&*compiled)) {
+    return failed(writeJeffOutput(jeff->module(), outputFilename)) ? 1 : 0;
+  }
+  if (auto* qasm = std::get_if<OpenQASMProgram>(&*compiled)) {
+    return failed(writePayload(qasm->source(), outputFilename)) ? 1 : 0;
+  }
+  if (auto* iqm = std::get_if<IQMJSONProgram>(&*compiled)) {
+    return failed(writePayload(iqm->source(), outputFilename)) ? 1 : 0;
+  }
+  if (auto* qir = std::get_if<QIRProgram>(&*compiled)) {
+    const auto encoding =
         targetEnvironment
             ? targetEnvironment->payloadSpecification().format().encoding
         : outputFilename == "-" ||
                 llvm::sys::path::extension(outputFilename) == ".ll"
             ? PayloadEncoding::Text
             : PayloadEncoding::Binary;
-    if (failed(
-            writeOutput(std::move(program.mod), outputFilename, qirEncoding))) {
-      return 1;
+    if (encoding == PayloadEncoding::Text) {
+      auto source = std::move(*qir).intoLLVMIR();
+      return failed(source) || failed(writePayload(*source, outputFilename))
+                 ? 1
+                 : 0;
     }
-  } else if (writeOutput(std::move(program.mod), outputFilename).failed()) {
-    return 1;
+    std::string bytes;
+    llvm::raw_string_ostream stream(bytes);
+    return failed(std::move(*qir).intoBitcode(stream)) ||
+                   failed(writePayload(bytes, outputFilename, true))
+               ? 1
+               : 0;
   }
-
-  return 0;
+  if (auto* qc = std::get_if<QCProgram>(&*compiled)) {
+    return failed(writeOutput(qc->module(), outputFilename)) ? 1 : 0;
+  }
+  return failed(writeOutput(std::get<QCOProgram>(*compiled).module(),
+                            outputFilename))
+             ? 1
+             : 0;
 }

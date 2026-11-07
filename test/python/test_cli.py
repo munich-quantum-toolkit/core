@@ -25,7 +25,15 @@ from qiskit import qpy
 from qiskit.quantum_info import Statevector
 
 from mqt.core import __version__ as mqt_core_version
-from mqt.core.mlir import CompilerTarget, QCProgram
+from mqt.core.mlir import (
+    CompilerTarget,
+    OpenQASMProgram,
+    OutputFormat,
+    QCOProgram,
+    QCProgram,
+    QIRProgram,
+    compile_program,
+)
 
 if TYPE_CHECKING:
     from pytest_console_scripts import ScriptRunner
@@ -132,6 +140,81 @@ def test_compiler_cli_serialized_target(script_runner: ScriptRunner, tmp_path: P
     assert ret.success
     assert ret.stdout.startswith("OPENQASM 3;")
     assert QCProgram.from_openqasm_str(ret.stdout).is_valid
+
+
+@pytest.mark.parametrize("source_name", ["bell.qasm", "layout.qc.mlir"])
+@pytest.mark.parametrize(
+    "output",
+    [
+        OutputFormat.QC_IMPORT,
+        OutputFormat.QCO,
+        OutputFormat.QCO_OPTIMIZED,
+        OutputFormat.QC,
+        OutputFormat.OPENQASM2,
+        OutputFormat.OPENQASM3,
+        OutputFormat.QIR_BASE,
+        OutputFormat.QIR_ADAPTIVE,
+    ],
+)
+def test_compiler_cli_matches_library(script_runner: ScriptRunner, source_name: str, output: OutputFormat) -> None:
+    """CLI checkpoints and exports use the library's pass sequence."""
+    source = Path(__file__).parents[2] / "mlir/unittests/Compiler/compile" / source_name
+    result = compile_program(source, output=output)
+    if isinstance(result, QIRProgram):
+        expected = result.to_llvm_ir()
+    elif isinstance(result, OpenQASMProgram):
+        expected = result.source
+    else:
+        assert isinstance(result, (QCProgram, QCOProgram))
+        expected = result.ir
+    ret = script_runner.run(["mqt-core", "compile", str(source), f"--emit={output.name.lower().replace('_', '-')}"])
+    assert ret.success
+    assert ret.stdout.strip() == expected.strip()
+
+
+def test_compiler_cli_custom_qir_pipeline(script_runner: ScriptRunner, tmp_path: Path) -> None:
+    """Custom QCO pipelines still lower inverse modifiers before QIR export."""
+    source = tmp_path / "inverse.qasm"
+    source.write_text('OPENQASM 3; include "stdgates.inc"; qubit[1] q; inv @ s q[0];')
+    pipeline = "builtin.module(canonicalize)"
+    expected = compile_program(source, output=OutputFormat.QIR_ADAPTIVE, qco_pipeline=pipeline)
+    assert isinstance(expected, QIRProgram)
+    ret = script_runner.run([
+        "mqt-core",
+        "compile",
+        str(source),
+        "--emit=qir-adaptive",
+        f"--pass-pipeline={pipeline}",
+    ])
+    assert ret.success
+    assert ret.stdout.strip() == expected.to_llvm_ir().strip()
+
+
+def test_compiler_cli_resonator_moves(script_runner: ScriptRunner, tmp_path: Path) -> None:
+    """The CLI expands resonator routing into native MOVEs before export."""
+    capability = CompilerTarget.OperationCapability
+    target = CompilerTarget(
+        [CompilerTarget.Site(0, "CR"), CompilerTarget.Site(1, "QB1"), CompilerTarget.Site(2, "QB2")],
+        connectivity=CompilerTarget.Connectivity([(1, 0), (2, 0), (0, 1), (0, 2)]),
+        native_operations=CompilerTarget.NativeOperations([
+            capability("r", 1, 2, [[1], [2]]),
+            capability("measure", 1, 0, [[1], [2]]),
+            capability("cz", 2, 0, [[0, 1], [0, 2]]),
+            capability("move", 2, 0, [[1, 0], [2, 0]]),
+        ]),
+    )
+    source = tmp_path / "resonator.qasm"
+    source.write_text(
+        'OPENQASM 3; include "stdgates.inc"; qubit[2] q; h q[0]; h q[1]; cz q[0], q[1]; bit[2] c = measure q;'
+    )
+    payload = (
+        '#mqt.payload_spec<format = <id = "iqm-json", version = "", profile = "", encoding = text>, '
+        "capabilities = [], optional_capabilities_known = true>"
+    )
+    ret = script_runner.run(["mqt-core", "compile", str(source), f"--target={target}", f"--payload-spec={payload}"])
+    assert ret.success
+    instructions = json.loads(ret.stdout)["instructions"]
+    assert sum(instruction["name"] == "move" for instruction in instructions) == 2
 
 
 def test_benchmark_cli(script_runner: ScriptRunner) -> None:
