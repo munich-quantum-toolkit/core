@@ -1338,6 +1338,7 @@ def CtrlOp
     static void getLoweringPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
 
     /// Populate explicit quantum simplification patterns.
+    /// Adjacent control merging requires gate optimization patterns in the same driver.
     static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
 
         size_t getNumBodyUnitaries();

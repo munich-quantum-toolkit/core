@@ -89,6 +89,7 @@
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
@@ -376,6 +377,29 @@ constexpr llvm::StringLiteral QCO_INDEX_SWITCH_SOURCE = R"mlir(
     }
   }
 )mlir";
+
+TEST_P(CompilerPipelineTest, CanonicalizationConverges) {
+  auto moduleOp =
+      ::mqt::test::buildMLIRProgram(context.get(), GetParam().qcProgramBuilder);
+  ASSERT_TRUE(moduleOp);
+  auto qc = QCProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(succeeded(qc));
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(succeeded(qco));
+  PassManager manager(context.get());
+  populateQCOCleanupPipeline(manager);
+  for (auto& pass : manager.getPasses()) {
+    if (pass.getArgument() == "canonicalize") {
+      ASSERT_TRUE(succeeded(pass.initializeOptions(
+          "test-convergence=true", [](const llvm::Twine& message) {
+            ADD_FAILURE() << message.str();
+            return failure();
+          })));
+    }
+  }
+  ASSERT_TRUE(succeeded(manager.run(qco->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(qco->module())));
+}
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   SCOPED_TRACE(

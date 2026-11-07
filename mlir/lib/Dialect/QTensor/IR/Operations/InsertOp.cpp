@@ -30,19 +30,59 @@ using namespace mlir;
 using namespace mlir::qtensor;
 
 namespace {
-/// Remove both operations so forwarding the tensor preserves linearity.
+/// Cancel consecutive identity pairs without requeuing their producer per pair.
 struct FoldInsertAfterExtract final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(InsertOp insert,
-                                PatternRewriter& rewriter) const override {
+  static ExtractOp matchingExtract(InsertOp insert) {
     auto extract = insert.getScalar().getDefiningOp<ExtractOp>();
     if (!extract || insert.getDest() != extract.getOutTensor() ||
         !isEqualConstantIntOrValue(insert.getIndex(), extract.getIndex())) {
+      return {};
+    }
+    return extract;
+  }
+
+  LogicalResult matchAndRewrite(InsertOp insert,
+                                PatternRewriter& rewriter) const override {
+    auto extract = matchingExtract(insert);
+    if (!extract) {
       return failure();
     }
-    rewriter.replaceOp(insert, extract.getTensor());
-    rewriter.eraseOp(extract);
+    auto* block = insert->getBlock();
+    const bool checkOrder = mayBeGraphRegion(*insert->getParentRegion());
+    while (auto previous = extract.getTensor().getDefiningOp<InsertOp>()) {
+      auto previousExtract = matchingExtract(previous);
+      if (!previousExtract || previous->getBlock() != block ||
+          previousExtract->getBlock() != block ||
+          extract->getBlock() != block ||
+          (checkOrder && (!previous->isBeforeInBlock(insert) ||
+                          !previous->isBeforeInBlock(extract)))) {
+        break;
+      }
+      insert = previous;
+      extract = previousExtract;
+    }
+    do {
+      InsertOp next;
+      auto nextExtract = dyn_cast<ExtractOp>(*insert.getResult().user_begin());
+      if (nextExtract && nextExtract->getBlock() == block &&
+          (!checkOrder || insert->isBeforeInBlock(nextExtract))) {
+        auto candidate =
+            dyn_cast<InsertOp>(*nextExtract.getOutTensor().user_begin());
+        if (candidate && candidate->getBlock() == block &&
+            (!checkOrder || insert->isBeforeInBlock(candidate)) &&
+            matchingExtract(candidate) == nextExtract) {
+          next = candidate;
+        }
+      }
+      rewriter.replaceOp(insert, extract.getTensor());
+      rewriter.eraseOp(extract);
+      insert = next;
+      if (insert) {
+        extract = matchingExtract(insert);
+      }
+    } while (insert);
     return success();
   }
 };
@@ -99,6 +139,7 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
     DenseMap<int64_t, size_t> pending{
         {*getConstantIntValue(firstInsert.getIndex()), 0},
     };
+    bool changed = false;
     size_t numInsertsToMove = 0;
     auto input = firstInsert.getDest();
     tensor = firstInsert.getResult();
@@ -132,6 +173,7 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
           tensor = nextExtract.getTensor();
           previous = tensor.getDefiningOp();
           rewriter.replaceOp(nextExtract, {tensor, qubit});
+          changed = true;
           pending.erase(found);
           continue;
         }
@@ -149,7 +191,7 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
     inserts.resize(numInsertsToMove);
     llvm::erase_if(inserts, [](InsertOp op) { return !op; });
     if (extracts.empty() || inserts.empty()) {
-      return success();
+      return success(changed);
     }
     auto tail = extracts.back().getOutTensor();
     tensor = input;

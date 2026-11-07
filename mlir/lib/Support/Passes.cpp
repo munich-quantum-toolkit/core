@@ -254,10 +254,7 @@ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeUnusedValues) {
   pm.addPass(mqt::createPromoteClassicalMemory());
   pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}
-          .enableCSEBetweenIterations()
-          .setUseTopDownTraversal()
-          .setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+      CanonicalizerPassOptions{.cseBetweenIterations = true}));
   pm.addPass(mqt::createRemoveUnusedQubits());
   if (removeUnusedValues) {
     pm.addPass(qtensor::createShrinkQTensorToFitPass());
