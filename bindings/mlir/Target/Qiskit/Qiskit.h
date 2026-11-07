@@ -19,10 +19,14 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace mqt::bindings::qiskit {
 
 namespace nb = nanobind;
+
+/// Construct a native R alias gate, or None for an unrecognized name.
+[[nodiscard]] nb::object nativeRGate(std::string_view name, nb::handle phase);
 
 /// Import a Qiskit QuantumCircuit into an independently owned QC program.
 ///

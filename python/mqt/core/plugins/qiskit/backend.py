@@ -14,7 +14,6 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices.
 from __future__ import annotations
 
 __lazy_modules__ = {
-    "math",
     "mqt.core.mlir",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
@@ -26,7 +25,6 @@ __lazy_modules__ = {
     "qiskit.transpiler",
 }
 
-from math import pi
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, cast
 
@@ -59,6 +57,7 @@ from mqt.core.mlir import (
     CompilerTarget,
     ProgramCapability,
     TargetEnvironment,
+    _native_r_gate,
     compile_program,
     serialize_program,
 )
@@ -293,11 +292,8 @@ class QDMIBackend(BackendV2):
                 gate = Gate(
                     name, capability.arity.value, [Parameter(f"p{i}") for i in range(capability.num_parameters)]
                 )
-            if capability.name in {"gpi", "gpi2"} and capability.canonical_name == "r":
-                gate = Gate(capability.name, 1, [Parameter("phi")])
-                definition = QuantumCircuit(1, global_phase=pi / 2 if capability.name == "gpi" else 0)
-                definition.r(capability.fixed_parameters[0], gate.params[0], 0)
-                gate.definition = definition
+            if (native_gate := _native_r_gate(capability)) is not None:
+                gate = native_gate
             name = ("mcphase" if name == "mcp" else name) if isinstance(gate, type) else gate.name
             self._operation_names[capability.name] = name
             projections.append((capability, gate, name))
@@ -325,9 +321,10 @@ class QDMIBackend(BackendV2):
             gate = projected_gate
             fixed = capability.fixed_parameters
             bounds = capability.parameter_bounds
-            if name in {"gpi", "gpi2"} and capability.canonical_name == "r":
-                fixed = fixed[1:]
-                bounds = bounds[1:]
+            if not isinstance(gate, type):
+                offset = capability.num_parameters - len(gate.params)
+                fixed = fixed[offset:]
+                bounds = bounds[offset:]
             key = (
                 name,
                 None if isinstance(gate, type) else gate.num_qubits,

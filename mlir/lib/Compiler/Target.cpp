@@ -52,6 +52,21 @@
 #include <vector>
 
 namespace mlir {
+std::optional<NativeRAlias> nativeRAlias(StringRef name) {
+  return llvm::StringSwitch<std::optional<NativeRAlias>>(name)
+      .Case("gpi",
+            NativeRAlias{
+                .angle = std::numbers::pi,
+                .globalPhase = std::numbers::pi / 2.,
+            })
+      .Case("gpi2",
+            NativeRAlias{
+                .angle = std::numbers::pi / 2.,
+                .globalPhase = 0.,
+            })
+      .Default(std::nullopt);
+}
+
 namespace {
 
 using GateKind = CompilerTarget::GateKind;
@@ -510,16 +525,14 @@ CompilerTarget::OperationCapability::create(
   }
 
   // Native GPI pulses expose only the azimuth of a fixed-angle R rotation.
-  if (arity == Arity::fixed(1) && numParameters == 1 &&
-      (canonical == "gpi" || canonical == "gpi2")) {
-    const double angle =
-        canonical == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+  if (const auto alias = nativeRAlias(canonical);
+      alias && arity == Arity::fixed(1) && numParameters == 1) {
     canonical = "r";
     numParameters = 2;
     if (fixedParameters.empty()) {
       fixedParameters.emplace_back();
     }
-    fixedParameters.insert(fixedParameters.begin(), angle);
+    fixedParameters.insert(fixedParameters.begin(), alias->angle);
     if (!parameterBounds.empty()) {
       parameterBounds.insert(parameterBounds.begin(), std::nullopt);
     }

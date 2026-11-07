@@ -452,3 +452,29 @@ def test_native_pulse_requires_its_declared_native_name() -> None:
         serialize_program(
             circuit, target=TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QASM3))
         )
+
+
+@pytest.mark.parametrize("name", ["gpi", "gpi2"])
+@pytest.mark.parametrize("phase", [None, 0.25])
+def test_native_r_alias_round_trip(monkeypatch: pytest.MonkeyPatch, name: str, phase: float | None) -> None:
+    """Backend pulse definitions are recognized by strict native target import."""
+    capability = CompilerTarget.OperationCapability
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            capability(name, 1, 1, fixed_parameters=[phase]),
+            capability("gphase", 0, 1),
+            capability("measure", 1, 0),
+        ]),
+    )
+    backend = backend_for_snapshot(monkeypatch, target)
+    restored = TargetEnvironment.from_qiskit(backend.target, strict=True).target
+    for original, actual in zip(
+        sorted(target.operations, key=lambda op: op.name),
+        sorted(restored.operations, key=lambda op: op.name),
+        strict=True,
+    ):
+        assert actual.name == original.name
+        assert actual.canonical_name == original.canonical_name
+        assert actual.fixed_parameters == original.fixed_parameters
