@@ -53,6 +53,15 @@ normalizeRotationParameter(OpBuilder& builder, Location loc,
 [[nodiscard]] mqt::FloatExpression
 normalizeRotationParameter(mqt::FloatExpression angle);
 
+/// Add finite rotation angles, keeping constant arithmetic on host doubles.
+///
+/// Unknown SSA operands must dominate the insertion point. Exact zero angles
+/// are additive identities; no angle normalization is applied.
+[[nodiscard]] RotationParameter
+addRotationParameters(OpBuilder& builder, Location loc,
+                      const RotationParameter& lhs,
+                      const RotationParameter& rhs);
+
 struct RotationAngleTerm {
   Value value;
   double scale = 1.;
