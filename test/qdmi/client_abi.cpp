@@ -16,8 +16,8 @@
 // NOLINTNEXTLINE(readability-identifier-naming)
 uint32_t QDMI_driver_get_client_abi_version() {
 #ifdef TEST_INCOMPATIBLE_DRIVER
-  return QDMI_MAKE_VERSION(0, 0, 0);
+  return QDMI_MAKE_VERSION(1, 5, 0);
 #else
-  return QDMI_CLIENT_ABI_VERSION;
+  return QDMI_MAKE_VERSION(1, 4, 99);
 #endif
 }
