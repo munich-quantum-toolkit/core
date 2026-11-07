@@ -3194,13 +3194,16 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
   }
   const auto streams =
       dd::makeShotStreams(shots, streamCount, seed != 0 ? seed : rng());
-  std::vector<std::map<std::string, size_t>> parts(streamCount);
-  std::vector<std::vector<std::string>> samples(
+  SmallVector<std::map<std::string, size_t>, 8> parts(streamCount);
+  SmallVector<std::vector<std::string>, 8> samples(
       shotResults != nullptr ? streamCount : 0);
   const auto run = [&](size_t index) {
     auto& worker = work[index];
     for (size_t i = index; i < streamCount; i += workers) {
       std::mt19937_64 streamRng(streams[i].seed);
+      if (shotResults != nullptr) {
+        samples[i].reserve(streams[i].shots);
+      }
       auto part = sampleImpl(func, *worker.dd, streams[i].shots, streamRng,
                              worker.prepared,
                              shotResults != nullptr ? &samples[i] : nullptr,
@@ -3213,23 +3216,16 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
     }
     return success();
   };
-  if (workers == 1) {
-    if (failed(run(0))) {
-      return failure();
-    }
-  } else {
-    std::vector<std::future<LogicalResult>> tasks;
-    tasks.reserve(workers);
-    for (size_t i = 0; i < workers; ++i) {
-      tasks.push_back(std::async(std::launch::async, run, i));
-    }
-    bool allSucceeded = true;
-    for (auto& task : tasks) {
-      allSucceeded &= succeeded(task.get());
-    }
-    if (!allSucceeded) {
-      return failure();
-    }
+  SmallVector<std::future<LogicalResult>, 8> tasks;
+  for (size_t i = 1; i < workers; ++i) {
+    tasks.push_back(std::async(std::launch::async, run, i));
+  }
+  bool allSucceeded = succeeded(run(0));
+  for (auto& task : tasks) {
+    allSucceeded &= succeeded(task.get());
+  }
+  if (!allSucceeded) {
+    return failure();
   }
   std::map<std::string, size_t> counts;
   for (size_t i = 0; i < streamCount; ++i) {

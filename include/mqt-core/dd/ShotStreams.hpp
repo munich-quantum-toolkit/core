@@ -10,10 +10,11 @@
 
 #pragma once
 
+#include "llvm/ADT/SmallVector.h"
+
 #include <cstddef>
 #include <cstdint>
 #include <random>
-#include <vector>
 
 namespace dd {
 /// A logical sampling stream, independent of its executing thread.
@@ -25,10 +26,10 @@ struct ShotStream {
 /// Partition shots and seeds across a fixed number of logical streams.
 ///
 /// The caller supplies a positive stream count no greater than the shot count.
-[[nodiscard]] inline std::vector<ShotStream>
+[[nodiscard]] inline llvm::SmallVector<ShotStream, 8>
 makeShotStreams(size_t shots, size_t streams, uint64_t seed) {
   std::mt19937_64 rng(seed);
-  std::vector<ShotStream> result;
+  llvm::SmallVector<ShotStream, 8> result;
   result.reserve(streams);
   for (size_t i = 0; i < streams; ++i) {
     result.push_back(

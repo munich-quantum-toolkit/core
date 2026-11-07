@@ -25,6 +25,7 @@
 
 #include "qdmi/constants.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
@@ -42,7 +43,6 @@
 #include <string>
 #include <string_view>
 #include <utility>
-#include <vector>
 
 using llvm::raw_socket_stream;
 using llvm::raw_string_ostream;
@@ -227,13 +227,16 @@ struct Execution {
       const auto streams = ::dd::makeShotStreams(
           numShots_, streamCount,
           seed_ ? *seed_ : ::qir::Runtime::generateRandomSeed());
-      std::vector<std::string> parts(streamCount);
-      std::vector<std::string> records(streamCount);
-      std::vector<std::map<std::string, size_t>> counts(streamCount);
-      std::vector<int64_t> codes(streamCount);
+      struct StreamResult {
+        std::string shots;
+        std::string records;
+        std::map<std::string, size_t> counts;
+        int64_t code = 0;
+      };
+      llvm::SmallVector<StreamResult, 8> results(streamCount);
       const bool shareCode = jitSession.canShareCompiledCode();
       const auto run = [&](const size_t i) -> int64_t {
-        raw_string_ostream localOutput(records[i]);
+        raw_string_ostream localOutput(results[i].records);
         std::unique_ptr<::qir::JitSession> peer;
         std::unique_ptr<::qir::Runtime> workerRuntime;
         if (i != 0 && shareCode) {
@@ -272,9 +275,9 @@ struct Execution {
         const size_t count = streams[i].shots;
         const auto emit = [&](std::string_view shot) {
           if (capture) {
-            appendShot(parts[i], shot);
+            appendShot(results[i].shots, shot);
           } else {
-            ++counts[i][std::string(shot.rbegin(), shot.rend())];
+            ++results[i].counts[std::string(shot.rbegin(), shot.rend())];
           }
         };
         auto code = workerRuntime ? jitSession.sampleWithRuntime(*worker, count,
@@ -288,22 +291,23 @@ struct Execution {
         }
         return *code;
       };
-      std::vector<llvm::thread> tasks;
-      tasks.reserve(workers);
-      for (size_t i = 0; i < workers; ++i) {
-        tasks.emplace_back([&, i] {
-          for (size_t stream = i; stream < streamCount; stream += workers) {
-            codes[stream] = run(stream);
-          }
-        });
+      const auto runWorker = [&](size_t index) {
+        for (size_t stream = index; stream < streamCount; stream += workers) {
+          results[stream].code = run(stream);
+        }
+      };
+      llvm::SmallVector<llvm::thread, 8> tasks;
+      for (size_t i = 1; i < workers; ++i) {
+        tasks.emplace_back(runWorker, i);
       }
+      runWorker(0);
       for (auto& task : tasks) {
         task.join();
       }
       int64_t firstError = 0;
-      for (const auto code : codes) {
-        if (firstError == 0 && code != 0) {
-          firstError = code;
+      for (const auto& result : results) {
+        if (firstError == 0 && result.code != 0) {
+          firstError = result.code;
         }
       }
       if (firstError != 0) {
@@ -312,20 +316,20 @@ struct Execution {
         return false;
       }
       size_t packedSize = 0;
-      for (const auto& part : parts) {
-        packedSize += part.size();
+      for (const auto& result : results) {
+        packedSize += result.shots.size();
       }
       shots_.reserve(packedSize);
-      for (const auto& part : parts) {
-        shots_ += part;
+      for (const auto& result : results) {
+        shots_ += result.shots;
       }
       if (output) {
         for (size_t i = 1; i < streamCount; ++i) {
-          *output << records[i];
+          *output << results[i].records;
         }
       }
-      for (const auto& part : counts) {
-        for (const auto& [shot, count] : part) {
+      for (const auto& result : results) {
+        for (const auto& [shot, count] : result.counts) {
           counts_[shot] += count;
         }
       }
