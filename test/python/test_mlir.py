@@ -1321,8 +1321,7 @@ def test_runtime_pauli_rotations_compile_and_export(gate: str, native_entangler:
     assert all(f"math.{operation}" not in program.ir for operation in forbidden)
     assert program.to_jeff(copy=True).is_valid
     result = program.to_qiskit(target=target)
-    emitted_entangler = "xx_plus_yy" if native_entangler == "sqrt_iswap" else native_entangler
-    assert set(result.count_ops()) <= {"rx", "rz", emitted_entangler}
+    assert set(result.count_ops()) <= {"rx", "rz", native_entangler}
     assert result.parameters == source.parameters
     expected_count = (
         0
@@ -1331,7 +1330,7 @@ def test_runtime_pauli_rotations_compile_and_export(gate: str, native_entangler:
         if native_entangler in {"cz", "sqrt_iswap"} or gate in {"xx_plus_yy", "xx_minus_yy"}
         else 1
     )
-    assert result.count_ops().get(emitted_entangler, 0) == expected_count
+    assert result.count_ops().get(native_entangler, 0) == expected_count
     for value in [-1.2, 0.0, -np.pi / 2, np.pi / 2, np.pi, 2 * np.pi, 7.1]:
         actual = Operator.from_circuit(result.assign_parameters({theta: value})).data
         expected = Operator(source.assign_parameters({theta: value})).data

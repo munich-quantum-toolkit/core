@@ -5355,3 +5355,44 @@ def test_measurement_free_source_submission() -> None:
     job = submit_program(circuit, target="mqt.ddsim.default", num_shots=3)
     assert job.wait()
     assert job.get_shots() == ["0"] * 3
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QPY, ProgramFormat.QASM3])
+def test_serialization_rejects_unsupported_native_placement(program_format: ProgramFormat) -> None:
+    """Native exporters enforce the ordered sites of a controlled gate."""
+    target = CompilerTarget(
+        "directed",
+        [CompilerTarget.Site(0), CompilerTarget.Site(1)],
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("cx", 2, 0, site_tuples=[[0, 1]])
+        ]),
+    )
+    environment = TargetEnvironment(target, PayloadSpecification.from_program_format(program_format))
+    forward = QuantumCircuit(2)
+    forward.cx(0, 1)
+    assert serialize_program(forward, target=environment).payload
+    reverse = QuantumCircuit(2)
+    reverse.cx(1, 0)
+    with pytest.raises((ValueError, RuntimeError), match="target operation cannot be emitted as native"):
+        serialize_program(reverse, target=environment)
+
+
+@pytest.mark.parametrize("controls", [1, 2, 4])
+def test_qpy_serialization_accepts_variadic_native_controls(controls: int) -> None:
+    """Variadic X capabilities support the corresponding controlled gates."""
+    target = CompilerTarget(
+        controls + 1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("x", CompilerTarget.OperationArity.variadic(1), 0)
+        ]),
+    )
+    circuit = QuantumCircuit(controls + 1)
+    circuit.mcx(list(range(controls)), controls)
+    program = serialize_program(
+        circuit, target=TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY))
+    )
+    assert isinstance(program.payload, bytes)
+    restored = qpy.load(BytesIO(program.payload))[0]
+    np.testing.assert_allclose(Operator(restored).data, Operator(circuit).data)
