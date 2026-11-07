@@ -6,6 +6,16 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+## [3.12.0]
+
+### Shared-library ABI version
+
+The shared-library ABI version (`SOVERSION`) changes from `3.11` to `3.12`.
+Rebuild downstream C++ libraries and Python extensions against MQT Core 3.12.0.
+In `cibuildwheel` configurations that exclude bundled MQT Core libraries from
+wheel repair, replace each `libmqt-core-*.so.3.11` entry with the corresponding
+`libmqt-core-*.so.3.12` entry.
+
 ### QDMI 1.4.0
 
 Use Python `mqt.core.qdmi.Session(driver_path=...)` or C++
@@ -1136,7 +1146,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.11.0...v3.x
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.12.0...v3.x
+[3.12.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.11.0...v3.12.0
 [3.11.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.1...v3.11.0
 [3.10.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...v3.10.1
 [3.10.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...v3.10.0

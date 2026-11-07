@@ -10,6 +10,10 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+## [3.12.0] - 2026-11-07
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3120)._
+
 ### Added
 
 - ✨ Select compatible QDMI driver libraries through owning C++ and Python
@@ -928,7 +932,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.11.0...v3.x
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.12.0...v3.x
+[3.12.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.12.0
 [3.11.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.11.0
 [3.10.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.1
 [3.10.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.0
