@@ -698,10 +698,7 @@ private:
     }
 
     /// Initialize a child from its parent while reusing layout capacity.
-    void initializeChild(Node* nextParent, const SwapCandidate& candidate,
-                         ArrayRef<QubitIndexPair> window,
-                         const DistanceMatrix& distances,
-                         const Parameters& params) {
+    void initializeChild(Node* nextParent, const SwapCandidate& candidate) {
       layout = nextParent->layout;
       const auto [a, b] = candidate.indices;
       const auto pa = layout.getProgramIndex(a);
@@ -711,12 +708,16 @@ private:
       layout.swap(a, b);
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
-      f = params.alpha * static_cast<float>(cost) +
-          static_cast<float>(candidate.standalone) *
-              h(window, distances, params);
-
       swap = candidate.indices;
       parent = nextParent;
+    }
+
+    /// Evaluate the priority of an accepted search candidate.
+    void updatePriority(size_t standalone, ArrayRef<QubitIndexPair> window,
+                        const DistanceMatrix& distances,
+                        const Parameters& params) {
+      f = params.alpha * static_cast<float>(cost) +
+          static_cast<float>(standalone) * h(window, distances, params);
     }
 
     /// Return whether the leading interaction is executable.
@@ -779,6 +780,12 @@ private:
   /// A deduplicated priority queue for A* search nodes.
   class SearchFrontier {
   public:
+    /// Check without retaining the candidate or its address.
+    [[nodiscard]] bool improves(Node* node) const {
+      const auto* incumbent = best.lookup(node);
+      return incumbent == nullptr || node->cost < incumbent->cost;
+    }
+
     /// Push a node onto the frontier.
     void push(Node* node) {
       auto*& incumbent = best[node];
@@ -869,6 +876,12 @@ private:
     /// Retains allocated storage. Only the logical size (index) is reset to
     /// zero.
     void reset() { index = 0; }
+
+    /// Reclaim the newest candidate before publishing it to the frontier.
+    void discardLast() {
+      assert(index > 0);
+      --index;
+    }
 
   private:
     /// Storage for nodes.
@@ -1555,10 +1568,17 @@ private:
         auto state = RoutingState::fromLayout(wires, t.layout, env);
         for (size_t i = 0; i < niterations; ++i) {
           const auto start = state.layout;
+          const bool canRefineAgain = i + 1 < niterations;
+          const auto startWires = canRefineAgain ? state.wires : Wires{};
           const auto stats =
               route<WireDirection::Forward>(block, state, arena, env);
           retain(start, state, stats);
           route<WireDirection::Backward>(block, state, arena, env);
+          // Another deterministic round from the same state cannot improve it.
+          if (canRefineAgain && state.layout == start &&
+              state.wires == startWires) {
+            break;
+          }
         }
         t.layout = std::move(state.layout);
       }
@@ -1637,8 +1657,13 @@ private:
                 .prefix = prefix,
             };
 
-            child->initializeChild(curr, candidate, window, distances, params);
+            child->initializeChild(curr, candidate);
             seen.insert(indices);
+            if (!frontier.improves(child)) {
+              arena.discardLast();
+              return;
+            }
+            child->updatePriority(standalone, window, distances, params);
             frontier.push(child);
           }
         });

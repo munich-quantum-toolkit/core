@@ -4068,7 +4068,7 @@ TEST_F(MappingPassFixture, PreserveBasisStatesAfterNativeScoredCompilation) {
 TEST_F(MappingPassFixture, PreserveRegionsWithIdleWiresAcrossCostAvailability) {
   const auto topology = getSquareGridTarget(3);
   for (const auto& target : {topology, withNativeBasis(topology, "cz")}) {
-    for (size_t iterations : {size_t{0}, size_t{1}}) {
+    for (size_t iterations : {size_t{0}, size_t{1}, size_t{8}}) {
       for (size_t shape = 0; shape < 4; ++shape) {
         for (size_t budget : {size_t{0}, size_t{1024} * 1024}) {
           std::string serial;
