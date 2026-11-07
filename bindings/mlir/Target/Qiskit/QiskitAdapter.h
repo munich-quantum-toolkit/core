@@ -2409,37 +2409,49 @@ public:
                const std::vector<Parameter>& parameters) override {
     const auto* gate = versionGate(mapping);
     std::string nativeName;
-    if (target_ != nullptr && gate != nullptr) {
-      for (const auto& operation : target_->operations()) {
+    if (target_ != nullptr) {
+      std::vector<mlir::CompilerTarget::SiteId> sites(qubits.begin(),
+                                                      qubits.end());
+      std::vector<std::optional<double>> values;
+      values.reserve(parameters.size());
+      for (const auto& parameter : parameters) {
+        const auto* number = parameter.getNumber();
+        values.push_back(number != nullptr ? std::optional{number->value}
+                                           : std::nullopt);
+      }
+      const auto compatible = [&](const auto& operation) {
         const auto* candidate = versionGate(operation.canonicalName());
-        if (candidate == nullptr || candidate->translation != mapping ||
-            !operation.arity().accepts(qubits.size()) ||
-            operation.numParameters() != parameters.size() ||
-            !std::ranges::all_of(
-                std::views::iota(size_t{0}, operation.numParameters()),
-                [&](size_t index) {
-                  const auto* actual = parameters[index].getNumber();
-                  return operation.acceptsParameter(
-                      index, actual != nullptr ? std::optional{actual->value}
-                                               : std::nullopt);
-                })) {
-          continue;
-        }
+        return candidate != nullptr &&
+               (candidate->translation == mapping ||
+                (operation.arity().kind() ==
+                     mlir::CompilerTarget::OperationCapability::Arity::Kind::
+                         Variadic &&
+                 candidate->translation ==
+                     StandardGateMapping{mapping.gate, 0}));
+      };
+      const auto& descriptor =
+          mlir::qc::getStandardGateDescriptor(mapping.gate);
+      auto selected =
+          target_->findOperation(descriptor.operationSymbol, qubits.size(),
+                                 values, sites, mapping.controls, compatible);
+      if (selected.capability == nullptr && gate != nullptr) {
+        selected = target_->findOperation(gate->name, qubits.size(), values,
+                                          sites, 0, compatible);
+      }
+      if (selected.capability != nullptr && !selected.genericControls) {
+        const auto& operation = *selected.capability;
+        gate = versionGate(operation.canonicalName());
         if (const auto* named = versionGate(operation.name());
             named != nullptr && named->translation == mapping) {
-          candidate = named;
+          gate = named;
         }
-        if (operation.siteTuples().empty() ||
-            std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
-              return std::ranges::equal(
-                  tuple.sites(), qubits, {}, {}, [&](uint32_t qubit) {
-                    return static_cast<mlir::CompilerTarget::SiteId>(qubit);
-                  });
-            })) {
-          gate = candidate;
-          nativeName = operation.name().str();
-          break;
-        }
+        nativeName = operation.name().str();
+      } else if (selected.capability == nullptr &&
+                 target_->hasDeviceConstraints() &&
+                 target_->nativeOperationsKind() ==
+                     mlir::CompilerTarget::NativeOperations::Kind::Explicit) {
+        throw std::runtime_error(
+            "target operation cannot be emitted as native Qiskit");
       }
     }
     const auto extraControls = gate == nullptr ? mapping.controls : 0;
@@ -3417,15 +3429,6 @@ public:
   [[nodiscard]] std::unique_ptr<CircuitWriter>
   createCircuit(const uint32_t looseQubits, const uint32_t looseClbits,
                 const mlir::CompilerTarget* target) const override {
-    if (target != nullptr &&
-        std::ranges::none_of(
-            *gates_,
-            [](const auto& gate) { return !gate.second.nativeName.empty(); }) &&
-        std::ranges::none_of(target->operations(), [](const auto& operation) {
-          return operation.name() != operation.canonicalName();
-        })) {
-      target = nullptr;
-    }
     return std::make_unique<NativeCircuitWriter>(looseQubits, looseClbits,
                                                  parameters_, gates_, target);
   }
