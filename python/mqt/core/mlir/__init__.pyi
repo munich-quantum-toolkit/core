@@ -1991,10 +1991,10 @@ def serialize_program(
         target: The destination device, registered device ID, or TargetEnvironment.
     """
 
-def _submission_environment(
-    device: mqt.core.qdmi.Device, program_format: mqt.core.qdmi.ProgramFormat
-) -> TargetEnvironment:
-    """Snapshot a submission contract without calibration for whole-batch preflight."""
+def _prepare_qdmi_programs(
+    device: mqt.core.qdmi.Device, programs: tuple[CompiledProgram, ...], environment: TargetEnvironment
+) -> dict[mqt.core.qdmi.ProgramFormat, TargetEnvironment]:
+    """Validate every format group and retain its destination for submission."""
 
 def _try_submit_programs(
     device: mqt.core.qdmi.Device,

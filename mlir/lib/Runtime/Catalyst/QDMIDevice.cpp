@@ -46,6 +46,7 @@ struct Registry {
   llvm::DenseMap<uint64_t, std::weak_ptr<Context>> contexts;
 };
 
+// Keep shared-decoder bitstrings MSB-first; consumers select wire order.
 using Readout = llvm::SmallVector<std::pair<std::string, size_t>>;
 
 } // namespace
@@ -158,9 +159,6 @@ static Readout readout(const qdmi::Job& job, size_t width, size_t shots,
     }
   }
   auto result = std::move(*loaded);
-  for (auto& [bits, count] : result) {
-    std::ranges::reverse(bits);
-  }
   require(!result.empty(), "QDMI returned no samples for a nonempty job.");
   return result;
 }
@@ -169,7 +167,8 @@ static size_t basisIndex(const std::string& bits,
                          llvm::ArrayRef<size_t> wires) {
   size_t index = 0;
   for (const auto wire : wires) {
-    index = (index << 1U) | static_cast<size_t>(bits[wire] - '0');
+    index =
+        (index << 1U) | static_cast<size_t>(bits[bits.size() - wire - 1] - '0');
   }
   return index;
 }
@@ -243,13 +242,14 @@ decodeSamples(const qdmi::Job& job, size_t width, size_t shots,
               size_t programIndex,
               const std::optional<mlir::ResultLayout>& layout) {
   const auto result = readout(job, width, shots, programIndex, layout, true);
-  std::vector<int8_t> values;
-  values.reserve(product(shots, width));
+  std::vector<int8_t> values(product(shots, width));
+  auto output = values.begin();
   for (const auto& [bits, count] : result) {
     for (size_t i = 0; i < count; ++i) {
-      for (const char bit : bits) {
-        values.push_back(static_cast<int8_t>(bit - '0'));
-      }
+      output = std::ranges::transform(
+                   bits.rbegin(), bits.rend(), output,
+                   [](char bit) { return static_cast<int8_t>(bit - '0'); })
+                   .out;
     }
   }
   return values;
@@ -416,7 +416,7 @@ void QDMIDevice::PartialSample(DataView<double, 2>& samples,
   for (const auto& [bits, count] : result) {
     for (size_t shot = 0; shot < count; ++shot) {
       for (const auto wire : indices) {
-        *output++ = static_cast<double>(bits[wire] - '0');
+        *output++ = static_cast<double>(bits[bits.size() - wire - 1] - '0');
       }
     }
   }
@@ -473,7 +473,7 @@ double QDMIDevice::Expval(ObsIdType observable) {
   for (const auto& [bits, count] : result) {
     bool odd = false;
     for (const auto wire : parity) {
-      odd = odd != (bits[wire] == '1');
+      odd = odd != (bits[bits.size() - wire - 1] == '1');
     }
     if (odd) {
       negative += count;

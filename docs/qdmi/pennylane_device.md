@@ -54,6 +54,11 @@ import pennylane as qp
 device = qp.device("mqt.ddsim.default", wires=2, job_parameters={"custom1": 7})
 ```
 
+DDSIM scopes the session to the number of declared wires. An explicit
+`session_parameters={"custom1": "12"}` sets the session width instead. With
+`wires=None`, the default session exposes all 65,535 sites. See
+[session width](ddsim_device.md#session-width) for the parameter contract.
+
 ## Run a QNode
 
 Define a Bell-state circuit and set the number of shots when calling it:

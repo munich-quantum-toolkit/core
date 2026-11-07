@@ -24,7 +24,9 @@ device = open_device("mqt.ddsim.default", custom1="12")
 
 The same argument works with `QDMIBackend.from_device_id`. The compiler sees 12
 sites instead of the simulator's maximum. Compile for that device before
-submission. The default remains the full simulator capacity.
+submission. The default remains the full simulator capacity. The PennyLane
+`DDSIMDevice` selects the declared wire count when no session `custom1` is
+given.
 
 The width is fixed for the session and independent of other sessions. The C ABI
 expects a NUL-terminated string, with its terminator included in the buffer

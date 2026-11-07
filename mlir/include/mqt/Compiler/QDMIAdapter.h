@@ -193,6 +193,16 @@ compileProgram(CompilerInput program, const qdmi::Device& device,
     const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt);
 
+/// Validate one format group and retain its destination contract.
+///
+/// Without a retained destination, snapshot the device without calibration.
+/// No job is created. All programs must be non-null and use the same format.
+/// A retained destination must belong to the supplied device session.
+[[nodiscard]] llvm::Expected<TargetEnvironment>
+prepareProgramSubmission(const qdmi::Device& device,
+                         llvm::ArrayRef<const CompiledProgram*> programs,
+                         const TargetEnvironment* destination = nullptr);
+
 /// Validate and submit compiled programs together when the provider supports
 /// it.
 ///

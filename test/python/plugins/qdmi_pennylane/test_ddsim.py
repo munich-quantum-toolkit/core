@@ -32,8 +32,35 @@ if TYPE_CHECKING:
     from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, SampleMP, VarianceMP
 
     from mqt.core.qdmi import Job
+    from mqt.core.typing import QDMISessionParameters
 
 GRAPH_EDGES = ((0, 1), (0, 2), (1, 2), (2, 3))
+
+
+@pytest.mark.parametrize(
+    ("wires", "parameters", "width"),
+    [(2, {}, 2), (["a", "b", "c"], {}, 3), (None, {}, 65535), (2, {"custom1": "4"}, 4)],
+)
+def test_ddsim_session_width(wires: int | list[str] | None, parameters: QDMISessionParameters, width: int) -> None:
+    """Scope implicit sessions to declared wires and preserve explicit overrides."""
+    original = parameters.copy()
+    device = DDSIMDevice(wires=wires, session_parameters=parameters)
+    assert device.qdmi_device.qubits_num() == width
+    assert parameters == original
+
+
+def test_multi_controlled_gate_uses_no_spare_device_wires() -> None:
+    """Execute a gate occupying the entire session without extra target sites."""
+    device = DDSIMDevice(wires=5, job_parameters={"custom1": 42})
+    tape = qp.tape.QuantumScript(
+        [*(qp.Hadamard(wire) for wire in range(4)), qp.MultiControlledX(wires=range(5))],
+        [qp.sample(wires=range(5))],
+        shots=512,
+    )
+    samples = np.asarray(device.execute(tape))
+    assert device.qdmi_device.qubits_num() == 5
+    np.testing.assert_array_equal(samples[:, 4], np.prod(samples[:, :4], axis=1))
+    assert np.any(samples[:, 4])
 
 
 @pytest.mark.parametrize(("wires", "expected"), [(None, "01"), (["idle", "spare", "active"], "100")])
