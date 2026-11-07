@@ -385,6 +385,10 @@ class DDSIMDevice(QDMIDevice):
         max_retries: int = 0,
     ) -> None:
         """Open the built-in DDSIM device by its stable QDMI ID."""
+        if wires is not None:
+            width = wires if isinstance(wires, int) else len(wires)
+            if width > 0:
+                session_parameters = {"custom1": str(int(width)), **(session_parameters or {})}
         super().__init__(
             "mqt.ddsim.default",
             wires=wires,
