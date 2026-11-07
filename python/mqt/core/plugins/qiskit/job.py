@@ -154,7 +154,7 @@ class QDMIJob(JobV1):
             self._backend.device,
             programs,
             self._shots,
-            destination=self._destinations[indices[0]],
+            destination=self._destinations[programs[0].program_format],
             **self._job_parameters,
         )
 

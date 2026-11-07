@@ -1993,7 +1993,7 @@ def serialize_program(
 
 def _prepare_qdmi_programs(
     device: mqt.core.qdmi.Device, programs: tuple[CompiledProgram, ...], environment: TargetEnvironment
-) -> list[TargetEnvironment]:
+) -> dict[mqt.core.qdmi.ProgramFormat, TargetEnvironment]:
     """Validate every format group and retain its destination for submission."""
 
 def _try_submit_programs(

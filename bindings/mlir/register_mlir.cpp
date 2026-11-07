@@ -70,6 +70,8 @@
 #include "mlir/IR/MLIRContext.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
@@ -3069,41 +3071,37 @@ Args:
       [](const qdmi::Device& device, const nb::tuple& programs,
          const nb::handle retainedEnvironment) {
         struct Group {
-          std::vector<const mlir::CompiledProgram*> programs;
+          llvm::SmallVector<const mlir::CompiledProgram*> programs;
           bool retained = true;
-          std::optional<mlir::TargetEnvironment> destination;
         };
         const auto& environment =
             nb::cast<const mlir::TargetEnvironment&>(retainedEnvironment);
-        std::map<QDMI_Program_Format, Group> groups;
-        std::vector<QDMI_Program_Format> order;
+        llvm::SmallMapVector<QDMI_Program_Format, Group, 4> groups;
         for (const auto program : programs) {
-          const auto* compiled =
-              &nb::cast<const mlir::CompiledProgram&>(program);
-          const auto format = compiled->programFormat();
-          auto& group = groups[format];
-          group.programs.push_back(compiled);
+          const auto& compiled =
+              nb::cast<const mlir::CompiledProgram&>(program);
+          auto& group = groups[compiled.programFormat()];
+          group.programs.push_back(&compiled);
           group.retained &= nb::getattr(program, "_environment", nb::none())
                                 .is(retainedEnvironment);
-          order.push_back(format);
         }
-        std::vector<mlir::TargetEnvironment> destinations;
-        const nb::gil_scoped_release release;
-        for (auto& entry : groups) {
-          auto& group = entry.second;
-          group.destination = unwrap(mlir::prepareProgramSubmission(
-              device, group.programs, group.retained ? &environment : nullptr));
-        }
-        destinations.reserve(order.size());
-        for (const auto format : order) {
-          destinations.push_back(*groups.at(format).destination);
+        nb::dict destinations;
+        for (const auto& [format, group] : groups) {
+          auto destination = [&] {
+            const nb::gil_scoped_release release;
+            return unwrap(mlir::prepareProgramSubmission(
+                device, group.programs,
+                group.retained ? &environment : nullptr));
+          }();
+          destinations[nb::cast(format)] = nb::cast(std::move(destination));
         }
         return destinations;
       },
       "device"_a, "programs"_a, "environment"_a,
       nb::sig("def _prepare_qdmi_programs(device: mqt.core.qdmi.Device, "
               "programs: tuple[CompiledProgram, ...], environment: "
-              "TargetEnvironment) -> list[TargetEnvironment]"),
+              "TargetEnvironment) -> dict[mqt.core.qdmi.ProgramFormat, "
+              "TargetEnvironment]"),
       "Validate every format group and retain its destination for submission.");
 
   m.def(

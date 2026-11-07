@@ -82,7 +82,7 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def prepare(
         device: Device, programs: tuple[CompiledProgram, ...], retained: TargetEnvironment
-    ) -> list[TargetEnvironment]:
+    ) -> dict[ProgramFormat, TargetEnvironment]:
         if isinstance(device, Device):
             return native_prepare(device, programs, retained)
         destinations = {}
@@ -91,10 +91,10 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
                 destinations[program.program_format] = TargetEnvironment.from_device(
                     device, program_format=program.program_format
                 )
-        result = [destinations.get(program.program_format, retained) for program in programs]
-        for program, destination in zip(programs, result, strict=True):
+        for program in programs:
+            destination = destinations.setdefault(program.program_format, retained)
             program._validate_environment(destination)  # ruff:ignore[private-member-access] Exercise the native compatibility check for device doubles.
-        return result
+        return destinations
 
     def submit_programs(
         device: Device,
