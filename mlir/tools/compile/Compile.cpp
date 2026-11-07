@@ -685,20 +685,8 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
       llvm::errs() << "--pass-pipeline must be anchored on builtin.module.\n";
       return failure();
     }
-    // Append to the existing preparation stages using MLIR's pipeline parser.
     return parsePassPipeline(pipeline, pm);
   };
-
-  const auto runPasses =
-      [&](const function_ref<LogicalResult(OpPassManager&)> populate,
-          bool preservesLayout = false) {
-        PassManager pm(context.get());
-        if (failed(populate(pm))) {
-          return failure();
-        }
-        return runWithCompilationOptions(pm, *program.mod, options,
-                                         preservesLayout);
-      };
 
   if (isolated) {
     PassManager pm(context.get());
@@ -756,16 +744,15 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
       *parsedOutputFormat != ProgramFormat::QCImport &&
       *parsedOutputFormat != ProgramFormat::QCO &&
       passPipeline.getNumOccurrences() == 0) {
-    if (failed(runPasses([&](OpPassManager& pm) {
-          if (program.dialect == InputDialect::QC) {
-            pm.addPass(createQCToQCO());
-          }
-          // Keep potential ancilla qubits until decomposition.
-          populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
-          populateDecomposeMultiControlledPipeline(
-              pm, decomposeMultiControlledMinQubits.getValue());
-          return success();
-        }))) {
+    PassManager pm(context.get());
+    if (program.dialect == InputDialect::QC) {
+      pm.addPass(createQCToQCO());
+    }
+    // Keep potential ancilla qubits until decomposition.
+    populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
+    populateDecomposeMultiControlledPipeline(
+        pm, decomposeMultiControlledMinQubits.getValue());
+    if (failed(runWithCompilationOptions(pm, *program.mod, options))) {
       return 1;
     }
     program.dialect = InputDialect::QCO;
