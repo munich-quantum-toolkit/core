@@ -26,6 +26,7 @@
 #include "qdmi/constants.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
@@ -230,7 +231,7 @@ struct Execution {
       struct StreamResult {
         std::string shots;
         std::string records;
-        std::map<std::string, size_t> counts;
+        llvm::StringMap<size_t> counts;
         int64_t code = 0;
       };
       llvm::SmallVector<StreamResult, 8> results(streamCount);
@@ -277,7 +278,7 @@ struct Execution {
           if (capture) {
             appendShot(results[i].shots, shot);
           } else {
-            ++results[i].counts[std::string(shot.rbegin(), shot.rend())];
+            ++results[i].counts[shot];
           }
         };
         auto code = workerRuntime ? jitSession.sampleWithRuntime(*worker, count,
@@ -329,8 +330,10 @@ struct Execution {
         }
       }
       for (const auto& result : results) {
-        for (const auto& [shot, count] : result.counts) {
-          counts_[shot] += count;
+        for (const auto& outcome : result.counts) {
+          const auto shot = outcome.getKey();
+          counts_[std::string(shot.rbegin(), shot.rend())] +=
+              outcome.getValue();
         }
       }
     }

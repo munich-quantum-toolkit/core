@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-from mqt.core.mlir import CompilerTarget
-from mqt.core.qdmi import builtin_driver
+from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+from mqt.core.qdmi import ProgramFormat, builtin_driver
 
 
 def test_manifest_registration_and_offline_enumeration(tmp_path: Path) -> None:
@@ -166,3 +166,30 @@ print(json.dumps([job.get_counts(), job.get_shots()]))
         assert sum(counts.values()) == len(shots) == 1024
         results.append((counts, shots))
     assert results[0] == results[1] == results[2]
+
+
+def test_adaptive_qir_histogram_preserves_bit_order() -> None:
+    """Per-shot classical effects keep count-only sampling on the dynamic path."""
+    source = 'OPENQASM 3; include "stdgates.inc"; qubit[2] q; h q[0]; x q[1]; bit[2] c = measure q;'
+    program = compile_program(source, output=OutputFormat.QIR_ADAPTIVE).to_llvm_ir()
+    program += "\n@counter = internal global i64 0\n"
+    initialize = "  call void @__quantum__rt__initialize(ptr null)"
+    assert initialize in program
+    program = program.replace(
+        initialize,
+        initialize + "\n  %old = load volatile i64, ptr @counter\n"
+        "  %next = add i64 %old, 1\n  store volatile i64 %next, ptr @counter",
+        1,
+    )
+    device = builtin_driver.open_device("mqt.ddsim.default")
+    results = []
+    for capture in (False, True):
+        job = device.submit_job(
+            program, ProgramFormat.QIR_ADAPTIVE_STRING, 1024, custom1=17, custom2=capture, custom3=4
+        )
+        assert job.wait()
+        counts = job.get_counts()
+        assert set(counts) == {"10", "11"}
+        assert sum(counts.values()) == 1024
+        results.append(counts)
+    assert results[0] == results[1]
