@@ -145,8 +145,6 @@ void populateQIRPreparationPipeline(OpPassManager& pm,
     llvm::raw_string_ostream stream(options.payloadSpec);
     stream << payload;
     pm.addPass(qco::createUnrollLoopsForPayload(options));
-  } else {
-    pm.addPass(mqt::createPromoteClassicalMemory());
   }
   pm.addPass(createCanonicalizerPass());
 }

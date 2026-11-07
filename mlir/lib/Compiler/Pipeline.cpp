@@ -757,10 +757,6 @@ FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
     }
     return CompilerProgram(std::move(*source));
   }
-  if (failed(qc.cleanup())) {
-    return failure();
-  }
-
   const auto profile = output == ProgramFormat::QIRAdaptive
                            ? QIRProfile::Adaptive
                            : QIRProfile::Base;

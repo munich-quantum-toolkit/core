@@ -228,11 +228,13 @@ TEST(IQMJSONPipelineTest, DelaysIndependentReadoutUntilRoutedGatesFinish) {
   }
 }
 
-TEST(IQMJSONPipelineTest, NativeExportOmitsBarriers) {
+TEST(IQMJSONPipelineTest,
+     NativeExportPreparesClassicalControlAndOmitsBarriers) {
   auto qc = QCProgram::fromOpenQASMString(R"qasm(
     OPENQASM 3.0;
-    bit[2] result;
-    r(0.25, 0.5) $5;
+    output bit[2] result;
+    int scratch = 1;
+    if (scratch == 1) { r(0.25, 0.5) $5; }
     barrier $5, $17;
     r(0.75, 1.0) $17;
     result[0] = measure $5;
