@@ -102,3 +102,28 @@ def test_binary_batch_reaches_the_device_without_text_conversion() -> None:
     device = open_device("mqt.ddsim.default")
     with pytest.raises(RuntimeError, match="Setting program: Not supported"):
         device.submit_job([b"\x00\xff", b"\x80"], ProgramFormat.QIR_BASE_MODULE)
+
+
+@pytest.mark.parametrize("as_list", [False, True])
+def test_text_submission_preserves_one_terminating_null(*, as_list: bool) -> None:
+    """Text with an explicit terminator matches ordinary text submission."""
+    device = open_device("mqt.ddsim.default")
+    program = ZERO + "\0"
+    job = device.submit_job([program, program] if as_list else program, ProgramFormat.QASM3, 4)
+    assert job.wait()
+    assert job.program == ZERO
+    assert job.get_counts(job.num_programs - 1) == {"0": 4}
+
+
+def test_try_submit_job_only_falls_back_on_unsupported_programs() -> None:
+    """Unsupported admission returns None; malformed input still raises."""
+    device = open_device("mqt.ddsim.default")
+    assert device.try_submit_job([ZERO], ProgramFormat.CUSTOM1) is None
+    with pytest.raises(ValueError, match="embedded null"):
+        device.try_submit_job([ZERO, "bad\0text"], ProgramFormat.QASM3)
+    with pytest.raises(ValueError, match="at least one program"):
+        device.try_submit_job([], ProgramFormat.QASM3)
+    job = device.try_submit_job([ZERO, ONE], ProgramFormat.QASM3, 4)
+    assert job is not None
+    assert job.wait()
+    assert [job.get_counts(index) for index in range(2)] == [{"0": 4}, {"1": 4}]

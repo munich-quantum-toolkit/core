@@ -504,3 +504,10 @@ For complete API documentation, see:
 - {py:class}`~mqt.core.plugins.qiskit.QDMIBackend` — BackendV2 implementation
 - {py:class}`~mqt.core.plugins.qiskit.QDMIJob` — Job wrapper and result handling
 - {py:mod}`~mqt.core.plugins.qiskit.exceptions` — Exception types
+
+## Native program lists
+
+The backend groups compatible circuits with the same program format and shot
+count into native QDMI jobs. Each result retains its original circuit index.
+Devices that reject native lists use separate single-program submissions. Other
+submission errors propagate without starting duplicate jobs.

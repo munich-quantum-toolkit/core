@@ -13,14 +13,15 @@
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
-#include <nanobind/stl/complex.h>    // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/filesystem.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/map.h>        // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/optional.h>   // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/pair.h>       // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/variant.h>    // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/complex.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/map.h>         // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/optional.h>    // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/pair.h>        // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>      // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string_view.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/variant.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>      // NOLINT(misc-include-cleaner)
 #include <qdmi/client.h>
 
 #include <cstddef>
@@ -43,6 +44,31 @@ void registerSlurm(nb::module_& qdmiModule);
 }
 
 namespace {
+qdmi::SessionConfig makeDriverSessionConfig(
+    std::optional<std::filesystem::path> driverPath,
+    std::optional<std::string> token,
+    std::optional<std::filesystem::path> authFile,
+    std::optional<std::string> authUrl, std::optional<std::string> username,
+    std::optional<std::string> password, std::optional<std::string> projectId,
+    std::optional<std::string> custom1, std::optional<std::string> custom2,
+    std::optional<std::string> custom3, std::optional<std::string> custom4,
+    std::optional<std::string> custom5) {
+  return {
+      .token = std::move(token),
+      .authFile = std::move(authFile),
+      .authUrl = std::move(authUrl),
+      .username = std::move(username),
+      .password = std::move(password),
+      .projectId = std::move(projectId),
+      .custom1 = std::move(custom1),
+      .custom2 = std::move(custom2),
+      .custom3 = std::move(custom3),
+      .custom4 = std::move(custom4),
+      .custom5 = std::move(custom5),
+      .driverPath = std::move(driverPath),
+  };
+}
+
 using PythonProgram =
     std::variant<std::string, nb::bytes, std::vector<std::string>,
                  std::vector<nb::bytes>>;
@@ -155,6 +181,84 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
   auto driver = qdmiModule.def_submodule(
       "driver", "Register, discover, and open QDMI devices through MQT Core.");
   bindings::registerSlurm(qdmiModule);
+
+  nb::class_<qdmi::Session>(qdmiModule, "Session",
+                            "One initialized QDMI driver session.")
+      .def(
+          "__init__",
+          [](qdmi::Session* self,
+             std::optional<std::filesystem::path> driverPath,
+             std::optional<std::string> token,
+             std::optional<std::filesystem::path> authFile,
+             std::optional<std::string> authUrl,
+             std::optional<std::string> username,
+             std::optional<std::string> password,
+             std::optional<std::string> projectId,
+             std::optional<std::string> custom1,
+             std::optional<std::string> custom2,
+             std::optional<std::string> custom3,
+             std::optional<std::string> custom4,
+             std::optional<std::string> custom5) {
+            const nb::gil_scoped_release release;
+            new (self) qdmi::Session(makeDriverSessionConfig(
+                std::move(driverPath), std::move(token), std::move(authFile),
+                std::move(authUrl), std::move(username), std::move(password),
+                std::move(projectId), std::move(custom1), std::move(custom2),
+                std::move(custom3), std::move(custom4), std::move(custom5)));
+          },
+          nb::kw_only(), "driver_path"_a = std::nullopt,
+          "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
+          "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
+          "password"_a = std::nullopt, "project_id"_a = std::nullopt,
+          "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
+          "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
+          "custom5"_a = std::nullopt)
+      .def_prop_ro("devices", &qdmi::Session::getDevices,
+                   nb::call_guard<nb::gil_scoped_release>(),
+                   "The devices visible to this authenticated session.")
+      .def_prop_ro("device_ids", &qdmi::Session::getDeviceIds,
+                   nb::call_guard<nb::gil_scoped_release>(),
+                   "The stable IDs of devices visible to this session.")
+      .def("get_device", &qdmi::Session::getDevice, "device_id"_a,
+           nb::call_guard<nb::gil_scoped_release>(),
+           "Find a device by stable ID within this session.");
+
+  qdmiModule.def(
+      "open_device",
+      [](const std::string& deviceId,
+         std::optional<std::filesystem::path> driverPath,
+         std::optional<std::string> token,
+         std::optional<std::filesystem::path> authFile,
+         std::optional<std::string> authUrl,
+         std::optional<std::string> username,
+         std::optional<std::string> password,
+         std::optional<std::string> projectId,
+         std::optional<std::string> custom1, std::optional<std::string> custom2,
+         std::optional<std::string> custom3, std::optional<std::string> custom4,
+         std::optional<std::string> custom5) {
+        const nb::gil_scoped_release release;
+        return qdmi::Session(makeDriverSessionConfig(
+                                 std::move(driverPath), std::move(token),
+                                 std::move(authFile), std::move(authUrl),
+                                 std::move(username), std::move(password),
+                                 std::move(projectId), std::move(custom1),
+                                 std::move(custom2), std::move(custom3),
+                                 std::move(custom4), std::move(custom5)))
+            .getDevice(deviceId);
+      },
+      "device_id"_a, nb::kw_only(), "driver_path"_a = std::nullopt,
+      "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
+      "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
+      "password"_a = std::nullopt, "project_id"_a = std::nullopt,
+      "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
+      "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
+      "custom5"_a = std::nullopt,
+      "Open a client-visible device by stable ID in a fresh session.");
+
+  qdmiModule.def(
+      "device_ids", [] { return qdmi::Session{}.getDeviceIds(); },
+      nb::call_guard<nb::gil_scoped_release>(),
+      "Return the stable IDs visible to a fresh QDMI driver session.");
 
   // Job class
   auto job = nb::class_<qdmi::Job>(
@@ -475,6 +579,28 @@ when the custom slot is unsupported.)pb");
       "custom3"_a = nb::none(), "custom4"_a = nb::none(),
       "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
       "Submit one program or an ordered list with common parameters.");
+
+  device.def(
+      "try_submit_job",
+      [](const qdmi::Device& self, const PythonProgram& program,
+         const QDMI_Program_Format format, const std::optional<size_t> numShots,
+         const std::optional<qdmi::CustomJobParameter>& custom1,
+         const std::optional<qdmi::CustomJobParameter>& custom2,
+         const std::optional<qdmi::CustomJobParameter>& custom3,
+         const std::optional<qdmi::CustomJobParameter>& custom4,
+         const std::optional<qdmi::CustomJobParameter>& custom5) {
+        return withProgramPayload(program, [&](const auto& payloads) {
+          const nb::gil_scoped_release release;
+          return self.trySubmitJob(payloads, format, numShots, custom1, custom2,
+                                   custom3, custom4, custom5);
+        });
+      },
+      "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
+      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+      "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
+      "Submit programs, or return None if the device rejects them before "
+      "submission.");
 
   device.def(
       "retrieve_job_by_id",

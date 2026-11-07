@@ -12,10 +12,14 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Select compatible QDMI driver libraries through owning C++ and Python
+  sessions, with ABI checks and stable device discovery ([#2952])
+  ([**@burgholzer**], [**@denialhaag**], [**@ystade**])
 - ✨ Submit ordered QDMI program lists with indexed programs, status, and
-  results in C++ and Python. DDSIM executes batches serially and preserves
-  successful results when other programs fail or are cancelled ([#2952])
-  ([**@burgholzer**], [**@denialhaag**])
+  results in C++ and Python. Qiskit and PennyLane group compatible programs into
+  native jobs and fall back to single-program jobs when needed. DDSIM executes
+  batches serially and preserves successful results when other programs fail or
+  are cancelled ([#2952]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add normalized Frobenius comparisons for DD identity and measured-output
   diagonal blocks with conservative early rejection, and use complex distance
   for structural ancillary checks ([#2942]) ([**@burgholzer**])

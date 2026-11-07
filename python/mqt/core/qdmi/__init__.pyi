@@ -9,11 +9,63 @@
 """QDMI entities and access to MQT Core's QDMI driver."""
 
 import enum
+import os
 from collections.abc import Sequence
 from typing import overload
 
 from mqt.core.qdmi import driver as driver
 from mqt.core.qdmi import slurm as slurm
+
+class Session:
+    """One initialized QDMI driver session."""
+
+    def __init__(
+        self,
+        *,
+        driver_path: str | os.PathLike | None = None,
+        token: str | None = None,
+        auth_file: str | os.PathLike | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        project_id: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> None: ...
+    @property
+    def devices(self) -> list[Device]:
+        """The devices visible to this authenticated session."""
+
+    @property
+    def device_ids(self) -> list[str]:
+        """The stable IDs of devices visible to this session."""
+
+    def get_device(self, device_id: str) -> Device:
+        """Find a device by stable ID within this session."""
+
+def open_device(
+    device_id: str,
+    *,
+    driver_path: str | os.PathLike | None = None,
+    token: str | None = None,
+    auth_file: str | os.PathLike | None = None,
+    auth_url: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    project_id: str | None = None,
+    custom1: str | None = None,
+    custom2: str | None = None,
+    custom3: str | None = None,
+    custom4: str | None = None,
+    custom5: str | None = None,
+) -> Device:
+    """Open a client-visible device by stable ID in a fresh session."""
+
+def device_ids() -> list[str]:
+    """Return the stable IDs visible to a fresh QDMI driver session."""
 
 class Job:
     """A job represents a submitted quantum program execution."""
@@ -340,6 +392,20 @@ class Device:
         custom5: str | bool | float | None = None,
     ) -> Job:
         """Submit one program or an ordered list with common parameters."""
+
+    def try_submit_job(
+        self,
+        program: str | bytes | Sequence[str] | Sequence[bytes],
+        program_format: ProgramFormat,
+        num_shots: int | None = None,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job | None:
+        """Submit programs, or return None if the device rejects them before submission."""
 
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""

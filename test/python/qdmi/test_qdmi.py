@@ -22,6 +22,8 @@ from mqt.core.qdmi import (
     Device,
     Job,
     ProgramFormat,
+    Session,
+    device_ids,
     is_binary_program_format,
 )
 from mqt.core.qdmi.driver import (
@@ -501,7 +503,7 @@ def test_is_binary_program_format() -> None:
 @pytest.mark.parametrize("program", [b"OPENQASM 3.0;", b"OPENQASM 3.0;\0garbage\0", "OPENQASM 3.0;\0garbage"])
 def test_device_rejects_invalid_text_payloads(ddsim_device: Device, program: str | bytes) -> None:
     """Reject payloads that do not satisfy QDMI's text contract."""
-    with pytest.raises(ValueError, match=r"Setting program: Invalid argument\."):
+    with pytest.raises(ValueError, match=r"Invalid argument|embedded null"):
         ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=1)
 
 
@@ -877,3 +879,27 @@ def test_operation_keeps_fresh_session_alive() -> None:
     """An operation should remain usable after its device wrapper is destroyed."""
     operation = open_device("mqt.sc.default").operations()[0]
     assert operation.name()
+
+
+def test_driver_session_retains_devices_and_descendants() -> None:
+    """Driver-based devices and results survive their Python Session wrapper."""
+    session = Session()
+    assert "mqt.ddsim.default" in session.device_ids
+    assert session.device_ids == device_ids()
+    dev = session.get_device("mqt.ddsim.default")
+    site = dev.sites()[0]
+    del session
+    assert site.index() == 0
+    job = dev.submit_job("OPENQASM 3; qubit q; bit c; c = measure q;", ProgramFormat.QASM3, 4)
+    del dev
+    assert job.wait()
+    assert job.get_counts() == {"0": 4}
+
+
+def test_driver_selection_validates_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject unavailable and empty driver overrides before session allocation."""
+    monkeypatch.setenv("MQT_CORE_QDMI_DRIVER", "missing-qdmi-driver")
+    with pytest.raises(RuntimeError, match="Cannot load QDMI driver"):
+        Session()
+    with pytest.raises(ValueError, match="must not be empty"):
+        Session(driver_path="")

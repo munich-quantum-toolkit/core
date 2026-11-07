@@ -8,6 +8,15 @@ of changes including minor and patch releases, please refer to the
 
 ### QDMI 1.4.0
 
+Use Python `mqt.core.qdmi.Session(driver_path=...)` or C++
+`SessionConfig::driverPath` to select a QDMI driver library. When omitted,
+`MQT_CORE_QDMI_DRIVER` selects the driver, or MQT Core uses its built-in driver.
+The client checks the driver's ABI and required entry points before allocating
+sessions. Devices, sites, operations, and jobs retain the selected driver and
+session. Python `mqt.core.qdmi.open_device` opens a device by its stable ID
+through this interface. The existing `mqt.core.qdmi.driver` registration and
+opening functions continue to use MQT Core's built-in driver.
+
 Rebuild downstream C++ consumers and QDMI devices against the updated MQT Core
 and QDMI 1.4.0. The driver now requires the program-list entry points and the
 indexed result-query signature. QDMI 1.3 device libraries are incompatible. Set
@@ -24,6 +33,14 @@ count, and pass a zero-based program index to program and result queries. The
 default index is `0`. The Python `program` and `program_bytes` properties retain
 the first program. Use `job.get_program(index)` for text or
 `job.get_program(bytes, index)` for exact bytes from another program.
+
+Qiskit groups circuits with the same program format. PennyLane groups tapes and
+shot partitions with the same format and shot count. Both adapters preserve
+input and result order, and fall back to independent jobs only when the device
+rejects the native program list before submission. Python `try_submit_job` and
+C++ `trySubmitJob` expose this admission result as `None` or `std::nullopt`.
+Other errors still raise exceptions. Text submission accepts an optional final
+null byte and rejects embedded null bytes.
 
 DDSIM executes each batch serially. A failed program does not discard successful
 siblings. Cancellation waits for the active simulation to finish and prevents

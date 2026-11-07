@@ -13,10 +13,19 @@ Provides a Qiskit JobV1-compatible wrapper for QDMI job execution and results.
 
 from __future__ import annotations
 
-__lazy_modules__ = {"collections", "datetime", "mqt.core.qdmi", "numbers", "qiskit.result", "qiskit.result.models"}
+__lazy_modules__ = {
+    "collections",
+    "datetime",
+    "itertools",
+    "mqt.core.qdmi",
+    "numbers",
+    "qiskit.result",
+    "qiskit.result.models",
+}
 
 import datetime as dt
 from collections import Counter
+from itertools import starmap
 from numbers import Integral
 from typing import TYPE_CHECKING, Any
 
@@ -47,7 +56,7 @@ def _cancel_jobs(jobs: Sequence[QDMIJobHandle]) -> bool:
         Whether every cancellation succeeded.
     """
     success = True
-    for job in jobs:
+    for job in {id(handle): handle for handle in jobs}.values():
         try:
             job.cancel()
         except BaseException:  # ruff:ignore[blind-except] Cleanup must preserve the original failure, even on interruption.
@@ -92,6 +101,7 @@ class QDMIJob(JobV1):
         *,
         shots: int,
         memory: bool,
+        program_indices: Sequence[int] | None = None,
     ) -> None:
         """Initialize without querying remote job IDs.
 
@@ -104,6 +114,10 @@ class QDMIJob(JobV1):
         super().__init__(backend=backend, job_id="")
         self._backend: QDMIBackend = backend
         self._jobs = list(jobs)
+        self._program_indices = list(program_indices) if program_indices is not None else [0] * len(jobs)
+        if len(self._program_indices) != len(jobs):
+            msg = "Each circuit requires one program index."
+            raise ValueError(msg)
         self._headers: list[dict[str, Any]] = [
             {
                 "name": circuit.name,
@@ -142,7 +156,9 @@ class QDMIJob(JobV1):
         if self._result is not None:
             return self._result
         try:
-            experiment_results = list(map(self._collect_result, self._jobs, self._headers))
+            experiment_results = list(
+                starmap(self._collect_result, zip(self._jobs, self._headers, self._program_indices, strict=True))
+            )
             self._result = Result(
                 backend_name=self._backend.name,
                 backend_version=self._backend.backend_version,
@@ -156,7 +172,7 @@ class QDMIJob(JobV1):
             raise
         return self._result
 
-    def _collect_result(self, job: QDMIJobHandle, header: dict[str, Any]) -> ExperimentResult:
+    def _collect_result(self, job: QDMIJobHandle, header: dict[str, Any], program_index: int = 0) -> ExperimentResult:
         """Collect and validate one circuit's result.
 
         Returns:
@@ -180,7 +196,7 @@ class QDMIJob(JobV1):
         width = header["memory_slots"]
         if self._memory:
             try:
-                shots = job.get_shots()
+                shots = job.get_shots(program_index) if program_index else job.get_shots()
             except Exception as exc:
                 exc.add_note("memory=True and BackendSamplerV2 require valid QDMI SHOTS results.")
                 raise
@@ -192,7 +208,7 @@ class QDMIJob(JobV1):
         elif not width:
             data = {"counts": {}}
         else:
-            counts = job.get_counts()
+            counts = job.get_counts(program_index) if program_index else job.get_counts()
             if any(not isinstance(count, Integral) or count < 0 for count in counts.values()):
                 msg = "Invalid QDMI histogram: counts must be nonnegative integers."
                 raise JobError(msg)

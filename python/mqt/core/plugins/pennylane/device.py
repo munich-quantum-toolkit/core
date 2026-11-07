@@ -14,6 +14,7 @@ __lazy_modules__ = {
     "contextlib",
     "mqt.core.plugins.pennylane.converter",
     "mqt.core.plugins.pennylane.exceptions",
+    "mqt.core.plugins.qdmi_batch",
     "mqt.core.qdmi",
     "mqt.core.qdmi.driver",
     "numpy",
@@ -47,6 +48,7 @@ from mqt.core.plugins.pennylane.exceptions import PennyLaneExecutionError as Exe
 from mqt.core.plugins.pennylane.exceptions import PennyLaneUnsupportedFormatError as UnsupportedFormatError
 from mqt.core.plugins.pennylane.exceptions import PennyLaneUnsupportedOperationError as UnsupportedOperationError
 from mqt.core.plugins.pennylane.exceptions import PennyLaneValidationError as ValidationError
+from mqt.core.plugins.qdmi_batch import submit_programs
 from mqt.core.qdmi import Device as QDMIDeviceHandle
 from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
@@ -270,7 +272,7 @@ class QDMIDevice(Device):
         return tuple(shot_copy.shots for shot_copy in shots.shot_vector for _ in range(shot_copy.copies))
 
     @staticmethod
-    def _shots_or_counts(job: QDMIJobHandle) -> list[str]:
+    def _shots_or_counts(job: QDMIJobHandle, program_index: int = 0) -> list[str]:
         """Read ordered shots, falling back to an equivalent expansion of counts.
 
         Returns:
@@ -280,20 +282,22 @@ class QDMIDevice(Device):
             PennyLaneExecutionError: If the job exposes neither result representation.
         """
         try:
-            shots = job.get_shots()
+            shots = job.get_shots(program_index) if program_index else job.get_shots()
         except RuntimeError:
             shots = []
         if shots:
             return shots
 
         try:
-            counts = job.get_counts()
+            counts = job.get_counts(program_index) if program_index else job.get_counts()
         except RuntimeError as exc:
             msg = "The QDMI job exposes neither raw shots nor measurement counts."
             raise ExecutionError(msg) from exc
         return [bitstring for bitstring, count in sorted(counts.items()) for _ in range(count)]
 
-    def _samples(self, job: QDMIJobHandle, converted: _ConvertedProgram, shots: int) -> np.ndarray:
+    def _samples(
+        self, job: QDMIJobHandle, converted: _ConvertedProgram, shots: int, program_index: int = 0
+    ) -> np.ndarray:
         """Convert QDMI bit strings to PennyLane sample rows.
 
         Returns:
@@ -302,7 +306,7 @@ class QDMIDevice(Device):
         Raises:
             PennyLaneExecutionError: If QDMI returns malformed or incomplete results.
         """
-        bitstrings = self._shots_or_counts(job)
+        bitstrings = self._shots_or_counts(job, program_index)
         if len(bitstrings) != shots:
             msg = f"QDMI returned {len(bitstrings)} samples for a {shots}-shot job."
             raise ExecutionError(msg)
@@ -333,29 +337,9 @@ class QDMIDevice(Device):
             msg = f"QDMI job '{job.id}' finished with status {status.name}."
             raise ExecutionError(msg)
 
-    def _submit(self, converted: _ConvertedProgram, shots: int) -> QDMIJobHandle:
-        """Submit one QDMI job.
-
-        Returns:
-            The submitted job.
-
-        Raises:
-            PennyLaneExecutionError: If submission fails.
-        """
-        try:
-            job = self._qdmi_device.submit_job(
-                converted.payload,
-                converted.program_format,
-                shots,
-                **self._job_parameters,
-            )
-            self._submitted_jobs += 1
-        except (RuntimeError, ValueError) as exc:
-            msg = f"QDMI execution on '{self._device_name}' failed: {exc}"
-            raise ExecutionError(msg) from exc
-        return job
-
-    def _result(self, job: QDMIJobHandle, converted: _ConvertedProgram, shots: int) -> np.ndarray:
+    def _result(
+        self, job: QDMIJobHandle, converted: _ConvertedProgram, shots: int, program_index: int = 0
+    ) -> np.ndarray:
         """Wait for and decode one QDMI job.
 
         Returns:
@@ -370,7 +354,48 @@ class QDMIDevice(Device):
             msg = f"QDMI execution on '{self._device_name}' failed: {exc}"
             raise ExecutionError(msg) from exc
         self._require_done(job)
-        return self._samples(job, converted, shots)
+        return self._samples(job, converted, shots, program_index)
+
+    def _submit_partitions(
+        self, partitions: Sequence[tuple[int, _ConvertedProgram, int]]
+    ) -> list[tuple[QDMIJobHandle, int]]:
+        """Submit compatible partitions before collecting any results.
+
+        Returns:
+            Native job handles and result indices in partition order.
+
+        Raises:
+            PennyLaneExecutionError: If a provider rejects submission.
+        """
+        submitted: list[QDMIJobHandle] = []
+        try:
+            return submit_programs(
+                self._qdmi_device,
+                [(converted.payload, converted.program_format, shots) for _, converted, shots in partitions],
+                self._job_parameters,
+                submitted=submitted,
+            )
+        except (RuntimeError, ValueError) as exc:
+            msg = f"QDMI execution on '{self._device_name}' failed: {exc}"
+            raise ExecutionError(msg) from exc
+        finally:
+            self._submitted_jobs += len(submitted)
+
+    def _collect_partitions(
+        self,
+        tapes: Sequence[QuantumScript],
+        partitions: Sequence[tuple[int, _ConvertedProgram, int]],
+        submissions: Sequence[tuple[QDMIJobHandle, int]],
+    ) -> list[list[np.ndarray]]:
+        """Decode each native result into its original tape and shot partition.
+
+        Returns:
+            Samples grouped by input tape.
+        """
+        results: list[list[np.ndarray]] = [[] for _ in tapes]
+        for (tape, converted, shots), (handle, program_index) in zip(partitions, submissions, strict=True):
+            results[tape].append(self._result(handle, converted, shots, program_index))
+        return results
 
     def execute(
         self,
@@ -389,17 +414,19 @@ class QDMIDevice(Device):
         if not prepared:
             return cast("ResultBatch", ())
 
-        submitted: list[tuple[int, _ConvertedProgram, int, QDMIJobHandle]] = []
+        partitions = [
+            (index, converted, shots)
+            for index, (converted, shot_copies) in enumerate(prepared)
+            for shots in shot_copies
+        ]
+        handles: list[QDMIJobHandle] = []
         started = monotonic()
         try:
-            for index, (converted, shot_copies) in enumerate(prepared):
-                submitted.extend((index, converted, shots, self._submit(converted, shots)) for shots in shot_copies)
-
-            tape_results: list[list[np.ndarray]] = [[] for _ in tapes]
-            for index, converted, shots, job in submitted:
-                tape_results[index].append(self._result(job, converted, shots))
+            submissions = self._submit_partitions(partitions)
+            handles = list({id(handle): handle for handle, _ in submissions}.values())
+            tape_results = self._collect_partitions(tapes, partitions, submissions)
         except BaseException:
-            for *_unused, job in submitted:
+            for job in handles:
                 with suppress(BaseException):
                     job.cancel()
             raise

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 __lazy_modules__ = {
     "inspect",
+    "mqt.core.plugins.qdmi_batch",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
     "mqt.core.plugins.qiskit.serializers",
@@ -45,6 +46,7 @@ from qiskit.primitives import BackendEstimatorV2, BackendSamplerV2
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
+from mqt.core.plugins.qdmi_batch import submit_programs
 from mqt.core.plugins.qiskit.exceptions import (
     CircuitValidationError,
     JobSubmissionError,
@@ -53,10 +55,9 @@ from mqt.core.plugins.qiskit.exceptions import (
     UnsupportedFormatError,
     UnsupportedOperationError,
 )
-from mqt.core.plugins.qiskit.job import QDMIJob, _cancel_jobs
+from mqt.core.plugins.qiskit.job import QDMIJob
 from mqt.core.plugins.qiskit.serializers import preferred_program_formats, program_serializer
 from mqt.core.qdmi import Device as QDMIDevice
-from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat, is_binary_program_format
 from mqt.core.qdmi.driver import open_device
 
@@ -812,7 +813,6 @@ class QDMIBackend(BackendV2):
         supported_formats = self._device.supported_program_formats()
 
         # Process each circuit
-        qdmi_jobs: list[QDMIJobHandle] = []
         prepared_circuits: list[QuantumCircuit] = []
         # First pass: validate and serialize all circuits
         serialized_circuits: list[tuple[str | bytes, ProgramFormat]] = []
@@ -855,17 +855,18 @@ class QDMIBackend(BackendV2):
             serialized_circuits.append(self._serialize_circuit(bound_circuit, supported_formats))
             prepared_circuits.append(bound_circuit)
 
-        # Second pass: submit all validated circuits
         try:
-            for program, program_format in serialized_circuits:
-                try:
-                    qdmi_jobs.append(
-                        self._device.submit_job(program=program, program_format=program_format, num_shots=shots)
-                    )
-                except Exception as exc:
-                    msg = f"Failed to submit job to device: {exc}"
-                    raise JobSubmissionError(msg) from exc
-            return QDMIJob(self, qdmi_jobs, prepared_circuits, shots=shots, memory=memory)
-        except BaseException:
-            _cancel_jobs(qdmi_jobs)
-            raise
+            submissions = submit_programs(
+                self._device, [(program, program_format, shots) for program, program_format in serialized_circuits]
+            )
+        except Exception as exc:
+            msg = f"Failed to submit job to device: {exc}"
+            raise JobSubmissionError(msg) from exc
+        return QDMIJob(
+            self,
+            [handle for handle, _ in submissions],
+            prepared_circuits,
+            shots=shots,
+            memory=memory,
+            program_indices=[index for _, index in submissions],
+        )

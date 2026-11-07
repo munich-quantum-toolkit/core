@@ -275,6 +275,10 @@ class MockQDMIDevice:
         """Return list of supported program formats."""
         return [ProgramFormat.QASM2, ProgramFormat.QASM3]
 
+    @staticmethod
+    def try_submit_job(program: object, program_format: ProgramFormat, num_shots: int) -> None:
+        """Reject native lists so tests exercise scalar fallback."""
+
     def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int) -> MockJob:  # ruff:ignore[unused-method-argument]
         """Submit a mock job to the device.
 

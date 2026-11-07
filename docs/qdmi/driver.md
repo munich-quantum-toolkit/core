@@ -72,6 +72,33 @@ The driver implements QDMI 1.4.0 program submission through
 `QDMI_job_set_programs`. C clients use a zero-based program index when querying
 programs, program status, or results.
 
+### Selecting a driver
+
+Use {py:class}`~mqt.core.qdmi.Session` to access devices through a compatible
+QDMI Client Interface. Pass `driver_path` to load another driver library. When
+this argument is omitted, `MQT_CORE_QDMI_DRIVER` selects the library, or the
+session uses MQT Core's built-in driver. The client checks the ABI major and
+minor versions and all required symbols before it allocates a session. Patch
+versions can differ. Devices and jobs retain their session and driver library.
+
+```{code-cell} ipython3
+from mqt.core.qdmi import Session
+
+session = Session()
+device = session.get_device("mqt.ddsim.default")
+print(device.id)
+```
+
+For a replacement driver, use `Session(driver_path="/path/to/driver")` or
+`mqt.core.qdmi.open_device(device_id, driver_path="/path/to/driver")`. Driver
+sessions accept QDMI authentication parameters such as `token` and `auth_file`.
+In C++, set `qdmi::SessionConfig::driverPath` and construct a `qdmi::Session`.
+Use `getDeviceIds()` and `getDevice(id)` to access its device catalog.
+
+The existing `mqt.core.qdmi.driver` functions register and open devices with MQT
+Core's built-in driver. Those functions keep their per-device configuration and
+ignore `MQT_CORE_QDMI_DRIVER`.
+
 ### Program lists
 
 `Device.submit_job` accepts one program or an ordered list with a common format
@@ -101,3 +128,10 @@ Use `job.get_program_status(index)` to inspect individual outcomes when the
 device supports them. A successful program's results remain accessible when
 another program fails or is cancelled. The list shares one job handle, wait
 operation, and cancellation operation.
+
+Use `Device.try_submit_job` (C++ `Device::trySubmitJob`) to try list submission.
+It returns `None` (`std::nullopt`) if the device rejects the programs before
+submission. The caller can then submit separate jobs. Validation,
+authentication, and submission errors still raise exceptions and must not
+trigger fallback. Text strings can include one final null byte. Embedded null
+bytes are invalid.
