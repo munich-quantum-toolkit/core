@@ -103,9 +103,12 @@ parsePayloadCapabilities(llvm::StringRef text,
 /// Snapshot a device payload contract without requiring a local serializer.
 ///
 /// An omitted format uses the device's highest-preference compiler payload.
+/// Submission preflight can omit calibration, which does not affect
+/// compatibility.
 [[nodiscard]] llvm::Expected<TargetEnvironment> inspectTargetEnvironment(
     const qdmi::Device& device,
-    std::optional<QDMI_Program_Format> format = std::nullopt);
+    std::optional<QDMI_Program_Format> format = std::nullopt,
+    bool includeCalibration = true);
 
 /// Check hardware compatibility and payload support, ignoring calibration.
 ///

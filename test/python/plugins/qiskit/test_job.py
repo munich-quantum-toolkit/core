@@ -34,7 +34,7 @@ from mqt.core.plugins.qiskit import (
     QDMIJob,
     TranslationError,
 )
-from mqt.core.qdmi import Job, ProgramFormat
+from mqt.core.qdmi import Job, ProgramFormat, builtin_driver
 
 pytestmark = pytest.mark.usefixtures("mock_device_snapshot")
 
@@ -658,16 +658,8 @@ def test_compiled_unsupported_format_preflight(
         circuit,
         target=TargetEnvironment.from_device(backend.device, program_format=ProgramFormat.QASM2),
     )
-    original = TargetEnvironment.from_device
-
-    def snapshot(device: Device, *, program_format: ProgramFormat | None = None) -> TargetEnvironment:
-        if program_format == ProgramFormat.QASM2:
-            msg = "Device does not support QASM2"
-            raise ValueError(msg)
-        return original(device, program_format=program_format)
-
-    monkeypatch.setattr(TargetEnvironment, "from_device", snapshot)
-    with pytest.raises(ValueError, match="does not support QASM2"):
+    monkeypatch.setattr(backend.device, "supported_program_formats", lambda: [ProgramFormat.QASM3])
+    with pytest.raises(ValueError, match="does not support"):
         backend.run([valid, alternative], shots=4)
     assert not jobs
 
@@ -735,3 +727,18 @@ def test_register_separator_spaces(recording_backend: RecordingBackend, *, memor
     assert job.result().get_counts() == {"100": 4}
     if memory:
         assert job.result().get_memory() == ["100"] * 4
+
+
+def test_foreign_program_submission_reuses_uncalibrated_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Foreign compiled programs use native preflight without calibration snapshots."""
+    device = builtin_driver.open_device("mqt.ddsim.default")
+    backend = QDMIBackend(device)
+    circuit = QuantumCircuit(1, 1)
+    circuit.x(0)
+    circuit.measure(0, 0)
+    program = compile_program(circuit, target=device)
+    calibrated = MagicMock(side_effect=AssertionError("submission requested calibration"))
+    monkeypatch.setattr(TargetEnvironment, "from_device", calibrated)
+    job = backend.run([program, program], shots=4)
+    assert job.result().get_counts() == [{"1": 4}, {"1": 4}]
+    calibrated.assert_not_called()

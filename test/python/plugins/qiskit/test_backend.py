@@ -693,6 +693,7 @@ def test_native_submission_preserves_folded_unitary_sequence(
         assert "@__quantum__qis__x__body(ptr inttoptr (i64 1 to ptr))" in payloads[0]
 
 
+@pytest.mark.usefixtures("mock_device_snapshot")
 def test_resonator_compilation_uses_native_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     """A native star snapshot compiles and submits with permuted result decoding."""
     config = {

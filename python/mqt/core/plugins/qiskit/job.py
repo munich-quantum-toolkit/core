@@ -28,13 +28,13 @@ __lazy_modules__ = {
 import datetime as dt
 from collections import Counter
 from numbers import Integral
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
-from mqt.core.mlir import TargetEnvironment, decode_counts, decode_shots
+from mqt.core.mlir import _submission_environment, _try_submit_programs, decode_counts, decode_shots
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 from mqt.core.plugins.qiskit.exceptions import JobExecutionError, JobSubmissionError
 from mqt.core.qdmi import Job as QDMIJobHandle
@@ -42,8 +42,9 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mqt.core.mlir import CompiledProgram, ResultLayout
+    from mqt.core.mlir import CompiledProgram, ResultLayout, TargetEnvironment
     from mqt.core.plugins.qiskit.backend import QDMIBackend
+    from mqt.core.qdmi import ProgramFormat
     from mqt.core.typing import QDMIJobParameters
 
 __all__ = ["QDMIJob"]
@@ -93,7 +94,7 @@ class QDMIJob(JobV1):
         self._backend: QDMIBackend = backend
         self._programs = tuple(programs)
         environment = backend._environment  # ruff:ignore[private-member-access] Shared immutable backend snapshot.
-        environments = {
+        environments: dict[ProgramFormat, TargetEnvironment] = {
             program.program_format: environment
             for program in self._programs
             if getattr(program, "_environment", None) is environment
@@ -107,10 +108,11 @@ class QDMIJob(JobV1):
                 raise JobError(msg)
             if getattr(program, "_environment", None) is not environment:
                 if program.program_format not in environments:
-                    environments[program.program_format] = TargetEnvironment.from_device(
-                        backend.device, program_format=program.program_format
+                    environments[program.program_format] = _submission_environment(
+                        backend.device, program.program_format
                     )
                 program._validate_environment(environments[program.program_format])  # ruff:ignore[private-member-access] Preflight the entire batch.
+        self._environments = environments
         self._headers: list[dict[str, Any]] = [
             getattr(
                 program,
@@ -152,17 +154,19 @@ class QDMIJob(JobV1):
         return self._batch.entries
 
     def _submit_entry(self, index: int) -> QDMIJobHandle:
-        program = self._programs[index]
-        return self._backend.device.submit_job(
-            program.payload, program.program_format, self._shots, **self._job_parameters
-        )
+        job = self._submit_programs([index])
+        if job is None:
+            msg = "Provider declined a single-program job."
+            raise RuntimeError(msg)
+        return job
 
     def _submit_programs(self, indices: Sequence[int]) -> QDMIJobHandle | None:
-        return self._backend.device.try_submit_job(
-            # A format fixes the payload type for the whole group.
-            cast("Sequence[str] | Sequence[bytes]", [self._programs[index].payload for index in indices]),
-            self._programs[indices[0]].program_format,
+        programs = [self._programs[index] for index in indices]
+        return _try_submit_programs(
+            self._backend.device,
+            programs,
             self._shots,
+            destination=self._environments[programs[0].program_format],
             **self._job_parameters,
         )
 

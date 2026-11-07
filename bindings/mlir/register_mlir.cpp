@@ -2958,7 +2958,9 @@ and error contracts.)pb");
               throw nb::value_error(llvm::toString(std::move(error)).c_str());
             }
           },
-          "environment"_a, "Check destination compatibility before submission.")
+          "environment"_a,
+          "Preflight every program before submitting any format group in a "
+          "batch.")
       .def_prop_ro(
           "result_layout", &mlir::CompiledProgram::resultLayout,
           "Logical output reconstruction, or None for an identity layout.")
@@ -3061,6 +3063,45 @@ Args:
     program: A native Qiskit circuit or QC program with static target sites.
     target: The destination device, registered device ID, or TargetEnvironment.
 )pb");
+
+  m.def(
+      "_submission_environment",
+      [](const qdmi::Device& device, QDMI_Program_Format format) {
+        const nb::gil_scoped_release release;
+        return unwrap(mlir::inspectTargetEnvironment(device, format, false));
+      },
+      "device"_a, "program_format"_a,
+      "Snapshot a submission contract without calibration for whole-batch "
+      "preflight.");
+  m.def(
+      "_try_submit_programs",
+      [](const qdmi::Device& device,
+         const std::vector<const mlir::CompiledProgram*>& programs,
+         int64_t numShots,
+         const std::optional<PythonCustomJobParameter>& custom1,
+         const std::optional<PythonCustomJobParameter>& custom2,
+         const std::optional<PythonCustomJobParameter>& custom3,
+         const std::optional<PythonCustomJobParameter>& custom4,
+         const std::optional<PythonCustomJobParameter>& custom5,
+         const mlir::TargetEnvironment* destination) {
+        const auto params = std::array{
+            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+            toCustomJobParameter(custom5),
+        };
+        const nb::gil_scoped_release release;
+        return unwrap(mlir::trySubmitPrograms(
+            device, programs, numShots, params[0], params[1], params[2],
+            params[3], params[4], destination));
+      },
+      "device"_a, "programs"_a, "num_shots"_a, nb::kw_only(),
+      "custom1"_a.noconvert() = nb::none(),
+      "custom2"_a.noconvert() = nb::none(),
+      "custom3"_a.noconvert() = nb::none(),
+      "custom4"_a.noconvert() = nb::none(),
+      "custom5"_a.noconvert() = nb::none(), "destination"_a = nb::none(),
+      "Submit compatible compiled programs, returning None only when a "
+      "provider declines batching.");
 
   m.def("submit_program", PythonInputAdapter<&submitProgram>{inputTypes},
         "program"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024,

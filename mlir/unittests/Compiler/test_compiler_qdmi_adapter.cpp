@@ -1133,6 +1133,17 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
   const auto compiled = llvm::cantFail(
       mlir::compileProgram(mlir::OpenQASMProgram(source), device));
   siteLists = calibrationQueries = 0;
+  auto destination = llvm::cantFail(
+      mlir::inspectTargetEnvironment(device, compiled.programFormat(), false));
+  EXPECT_EQ(siteLists, 1);
+  EXPECT_EQ(calibrationQueries, 0);
+  siteLists = 0;
+  auto retained = llvm::cantFail(mlir::trySubmitPrograms(
+      device, {&compiled}, 4, {}, {}, {}, {}, {}, &destination));
+  ASSERT_TRUE(retained);
+  ASSERT_TRUE(llvm::cantFail(retained->wait()));
+  EXPECT_EQ(siteLists, 0);
+  EXPECT_EQ(calibrationQueries, 0);
   auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 4));
   EXPECT_EQ(siteLists, 1);
   EXPECT_EQ(calibrationQueries, 0);
