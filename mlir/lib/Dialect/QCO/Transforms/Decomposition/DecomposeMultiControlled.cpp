@@ -1811,7 +1811,7 @@ protected:
              UnrollControlledModifier<InvOp>, UnrollControlledModifier<PowOp>>(
             &getContext(), minQubits, nativeTarget,
             traceStaticSites ? &staticSites : nullptr);
-    CtrlOp::getOptimizationPatterns(patterns, &getContext());
+    CtrlOp::getLoweringPatterns(patterns, &getContext());
     InvOp::getLoweringPatterns(patterns, &getContext());
     PowOp::getLoweringPatterns(patterns, &getContext());
     // Borrowing can introduce inserts before later extracts. Restore the

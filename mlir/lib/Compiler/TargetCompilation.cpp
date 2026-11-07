@@ -399,6 +399,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateTargetPreparationCleanup(pm);
   pm.addPass(qco::createCombineControlledGates(target));
   pm.addPass(mqt::createSimplifyQuantum());
+  // Eliminate identity loops before unrolling applies its clone budget.
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createSCCPPass());
   pm.addPass(qco::createUnrollLoopsForPayload());
@@ -443,6 +444,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   populateTargetPreparationCleanup(pm);
   pm.addPass(qco::createCombineControlledGates(target));
   pm.addPass(mqt::createSimplifyQuantum());
+  // Remove identity branches before checking payload control-flow support.
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());
   populateDecompositionAndPlacement(pm, target);

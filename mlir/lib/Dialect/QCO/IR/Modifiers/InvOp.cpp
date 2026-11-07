@@ -131,8 +131,8 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
     // Values are accessible from outside and survive InvOp erasure.
     mqt::hoistSupportingOpsBefore(*invOp.getBody(), innerPow.getOperation(),
                                   invOp, rewriter);
-    Value negExponent =
-        arith::NegFOp::create(rewriter, invOp.getLoc(), innerPow.getExponent());
+    Value negExponent = rewriter.createOrFold<arith::NegFOp>(
+        invOp.getLoc(), innerPow.getExponent());
     // The inner pow's operands alias the inv's block args; translate them back
     // to the outer qubits the inv aliases so the new pow is valid in the inv's
     // parent scope.
@@ -202,7 +202,7 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
     const auto loc = innerOp->getLoc();
     rewriter.setInsertionPoint(innerOp);
     const auto negTheta = [&](auto g) {
-      return arith::NegFOp::create(rewriter, loc, g.getTheta()).getResult();
+      return rewriter.createOrFold<arith::NegFOp>(loc, g.getTheta());
     };
     const auto replaced =
         TypeSwitch<Operation*, LogicalResult>(innerOp)
@@ -261,11 +261,11 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
             })
             .Case([&](UOp g) {
               Value newPhi =
-                  arith::NegFOp::create(rewriter, loc, g.getLambda());
+                  rewriter.createOrFold<arith::NegFOp>(loc, g.getLambda());
               Value newLambda =
-                  arith::NegFOp::create(rewriter, loc, g.getPhi());
+                  rewriter.createOrFold<arith::NegFOp>(loc, g.getPhi());
               Value newTheta =
-                  arith::NegFOp::create(rewriter, loc, g.getTheta());
+                  rewriter.createOrFold<arith::NegFOp>(loc, g.getTheta());
               rewriter.replaceOpWithNewOp<UOp>(g, g.getInputTarget(0), newTheta,
                                                newPhi, newLambda);
               return success();
@@ -274,8 +274,10 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
               Value theta = arith::ConstantOp::create(
                   rewriter, loc,
                   rewriter.getF64FloatAttr(-std::numbers::pi / 2.0));
-              Value phi = arith::NegFOp::create(rewriter, loc, g.getLambda());
-              Value lambda = arith::NegFOp::create(rewriter, loc, g.getPhi());
+              Value phi =
+                  rewriter.createOrFold<arith::NegFOp>(loc, g.getLambda());
+              Value lambda =
+                  rewriter.createOrFold<arith::NegFOp>(loc, g.getPhi());
               rewriter.replaceOpWithNewOp<UOp>(g, g.getInputTarget(0), theta,
                                                phi, lambda);
               return success();
