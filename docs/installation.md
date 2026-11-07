@@ -83,9 +83,9 @@ Windows wheels use MSVC with IPO, except for DLLs that require automatic symbol
 exports. Wheels include the QDMI driver and device bundles and the `mqt-core`
 executable with `compile`, `bench`, `simulate`, and `run` subcommands. Their
 CMake package exposes the QDMI C interfaces and the `MQT::mqt-core` executable
-target. Native CMake consumers require a matching LLVM SDK; see {doc}`cpp_api`.
-C++ development libraries and headers are available from source installations;
-the DD library is static.
+target. The Runtime component requires no LLVM SDK; see {doc}`cpp_api`. C++
+development libraries and headers are available from source installations; the
+DD library is static.
 
 ### Command-line tools
 

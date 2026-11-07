@@ -26,14 +26,14 @@ endif()
 
 include(CMakeFindDependencyMacro)
 find_dependency(qdmi)
-find_dependency(LLVM @LLVM_VERSION_MAJOR@.@LLVM_VERSION_MINOR@ CONFIG)
-# LLVM component exports omit their header usage requirements.
-target_include_directories(LLVMSupport SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
 
 include("${CMAKE_CURRENT_LIST_DIR}/AddMQTQDMIDevice.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-runtime-targets.cmake")
 if(mqt-core_Development_FOUND
    AND (NOT mqt-core_FIND_COMPONENTS OR "Development" IN_LIST mqt-core_FIND_COMPONENTS))
+  find_dependency(LLVM @LLVM_VERSION_MAJOR@.@LLVM_VERSION_MINOR@ CONFIG)
+  # LLVM component exports omit their header usage requirements.
+  target_include_directories(LLVMSupport SYSTEM INTERFACE ${LLVM_INCLUDE_DIRS})
   include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-development-targets.cmake")
 endif()
 check_required_components(mqt-core)

@@ -109,29 +109,46 @@ static Parameters borrowParameters(const JobParameters& parameters) {
 
 static Readout readout(const qdmi::Job& job, size_t width, size_t shots,
                        size_t programIndex,
-                       const std::optional<mlir::ResultLayout>& layout) {
+                       const std::optional<mlir::ResultLayout>& layout,
+                       bool samples) {
   validateShots(shots);
-  Readout result;
-  auto samples = job.getShots(programIndex);
-  if (samples && !samples->empty()) {
-    result.reserve(samples->size());
-    for (auto& bits : *samples) {
-      result.emplace_back(std::move(bits), 1);
-    }
-  } else {
-    const auto shotsError = samples ? "" : llvm::toString(samples.takeError());
-    auto counts = job.getCounts(programIndex);
-    if (!counts) {
-      throw std::runtime_error(
-          "Cannot read QDMI samples; shots: " + shotsError +
-          "; counts: " + llvm::toString(counts.takeError()));
-    }
-    for (const auto& [bits, count] : *counts) {
-      if (count != 0) {
-        result.emplace_back(bits, count);
+  const auto load = [&](bool loadSamples) -> llvm::Expected<Readout> {
+    Readout result;
+    if (loadSamples) {
+      auto values = job.getShots(programIndex);
+      if (!values) {
+        return values.takeError();
+      }
+      result.reserve(values->size());
+      for (auto& bits : *values) {
+        result.emplace_back(std::move(bits), 1);
+      }
+    } else {
+      auto counts = job.getCounts(programIndex);
+      if (!counts) {
+        return counts.takeError();
+      }
+      for (const auto& [bits, count] : *counts) {
+        if (count != 0) {
+          result.emplace_back(bits, count);
+        }
       }
     }
+    return result;
+  };
+  auto loaded = load(samples);
+  if (!loaded || loaded->empty()) {
+    const auto firstError = loaded ? "" : llvm::toString(loaded.takeError());
+    loaded = load(!samples);
+    if (!loaded) {
+      throw std::runtime_error("Cannot read QDMI results; " +
+                               std::string(samples ? "shots: " : "counts: ") +
+                               firstError +
+                               (samples ? "; counts: " : "; shots: ") +
+                               llvm::toString(loaded.takeError()));
+    }
   }
+  auto result = std::move(*loaded);
   size_t total = 0;
   for (auto& [bits, count] : result) {
     std::erase(bits, ' ');
@@ -229,7 +246,7 @@ std::vector<int8_t>
 decodeSamples(const qdmi::Job& job, size_t width, size_t shots,
               size_t programIndex,
               const std::optional<mlir::ResultLayout>& layout) {
-  const auto result = readout(job, width, shots, programIndex, layout);
+  const auto result = readout(job, width, shots, programIndex, layout, true);
   std::vector<int8_t> values;
   values.reserve(product(shots, width));
   for (const auto& [bits, count] : result) {
@@ -262,22 +279,27 @@ ObsIdType QDMIDevice::addObservable(ObservableWires value) {
   return nextObservable_++;
 }
 
-const QDMIDevice::Readout& QDMIDevice::read() {
+const QDMIDevice::Readout& QDMIDevice::read(bool samples) {
   validateShots(shots_);
   require(context_ != nullptr, "No QDMI execution context is configured.");
   if (!result_ && !recorder_.hasTouchedWires()) {
     result_ = Readout{{std::string(recorder_.wires().size(), '0'), shots_}};
+    sampleReadout_ = true;
   }
-  if (!result_) {
+  if (!result_ || (samples && !sampleReadout_)) {
     if (!compiled_) {
       compiled_ = unwrap(mlir::CompiledProgram::compile(
           recorder_.takeProgram(), context_->environment_));
     }
-    auto job = context_->submit(*compiled_, static_cast<int64_t>(shots_));
-    require(unwrap(job.wait()) && unwrap(job.check()) == QDMI_JOB_STATUS_DONE,
-            "QDMI job did not complete successfully.");
-    result_ = readout(job, recorder_.wires().size(), shots_, 0,
-                      compiled_->resultLayout());
+    if (!job_) {
+      auto job = context_->submit(*compiled_, static_cast<int64_t>(shots_));
+      require(unwrap(job.wait()) && unwrap(job.check()) == QDMI_JOB_STATUS_DONE,
+              "QDMI job did not complete successfully.");
+      job_ = std::move(job);
+    }
+    result_ = readout(*job_, recorder_.wires().size(), shots_, 0,
+                      compiled_->resultLayout(), samples);
+    sampleReadout_ = samples;
   }
   return *result_;
 }
@@ -298,6 +320,8 @@ void QDMIDevice::ReleaseQubits(const std::vector<QubitIdType>& wires) {
   recorder_.release(wires);
   compiled_.reset();
   result_.reset();
+  job_.reset();
+  sampleReadout_ = false;
   observables_.clear();
   firstObservable_ = nextObservable_;
 }
@@ -307,6 +331,8 @@ void QDMIDevice::SetDeviceShots(size_t shots) {
   validateShots(shots);
   if (shots_ != shots) {
     result_.reset();
+    job_.reset();
+    sampleReadout_ = false;
   }
   shots_ = shots;
 }
@@ -389,7 +415,7 @@ void QDMIDevice::PartialSample(DataView<double, 2>& samples,
   const auto indices = wireIndices(wires);
   require(samples.size() == product(shots_, indices.size()),
           "Unexpected Catalyst sample buffer size.");
-  const auto& result = read();
+  const auto& result = read(true);
   auto output = samples.begin();
   for (const auto& [bits, count] : result) {
     for (size_t shot = 0; shot < count; ++shot) {

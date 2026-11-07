@@ -21,6 +21,7 @@
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Error.h"
 
+#include <algorithm>
 #include <array>
 #include <complex>
 #include <cstddef>
@@ -44,6 +45,7 @@ using mqt::catalyst::decodeSamples;
 using mqt::catalyst::JobParameters;
 using mqt::catalyst::QDMIDevice;
 
+thread_local std::vector<std::pair<QDMI_Device_Job, QDMI_Job_Result>> queries;
 thread_local std::optional<std::string> returnedShots;
 thread_local std::string returnedKeys;
 thread_local std::vector<size_t> returnedCounts;
@@ -66,8 +68,9 @@ static int copyResult(std::span<const std::byte> bytes, size_t size,
   return QDMI_SUCCESS;
 }
 
-static int getResults(QDMI_Device_Job, size_t, QDMI_Job_Result result,
+static int getResults(QDMI_Device_Job job, size_t, QDMI_Job_Result result,
                       size_t size, void* value, size_t* sizeRet) {
+  queries.emplace_back(job, result);
   if (result == QDMI_JOB_RESULT_SHOTS && returnedShots) {
     return copyResult(std::as_bytes(std::span(returnedShots->c_str(),
                                               returnedShots->size() + 1)),
@@ -163,6 +166,61 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   EXPECT_THROW(decodeSamples(job, 3, 6), std::runtime_error);
   returnedKeys = "10x,001";
   EXPECT_THROW(decodeSamples(job, 3, 5), std::runtime_error);
+}
+
+TEST(CatalystQDMI, AggregateReadoutKeepsCountsAndSamplesFromOneJob) {
+  auto device =
+      llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
+  auto& api =
+      const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
+  const auto original = api.device_job_get_results;
+  const auto restore =
+      llvm::make_scope_exit([&] { api.device_job_get_results = original; });
+  auto context = Context::create(device);
+  api.device_job_get_results = getResults;
+  for (const bool countsAvailable : {false, true}) {
+    for (const bool samplesFirst : {false, true}) {
+      SCOPED_TRACE(countsAvailable);
+      SCOPED_TRACE(samplesFirst);
+      returnedShots = "1,0,1";
+      returnedKeys = countsAvailable ? "0,1" : "";
+      returnedCounts = {1, 2};
+      queries.clear();
+      QDMIDevice runtime(context);
+      const auto wires = runtime.AllocateQubits(1);
+      runtime.NamedOperation("PauliX", {}, wires);
+      runtime.SetDeviceShots(3);
+      const auto observable = runtime.Observable(ObsId::PauliZ, {}, wires);
+      std::vector<double> samples(3);
+      const std::array<size_t, 2> sizes{3, 1};
+      const std::array<size_t, 2> strides{1, 1};
+      DataView<double, 2> sampleView(samples.data(), 0, sizes.data(),
+                                     strides.data());
+      if (samplesFirst) {
+        runtime.Sample(sampleView);
+      }
+      EXPECT_NEAR(runtime.Expval(observable), -1.0 / 3, 1e-15);
+      ASSERT_FALSE(queries.empty());
+      auto* const job = queries.front().first;
+      if (countsAvailable && !samplesFirst) {
+        EXPECT_TRUE(std::ranges::none_of(queries, [](const auto& query) {
+          return query.second == QDMI_JOB_RESULT_SHOTS;
+        }));
+      }
+      runtime.Sample(sampleView);
+      EXPECT_EQ(samples, (std::vector<double>{1, 0, 1}));
+      EXPECT_TRUE(std::ranges::all_of(
+          queries, [job](const auto& query) { return query.first == job; }));
+      EXPECT_NEAR(runtime.Expval(observable), -1.0 / 3, 1e-15);
+      if (countsAvailable) {
+        runtime.SetDeviceShots(4);
+        EXPECT_THROW(runtime.Expval(observable), std::runtime_error);
+        returnedKeys = "x";
+        returnedCounts = {4};
+        EXPECT_THROW(runtime.Expval(observable), std::runtime_error);
+      }
+    }
+  }
 }
 
 TEST(CatalystQDMI, MatrixGatesShareCorrelatedTerminalReadouts) {
