@@ -62,7 +62,8 @@ endif()
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   message(
     FATAL_ERROR
-      "MQT Core cannot build MLIR with GCC on macOS because MLIR uses an incompatible C++ standard library")
+      "MQT Core cannot build MLIR with GCC on macOS because MLIR uses an incompatible C++ standard library"
+  )
 endif()
 if(APPLE
    AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang"

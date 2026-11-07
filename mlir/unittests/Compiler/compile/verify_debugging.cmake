@@ -82,9 +82,9 @@ foreach(mode IN ITEMS --run-pipeline --emit=qco-optimized)
                   "--pass-pipeline=func.func(cse)")
   reject_compiler("must be anchored on builtin.module" "${reduced}" "${mode}"
                   "--pass-pipeline=builtin.module(cse")
-  reject_compiler("without disabling multi-threading" "${reduced}" "${mode}"
-                  "--pass-pipeline=builtin.module()" --mlir-print-ir-module-scope
-                  --mlir-disable-threading=false)
+  reject_compiler(
+    "without disabling multi-threading" "${reduced}" "${mode}" "--pass-pipeline=builtin.module()"
+    --mlir-print-ir-module-scope --mlir-disable-threading=false)
   run_compiler(0 "${reduced}" "${mode}" "--pass-pipeline=builtin.module()"
                --mlir-print-ir-module-scope --mlir-disable-threading)
 endforeach()
@@ -220,15 +220,17 @@ run_compiler(1 "${unsupported}" --run-pipeline "--pass-pipeline=builtin.module(q
 foreach(profile IN ITEMS qir-base qir-adaptive)
   set(qir_reproducer "${OUTPUT_DIR}/${profile}-failure.mlir")
   file(REMOVE "${qir_reproducer}")
-  reject_compiler("no main function with mqt.entry_point found" "${reduced}" "--emit=${profile}"
-                  --mlir-disable-threading "--mlir-pass-pipeline-crash-reproducer=${qir_reproducer}")
+  reject_compiler(
+    "no main function with mqt.entry_point found" "${reduced}" "--emit=${profile}"
+    --mlir-disable-threading "--mlir-pass-pipeline-crash-reproducer=${qir_reproducer}")
   reject_compiler(
     "no main function with mqt.entry_point found" "${qir_reproducer}" --run-reproducer)
 endforeach()
 
 # Register the named shrink and QIR cleanup passes for isolated pipelines too.
-run_compiler(0 "${reduced}" --run-pipeline
-             "--pass-pipeline=builtin.module(qtensor-shrink-to-fit,qc-shrink-qubit-registers,qir-cleanup)")
+run_compiler(
+  0 "${reduced}" --run-pipeline
+  "--pass-pipeline=builtin.module(qtensor-shrink-to-fit,qc-shrink-qubit-registers,qir-cleanup)")
 reject_compiler("QIR metadata attachment requires exactly one entry point" "${reduced}"
                 --run-pipeline "--pass-pipeline=builtin.module(set-qir-attributes-and-metadata)")
 

@@ -31,8 +31,10 @@ endfunction()
 
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 set(source "${OUTPUT_DIR}/readout.qasm")
-file(WRITE "${source}"
-     "OPENQASM 3; qubit[2] q; bit[3] c; x q[0]; c[2]=measure q[0]; c[0]=measure q[0]; c[1]=measure q[1];")
+file(
+  WRITE "${source}"
+  "OPENQASM 3; qubit[2] q; bit[3] c; x q[0]; c[2]=measure q[0]; c[0]=measure q[0]; c[1]=measure q[1];"
+)
 run_ok()
 run_ok(bench list)
 run_ok(--help)
