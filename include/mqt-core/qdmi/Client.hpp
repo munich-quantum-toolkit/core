@@ -665,7 +665,7 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
-  /// @brief Submits an ordered list of text programs with common parameters.
+  /// Submits an ordered list of text programs with common parameters.
   [[nodiscard]] Job submitJob(
       std::span<const std::string> programs, QDMI_Program_Format format,
       std::optional<size_t> numShots = std::nullopt,
@@ -675,7 +675,7 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
-  /// @brief Submits an ordered list of exact-byte programs with common
+  /// Submits an ordered list of exact-byte programs with common
   /// parameters.
   [[nodiscard]] Job submitJob(
       std::span<const std::span<const std::byte>> programs,
@@ -788,7 +788,7 @@ private:
   static void setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
                                 const CustomJobParameter& value);
 
-  /// @brief The underlying device pointer.
+  /// The underlying device pointer.
   std::shared_ptr<QDMI_Device_impl_d> device_;
 
   friend class Session;
@@ -840,16 +840,14 @@ public:
    */
   [[nodiscard]] std::string getProgram(size_t programIndex = 0) const;
 
-  /**
-   * @brief Gets the submitted program bytes exactly as returned by the device.
-   */
+  /// Gets the submitted program bytes exactly as returned by the device.
   [[nodiscard]] std::vector<std::byte>
   getProgramBytes(size_t programIndex = 0) const;
 
-  /// @brief Returns the number of programs in input order.
+  /// Returns the number of programs in input order.
   [[nodiscard]] size_t getNumPrograms() const;
 
-  /// @brief Returns one program status, or no value if unsupported.
+  /// Returns one program status, or no value if unsupported.
   [[nodiscard]] std::optional<QDMI_Job_Status>
   getProgramStatus(size_t programIndex = 0) const;
 
@@ -1106,10 +1104,10 @@ private:
     }
   }
 
-  /// @brief The QDMI device handle that owns the site.
+  /// The QDMI device handle that owns the site.
   std::shared_ptr<QDMI_Device_impl_d> device_;
 
-  /// @brief The underlying QDMI_Site object.
+  /// The underlying QDMI_Site object.
   QDMI_Site site_;
 
   friend class Device;
@@ -1302,10 +1300,10 @@ private:
     }
   }
 
-  /// @brief The QDMI device handle that owns the operation.
+  /// The QDMI device handle that owns the operation.
   std::shared_ptr<QDMI_Device_impl_d> device_;
 
-  /// @brief The underlying QDMI_Operation object.
+  /// The underlying QDMI_Operation object.
   QDMI_Operation operation_;
 
   friend class Device;

@@ -65,7 +65,7 @@ class Device final : public Singleton<Device> {
   /// The number of running jobs.
   std::atomic<size_t> runningJobs_{0};
 
-  /// @brief Private constructor to enforce the singleton pattern.
+  /// Private constructor to enforce the singleton pattern.
   Device();
 
 public:
@@ -102,9 +102,7 @@ public:
 };
 } // namespace qdmi::dd
 
-/**
- * @brief Implementation of the MQT_DDSIM_QDMI_Device_Session structure.
- */
+/// Implementation of the MQT_DDSIM_QDMI_Device_Session structure.
 struct MQT_DDSIM_QDMI_Device_Session_impl_d {
 private:
   /// The status of the session.
@@ -112,13 +110,13 @@ private:
     ALLOCATED,   ///< The session has been allocated but not initialized
     INITIALIZED, ///< The session has been initialized and is ready for use
   };
-  /// @brief The current status of the session.
+  /// The current status of the session.
   Status status_ = Status::ALLOCATED;
-  /// @brief The device jobs associated with this session.
+  /// The device jobs associated with this session.
   std::unordered_map<MQT_DDSIM_QDMI_Device_Job,
                      std::unique_ptr<MQT_DDSIM_QDMI_Device_Job_impl_d>>
       jobs_;
-  /// @brief Mutex protecting access to jobs_.
+  /// Mutex protecting access to jobs_.
   mutable std::mutex jobsMutex_;
 
 public:
@@ -174,9 +172,7 @@ public:
       -> QDMI_STATUS;
 };
 
-/**
- * @brief Implementation of the MQT_DDSIM_QDMI_Device_Job structure.
- */
+/// Implementation of the MQT_DDSIM_QDMI_Device_Job structure.
 struct MQT_DDSIM_QDMI_Device_Job_impl_d {
 private:
   /// The device session associated with the job.
@@ -196,6 +192,7 @@ private:
     explicit Program(std::string code) : code_(std::move(code)) {}
     std::string code_;
     std::atomic<QDMI_Job_Status> status_{QDMI_JOB_STATUS_CREATED};
+
     /// The measurement counts for the program
     std::map<std::string, std::size_t> counts_;
 
@@ -243,6 +240,7 @@ private:
 
     /// Executes this program with the common job shot count.
     auto run(size_t numShots) -> void;
+
     /// Retrieves results after this program has completed successfully.
     auto getResults(QDMI_Job_Result result, size_t numShots, size_t size,
                     void* data, size_t* sizeRet) -> QDMI_STATUS;
@@ -281,17 +279,17 @@ public:
   auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
                     const void* value) -> QDMI_STATUS;
 
-  /// @brief Sets the program list, as specified by
+  /// Sets the program list, as specified by
   /// QDMI_device_job_set_programs.
   auto setPrograms(QDMI_Program_Format format, size_t count,
                    const size_t* sizes, const void* const* programs)
       -> QDMI_STATUS;
 
-  /// @brief Retrieves the original program, including its terminating NUL.
+  /// Retrieves the original program, including its terminating NUL.
   auto getProgram(size_t programIndex, size_t size, void* data,
                   size_t* sizeRet) const -> QDMI_STATUS;
 
-  /// @brief Queries the status of one program.
+  /// Queries the status of one program.
   auto getProgramStatus(size_t programIndex, QDMI_Job_Status* status) const
       -> QDMI_STATUS;
 

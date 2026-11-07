@@ -174,6 +174,7 @@ Operation::getMeanShuttlingSpeed(const std::vector<Site>& sites,
   return queryProperty<std::optional<uint64_t>>(
       QDMI_OPERATION_PROPERTY_MEANSHUTTLINGSPEED, sites, params);
 }
+
 std::string Device::getId() const {
   return queryProperty<std::string>(QDMI_DEVICE_PROPERTY_ID);
 }

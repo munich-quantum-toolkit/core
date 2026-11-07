@@ -20,7 +20,6 @@ if(TARGET MQT::CoreQDMI_DDSIM_Device)
     device_properties_test.cpp
     session_lifecycle_test.cpp
     job_parameters_test.cpp
-    batch_test.cpp
     job_lifecycle_test.cpp
     results_sampling_test.cpp
     results_statevector_test.cpp

@@ -174,7 +174,7 @@ struct DeviceLibrary {
  * overrides the constructor and destructor to open and close the library.
  */
 class DynamicDeviceLibrary final : public DeviceLibrary {
-  /// @brief Handle to the dynamic library
+  /// Handle to the dynamic library
   void* libHandle_;
 
 public:
@@ -206,9 +206,7 @@ enum class SessionStatus : uint8_t {
 };
 } // namespace qdmi
 
-/**
- * @brief Definition of the QDMI Device.
- */
+/// Definition of the QDMI Device.
 struct QDMI_Device_impl_d {
 private:
   /**
@@ -217,9 +215,9 @@ private:
    * libraries that are subclasses of qdmi::DeviceLibrary.
    */
   std::shared_ptr<qdmi::DeviceLibrary> library_;
-  /// @brief The configured stable device ID.
+  /// The configured stable device ID.
   std::string id_;
-  /// @brief The device session handle.
+  /// The device session handle.
   QDMI_Device_Session deviceSession_ = nullptr;
   /// Client-facing wrappers for direct child devices.
   std::vector<std::unique_ptr<QDMI_Device_impl_d>> childDevices_;
@@ -317,14 +315,12 @@ public:
                               void* value, size_t* sizeRet) const -> int;
 };
 
-/**
- * @brief Definition of the QDMI Job.
- */
+/// Definition of the QDMI Job.
 struct QDMI_Job_impl_d {
 private:
-  /// @brief The device job handle.
+  /// The device job handle.
   QDMI_Device_Job deviceJob_ = nullptr;
-  /// @brief The device associated with the job.
+  /// The device associated with the job.
   QDMI_Device device_ = nullptr;
 
 public:
@@ -352,16 +348,16 @@ public:
   auto setParameter(QDMI_Job_Parameter param, size_t size,
                     const void* value) const -> int;
 
-  /// @brief Forwards the atomic program-list setter to the device.
+  /// Forwards the atomic program-list setter to the device.
   auto setPrograms(QDMI_Program_Format format, size_t count,
                    const size_t* sizes, const void* const* programs) const
       -> int;
 
-  /// @brief Retrieves one program from the device.
+  /// Retrieves one program from the device.
   auto getProgram(size_t programIndex, size_t size, void* data,
                   size_t* sizeRet) const -> int;
 
-  /// @brief Queries the status of one program.
+  /// Queries the status of one program.
   auto getProgramStatus(size_t programIndex, QDMI_Job_Status* status) const
       -> int;
 
@@ -414,22 +410,20 @@ public:
   auto free() -> void;
 };
 
-/**
- * @brief Definition of the QDMI Session.
- */
+/// Definition of the QDMI Session.
 struct QDMI_Session_impl_d {
 private:
-  /// @brief The status of the session.
+  /// The status of the session.
   qdmi::SessionStatus status_ = qdmi::SessionStatus::ALLOCATED;
-  /// @brief Snapshot of devices visible when this session was allocated.
+  /// Snapshot of devices visible when this session was allocated.
   std::vector<QDMI_Device> devices_;
 
 public:
-  /// @brief Constructor for the QDMI session.
+  /// Constructor for the QDMI session.
   explicit QDMI_Session_impl_d(
       const std::vector<std::unique_ptr<QDMI_Device_impl_d>>& devices);
 
-  /// @brief Constructor from an explicit device-handle snapshot.
+  /// Constructor from an explicit device-handle snapshot.
   explicit QDMI_Session_impl_d(const std::vector<QDMI_Device>& devices);
 
   /**
@@ -466,7 +460,7 @@ class Driver final : public Singleton<Driver> {
   friend class Singleton;
   friend class Session;
 
-  /// @brief Private constructor to enforce the singleton pattern.
+  /// Private constructor to enforce the singleton pattern.
   Driver();
 
   /// Guards all mutable driver state below.
@@ -478,27 +472,25 @@ class Driver final : public Singleton<Driver> {
   /// Ensures that the configured client catalog is materialized once.
   std::once_flag clientCatalogOnce_;
 
-  /**
-   * @brief Vector of unique pointers to QDMI_Device_impl_d objects.
-   */
+  /// Vector of unique pointers to QDMI_Device_impl_d objects.
   std::vector<std::unique_ptr<QDMI_Device_impl_d>> devices_;
 
-  /// @brief Registered definitions in stable registration order.
+  /// Registered definitions in stable registration order.
   std::vector<DeviceDefinition> definitions_;
 
-  /// @brief IDs disabled by the highest-precedence configuration source.
+  /// IDs disabled by the highest-precedence configuration source.
   std::unordered_set<std::string> disabledDeviceIds_;
 
-  /// @brief Initially discovered definitions visible to the client API.
+  /// Initially discovered definitions visible to the client API.
   std::vector<std::string> clientDefinitionIds_;
 
-  /// @brief Materialized devices exposed through the client API.
+  /// Materialized devices exposed through the client API.
   std::vector<QDMI_Device> clientDevices_;
 
-  /// @brief Opened devices indexed by their stable registration ID.
+  /// Opened devices indexed by their stable registration ID.
   std::unordered_map<std::string, QDMI_Device> openedDevices_;
 
-  /// @brief Device IDs whose persistent sessions are being opened.
+  /// Device IDs whose persistent sessions are being opened.
   std::unordered_set<std::string> openingDeviceIds_;
 
   /**

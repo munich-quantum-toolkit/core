@@ -9,7 +9,7 @@
  */
 
 /// @file Common.hpp
-/// @brief Common definitions and utilities for working with QDMI in C++.
+/// Common definitions and utilities for working with QDMI in C++.
 /// @note This header will be upstreamed to the QDMI core library in the future.
 
 #pragma once
@@ -21,7 +21,7 @@
 namespace qdmi {
 template <class Concrete> class Singleton {
 protected:
-  /// @brief Protected constructor to enforce the singleton pattern.
+  /// Protected constructor to enforce the singleton pattern.
   Singleton() = default;
 
 public:
@@ -37,7 +37,7 @@ public:
   Singleton(const Singleton&) = delete;
   Singleton& operator=(const Singleton&) = delete;
 
-  /// @brief Virtual destructor for the Singleton base class.
+  /// Virtual destructor for the Singleton base class.
   virtual ~Singleton() = default;
 
   /// @returns the singleton instance of the derived class.

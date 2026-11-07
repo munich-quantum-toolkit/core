@@ -86,6 +86,41 @@ queryOperations(MQT_DDSIM_QDMI_Device_Session session) {
   return ops;
 }
 
+int setPrograms(MQT_DDSIM_QDMI_Device_Job job, const QDMI_Program_Format fmt,
+                const std::vector<std::string>& programs) {
+  std::vector<size_t> sizes;
+  std::vector<const void*> pointers;
+  for (const auto& program : programs) {
+    sizes.emplace_back(program.size() + 1);
+    pointers.emplace_back(program.c_str());
+  }
+  return MQT_DDSIM_QDMI_device_job_set_programs(job, fmt, programs.size(),
+                                                sizes.data(), pointers.data());
+}
+
+std::string getProgram(MQT_DDSIM_QDMI_Device_Job job, const size_t index) {
+  size_t size = 0;
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_get_program(job, index, 0, nullptr, &size),
+      QDMI_SUCCESS);
+  std::string program(size, '\0');
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program(job, index, size,
+                                                  program.data(), nullptr),
+            QDMI_SUCCESS);
+  if (!program.empty()) {
+    program.pop_back();
+  }
+  return program;
+}
+
+QDMI_Job_Status getProgramStatus(MQT_DDSIM_QDMI_Device_Job job,
+                                 const size_t index) {
+  QDMI_Job_Status status{};
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_program_status(job, index, &status),
+            QDMI_SUCCESS);
+  return status;
+}
+
 int setProgram(MQT_DDSIM_QDMI_Device_Job job, const QDMI_Program_Format fmt,
                const std::string_view program) {
   if (job == nullptr) {

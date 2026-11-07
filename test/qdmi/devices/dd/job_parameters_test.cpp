@@ -22,6 +22,7 @@
 #include <cstddef>
 #include <cstring>
 #include <string>
+#include <vector>
 
 TEST(JobParameters, SetAndQueryBasics) {
   const qdmi_test::SessionGuard s{};
@@ -213,4 +214,42 @@ TEST(JobParameters, ProgramFormatSupport) {
                                                      nullptr),
               QDMI_ERROR_NOTSUPPORTED);
   }
+}
+
+TEST(JobParameters, CopiesAndAtomicallyReplacesPrograms) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  std::vector<std::string> programs{
+      qdmi_test::QASM3_ZERO,
+      qdmi_test::QASM3_ONE,
+  };
+  ASSERT_EQ(qdmi_test::setPrograms(j.job, QDMI_PROGRAM_FORMAT_QASM3, programs),
+            QDMI_SUCCESS);
+  programs[0] = "overwritten";
+  EXPECT_EQ(qdmi_test::getProgram(j.job, 0), qdmi_test::QASM3_ZERO);
+  EXPECT_EQ(qdmi_test::getProgram(j.job, 1), qdmi_test::QASM3_ONE);
+  const std::string invalid("OPENQASM 3;\0garbage", 19);
+  EXPECT_EQ(qdmi_test::setPrograms(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+                                   {qdmi_test::QASM3_ONE, invalid}),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(qdmi_test::getProgram(j.job, 0), qdmi_test::QASM3_ZERO);
+  EXPECT_EQ(qdmi_test::getProgram(j.job, 1), qdmi_test::QASM3_ONE);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
+                j.job, QDMI_PROGRAM_FORMAT_QASM2, 4, nullptr, nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(qdmi_test::getProgram(j.job, 1), qdmi_test::QASM3_ONE);
+  size_t count = 0;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
+                j.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM, sizeof(count),
+                &count, nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(count, 2);
+  ASSERT_EQ(qdmi_test::setPrograms(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+                                   {qdmi_test::QASM3_ONE, qdmi_test::QASM3_ZERO,
+                                    qdmi_test::QASM3_ONE}),
+            QDMI_SUCCESS);
+  EXPECT_EQ(qdmi_test::getProgram(j.job, 2), qdmi_test::QASM3_ONE);
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_get_program(j.job, 3, 0, nullptr, nullptr),
+      QDMI_ERROR_OUTOFRANGE);
 }

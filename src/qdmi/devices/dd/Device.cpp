@@ -373,6 +373,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
   }
   return QDMI_SUCCESS;
 }
+
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::setPrograms(
     const QDMI_Program_Format format, const size_t count, const size_t* sizes,
     const void* const* programs) -> QDMI_STATUS {
@@ -497,7 +498,6 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::Program::run(const size_t numShots)
   dd_ = std::make_unique<dd::Package>(nQubits);
   stateVecDD_ = dd::simulate(qc, dd::makeZeroState(nQubits, *dd_), *dd_);
 }
-
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   const std::scoped_lock lock(mutex_);
   if (status_.load() != QDMI_JOB_STATUS_CREATED || programs_.empty()) {
