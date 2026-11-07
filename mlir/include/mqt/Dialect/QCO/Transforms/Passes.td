@@ -278,6 +278,12 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     lowered before mapping. Tensor allocations must follow a flat
     extract/insert/deallocate chain without tensor control flow.
 
+    Measurements advance during routing when their results or qubit successors
+    are needed by subsequent quantum work. This dependency analysis includes
+    nested captures and ordered classical memory effects. Other measurements
+    remain terminal. Placement preserves the logical classification while
+    inserting SWAPs and threading physical workspace through regions.
+
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
     mapping, which is referred to as the initial layout. The layout covers the
     complete target. The pass materializes all target sites as routing workspace
@@ -296,22 +302,25 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     layout. For `scf.while`, the before-region exit places the after region
     and loop results; the after region restores the loop-entry layout.
 
-    For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
-    or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
-    sequence of `SWAP` operations that makes these two-qubit operations executable. The A* search also considers
-    subsequent layers, which are determined by the `nlookahead` parameter.
+    Each routing search finds a sequence of `SWAP` operations that makes the
+    leading two-qubit interaction executable. The remaining interactions in
+    the window guide the heuristic; they need not be executable when the
+    search finishes. The `nlookahead` parameter limits these additional
+    interactions.
 
     The cost function of the A* search is defined as follows:
 
     - `f(n) = g(n) + h(n)`
-    - `g(n) = alpha * depth(n)`
-    - `h(n) = sum(pow(lambda, i) * h(gate, p) for [i, gate] in enumerate(window))`
+    - `g(n) = alpha * cost(n)`
+    - `h(n) = swapCost * sum(pow(lambda, i) * h(gate, p) for [i, gate] in enumerate(window))`
 
     Where:
 
     - `p` is the dynamic-to-static mapping associated with search node `n`.
     - `window` contains at most `1 + nlookahead` two-qubit operations in program order.
-    - `depth(n)` returns the distance from the node `n` to the root node.
+    - `cost(n)` is the accumulated SWAP cost from the root to node `n`.
+      Without native costs, each SWAP costs one.
+    - `swapCost` is the uniform standalone SWAP cost, or one without native costs.
     - `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
     - `h(gate, p)` is `dist(p[gate.first], p[gate.second]) - 1`.
 

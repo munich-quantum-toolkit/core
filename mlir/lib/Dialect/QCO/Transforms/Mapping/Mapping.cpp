@@ -31,7 +31,6 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/RandomSeed.h"
 
-#include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -58,6 +57,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/PriorityQueue.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
@@ -578,6 +578,7 @@ private:
     uint64_t seed;
     std::unique_ptr<const NativeCostTable> nativeCosts;
     std::optional<size_t> nativeSwapCost;
+    DenseSet<Operation*> routingMeasurements;
 
     void prepareNativeCosts(Operation* root) {
       const auto& basis = target.synthesisBasis();
@@ -683,7 +684,7 @@ private:
     QubitIndexPair swap;
     Node* parent = nullptr;
     int64_t cost = 0;
-    size_t depth = 0;
+    size_t layoutHash = 0;
     float f = 0;
 
     /// Reuse layout capacity when starting a new search.
@@ -691,7 +692,7 @@ private:
       layout = initialLayout;
       swap = {};
       parent = nullptr;
-      depth = 0;
+      layoutHash = hashLayout(layout);
       cost = 0;
       f = 0;
     }
@@ -702,9 +703,12 @@ private:
                          const DistanceMatrix& distances,
                          const Parameters& params) {
       layout = nextParent->layout;
-      layout.swap(candidate.indices.first, candidate.indices.second);
-
-      depth = nextParent->depth + 1;
+      const auto [a, b] = candidate.indices;
+      const auto pa = layout.getProgramIndex(a);
+      const auto pb = layout.getProgramIndex(b);
+      layoutHash = nextParent->layoutHash ^ hashEntry(pa, a) ^
+                   hashEntry(pb, b) ^ hashEntry(pa, b) ^ hashEntry(pb, a);
+      layout.swap(a, b);
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
       f = params.alpha * static_cast<float>(cost) +
@@ -715,8 +719,7 @@ private:
       parent = nextParent;
     }
 
-    /// Return true, if the current SWAP sequence makes all gates in the front
-    /// executable.
+    /// Return whether the leading interaction is executable.
     [[nodiscard]] bool isGoal(const QubitIndexPair& front,
                               const CompilerTarget& target) const {
       const auto [hw0, hw1] =
@@ -729,22 +732,32 @@ private:
 
     /// Return the sequence of SWAPs from the root to this node.
     [[nodiscard]] SmallVector<QubitIndexPair> swaps() const {
-      SmallVector<QubitIndexPair> seq(depth);
-      auto it = seq.rbegin();
-      for (const Node* n = this; n->parent != nullptr; n = n->parent, ++it) {
-        *it = n->swap;
+      SmallVector<QubitIndexPair> seq;
+      for (const Node* n = this; n->parent != nullptr; n = n->parent) {
+        seq.push_back(n->swap);
       }
+      std::ranges::reverse(seq);
       return seq;
     }
 
   private:
+    static size_t hashEntry(QubitIndex program, QubitIndex hardware) {
+      return llvm::hash_value((uint64_t{program} << 32U) | hardware);
+    }
+
+    static size_t hashLayout(const Layout<QubitIndex>& layout) {
+      size_t hash = 0;
+      for (auto [program, hardware] :
+           enumerate(layout.getProgramToHardware())) {
+        hash ^= hashEntry(static_cast<QubitIndex>(program), hardware);
+      }
+      return hash;
+    }
+
     /// Calculate the heuristic cost for the A* search algorithm.
     ///
-    /// Computes the minimal number of SWAPs required to route each gate in
-    /// each layer. For each gate, this is determined by the shortest distance
-    /// between its hardware qubits. Intuitively, this is the number of SWAPs
-    /// that a naive router would insert to route the layers (with a constant
-    /// layout).
+    /// Sum the distance-based SWAP estimates for the window's interactions,
+    /// weighted by lookahead distance and evaluated at this node's layout.
     [[nodiscard]] float h(ArrayRef<QubitIndexPair> window,
                           const DistanceMatrix& distances,
                           const Parameters& params) const {
@@ -768,7 +781,7 @@ private:
   public:
     /// Push a node onto the frontier.
     void push(Node* node) {
-      auto*& incumbent = best[node->layout.getProgramToHardware()];
+      auto*& incumbent = best[node];
       if (incumbent == nullptr || node->cost < incumbent->cost) {
         incumbent = node;
         queue.push(node);
@@ -781,12 +794,10 @@ private:
         Node* node = queue.top();
         queue.pop();
 
-        const auto key = node->layout.getProgramToHardware();
-
         // If the node matches the entry in the best map, it's valid.
         // Otherwise, the node was superseded by a cheaper state. Thus, drop it.
 
-        if (best.lookup(key) == node) {
+        if (best.lookup(node) == node) {
           return node;
         }
       }
@@ -803,8 +814,23 @@ private:
 
     /// Priority queue of node pointers managed by the caller.
     llvm::PriorityQueue<Node*, std::vector<Node*>, CompareNodePointer> queue;
-    /// Maps a layout to the node that reached it using the lowest cost.
-    DenseMap<ArrayRef<QubitIndex>, Node*> best;
+    struct LayoutKeyInfo {
+      static unsigned getHashValue(const Node* node) {
+        return static_cast<unsigned>(node->layoutHash);
+      }
+
+      static bool isEqual(const Node* lhs, const Node* rhs) {
+        if (lhs == rhs) {
+          return true;
+        }
+        return lhs->layoutHash == rhs->layoutHash &&
+               lhs->layout.getProgramToHardware() ==
+                   rhs->layout.getProgramToHardware();
+      }
+    };
+
+    /// Keys borrow immutable arena nodes until the search ends.
+    DenseMap<Node*, Node*, LayoutKeyInfo> best;
   };
 
   /// Memory arena for A* search nodes, enabling reuse across searches to reduce
@@ -1044,7 +1070,11 @@ protected:
       return;
     }
 
-    Environment env{.target = target, .seed = compilationSeed(moduleOp, seed)};
+    Environment env{
+        .target = target,
+        .seed = compilationSeed(moduleOp, seed),
+        .routingMeasurements = findRoutingMeasurements(func),
+    };
     const auto [layout, expectedScore] =
         generateLayout(computation->wires, func, env);
 
@@ -1855,104 +1885,42 @@ private:
     stats.nswaps += swaps.size();
   }
 
-  /// Classify a consecutive measurement run from its end, so each suffix is
-  /// visited once.
+  /// Find measurements required by logical quantum work before placement.
   ///
-  /// The cache is valid only while the IR remains unchanged.
-  static bool measurementNeedsRouting(MeasureOp measurement,
-                                      DenseMap<Operation*, bool>& cache) {
-    SmallVector<MeasureOp> measurements;
-    bool needsRouting = false;
-    for (auto* op : WireRange(measurement.getQubitOut())) {
-      if (const auto cached = cache.find(op); cached != cache.end()) {
-        needsRouting = cached->second;
-        break;
-      }
-      if (auto next = dyn_cast<MeasureOp>(op)) {
-        measurements.push_back(next);
-        continue;
-      }
-      // Validated tensor insertion tails become sinks during placement.
-      needsRouting = !isa<SinkOp, qtensor::InsertOp>(op);
-      break;
-    }
-
-    Block* const block = measurement->getBlock();
-
-    const auto addSlice = [](Operation* root, SetVector<Operation*>& worklist) {
-      SetVector<Operation*> slice;
-      ForwardSliceOptions options;
-      options.inclusive = true;
-      options.filter = [&](Operation* op) { return !worklist.contains(op); };
-      getForwardSlice(root, &slice, options);
-      worklist.insert(slice.begin(), slice.end());
-    };
-
-    SetVector<Operation*> worklist;
-
-    DenseSet<Value> processed;
-
-    size_t cursor = 0;
-    const auto resultNeedsRouting = [&](MeasureOp next) {
-      for_each(next.getResult().getUsers(),
-               [&](Operation* user) { addSlice(user, worklist); });
-      for (; cursor < worklist.size(); ++cursor) {
-        Operation* op = worklist[cursor];
-
-        // Quantum consumers require the measurement to advance, independent
-        // of the selected target's permission to reuse measured qubits.
-
-        if (any_of(op->getOperandTypes(),
-                   [](auto type) { return isa<QubitType>(type); })) {
-          return true;
-        }
-
-        // Captures and nested memory accesses also constrain their enclosing
-        // composite, whose placement threads every physical wire through it.
-
-        if (op->getBlock() != block) {
-          if (Operation* ancestor = block->findAncestorOpInBlock(*op);
-              ancestor != nullptr) {
-            addSlice(ancestor, worklist);
-          }
-        }
-
-        const auto effects = getEffectsRecursively(op);
-        if (!effects) {
-          continue;
-        }
-
-        for (const auto& effect : *effects) {
-          auto value = effect.getValue();
-          if (!value ||
-              !isa<cbit::RegisterType, BaseMemRefType>(value.getType())) {
-            continue;
-          }
-
-          if (!processed.insert(value).second) {
-            continue;
-          }
-
-          for (Operation* user : value.getUsers()) {
-            Operation* ancestor = block->findAncestorOpInBlock(*user);
-            if (user == op ||
-                (ancestor && !measurement->isBeforeInBlock(ancestor))) {
-              continue;
-            }
-
-            addSlice(user, worklist);
-          }
-        }
+  /// Placement preserves measurement identities and inserts physical routing
+  /// before pending operations, so both routing modes use this immutable set.
+  static DenseSet<Operation*> findRoutingMeasurements(func::FuncOp func) {
+    DenseSet<Operation*> measurements;
+    func.walk([&](Block* block) {
+      if (block->getOps<MeasureOp>().empty()) {
+        return;
       }
 
-      return false;
-    };
+      DenseMap<Operation*, SmallVector<Operation*, 2>> predecessors;
+      walkOperationDependencies(*block,
+                                [&](Operation* before, Operation* after) {
+                                  predecessors[after].push_back(before);
+                                });
 
-    for (auto next : llvm::reverse(measurements)) {
-      needsRouting = needsRouting || resultNeedsRouting(next);
-      cache.try_emplace(next, needsRouting);
-    }
-    return needsRouting;
+      SetVector<Operation*> required;
+      for (Operation& op : *block) {
+        if (!isa<MeasureOp, SinkOp, qtensor::InsertOp>(op) &&
+            any_of(op.getOperandTypes(),
+                   [](Type type) { return isa<QubitType>(type); })) {
+          required.insert(&op);
+        }
+      }
+      for (size_t cursor = 0; cursor < required.size(); ++cursor) {
+        Operation* op = required[cursor];
+        if (isa<MeasureOp>(op)) {
+          measurements.insert(op);
+        }
+        if (auto it = predecessors.find(op); it != predecessors.end()) {
+          required.insert(it->second.begin(), it->second.end());
+        }
+      }
+    });
+    return measurements;
   }
 
   /// Advance past executable gates and return the first ready composite.
@@ -1960,20 +1928,11 @@ private:
   /// Leave wires at non-executable gates, composites, terminal measurements, or
   /// sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
-  std::optional<CompositeUnitary>
-  advance(RoutingState& state, const Boundary<Direction>& boundary,
-          const Environment& env, bool classicalAliases) {
+  std::optional<CompositeUnitary> advance(RoutingState& state,
+                                          const Boundary<Direction>& boundary,
+                                          const Environment& env) {
     auto& wires = state.wires;
     std::optional<CompositeUnitary> composite;
-    // Advancement only moves iterators. Discard classifications before routing
-    // inserts SWAPs or replaces composites.
-    DenseMap<Operation*, bool> measurementRouting;
-    const auto needsRouting = [&](MeasureOp measurement) {
-      // Aliases can hide feedback from the storage handle's SSA use chain.
-      return classicalAliases ||
-             measurementNeedsRouting(measurement, measurementRouting);
-    };
-
     // The wire traversal does not follow classical dependencies. Defer a
     // composite until earlier routing work is complete, but let independent
     // composites pass terminal wires. Reverse block order for backward routing.
@@ -1996,7 +1955,7 @@ private:
         }
         if constexpr (Direction == WireDirection::Forward) {
           if (auto measurement = dyn_cast<MeasureOp>(op);
-              measurement && !needsRouting(measurement)) {
+              measurement && !env.routingMeasurements.contains(measurement)) {
             return false;
           }
           return op->isBeforeInBlock(candidate);
@@ -2032,7 +1991,7 @@ private:
                   if (Direction == WireDirection::Backward) {
                     return true;
                   }
-                  return needsRouting(m);
+                  return env.routingMeasurements.contains(m);
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
                     [](auto) { return Direction == WireDirection::Forward; })
@@ -2308,12 +2267,9 @@ private:
 
     Statistics stats;
     Boundary<Direction> boundary(block);
-    const bool classicalAliases = Direction == WireDirection::Forward &&
-                                  hasPotentialClassicalAliases(block);
 
     while (true) {
-      auto composite =
-          advance<Direction>(state, boundary, env, classicalAliases);
+      auto composite = advance<Direction>(state, boundary, env);
       if (composite) {
         assert(composite->op == boundary.operation());
         boundary.advance();
