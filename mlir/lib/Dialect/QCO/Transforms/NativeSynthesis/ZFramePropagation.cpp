@@ -32,6 +32,7 @@
 #include <cmath>
 #include <cstddef>
 #include <numbers>
+#include <optional>
 #include <utility>
 
 namespace mlir::qco::decomposition {
@@ -96,14 +97,17 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
   const bool equatorial =
       target.synthesisBasis() &&
       target.synthesisBasis()->singleQubit == SingleQubitBasis::R;
+  // Reuse cached coverage before checking heterogeneous site capabilities.
   const bool nativeRZ =
-      target.hasDeviceConstraints()
-          ? llvm::all_of(target.siteIds(),
-                         [&](auto site) {
-                           return target.supports(CompilerTarget::GateKind::RZ,
-                                                  ArrayRef(&site, 1));
-                         })
-          : target.supports(CompilerTarget::GateKind::RZ);
+      target.findOperation("rz", 1, {std::nullopt}, std::nullopt).capability !=
+          nullptr ||
+      (target.hasDeviceConstraints()
+           ? llvm::all_of(target.siteIds(),
+                          [&](auto site) {
+                            return target.supports(CompilerTarget::GateKind::RZ,
+                                                   ArrayRef(&site, 1));
+                          })
+           : target.supports(CompilerTarget::GateKind::RZ));
   if (!equatorial && !nativeRZ) {
     return success();
   }
