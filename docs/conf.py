@@ -55,6 +55,9 @@ extensions = [
     "sphinxext.opengraph",
 ]
 
+# Both builders execute notebooks that write to the same source directory.
+llms_txt_build_parallel = False
+
 source_suffix = [".rst", ".md"]
 
 exclude_patterns = [
