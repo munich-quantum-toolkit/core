@@ -138,7 +138,6 @@ class QDMIBackend(BackendV2):
             self._environment = TargetEnvironment.from_device(device)
         except ValueError as exc:
             raise UnsupportedDeviceError(str(exc)) from exc
-        self._native_width = max((site.id for site in self._environment.target.sites), default=-1) + 1
         self.last_job: QDMIJob | None = None
         self._target = self._build_target()
 
@@ -257,6 +256,8 @@ class QDMIBackend(BackendV2):
             UnsupportedOperationError: If Qiskit cannot represent a capability.
         """
         snapshot = self._environment.target
+        sites = snapshot.sites
+        self._native_width = max((site.id for site in sites), default=-1) + 1
         self._placeable_sites = set(snapshot.placeable_sites)
         if not self._placeable_sites:
             msg = "The device has no sites with single-qubit gates and measurement."
@@ -397,9 +398,9 @@ class QDMIBackend(BackendV2):
         if ProgramCapability.CLASSICAL_ASSIGNMENT in capabilities:
             target.add_instruction(Store, name="store")
         target.add_instruction(Barrier, name="barrier")
-        if any(site.t1 is not None or site.t2 is not None for site in snapshot.sites):
+        if any(site.t1 is not None or site.t2 is not None for site in sites):
             properties = [QubitProperties() for _ in range(width)]
-            for site in snapshot.sites:
+            for site in sites:
                 if site.id in self._placeable_sites:
                     properties[site.id] = QubitProperties(
                         t1=self._duration_seconds(site.t1), t2=self._duration_seconds(site.t2)
