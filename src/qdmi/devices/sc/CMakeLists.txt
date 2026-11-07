@@ -20,8 +20,11 @@ if(NOT TARGET ${TARGET_NAME})
 
   # add headers using file sets
   target_sources(
-    ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
-                          ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Configuration.hpp)
+    ${TARGET_NAME}
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+      FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Configuration.hpp)
 
   target_link_libraries(${TARGET_NAME} PRIVATE $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>)
 
@@ -30,9 +33,10 @@ if(NOT TARGET ${TARGET_NAME})
   # Place the library in the common output directories.
   set_target_properties(
     ${TARGET_NAME}
-    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
-               ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
-               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
+    PROPERTIES
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+      ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
 endif()
 
 # Set target name
@@ -57,14 +61,10 @@ if(NOT TARGET ${TARGET_NAME})
   # add headers using file sets
   target_sources(
     ${TARGET_NAME}
-    PUBLIC FILE_SET
-           HEADERS
-           BASE_DIRS
-           ${MQT_CORE_INCLUDE_BUILD_DIR}
-           ${CMAKE_CURRENT_BINARY_DIR}/include
-           FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Device.hpp
-           ${QDMI_HDRS})
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} ${CMAKE_CURRENT_BINARY_DIR}/include
+      FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Device.hpp ${QDMI_HDRS})
 
   # add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon MQT::CoreQDMIScDeviceConfig)
@@ -85,6 +85,4 @@ if(NOT TARGET ${TARGET_NAME})
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS}
-    PARENT_SCOPE)
+set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} PARENT_SCOPE)

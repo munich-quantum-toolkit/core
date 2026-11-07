@@ -10,8 +10,6 @@
 
 @PACKAGE_INIT@
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
-
 include(CMakeFindDependencyMacro)
 find_dependency(qdmi)
 
@@ -21,10 +19,7 @@ endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/AddMQTPythonBinding.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/AddMQTQDMIDevice.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/Cache.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/PackageAddTest.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/PreventInSourceBuilds.cmake")
-include("${CMAKE_CURRENT_LIST_DIR}/StandardProjectSettings.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/mqt-core-targets.cmake")
 
 if(NOT mqt-core_FIND_QUIETLY)

@@ -15,9 +15,7 @@ project(
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
 if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
-  set(CMAKE_CXX_STANDARD
-      20
-      CACHE STRING "C++ standard to conform to" FORCE)
+  set(CMAKE_CXX_STANDARD 20 CACHE STRING "C++ standard to conform to" FORCE)
 endif()
 
 # Add path for custom modules
@@ -28,29 +26,26 @@ include(StandardProjectSettings)
 include(PreventInSourceBuilds)
 include(PackageAddTest)
 include(Cache)
+include(GNUInstallDirs)
 include(AddMQTCoreLibrary)
 include(AddMQTQDMIDevice)
 
 option(BUILD_MQT_CORE_BINDINGS "Build the MQT Core Python bindings" OFF)
 if(BUILD_MQT_CORE_BINDINGS)
   # ensure that the BINDINGS option is set
-  set(BINDINGS
-      ON
-      CACHE INTERNAL "Enable settings related to Python bindings")
+  set(BINDINGS ON CACHE INTERNAL "Enable settings related to Python bindings")
   # Some common settings for finding Python
-  set(Python_FIND_VIRTUALENV
-      FIRST
+  set(Python_FIND_VIRTUALENV FIRST
       CACHE STRING "Give precedence to virtualenvs when searching for Python")
-  set(Python_FIND_FRAMEWORK
-      LAST
-      CACHE STRING "Prefer Brew/Conda to Apple framework Python")
-  set(Python_ARTIFACTS_INTERACTIVE
-      ON
+  set(Python_FIND_FRAMEWORK LAST CACHE STRING "Prefer Brew/Conda to Apple framework Python")
+  set(Python_ARTIFACTS_INTERACTIVE ON
       CACHE BOOL "Prevent multiple searches for Python and instead cache the results.")
 
   # top-level call to find Python
-  find_package(Python 3.11 REQUIRED COMPONENTS Interpreter Development.Module
-                                               ${SKBUILD_SABI_COMPONENT})
+  find_package(
+    Python 3.11
+    REQUIRED
+    COMPONENTS Interpreter Development.Module ${SKBUILD_SABI_COMPONENT})
 endif()
 
 option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJECT_IS_TOP_LEVEL})
@@ -86,7 +81,7 @@ if(MQT_CORE_INSTALL)
     set(BASEPOINT $ORIGIN)
   endif()
   set(CMAKE_INSTALL_RPATH ${BASEPOINT} ${BASEPOINT}/${CMAKE_INSTALL_LIBDIR}
-                          ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
+      ${BASEPOINT}/../${CMAKE_INSTALL_LIBDIR})
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 endif()
@@ -108,7 +103,7 @@ endif()
 
 if(BUILD_MQT_CORE_BINDINGS)
   set(MQT_CORE_WHEEL_TARGETS mqt-core-ir mqt-core-dd mqt-core-ir-bindings mqt-core-dd-bindings
-                             mqt-core-qdmi-bindings)
+      mqt-core-qdmi-bindings)
   if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device)
   endif()
@@ -121,13 +116,14 @@ endif()
 
 if(PROJECT_IS_TOP_LEVEL)
   if(NOT TARGET mqt-core-uninstall)
-    configure_file(${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in
-                   ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE @ONLY)
-    add_custom_target(mqt-core-uninstall COMMAND ${CMAKE_COMMAND} -P
-                                                 ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
+    configure_file(
+      ${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_uninstall.cmake.in
+      ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake IMMEDIATE
+      @ONLY)
+    add_custom_target(
+      mqt-core-uninstall
+      COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/cmake_uninstall.cmake)
   endif()
 else()
-  set(mqt-core_FOUND
-      TRUE
-      CACHE INTERNAL "True if mqt-core is found on the system")
+  set(mqt-core_FOUND TRUE CACHE INTERNAL "True if mqt-core is found on the system")
 endif()

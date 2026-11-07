@@ -15,7 +15,7 @@ from __future__ import annotations
 
 __lazy_modules__ = {"collections", "datetime", "mqt.core.qdmi", "numbers", "qiskit.result", "qiskit.result.models"}
 
-import datetime
+import datetime as dt
 from collections import Counter
 from numbers import Integral
 from typing import TYPE_CHECKING, Any
@@ -148,7 +148,7 @@ class QDMIJob(JobV1):
                 backend_version=self._backend.backend_version,
                 job_id=self.job_id(),
                 success=True,
-                date=datetime.datetime.now(datetime.UTC).isoformat(),
+                date=dt.datetime.now(dt.UTC).isoformat(),
                 results=experiment_results,
             )
         except BaseException:

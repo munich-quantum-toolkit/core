@@ -15,50 +15,36 @@ set(FETCH_PACKAGES "")
 if(BUILD_MQT_CORE_BINDINGS)
   # Detect the installed nanobind package and import it into CMake
   execute_process(
-    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir
-    OUTPUT_STRIP_TRAILING_WHITESPACE
+    COMMAND "${Python_EXECUTABLE}" -m nanobind --cmake_dir OUTPUT_STRIP_TRAILING_WHITESPACE
     OUTPUT_VARIABLE nanobind_ROOT)
   find_package(nanobind CONFIG REQUIRED)
 endif()
 
-set(JSON_VERSION
-    3.12.0
-    CACHE STRING "nlohmann_json version")
+set(JSON_VERSION 3.12.0 CACHE STRING "nlohmann_json version")
 set(JSON_URL https://github.com/nlohmann/json/releases/download/v${JSON_VERSION}/json.tar.xz)
-set(JSON_SystemInclude
-    ON
-    CACHE INTERNAL "Treat the library headers like system headers")
-FetchContent_Declare(nlohmann_json URL ${JSON_URL} FIND_PACKAGE_ARGS ${JSON_VERSION})
+set(JSON_SystemInclude ON CACHE INTERNAL "Treat the library headers like system headers")
+fetchcontent_declare(nlohmann_json URL ${JSON_URL} FIND_PACKAGE_ARGS ${JSON_VERSION})
 list(APPEND FETCH_PACKAGES nlohmann_json)
 
 if(BUILD_MQT_CORE_TESTS)
-  set(gtest_force_shared_crt
-      ON
-      CACHE BOOL "" FORCE)
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
   # Disable the install instructions for GTest, as we do not need them.
-  set(INSTALL_GTEST
-      OFF
-      CACHE BOOL "" FORCE)
-  set(GTEST_VERSION
-      1.17.0
-      CACHE STRING "Google Test version")
+  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+  set(GTEST_VERSION 1.17.0 CACHE STRING "Google Test version")
   set(GTEST_URL https://github.com/google/googletest/archive/refs/tags/v${GTEST_VERSION}.tar.gz)
-  FetchContent_Declare(googletest URL ${GTEST_URL} FIND_PACKAGE_ARGS ${GTEST_VERSION} NAMES GTest)
+  fetchcontent_declare(googletest URL ${GTEST_URL} FIND_PACKAGE_ARGS ${GTEST_VERSION} NAMES GTest)
   list(APPEND FETCH_PACKAGES googletest)
 endif()
 
-# cmake-format: off
-set(QDMI_MINIMUM_VERSION 1.3.3
-        CACHE STRING "Minimum QDMI version")
-set(QDMI_VERSION 1.3.3
-        CACHE STRING "QDMI version")
-set(QDMI_REV "18cfb67fd9042761d3005c2f8655751c1758f9c5" # v1.3.3
-        CACHE STRING "QDMI identifier (tag, branch or commit hash)")
+set(QDMI_MINIMUM_VERSION 1.3.3 CACHE STRING "Minimum QDMI version")
+set(QDMI_VERSION 1.3.3 CACHE STRING "QDMI version")
+set(QDMI_REV
+    "18cfb67fd9042761d3005c2f8655751c1758f9c5" # v1.3.3
+    CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
-        CACHE STRING "QDMI repository owner (change when using a fork)")
+    CACHE STRING "QDMI repository owner (change when using a fork)")
 cmake_dependent_option(INSTALL_QDMI "Install QDMI library" ON "MQT_CORE_INSTALL" OFF)
-# cmake-format: on
-FetchContent_Declare(
+fetchcontent_declare(
   qdmi
   GIT_REPOSITORY https://github.com/${QDMI_REPO_OWNER}/qdmi.git
   GIT_TAG ${QDMI_REV}
@@ -66,4 +52,4 @@ FetchContent_Declare(
 list(APPEND FETCH_PACKAGES qdmi)
 
 # Make all declared dependencies available.
-FetchContent_MakeAvailable(${FETCH_PACKAGES})
+fetchcontent_makeavailable(${FETCH_PACKAGES})

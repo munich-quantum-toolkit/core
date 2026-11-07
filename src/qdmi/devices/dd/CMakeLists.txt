@@ -28,14 +28,10 @@ if(NOT TARGET ${TARGET_NAME})
   # Add headers using file sets
   target_sources(
     ${TARGET_NAME}
-    PUBLIC FILE_SET
-           HEADERS
-           BASE_DIRS
-           ${MQT_CORE_INCLUDE_BUILD_DIR}
-           ${CMAKE_CURRENT_BINARY_DIR}/include
-           FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/dd/Device.hpp
-           ${QDMI_HDRS})
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} ${CMAKE_CURRENT_BINARY_DIR}/include
+      FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/dd/Device.hpp ${QDMI_HDRS})
 
   # Add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQASM MQT::CoreQDMICommon)
@@ -44,6 +40,4 @@ if(NOT TARGET ${TARGET_NAME})
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS}
-    PARENT_SCOPE)
+set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} PARENT_SCOPE)

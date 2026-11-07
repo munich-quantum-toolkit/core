@@ -12,26 +12,21 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # Set a default build type if none was specified
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message(STATUS "Setting build type to 'Release' as none was specified.")
-  set(CMAKE_BUILD_TYPE
-      Release
-      CACHE STRING "Choose the type of build." FORCE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build." FORCE)
   # Set the possible values of build type for cmake-gui, ccmake
-  set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "MinSizeRel"
-                                               "RelWithDebInfo")
+  set_property(
+    CACHE CMAKE_BUILD_TYPE
+    PROPERTY STRINGS "Debug" "Release" "MinSizeRel" "RelWithDebInfo")
 endif()
 
 # Require C++ standard
-set_property(GLOBAL PROPERTY CMAKE_CXX_STANDARD_REQUIRED ON)
-set_property(GLOBAL PROPERTY CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Generate compile_commands.json to make it easier to work with clang based tools
-set(CMAKE_EXPORT_COMPILE_COMMANDS
-    ON
-    CACHE BOOL "Export compile commands" FORCE)
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON CACHE BOOL "Export compile commands" FORCE)
 
-set(CMAKE_VERIFY_INTERFACE_HEADER_SETS
-    OFF
-    CACHE BOOL "Verify interface header sets")
+set(CMAKE_VERIFY_INTERFACE_HEADER_SETS OFF CACHE BOOL "Verify interface header sets")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
   add_compile_options(-fcolor-diagnostics)
@@ -45,23 +40,17 @@ endif()
 
 option(DEPLOY "Configure for deployment")
 if(DEFINED ENV{DEPLOY})
-  set(DEPLOY
-      $ENV{DEPLOY}
-      CACHE BOOL "Use deployment configuration from environment" FORCE)
+  set(DEPLOY $ENV{DEPLOY} CACHE BOOL "Use deployment configuration from environment" FORCE)
   message(STATUS "Setting deployment configuration to '${DEPLOY}' from environment")
 elseif(DEFINED ENV{CI})
-  set(DEPLOY
-      ON
-      CACHE BOOL "Set deployment configuration to ON for CI" FORCE)
+  set(DEPLOY ON CACHE BOOL "Set deployment configuration to ON for CI" FORCE)
   message(STATUS "Setting deployment configuration to '${DEPLOY}' for CI")
 endif()
 
 # set deployment specific options
 if(DEPLOY)
   # set the macOS deployment target appropriately
-  set(CMAKE_OSX_DEPLOYMENT_TARGET
-      "13.3"
-      CACHE STRING "" FORCE)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE STRING "" FORCE)
 endif()
 
 # try to enable inter-procedural optimization per default for Release builds outside of deployment
@@ -78,14 +67,11 @@ if(ENABLE_IPO)
     message(DEBUG "IPO is not supported: ${ipo_output}")
   endif()
 endif()
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION
-    ${ipo_supported}
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ${ipo_supported}
     CACHE BOOL "Enable Interprocedural Optimization" FORCE)
 
 # export all symbols by default on Windows
-set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS
-    ON
-    CACHE BOOL "Export all symbols on Windows")
+set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON CACHE BOOL "Export all symbols on Windows")
 
 if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
   set(CMAKE_CXX_SCAN_FOR_MODULES OFF)

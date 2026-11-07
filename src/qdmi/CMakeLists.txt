@@ -19,19 +19,15 @@ if(NOT TARGET ${TARGET_NAME})
 
   target_sources(
     ${TARGET_NAME}
-    PUBLIC FILE_SET
-           HEADERS
-           BASE_DIRS
-           ${MQT_CORE_INCLUDE_BUILD_DIR}
-           FILES
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Client.hpp
-           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Slurm.hpp)
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+      FILES ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Client.hpp
+            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/Slurm.hpp)
 
   target_link_libraries(${TARGET_NAME} PUBLIC qdmi::qdmi MQT::CoreQDMICommon MQT::CoreQDMIDriver)
 
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 
-set(MQT_CORE_TARGETS
-    ${MQT_CORE_TARGETS}
-    PARENT_SCOPE)
+set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} PARENT_SCOPE)

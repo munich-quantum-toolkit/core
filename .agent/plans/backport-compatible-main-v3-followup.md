@@ -25,8 +25,8 @@ must pass.
 
 ## Progress
 
-- [x] (2026-08-18 22:24Z) Refreshed `main`, `v3.x`, pull requests #2153 and
-  #2157, GitHub authentication, the worktree, and commit signing.
+- [x] (2026-08-18 22:24Z) Refreshed `main`, `v3.x`, pull requests #2153
+      and #2157, GitHub authentication, the worktree, and commit signing.
 - [x] (2026-08-18 22:24Z) Selected compatible changes and recorded all v3
   exclusions.
 - [x] (2026-08-18 22:43Z) Ported compatible maintenance and the SpecAudit method
@@ -48,8 +48,8 @@ must pass.
 ## Surprises & Discoveries
 
 - Observation: `v3.x` already contains the automatic backports of #2141, #2142,
-  and #2146. Evidence: its current first-parent history ends in pull requests
-  #2144, #2143, and #2151.
+  and #2146. Evidence: its current first-parent history ends in pull
+  requests #2144, #2143, and #2151.
 - Observation: The automatic #2145 backport merged while this work was in
   progress. Evidence: pull request #2153 merged into `v3.x` as
   `e4ef15f13002e79229d7496faa320657690974f4`. The branch was rebased onto that

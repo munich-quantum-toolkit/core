@@ -175,7 +175,7 @@ flexibility in how the library is integrated into the project.
 include(FetchContent)
 set(FETCH_PACKAGES "")
 
-# cmake-format: off
+# cmakefmt: off
 set(MQT_CORE_MINIMUM_VERSION "<minimum_version>"
     CACHE STRING "MQT Core minimum version")
 set(MQT_CORE_VERSION "<version>"
@@ -184,7 +184,7 @@ set(MQT_CORE_REV "<revision>"
     CACHE STRING "MQT Core identifier (tag, branch or commit hash)")
 set(MQT_CORE_REPO_OWNER "munich-quantum-toolkit"
     CACHE STRING "MQT Core repository owner (change when using a fork)")
-# cmake-format: on
+# cmakefmt: on
 FetchContent_Declare(
   mqt-core
   GIT_REPOSITORY https://github.com/${MQT_CORE_REPO_OWNER}/core.git
@@ -338,15 +338,17 @@ guidelines and workflows, see {doc}`contributing`.
 
 5. Install pre-commit hooks to ensure code quality: <!-- rumdl-disable-line MD013 -->
 
-   The project uses pre-commit hooks for running linters and formatting tools on each commit.
+   The project uses pre-commit hooks for running linters and formatting tools on
+   each commit.
    These checks can be run manually via [{code}`nox`][nox], by running:
 
    ```console
    nox -s lint
    ```
 
-   They can also be run automatically on every commit via [{code}`prek`][prek] (recommended). To set
-   this up, install {code}`prek`, e.g., via:
+   They can also be run automatically on every commit via
+   [{code}`prek`][prek] (recommended). To set this up, install {code}`prek`,
+   e.g., via:
 
    ::::{tab-set}
 

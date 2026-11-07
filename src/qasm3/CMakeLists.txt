@@ -19,8 +19,9 @@ if(NOT TARGET MQT::CoreQASM)
 
   # add headers using file sets
   target_sources(
-    ${MQT_CORE_TARGET_NAME}-qasm PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
-                                        FILES ${QASM_HEADERS})
+    ${MQT_CORE_TARGET_NAME}-qasm
+    PUBLIC
+    FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${QASM_HEADERS})
 
   # add link libraries
   target_link_libraries(${MQT_CORE_TARGET_NAME}-qasm PUBLIC MQT::CoreIR)
@@ -29,14 +30,15 @@ if(NOT TARGET MQT::CoreQASM)
   include(GenerateExportHeader)
   generate_export_header(${MQT_CORE_TARGET_NAME}-qasm BASE_NAME mqt_core_qasm)
   target_sources(
-    ${MQT_CORE_TARGET_NAME}-qasm PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
-                                        FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_qasm_export.h)
+    ${MQT_CORE_TARGET_NAME}-qasm
+    PUBLIC
+    FILE_SET HEADERS
+      BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/..
+      FILES ${CMAKE_CURRENT_BINARY_DIR}/mqt_core_qasm_export.h)
   if(NOT BUILD_MQT_CORE_SHARED_LIBS)
     target_compile_definitions(${MQT_CORE_TARGET_NAME}-qasm PUBLIC MQT_CORE_QASM_STATIC_DEFINE)
   endif()
 
   # add to list of MQT core target
-  set(MQT_CORE_TARGETS
-      ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-qasm
-      PARENT_SCOPE)
+  set(MQT_CORE_TARGETS ${MQT_CORE_TARGETS} ${MQT_CORE_TARGET_NAME}-qasm PARENT_SCOPE)
 endif()
