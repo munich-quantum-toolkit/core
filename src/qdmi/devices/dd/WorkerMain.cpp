@@ -114,16 +114,13 @@ struct Execution {
     }
     if (numShots_ != 0) {
       mlir::qco::DDSamplingState retainedState;
-      const size_t workers =
-          automaticWorkers_
-              ? std::min(maxWorkers_,
-                         std::clamp(numShots_ / 256, size_t{1}, size_t{8}))
-              : maxWorkers_;
+      const size_t workers = automaticWorkers_ ? 0 : maxWorkers_;
       auto counts = mlir::qco::sample(
           entryPoint, numShots_, seed_.value_or(0),
           mlir::qco::DDArgumentBindings{}, nullptr, &retainedState,
-          {.maxQubits = maxQubits_}, workers,
-          [&](size_t desired) { return requestWorkers(desired); });
+          {.maxQubits = maxQubits_}, workers, [&](size_t desired) {
+            return requestWorkers(std::min(desired, maxWorkers_));
+          });
       if (llvm::failed(counts)) {
         return false;
       }
