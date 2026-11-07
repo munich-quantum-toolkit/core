@@ -278,6 +278,12 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     lowered before mapping. Tensor allocations must follow a flat
     extract/insert/deallocate chain without tensor control flow.
 
+    Measurements advance during routing when their results or qubit successors
+    are needed by subsequent quantum work. This dependency analysis includes
+    nested captures and ordered classical memory effects. Other measurements
+    remain terminal. Placement preserves the logical classification while
+    inserting SWAPs and threading physical workspace through regions.
+
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
     mapping, which is referred to as the initial layout. The layout covers the
     complete target. The pass materializes all target sites as routing workspace

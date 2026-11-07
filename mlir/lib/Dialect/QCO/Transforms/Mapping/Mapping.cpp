@@ -31,7 +31,6 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/RandomSeed.h"
 
-#include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -579,7 +578,7 @@ private:
     uint64_t seed;
     std::unique_ptr<const NativeCostTable> nativeCosts;
     std::optional<size_t> nativeSwapCost;
-    DenseMap<Operation*, bool> isolatedMeasurementRouting;
+    DenseSet<Operation*> routingMeasurements;
 
     void prepareNativeCosts(Operation* root) {
       const auto& basis = target.synthesisBasis();
@@ -1074,7 +1073,7 @@ protected:
     Environment env{
         .target = target,
         .seed = compilationSeed(moduleOp, seed),
-        .isolatedMeasurementRouting = DenseMap<Operation*, bool>{},
+        .routingMeasurements = findRoutingMeasurements(func),
     };
     const auto [layout, expectedScore] =
         generateLayout(computation->wires, func, env);
@@ -1508,20 +1507,6 @@ private:
     }
 
     env.prepareNativeCosts(func);
-    func.walk([&](Block* block) {
-      if (hasPotentialClassicalAliases(*block)) {
-        return;
-      }
-      for (auto measurement : block->getOps<MeasureOp>()) {
-        // Consecutive runs share suffix state whose answer depends on the
-        // starting measurement; keep their per-advance cache.
-        if (!isa_and_nonnull<MeasureOp>(
-                measurement.getQubitIn().getDefiningOp()) &&
-            !isa<MeasureOp>(*measurement.getQubitOut().getUsers().begin())) {
-          measurementNeedsRouting(measurement, env.isolatedMeasurementRouting);
-        }
-      }
-    });
 
     struct Trial {
       Layout<QubitIndex> layout;
@@ -1900,133 +1885,54 @@ private:
     stats.nswaps += swaps.size();
   }
 
-  /// Classify a consecutive measurement run from its end, so each suffix is
-  /// visited once.
+  /// Find measurements required by logical quantum work before placement.
   ///
-  /// The cache is valid only while the IR remains unchanged.
-  static bool measurementNeedsRouting(MeasureOp measurement,
-                                      DenseMap<Operation*, bool>& cache) {
-    SmallVector<MeasureOp> measurements;
-    bool needsRouting = false;
-    for (auto* op : WireRange(measurement.getQubitOut())) {
-      if (const auto cached = cache.find(op); cached != cache.end()) {
-        needsRouting = cached->second;
-        break;
-      }
-      if (auto next = dyn_cast<MeasureOp>(op)) {
-        measurements.push_back(next);
-        continue;
-      }
-      // Validated tensor insertion tails become sinks during placement.
-      needsRouting = !isa<SinkOp, qtensor::InsertOp>(op);
-      break;
-    }
-
-    Block* const block = measurement->getBlock();
-
-    const auto addSlice = [](Operation* root, SetVector<Operation*>& worklist) {
-      SetVector<Operation*> slice;
-      ForwardSliceOptions options;
-      options.inclusive = true;
-      options.filter = [&](Operation* op) { return !worklist.contains(op); };
-      getForwardSlice(root, &slice, options);
-      worklist.insert(slice.begin(), slice.end());
-    };
-
-    SetVector<Operation*> worklist;
-
-    DenseSet<Value> processed;
-
-    size_t cursor = 0;
-    const auto resultNeedsRouting = [&](MeasureOp next) {
-      for_each(next.getResult().getUsers(),
-               [&](Operation* user) { addSlice(user, worklist); });
-      for (; cursor < worklist.size(); ++cursor) {
-        Operation* op = worklist[cursor];
-
-        // Quantum consumers require the measurement to advance, independent
-        // of the selected target's permission to reuse measured qubits.
-
-        if (any_of(op->getOperandTypes(),
-                   [](auto type) { return isa<QubitType>(type); })) {
-          return true;
-        }
-
-        // Captures and nested memory accesses also constrain their enclosing
-        // composite, whose placement threads every physical wire through it.
-
-        if (op->getBlock() != block) {
-          if (Operation* ancestor = block->findAncestorOpInBlock(*op);
-              ancestor != nullptr) {
-            addSlice(ancestor, worklist);
-          }
-        }
-
-        const auto effects = getEffectsRecursively(op);
-        if (!effects) {
-          continue;
-        }
-
-        for (const auto& effect : *effects) {
-          auto value = effect.getValue();
-          if (!value ||
-              !isa<cbit::RegisterType, BaseMemRefType>(value.getType())) {
-            continue;
-          }
-
-          if (!processed.insert(value).second) {
-            continue;
-          }
-
-          for (Operation* user : value.getUsers()) {
-            Operation* ancestor = block->findAncestorOpInBlock(*user);
-            if (user == op ||
-                (ancestor && !measurement->isBeforeInBlock(ancestor))) {
-              continue;
-            }
-
-            addSlice(user, worklist);
-          }
-        }
+  /// Placement preserves measurement identities and inserts physical routing
+  /// before pending operations, so both routing modes use this immutable set.
+  static DenseSet<Operation*> findRoutingMeasurements(func::FuncOp func) {
+    DenseSet<Operation*> measurements;
+    func.walk([&](Block* block) {
+      if (block->getOps<MeasureOp>().empty()) {
+        return;
       }
 
-      return false;
-    };
+      DenseMap<Operation*, SmallVector<Operation*, 2>> predecessors;
+      walkOperationDependencies(*block,
+                                [&](Operation* before, Operation* after) {
+                                  predecessors[after].push_back(before);
+                                });
 
-    for (auto next : llvm::reverse(measurements)) {
-      needsRouting = needsRouting || resultNeedsRouting(next);
-      cache.try_emplace(next, needsRouting);
-    }
-    return needsRouting;
+      SetVector<Operation*> required;
+      for (Operation& op : *block) {
+        if (!isa<MeasureOp, SinkOp, qtensor::InsertOp>(op) &&
+            any_of(op.getOperandTypes(),
+                   [](Type type) { return isa<QubitType>(type); })) {
+          required.insert(&op);
+        }
+      }
+      for (size_t cursor = 0; cursor < required.size(); ++cursor) {
+        Operation* op = required[cursor];
+        if (isa<MeasureOp>(op)) {
+          measurements.insert(op);
+        }
+        if (auto it = predecessors.find(op); it != predecessors.end()) {
+          required.insert(it->second.begin(), it->second.end());
+        }
+      }
+    });
+    return measurements;
   }
 
   /// Advance past executable gates and return the first ready composite.
   ///
   /// Leave wires at non-executable gates, composites, terminal measurements, or
   /// sink-like operations. Backward traversal can exhaust block arguments.
-  template <WireDirection Direction, RoutingMode Mode>
-  std::optional<CompositeUnitary>
-  advance(RoutingState& state, const Boundary<Direction>& boundary,
-          const Environment& env, bool classicalAliases) {
+  template <WireDirection Direction>
+  std::optional<CompositeUnitary> advance(RoutingState& state,
+                                          const Boundary<Direction>& boundary,
+                                          const Environment& env) {
     auto& wires = state.wires;
     std::optional<CompositeUnitary> composite;
-    // Advancement only moves iterators. Discard classifications before routing
-    // inserts SWAPs or replaces composites.
-    DenseMap<Operation*, bool> measurementRouting;
-    const auto needsRouting = [&](MeasureOp measurement) {
-      // Aliases can hide feedback from the storage handle's SSA use chain.
-      if (classicalAliases) {
-        return true;
-      }
-      if constexpr (Mode == RoutingMode::Cold) {
-        if (const auto it = env.isolatedMeasurementRouting.find(measurement);
-            it != env.isolatedMeasurementRouting.end()) {
-          return it->second;
-        }
-      }
-      return measurementNeedsRouting(measurement, measurementRouting);
-    };
-
     // The wire traversal does not follow classical dependencies. Defer a
     // composite until earlier routing work is complete, but let independent
     // composites pass terminal wires. Reverse block order for backward routing.
@@ -2049,7 +1955,7 @@ private:
         }
         if constexpr (Direction == WireDirection::Forward) {
           if (auto measurement = dyn_cast<MeasureOp>(op);
-              measurement && !needsRouting(measurement)) {
+              measurement && !env.routingMeasurements.contains(measurement)) {
             return false;
           }
           return op->isBeforeInBlock(candidate);
@@ -2085,7 +1991,7 @@ private:
                   if (Direction == WireDirection::Backward) {
                     return true;
                   }
-                  return needsRouting(m);
+                  return env.routingMeasurements.contains(m);
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
                     [](auto) { return Direction == WireDirection::Forward; })
@@ -2361,12 +2267,9 @@ private:
 
     Statistics stats;
     Boundary<Direction> boundary(block);
-    const bool classicalAliases = Direction == WireDirection::Forward &&
-                                  hasPotentialClassicalAliases(block);
 
     while (true) {
-      auto composite =
-          advance<Direction, Mode>(state, boundary, env, classicalAliases);
+      auto composite = advance<Direction>(state, boundary, env);
       if (composite) {
         assert(composite->op == boundary.operation());
         boundary.advance();
