@@ -47,7 +47,8 @@ public:
   static constexpr size_t GROWTH_FACTOR = 2U;
 
   /// Construct a new MemoryManager object for objects of type T.
-  /// @param initialAllocationSize The initial number of entries to allocate
+  /// @param initialAllocationSize The positive initial number of entries to
+  /// allocate
   /// @tparam T The type of the entries
   template <class T>
   static MemoryManager

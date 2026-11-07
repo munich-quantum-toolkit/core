@@ -166,6 +166,9 @@ def test_serialization(*, binary: bool) -> None:
 
         restored = VectorDD.from_bytes(DDPackage(3), data, binary=binary)
         assert np.allclose(restored.get_vector(), dd.get_vector())
+        if binary:
+            with pytest.raises(RuntimeError, match="truncated"):
+                VectorDD.from_bytes(DDPackage(3), data[:-1], binary=True)
         p.dec_ref_vec(dd)
 
 

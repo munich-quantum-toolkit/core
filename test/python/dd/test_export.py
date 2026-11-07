@@ -17,10 +17,27 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 
-from mqt.core.dd import DDPackage
+from mqt.core.dd import DDPackage, MatrixDD, VectorDD
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+
+@pytest.mark.parametrize("dd_type", [VectorDD, MatrixDD])
+@pytest.mark.parametrize("unit", [b"i", b"I"])
+def test_deserialization_preserves_imaginary_units(dd_type: type[VectorDD | MatrixDD], unit: bytes) -> None:
+    """Retain imaginary root weights in textual DDs."""
+    restored = dd_type.from_bytes(DDPackage(1), b"1\n" + unit + b"\n", binary=False)
+    value = restored.get_vector() if isinstance(restored, VectorDD) else restored.get_matrix(0)
+    assert value.item() == pytest.approx(1j)
+
+
+@pytest.mark.parametrize(("dd_type", "children"), [(VectorDD, b"(7 1) ()"), (MatrixDD, b"(7 1) () () ()")])
+def test_deserialization_rejects_invalid_data(dd_type: type[VectorDD | MatrixDD], children: bytes) -> None:
+    """Reject missing root weights, invalid versions, and unknown children."""
+    for data in (b"1\n", b"1junk\n1\n", b"1\n1\n0 0 " + children + b"\n"):
+        with pytest.raises(RuntimeError):
+            dd_type.from_bytes(DDPackage(1), data, binary=False)
 
 
 @pytest.mark.parametrize("matrix", [False, True])

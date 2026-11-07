@@ -244,6 +244,9 @@ def test_serialization(*, binary: bool) -> None:
 
         restored = MatrixDD.from_bytes(DDPackage(3), data, binary=binary)
         assert np.allclose(restored.get_matrix(num_qubits), dd.get_matrix(num_qubits))
+        if binary:
+            with pytest.raises(RuntimeError, match="truncated"):
+                MatrixDD.from_bytes(DDPackage(3), data[:-1], binary=True)
 
 
 @pytest.mark.parametrize("decisions", ["4", "9", "/", "x"])
