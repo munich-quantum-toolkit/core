@@ -18,7 +18,6 @@
 
 #include <gtest/gtest.h>
 
-#include <array>
 #include <atomic>
 #include <complex>
 #include <cstddef>
@@ -28,29 +27,37 @@
 
 TEST(Concurrency, ConcurrentStatevectorReads) {
   const qdmi_test::SessionGuard s{};
-  qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_STATE),
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(qdmi_test::setPrograms(
+                j.job, QDMI_PROGRAM_FORMAT_QASM3,
+                {qdmi_test::QASM3_ZERO,
+                 "OPENQASM 3; include \"stdgates.inc\"; qubit[2] q; x q;"}),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  const size_t stateSize =
-      qdmi_test::querySize(j.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE);
-  ASSERT_GT(stateSize, 0U);
-
-  auto const worker = [&] {
-    std::vector<double> buf(stateSize / sizeof(double));
+  const auto worker = [&](const size_t index) {
+    const size_t dimension = index == 0 ? 2 : 4;
+    const size_t nonzero = index == 0 ? 0 : 3;
+    std::vector<std::complex<double>> state(dimension);
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                  j.job, 0, QDMI_JOB_RESULT_STATEVECTOR_DENSE, stateSize,
-                  buf.data(), nullptr),
+                  j.job, index, QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+                  state.size() * sizeof(state.front()), state.data(), nullptr),
               QDMI_SUCCESS);
+    EXPECT_EQ(state[nonzero], std::complex<double>(1.0, 0.0));
+    std::vector<double> probabilities(dimension);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                  j.job, index, QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                  probabilities.size() * sizeof(probabilities.front()),
+                  probabilities.data(), nullptr),
+              QDMI_SUCCESS);
+    EXPECT_DOUBLE_EQ(probabilities[nonzero], 1.0);
   };
 
-  std::thread t1(worker);
-  std::thread t2(worker);
-  std::thread t3(worker);
-  std::thread t4(worker);
+  std::thread t1(worker, 0);
+  std::thread t2(worker, 0);
+  std::thread t3(worker, 1);
+  std::thread t4(worker, 1);
   t1.join();
   t2.join();
   t3.join();
@@ -120,50 +127,4 @@ TEST(Concurrency, ConcurrentCheckDuringRun) {
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
   done.store(true);
   poller.join();
-}
-
-TEST(Concurrency, KeepsStateAndCachesSeparateAcrossPrograms) {
-  const qdmi_test::SessionGuard s{};
-  const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setPrograms(
-                j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                {qdmi_test::QASM3_ZERO,
-                 "OPENQASM 3; include \"stdgates.inc\"; qubit[2] q; x q;"}),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-  const auto read = [&](const size_t index, const bool probabilities) {
-    const auto result = probabilities ? QDMI_JOB_RESULT_PROBABILITIES_DENSE
-                                      : QDMI_JOB_RESULT_STATEVECTOR_DENSE;
-    size_t size = 0;
-    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, index, result, 0,
-                                                    nullptr, &size),
-              QDMI_SUCCESS);
-    const size_t dimension = index == 0 ? 2 : 4;
-    if (probabilities) {
-      std::vector<double> values(size / sizeof(double));
-      ASSERT_EQ(values.size(), dimension);
-      ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                    j.job, index, result, size, values.data(), nullptr),
-                QDMI_SUCCESS);
-      EXPECT_DOUBLE_EQ(values[index == 0 ? 0 : 3], 1.0);
-    } else {
-      std::vector<std::complex<double>> values(size /
-                                               sizeof(std::complex<double>));
-      ASSERT_EQ(values.size(), dimension);
-      ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                    j.job, index, result, size, values.data(), nullptr),
-                QDMI_SUCCESS);
-      EXPECT_EQ(values[index == 0 ? 0 : 3], std::complex<double>(1.0, 0.0));
-    }
-  };
-  std::array<std::thread, 4> readers{
-      std::thread(read, 0, false),
-      std::thread(read, 0, true),
-      std::thread(read, 1, false),
-      std::thread(read, 1, true),
-  };
-  for (auto& reader : readers) {
-    reader.join();
-  }
 }

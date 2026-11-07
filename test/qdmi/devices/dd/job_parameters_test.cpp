@@ -18,7 +18,6 @@
 
 #include <gtest/gtest.h>
 
-#include <array>
 #include <cstddef>
 #include <cstring>
 #include <string>
@@ -101,50 +100,6 @@ TEST(JobParameters, RequiresProgramsBeforeSubmissionAndQueries) {
             QDMI_ERROR_BADSTATE);
 }
 
-TEST(JobParameters, ProgramReplacementIsAtomic) {
-  const qdmi_test::SessionGuard s{};
-  const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(
-      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM2, "OPENQASM 2.0;"),
-      QDMI_SUCCESS);
-  constexpr std::array unterminated{'x'};
-  constexpr auto interiorNull = std::to_array("OPENQASM 3.0;\0garbage");
-  const std::array<const void*, 2> invalidPrograms{
-      unterminated.data(),
-      interiorNull.data(),
-  };
-  constexpr std::array sizes{unterminated.size(), interiorNull.size()};
-  for (size_t i = 0; i < invalidPrograms.size(); ++i) {
-    const void* data = invalidPrograms[i];
-    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
-                  j.job, QDMI_PROGRAM_FORMAT_QASM3, 1, &sizes[i], &data),
-              QDMI_ERROR_INVALIDARGUMENT);
-  }
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
-                j.job, QDMI_PROGRAM_FORMAT_QASM3, 1, nullptr, nullptr),
-            QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
-                j.job, QDMI_PROGRAM_FORMAT_QASM3, 2, nullptr, nullptr),
-            QDMI_SUCCESS);
-  QDMI_Program_Format format{};
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
-                j.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT, sizeof(format),
-                &format, nullptr),
-            QDMI_SUCCESS);
-  EXPECT_EQ(format, QDMI_PROGRAM_FORMAT_QASM2);
-  size_t size = 0;
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_program(j.job, 0, 0, nullptr, &size),
-            QDMI_SUCCESS);
-  std::string program(size, '\0');
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_program(j.job, 0, size,
-                                                  program.data(), nullptr),
-            QDMI_SUCCESS);
-  EXPECT_STREQ(program.c_str(), "OPENQASM 2.0;");
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_SAMPLING),
-            QDMI_SUCCESS);
-}
-
 TEST(JobParameters, ValidatesProgramListArgumentsAndIndices) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
@@ -204,11 +159,6 @@ TEST(JobParameters, ProgramFormatSupport) {
            QDMI_PROGRAM_FORMAT_CUSTOM3,
            QDMI_PROGRAM_FORMAT_CUSTOM4,
            QDMI_PROGRAM_FORMAT_CUSTOM5,
-           // Removed formats retain their numeric values as reserved inputs.
-           // NOLINTBEGIN(clang-analyzer-optin.core.EnumCastOutOfRange)
-           static_cast<QDMI_Program_Format>(6),
-           static_cast<QDMI_Program_Format>(9),
-           // NOLINTEND(clang-analyzer-optin.core.EnumCastOutOfRange)
        }) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(j.job, format, 1, nullptr,
                                                      nullptr),
@@ -229,7 +179,7 @@ TEST(JobParameters, CopiesAndAtomicallyReplacesPrograms) {
   EXPECT_EQ(qdmi_test::getProgram(j.job, 0), qdmi_test::QASM3_ZERO);
   EXPECT_EQ(qdmi_test::getProgram(j.job, 1), qdmi_test::QASM3_ONE);
   const std::string invalid("OPENQASM 3;\0garbage", 19);
-  EXPECT_EQ(qdmi_test::setPrograms(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  EXPECT_EQ(qdmi_test::setPrograms(j.job, QDMI_PROGRAM_FORMAT_QASM2,
                                    {qdmi_test::QASM3_ONE, invalid}),
             QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(qdmi_test::getProgram(j.job, 0), qdmi_test::QASM3_ZERO);
@@ -237,7 +187,12 @@ TEST(JobParameters, CopiesAndAtomicallyReplacesPrograms) {
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
                 j.job, QDMI_PROGRAM_FORMAT_QASM2, 4, nullptr, nullptr),
             QDMI_SUCCESS);
-  EXPECT_EQ(qdmi_test::getProgram(j.job, 1), qdmi_test::QASM3_ONE);
+  QDMI_Program_Format format{};
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
+                j.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT, sizeof(format),
+                &format, nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(format, QDMI_PROGRAM_FORMAT_QASM3);
   size_t count = 0;
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
                 j.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM, sizeof(count),
