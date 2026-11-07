@@ -22,6 +22,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
+from time import perf_counter
 from typing import TYPE_CHECKING
 
 import nox
@@ -332,24 +333,28 @@ def docs(session: nox.Session) -> None:
         "SKBUILD_CMAKE_ARGS": "-DBUILD_MQT_CORE_DOCUMENTATION=ON;-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF",
     }
 
+    started = perf_counter()
+    session.run("uv", "sync", "--locked", "--inexact", "--only-group", "build", "--only-group", "docs", env=env)
+    session.log(f"Documentation dependencies: {perf_counter() - started:.2f} s")
+    started = perf_counter()
     session.run(
         "uv",
         "sync",
-        "--inexact",
-        "--only-group",
-        "build",
-        "--only-group",
-        "docs",
-        env=env,
-    )
-    session.run(
-        "uv",
-        "run",
-        "--no-dev",  # do not auto-install dev dependencies
+        "--locked",
+        "--inexact",  # retain the documentation dependencies
+        "--no-dev",
         "--no-build-isolation-package",
         "mqt-core",  # build the project without isolation
         "--reinstall-package",
         "mqt-core",  # apply documentation CMake options instead of a cached wheel
+        env=env,
+    )
+    session.log(f"Documentation package: {perf_counter() - started:.2f} s")
+    started = perf_counter()
+    session.run(
+        "uv",
+        "run",
+        "--no-sync",
         "sphinx-autobuild" if serve else "sphinx-build",
         "-n",  # nitpicky mode
         "-T",  # full tracebacks
@@ -366,6 +371,7 @@ def docs(session: nox.Session) -> None:
 
     if args.builder == "html" and not serve:
         session.run("python", "scripts/check_docs_links.py", "docs/_build/html")
+    session.log(f"Documentation rendering and checks: {perf_counter() - started:.2f} s")
 
 
 @nox.session(reuse_venv=True, venv_backend="uv")

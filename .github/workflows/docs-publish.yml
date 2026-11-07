@@ -1,0 +1,59 @@
+name: Publish documentation
+on:
+  # Only trusted publisher code runs; downloaded artifacts are validated static data.
+  workflow_run: # zizmor: ignore[dangerous-triggers]
+    workflows: [Documentation]
+    types: [completed]
+
+concurrency:
+  group: docs-publish-${{ github.event.workflow_run.head_repository.id }}-${{ github.event.workflow_run.head_branch }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  publish:
+    if: >-
+      vars.READTHEDOCS_UPLOAD_ENABLED == 'true' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      contains(fromJSON('["push", "pull_request"]'), github.event.workflow_run.event)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check out the trusted publisher
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          python-version: "3.14"
+          enable-cache: false
+      - name: Download this run's validated site
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: docs-${{ github.event.workflow_run.head_sha }}
+          path: build/docs-artifact
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Validate source identity and publication target
+        id: publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/docs_publication.py build/docs-artifact
+      - name: Upload the exact-commit artifact to Read the Docs
+        if: steps.publication.outputs.version != ''
+        env:
+          READTHEDOCS_TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
+          DOCS_VERSION: ${{ steps.publication.outputs.version }}
+          DOCS_VERSION_TYPE: ${{ steps.publication.outputs.type }}
+          DOCS_COMMIT: ${{ github.event.workflow_run.head_sha }}
+        run: >-
+          uvx --from git+https://github.com/readthedocs/readthedocs-cli@8b359129107745381963455ae43aa33eebed3ec7
+          readthedocs upload --project-slug mqt-core
+          --html build/docs-artifact/html --htmlzip build/docs-artifact/html.zip
+          --version-name "$DOCS_VERSION" --version-type "$DOCS_VERSION_TYPE" --commit "$DOCS_COMMIT"
