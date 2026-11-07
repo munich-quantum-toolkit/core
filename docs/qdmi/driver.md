@@ -55,6 +55,17 @@ device = open_device("example.device", driver_path="/path/to/libdriver.so", toke
 The driver defines how it uses the token and which devices it exposes. Only the
 builtin driver accepts per-device session overrides from manifests.
 
+Use {py:class}`~mqt.core.qdmi.Session` to reuse a driver session across device
+lookups:
+
+```{code-cell} ipython3
+from mqt.core.qdmi import Session
+
+session = Session()
+device = session.get_device("mqt.ddsim.default")
+print(device.id)
+```
+
 ## Opening configured devices
 
 The following discovery and configuration conveniences are specific to the MQT
@@ -69,6 +80,10 @@ from mqt.core.qdmi import builtin_driver
 
 device = builtin_driver.open_device("mqt.ddsim.default")
 ```
+
+The read-only {py:attr}`~mqt.core.qdmi.Device.id` property returns the stable ID
+of an opened device. Save the ID to open the same configured device later. The
+C++ equivalent is {cpp-api:func}`qdmi::Device::getId`.
 
 Use {py:func}`mqt.core.qdmi.builtin_driver.registered_device_ids` to list
 enabled configured IDs without loading device libraries or contacting devices.
@@ -99,7 +114,8 @@ extensions are exported from its shared library.
 `Device.submit_job` accepts one program or an ordered program list with one
 format and common job parameters. `num_shots` applies to each program. Text
 programs carry one terminating null byte; binary programs retain their exact
-bytes. `try_submit_job` returns `None` only when the device reports that it
+bytes. Text strings can include one final null byte. Embedded null bytes are
+invalid. `try_submit_job` returns `None` only when the device reports that it
 cannot accept the format or program count before submission. Device
 unavailability and submission errors propagate, since retrying an uncertain
 submission could duplicate execution.
@@ -111,6 +127,16 @@ job may not expose it. `job.get_program_status(index)` reports one outcome when
 supported, or `None` otherwise. A successful program's results remain available
 if another program fails or is cancelled. Cancelling uses the shared native job
 handle.
+
+```{code-cell} ipython3
+from mqt.core.qdmi import ProgramFormat
+
+program = "OPENQASM 3; qubit q; bit c; c = measure q;"
+job = device.submit_job([program, program], ProgramFormat.QASM3, num_shots=32)
+assert job.wait()
+for index in range(job.num_programs):
+    print(job.get_program_status(index), job.get_counts(index))
+```
 
 ## Building the Bundled Devices
 
