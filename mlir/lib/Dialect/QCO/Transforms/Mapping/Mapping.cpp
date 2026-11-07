@@ -58,6 +58,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/PriorityQueue.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
@@ -578,6 +579,7 @@ private:
     uint64_t seed;
     std::unique_ptr<const NativeCostTable> nativeCosts;
     std::optional<size_t> nativeSwapCost;
+    DenseMap<Operation*, bool> isolatedMeasurementRouting;
 
     void prepareNativeCosts(Operation* root) {
       const auto& basis = target.synthesisBasis();
@@ -683,7 +685,7 @@ private:
     QubitIndexPair swap;
     Node* parent = nullptr;
     int64_t cost = 0;
-    size_t depth = 0;
+    size_t layoutHash = 0;
     float f = 0;
 
     /// Reuse layout capacity when starting a new search.
@@ -691,7 +693,7 @@ private:
       layout = initialLayout;
       swap = {};
       parent = nullptr;
-      depth = 0;
+      layoutHash = hashLayout(layout);
       cost = 0;
       f = 0;
     }
@@ -702,9 +704,12 @@ private:
                          const DistanceMatrix& distances,
                          const Parameters& params) {
       layout = nextParent->layout;
-      layout.swap(candidate.indices.first, candidate.indices.second);
-
-      depth = nextParent->depth + 1;
+      const auto [a, b] = candidate.indices;
+      const auto pa = layout.getProgramIndex(a);
+      const auto pb = layout.getProgramIndex(b);
+      layoutHash = nextParent->layoutHash ^ hashEntry(pa, a) ^
+                   hashEntry(pb, b) ^ hashEntry(pa, b) ^ hashEntry(pb, a);
+      layout.swap(a, b);
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
       f = params.alpha * static_cast<float>(cost) +
@@ -715,8 +720,7 @@ private:
       parent = nextParent;
     }
 
-    /// Return true, if the current SWAP sequence makes all gates in the front
-    /// executable.
+    /// Return whether the leading interaction is executable.
     [[nodiscard]] bool isGoal(const QubitIndexPair& front,
                               const CompilerTarget& target) const {
       const auto [hw0, hw1] =
@@ -729,22 +733,32 @@ private:
 
     /// Return the sequence of SWAPs from the root to this node.
     [[nodiscard]] SmallVector<QubitIndexPair> swaps() const {
-      SmallVector<QubitIndexPair> seq(depth);
-      auto it = seq.rbegin();
-      for (const Node* n = this; n->parent != nullptr; n = n->parent, ++it) {
-        *it = n->swap;
+      SmallVector<QubitIndexPair> seq;
+      for (const Node* n = this; n->parent != nullptr; n = n->parent) {
+        seq.push_back(n->swap);
       }
+      std::ranges::reverse(seq);
       return seq;
     }
 
   private:
+    static size_t hashEntry(QubitIndex program, QubitIndex hardware) {
+      return llvm::hash_value((uint64_t{program} << 32U) | hardware);
+    }
+
+    static size_t hashLayout(const Layout<QubitIndex>& layout) {
+      size_t hash = 0;
+      for (auto [program, hardware] :
+           enumerate(layout.getProgramToHardware())) {
+        hash ^= hashEntry(static_cast<QubitIndex>(program), hardware);
+      }
+      return hash;
+    }
+
     /// Calculate the heuristic cost for the A* search algorithm.
     ///
-    /// Computes the minimal number of SWAPs required to route each gate in
-    /// each layer. For each gate, this is determined by the shortest distance
-    /// between its hardware qubits. Intuitively, this is the number of SWAPs
-    /// that a naive router would insert to route the layers (with a constant
-    /// layout).
+    /// Sum the distance-based SWAP estimates for the window's interactions,
+    /// weighted by lookahead distance and evaluated at this node's layout.
     [[nodiscard]] float h(ArrayRef<QubitIndexPair> window,
                           const DistanceMatrix& distances,
                           const Parameters& params) const {
@@ -768,7 +782,7 @@ private:
   public:
     /// Push a node onto the frontier.
     void push(Node* node) {
-      auto*& incumbent = best[node->layout.getProgramToHardware()];
+      auto*& incumbent = best[node];
       if (incumbent == nullptr || node->cost < incumbent->cost) {
         incumbent = node;
         queue.push(node);
@@ -781,12 +795,10 @@ private:
         Node* node = queue.top();
         queue.pop();
 
-        const auto key = node->layout.getProgramToHardware();
-
         // If the node matches the entry in the best map, it's valid.
         // Otherwise, the node was superseded by a cheaper state. Thus, drop it.
 
-        if (best.lookup(key) == node) {
+        if (best.lookup(node) == node) {
           return node;
         }
       }
@@ -803,8 +815,23 @@ private:
 
     /// Priority queue of node pointers managed by the caller.
     llvm::PriorityQueue<Node*, std::vector<Node*>, CompareNodePointer> queue;
-    /// Maps a layout to the node that reached it using the lowest cost.
-    DenseMap<ArrayRef<QubitIndex>, Node*> best;
+    struct LayoutKeyInfo {
+      static unsigned getHashValue(const Node* node) {
+        return static_cast<unsigned>(node->layoutHash);
+      }
+
+      static bool isEqual(const Node* lhs, const Node* rhs) {
+        if (lhs == rhs) {
+          return true;
+        }
+        return lhs->layoutHash == rhs->layoutHash &&
+               lhs->layout.getProgramToHardware() ==
+                   rhs->layout.getProgramToHardware();
+      }
+    };
+
+    /// Keys borrow immutable arena nodes until the search ends.
+    DenseMap<Node*, Node*, LayoutKeyInfo> best;
   };
 
   /// Memory arena for A* search nodes, enabling reuse across searches to reduce
@@ -1044,7 +1071,11 @@ protected:
       return;
     }
 
-    Environment env{.target = target, .seed = compilationSeed(moduleOp, seed)};
+    Environment env{
+        .target = target,
+        .seed = compilationSeed(moduleOp, seed),
+        .isolatedMeasurementRouting = DenseMap<Operation*, bool>{},
+    };
     const auto [layout, expectedScore] =
         generateLayout(computation->wires, func, env);
 
@@ -1477,6 +1508,20 @@ private:
     }
 
     env.prepareNativeCosts(func);
+    func.walk([&](Block* block) {
+      if (hasPotentialClassicalAliases(*block)) {
+        return;
+      }
+      for (auto measurement : block->getOps<MeasureOp>()) {
+        // Consecutive runs share suffix state whose answer depends on the
+        // starting measurement; keep their per-advance cache.
+        if (!isa_and_nonnull<MeasureOp>(
+                measurement.getQubitIn().getDefiningOp()) &&
+            !isa<MeasureOp>(*measurement.getQubitOut().getUsers().begin())) {
+          measurementNeedsRouting(measurement, env.isolatedMeasurementRouting);
+        }
+      }
+    });
 
     struct Trial {
       Layout<QubitIndex> layout;
@@ -1959,7 +2004,7 @@ private:
   ///
   /// Leave wires at non-executable gates, composites, terminal measurements, or
   /// sink-like operations. Backward traversal can exhaust block arguments.
-  template <WireDirection Direction>
+  template <WireDirection Direction, RoutingMode Mode>
   std::optional<CompositeUnitary>
   advance(RoutingState& state, const Boundary<Direction>& boundary,
           const Environment& env, bool classicalAliases) {
@@ -1970,8 +2015,16 @@ private:
     DenseMap<Operation*, bool> measurementRouting;
     const auto needsRouting = [&](MeasureOp measurement) {
       // Aliases can hide feedback from the storage handle's SSA use chain.
-      return classicalAliases ||
-             measurementNeedsRouting(measurement, measurementRouting);
+      if (classicalAliases) {
+        return true;
+      }
+      if constexpr (Mode == RoutingMode::Cold) {
+        if (const auto it = env.isolatedMeasurementRouting.find(measurement);
+            it != env.isolatedMeasurementRouting.end()) {
+          return it->second;
+        }
+      }
+      return measurementNeedsRouting(measurement, measurementRouting);
     };
 
     // The wire traversal does not follow classical dependencies. Defer a
@@ -2313,7 +2366,7 @@ private:
 
     while (true) {
       auto composite =
-          advance<Direction>(state, boundary, env, classicalAliases);
+          advance<Direction, Mode>(state, boundary, env, classicalAliases);
       if (composite) {
         assert(composite->op == boundary.operation());
         boundary.advance();
