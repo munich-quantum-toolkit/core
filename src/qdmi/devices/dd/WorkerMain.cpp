@@ -11,6 +11,7 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Export.hpp"
 #include "dd/Package.hpp"
+#include "dd/ShotStreams.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
@@ -38,7 +39,6 @@
 #include <map>
 #include <memory>
 #include <optional>
-#include <random>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -171,10 +171,13 @@ struct Execution {
         std::clamp(numShots_ / (large ? 32 : 256), size_t{1},
                    large ? size_t{32} : size_t{8});
     size_t workers = 1;
+    size_t streamCount = 1;
     if (sampling && !jitSession.canSampleTerminal() &&
         (capture || !jitSession.canSampleBranches())) {
       workers =
           automaticWorkers_ ? std::min(maxWorkers_, automatic) : maxWorkers_;
+      workers = std::min(workers, numShots_);
+      streamCount = workers;
       if (workers > 1) {
         workers = requestWorkers(workers);
         if (workers == 0) {
@@ -182,7 +185,10 @@ struct Execution {
         }
       }
     }
-    if (workers == 1) {
+    if (!seed_) {
+      streamCount = workers;
+    }
+    if (streamCount == 1) {
       std::optional<::qir::SampledOutput> terminalOutput;
       std::map<std::string, size_t> outcomes;
       const auto emit = [&](std::string_view shot) {
@@ -218,23 +224,20 @@ struct Execution {
         counts_.emplace(std::string(shot.rbegin(), shot.rend()), count);
       }
     } else {
-      std::mt19937_64 rng(seed_ ? *seed_
-                                : ::qir::Runtime::generateRandomSeed());
-      std::vector<uint64_t> workerSeeds(workers);
-      for (size_t i = 1; i < workers; ++i) {
-        workerSeeds[i] = rng();
-      }
-      std::vector<std::string> parts(workers);
-      std::vector<std::string> records(workers);
-      std::vector<std::map<std::string, size_t>> counts(workers);
-      std::vector<int64_t> codes(workers);
+      const auto streams = ::dd::makeShotStreams(
+          numShots_, streamCount,
+          seed_ ? *seed_ : ::qir::Runtime::generateRandomSeed());
+      std::vector<std::string> parts(streamCount);
+      std::vector<std::string> records(streamCount);
+      std::vector<std::map<std::string, size_t>> counts(streamCount);
+      std::vector<int64_t> codes(streamCount);
       const bool shareCode = jitSession.canShareCompiledCode();
       const auto run = [&](const size_t i) -> int64_t {
         raw_string_ostream localOutput(records[i]);
         std::unique_ptr<::qir::JitSession> peer;
         std::unique_ptr<::qir::Runtime> workerRuntime;
         if (i != 0 && shareCode) {
-          auto createdRuntime = jitSession.makeWorkerRuntime(workerSeeds[i]);
+          auto createdRuntime = jitSession.makeWorkerRuntime(streams[i].seed);
           if (!createdRuntime) {
             qdmi::diagnostics::error(
                 "DDSIM program failed: {0}",
@@ -244,7 +247,7 @@ struct Execution {
           workerRuntime = std::move(*createdRuntime);
         } else if (i != 0) {
           auto createdPeer = ::qir::JitSession::create(
-              irBytes, "QDMI job", ::qir::Execution::Sampling, workerSeeds[i],
+              irBytes, "QDMI job", ::qir::Execution::Sampling, streams[i].seed,
               capture ? &localOutput : nullptr, maxQubits_);
           if (!createdPeer) {
             qdmi::diagnostics::error("DDSIM program failed: {0}",
@@ -266,8 +269,7 @@ struct Execution {
             worker->disableOutput();
           }
         }
-        const size_t count = (numShots_ / workers) +
-                             static_cast<size_t>(i < numShots_ % workers);
+        const size_t count = streams[i].shots;
         const auto emit = [&](std::string_view shot) {
           if (capture) {
             appendShot(parts[i], shot);
@@ -289,7 +291,11 @@ struct Execution {
       std::vector<llvm::thread> tasks;
       tasks.reserve(workers);
       for (size_t i = 0; i < workers; ++i) {
-        tasks.emplace_back([&, i] { codes[i] = run(i); });
+        tasks.emplace_back([&, i] {
+          for (size_t stream = i; stream < streamCount; stream += workers) {
+            codes[stream] = run(stream);
+          }
+        });
       }
       for (auto& task : tasks) {
         task.join();
@@ -314,7 +320,7 @@ struct Execution {
         shots_ += part;
       }
       if (output) {
-        for (size_t i = 1; i < workers; ++i) {
+        for (size_t i = 1; i < streamCount; ++i) {
           *output << records[i];
         }
       }

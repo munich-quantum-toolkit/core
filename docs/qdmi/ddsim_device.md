@@ -92,8 +92,9 @@ process to cap the total active slots; the default uses LLVM's
 physical-core-aware thread strategy. An invalid value falls back to that
 default. Each host process has its own budget; coordinate separate host
 processes externally. Direct QCO sampling applies the same setting
-independently. The seed controls sampling, but shot order is unspecified and
-changing the worker count may change sampled outcomes. The C++ and Python QDMI
+independently. For fixed shots, the seed and requested worker setting determine
+sampled outcomes; the number of threads granted does not. Changing `custom3` may
+change those outcomes. Shot order is unspecified. The C++ and Python QDMI
 clients may also pass a nonnegative native `int` to `custom3`.
 
 Under the hood, the QDMI device imports OpenQASM into the compiler's QC
