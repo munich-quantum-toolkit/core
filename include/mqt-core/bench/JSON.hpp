@@ -26,6 +26,7 @@
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Shor.hpp"
 #include "bench/Teleportation.hpp"
+#include "bench/VQEAnsatz.hpp"
 #include "bench/WState.hpp"
 #include "bench/mqt_core_bench_export.h"
 
@@ -42,7 +43,7 @@ using BenchmarkInstance =
     std::variant<BV, FanOut, GHZ, Grover, GroverWeakMeasurement,
                  MagicStateDistillation, ModularMultiplier, Multiplexer, QAOA,
                  QFT, QFTAdder, QPE, RepeatUntilSuccess, Shor, Teleportation,
-                 WState>;
+                 VQEAnsatz, WState>;
 
 /// Owns a validated benchmark and its canonical manifest metadata.
 struct ParsedBenchmark {
@@ -100,6 +101,8 @@ describeBenchmarkJSON(std::string_view benchmark);
 countsFromJSON(std::string_view text, std::string_view source = "<counts>");
 
 /// Evaluate a counts document against a benchmark manifest.
+///
+/// Returns an error if the family has no built-in evaluation.
 [[nodiscard]] MQT_CORE_BENCH_EXPORT llvm::Expected<std::string>
 evaluateJSON(std::string_view manifest, std::string_view counts,
              std::string_view manifestSource = "<manifest>",
