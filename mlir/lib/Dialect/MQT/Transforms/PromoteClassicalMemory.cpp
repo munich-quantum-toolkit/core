@@ -38,7 +38,7 @@ struct PromoteClassicalMemory final
   OpPassManager pipeline_{ModuleOp::getOperationName()};
 
   PromoteClassicalMemory() {
-    // Fold index normalization before upstream promotion inspects accesses.
+    // Control-flow cleanup can expose static indices required by promotion.
     normalization_.addPass(createCanonicalizerPass());
     pipeline_.addPass(createSROA());
     pipeline_.addPass(createMem2Reg());

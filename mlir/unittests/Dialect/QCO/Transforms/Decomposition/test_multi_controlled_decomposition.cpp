@@ -1949,6 +1949,39 @@ TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
   EXPECT_EQ(controlledDcx, 1U);
 }
 
+TEST_F(MultiControlledDecompositionTest,
+       KeepsAdjacentUnsupportedControlsSeparate) {
+  for (const size_t numControls : {1U, 2U}) {
+    SCOPED_TRACE(numControls);
+    auto moduleOp =
+        QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& builder) {
+          SmallVector<Value> controls{builder.staticQubit(0)};
+          if (numControls == 2) {
+            controls.push_back(builder.staticQubit(1));
+          }
+          auto target = builder.staticQubit(numControls);
+          for (size_t i = 0; i < 2; ++i) {
+            auto [nextControls, nextTarget] =
+                builder.ctrl(controls, target,
+                             [&](Value qubit) { return builder.h(qubit); });
+            controls.assign(nextControls.begin(), nextControls.end());
+            target = nextTarget;
+          }
+          return SmallVector<Value>{};
+        });
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
+    size_t count = 0;
+    moduleOp->walk([&](CtrlOp op) {
+      EXPECT_EQ(op.getNumControls(), numControls);
+      EXPECT_EQ(op.getNumBodyUnitaries(), 1U);
+      EXPECT_TRUE(isa<HOp>(op.getBodyUnitary(0).getOperation()));
+      ++count;
+    });
+    EXPECT_EQ(count, 2U);
+  }
+}
+
 TEST_F(MultiControlledDecompositionTest, CompositeControlsRespectMinQubits) {
   auto moduleOp =
       QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {

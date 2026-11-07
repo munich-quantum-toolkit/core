@@ -99,6 +99,7 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
     DenseMap<int64_t, size_t> pending{
         {*getConstantIntValue(firstInsert.getIndex()), 0},
     };
+    bool changed = false;
     size_t numInsertsToMove = 0;
     auto input = firstInsert.getDest();
     tensor = firstInsert.getResult();
@@ -132,6 +133,7 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
           tensor = nextExtract.getTensor();
           previous = tensor.getDefiningOp();
           rewriter.replaceOp(nextExtract, {tensor, qubit});
+          changed = true;
           pending.erase(found);
           continue;
         }
@@ -149,7 +151,7 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
     inserts.resize(numInsertsToMove);
     llvm::erase_if(inserts, [](InsertOp op) { return !op; });
     if (extracts.empty() || inserts.empty()) {
-      return success();
+      return success(changed);
     }
     auto tail = extracts.back().getOutTensor();
     tensor = input;
