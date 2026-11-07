@@ -1167,6 +1167,41 @@ TEST_F(MultiControlledDecompositionTest, AncillaCleanExtractedSlotCanBeReused) {
   EXPECT_EQ(countEffectiveCxOps(*module), 84U);
 }
 
+TEST_F(MultiControlledDecompositionTest, AncillaDiscoveryRestartsForEachBlock) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
+        const SmallVector<Type> types(7, QubitType::get(context()));
+        for (const auto* name : {"first", "second"}) {
+          b.createFunction(name, types, [&](ValueRange wires) {
+            auto [controls, target] = b.mcx(wires.take_front(5), wires[5]);
+            auto [nextControls, nextTarget] =
+                b.mcx(controls, b.rz(0.37, target));
+            SmallVector<Value> outputs(nextControls);
+            outputs.push_back(nextTarget);
+            outputs.push_back(wires[6]);
+            return outputs;
+          });
+        }
+        return SmallVector<Value>{};
+      });
+  auto first = *moduleOp->getOps<func::FuncOp>().begin();
+  auto package = llvm::cantFail(dd::Package::create(7));
+  auto expected = buildFunctionality(first, *package);
+  ASSERT_TRUE(succeeded(expected));
+  ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
+  EXPECT_EQ(countEffectiveCxOps(*moduleOp), 224U);
+  for (auto function : moduleOp->getOps<func::FuncOp>()) {
+    if (function.getNumArguments() == 0) {
+      continue;
+    }
+    auto actual = buildFunctionality(function, *package);
+    ASSERT_TRUE(succeeded(actual));
+    expectOperatorColumnsNear(*actual, *expected, 7, 7);
+    package->decRef(*actual);
+  }
+  package->decRef(*expected);
+}
+
 TEST_F(MultiControlledDecompositionTest, BorrowsMultipleAncillasFromOneTensor) {
   auto module = QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
     auto tensor = b.qtensorAlloc(7);

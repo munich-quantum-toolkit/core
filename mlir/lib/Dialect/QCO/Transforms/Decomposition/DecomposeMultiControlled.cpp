@@ -48,6 +48,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <list>
 #include <numbers>
 #include <optional>
 #include <tuple>
@@ -305,6 +306,60 @@ struct BorrowedAncilla {
   Value value;
   std::optional<int64_t> slot;
   bool clean;
+};
+
+// The input-gate sweep only erases its current gate. Keep a surviving
+// predecessor so the next search includes the emitted replacement operations.
+class AncillaSearch {
+public:
+  const std::list<Value>& availableBefore(CtrlOp op) {
+    auto* block = op->getBlock();
+    const auto append = [&](Value value) {
+      auto tensor = dyn_cast<RankedTensorType>(value.getType());
+      if ((isa<QubitType>(value.getType()) ||
+           (tensor && tensor.getRank() == 1 && tensor.hasStaticShape() &&
+            isa<QubitType>(tensor.getElementType()))) &&
+          (*value.getUsers().begin())->getBlock() == block) {
+        positions_.try_emplace(value, values_.insert(values_.end(), value));
+      }
+    };
+    if (block != block_) {
+      block_ = block;
+      previous_ = nullptr;
+      values_.clear();
+      positions_.clear();
+      for (auto argument : block->getArguments()) {
+        append(argument);
+      }
+    }
+    const auto consume = [&](Operation* operation) {
+      for (auto operand : operation->getOperands()) {
+        const auto position = positions_.find(operand);
+        if (position != positions_.end()) {
+          values_.erase(position->second);
+          positions_.erase(position);
+        }
+      }
+    };
+    auto* next =
+        previous_ != nullptr ? previous_->getNextNode() : &block->front();
+    while (next != op.getOperation()) {
+      consume(next);
+      for (auto result : next->getResults()) {
+        append(result);
+      }
+      previous_ = next;
+      next = next->getNextNode();
+    }
+    consume(op);
+    return values_;
+  }
+
+private:
+  Block* block_ = nullptr;
+  Operation* previous_ = nullptr;
+  std::list<Value> values_;
+  DenseMap<Value, std::list<Value>::iterator> positions_;
 };
 
 } // namespace
@@ -1097,11 +1152,21 @@ static std::optional<bool> ancillaState(Value value,
 
 /// Find occupied candidates without scanning a potentially huge declared
 /// extent.
-static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
-                                         const DenseSet<Value>& restoredZeros) {
-  SmallVector<int64_t> slots;
+static SmallVector<BorrowedAncilla>
+ancillaSlots(Value tensor, size_t limit, const DenseSet<Value>& restoredZeros) {
+  SmallVector<BorrowedAncilla> slots;
+  auto original = tensor;
+  const auto remember = [&](int64_t slot, std::optional<bool> clean) {
+    if (clean) {
+      slots.push_back({.value = original, .slot = slot, .clean = *clean});
+    }
+  };
+  const auto extent = cast<RankedTensorType>(tensor.getType()).getDimSize(0);
   DenseSet<int64_t> touched;
   while (auto* definition = tensor.getDefiningOp()) {
+    if (std::cmp_equal(touched.size(), extent)) {
+      break;
+    }
     if (auto extract = dyn_cast<qtensor::ExtractOp>(definition)) {
       auto index = getConstantIntValue(extract.getIndex());
       if (!index) {
@@ -1115,7 +1180,8 @@ static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
         break;
       }
       if (touched.insert(*index).second) {
-        slots.push_back(*index);
+        remember(*index,
+                 ancillaState(insert.getScalar(), std::nullopt, restoredZeros));
       }
       tensor = insert.getDest();
     } else {
@@ -1125,7 +1191,7 @@ static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
         size_t clean = 0;
         for (int64_t index = 0; index < size && clean < limit; ++index) {
           if (!touched.contains(index)) {
-            slots.push_back(index);
+            remember(index, true);
             ++clean;
           }
         }
@@ -1140,12 +1206,11 @@ static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
           if (touched.contains(index)) {
             continue;
           }
-          const bool zero = ancillaState(elements.getElements()[index],
-                                         std::nullopt, restoredZeros)
-                                .value_or(false);
-          auto& count = zero ? clean : dirty;
+          const auto zero = ancillaState(elements.getElements()[index],
+                                         std::nullopt, restoredZeros);
+          auto& count = zero.value_or(false) ? clean : dirty;
           if (count < limit) {
-            slots.push_back(index);
+            remember(index, zero);
             ++count;
           }
         }
@@ -1153,12 +1218,15 @@ static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
       break;
     }
   }
-  llvm::sort(slots);
+  llvm::sort(slots, [](const auto& lhs, const auto& rhs) {
+    return *lhs.slot < *rhs.slot;
+  });
   return slots;
 }
 
 static SmallVector<BorrowedAncilla>
-findAncillas(CtrlOp op, size_t limit, const DenseSet<Value>& restoredZeros) {
+findAncillas(CtrlOp op, size_t limit, const DenseSet<Value>& restoredZeros,
+             AncillaSearch& search) {
   SmallVector<BorrowedAncilla> ancillas, dirty;
   const auto remember = [&](BorrowedAncilla ancilla) {
     auto& candidates = ancilla.clean ? ancillas : dirty;
@@ -1166,23 +1234,8 @@ findAncillas(CtrlOp op, size_t limit, const DenseSet<Value>& restoredZeros) {
       candidates.push_back(ancilla);
     }
   };
-  auto* block = op->getBlock();
   const auto inspect = [&](Value value) {
-    if (ancillas.size() == limit) {
-      return;
-    }
     auto tensorType = dyn_cast<RankedTensorType>(value.getType());
-    if (!isa<QubitType>(value.getType()) &&
-        !(tensorType && tensorType.getRank() == 1 &&
-          tensorType.hasStaticShape() &&
-          isa<QubitType>(tensorType.getElementType()))) {
-      return;
-    }
-    auto* user = *value.getUsers().begin();
-    // No captures, future definitions, consumed wires, or gate operands.
-    if (user->getBlock() != block || !op->isBeforeInBlock(user)) {
-      return;
-    }
     if (!tensorType) {
       remember({
           .value = value,
@@ -1192,25 +1245,18 @@ findAncillas(CtrlOp op, size_t limit, const DenseSet<Value>& restoredZeros) {
       });
       return;
     }
-    for (int64_t slot : ancillaSlots(value, limit, restoredZeros)) {
+    for (const auto& ancilla : ancillaSlots(value, limit, restoredZeros)) {
       if (ancillas.size() == limit) {
         break;
       }
-      if (auto clean = ancillaState(value, slot, restoredZeros)) {
-        remember({.value = value, .slot = slot, .clean = *clean});
-      }
+      remember(ancilla);
     }
   };
-  for (auto argument : block->getArguments()) {
-    inspect(argument);
-  }
-  for (auto& previous : *block) {
-    if (&previous == op.getOperation() || ancillas.size() == limit) {
+  for (auto value : search.availableBefore(op)) {
+    if (ancillas.size() == limit) {
       break;
     }
-    for (auto result : previous.getResults()) {
-      inspect(result);
-    }
+    inspect(value);
   }
   // Keep clean-first, source-order selection without storing unused slots.
   ancillas.append(dirty.begin(),
@@ -1287,7 +1333,8 @@ static size_t entanglingCost(const CircuitPlan& plan) {
 
 static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
                                             PatternRewriter& rewriter,
-                                            DenseSet<Value>& restoredZeros) {
+                                            DenseSet<Value>& restoredZeros,
+                                            AncillaSearch& search) {
   const bool swap = isa<SWAPOp>(inner.getOperation());
   const bool y = isa<YOp>(inner.getOperation());
   auto phase = dyn_cast<POp>(inner.getOperation());
@@ -1300,7 +1347,7 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
   const bool parameterized = generalPhase || rotation;
   // SWAP's second target becomes one more control of the central MCX.
   const size_t k = op.getNumControls() + (swap ? 1 : 0);
-  auto ancillas = findAncillas(op, k - 2, restoredZeros);
+  auto ancillas = findAncillas(op, k - 2, restoredZeros, search);
   if (ancillas.empty()) {
     return failure();
   }
@@ -1797,11 +1844,12 @@ protected:
       // These proofs remain valid only during this input-gate sweep. Discard
       // them before greedy rewriting can erase or recycle the SSA values.
       DenseSet<Value> restoredZeros;
+      AncillaSearch search;
       for (auto op : candidates) {
         rewriter.setInsertionPoint(op);
         auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
         std::ignore =
-            synthesizeWithAncillas(op, inner, rewriter, restoredZeros);
+            synthesizeWithAncillas(op, inner, rewriter, restoredZeros, search);
       }
     }
     StaticSites staticSites;

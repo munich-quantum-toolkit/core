@@ -596,32 +596,33 @@ NativeCostTable::precompute(Operation* root, uint64_t seed) {
   constexpr size_t capacity = 1024;
   auto result = std::make_unique<NativeCostTable>();
   result->seed_ = seed;
-  const auto add = [&](const Matrix4x4& matrix) {
+  const auto add = [&](const Matrix4x4& key, const Matrix4x4& equivalent) {
     if (result->entries_.size() == capacity) {
       return;
     }
-    const auto hash = matrixHash(matrix);
+    const auto hash = matrixHash(key);
     // Keep one entry per fingerprint; collisions remain cache misses.
     if (result->index_.contains(hash)) {
       return;
     }
+    const auto* cached = result->lookup(equivalent, matrixHash(equivalent));
+    const auto coordinates = cached ? *cached : weylCoordinates(key, seed);
     result->index_.try_emplace(hash, result->entries_.size());
-    result->entries_.push_back({
-        .matrix = matrix,
-        .coordinates = weylCoordinates(matrix, seed),
-    });
+    result->entries_.push_back({.matrix = key, .coordinates = coordinates});
   };
   const auto swap = SWAPOp::getUnitaryMatrix();
   const auto addOrientations = [&](const Matrix4x4& matrix) {
+    const auto swapped = swap * matrix;
+    // SWAP conjugation preserves Weyl coordinates, including for SWAP * M.
     for (const bool reverse : {false, true}) {
       const auto ordered = reverse ? matrix.reorderForQubits(1, 0) : matrix;
-      add(ordered);
-      add(swap * ordered);
-      add(ordered * swap);
+      add(ordered, matrix);
+      add(swap * ordered, swapped);
+      add(ordered * swap, swapped);
     }
   };
-  add(Matrix4x4::identity());
-  add(swap);
+  add(Matrix4x4::identity(), Matrix4x4::identity());
+  add(swap, swap);
   root->walk([&](Operation* op) {
     if (result->entries_.size() == capacity) {
       return WalkResult::interrupt();
@@ -1638,7 +1639,10 @@ protected:
     if (targetBasis) {
       if (failed(decomposition::propagateZFrames(
               rewriter, moduleOp, target,
-              GreedyRewriteConfig{}.setListener(&listener)))) {
+              GreedyRewriteConfig{}
+                  .setRegionSimplificationLevel(
+                      GreedySimplifyRegionLevel::Disabled)
+                  .setListener(&listener)))) {
         signalPassFailure();
         return;
       }
