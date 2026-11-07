@@ -28,7 +28,8 @@ function(version_from_skbuild)
   if(NOT DEFINED SKBUILD_PROJECT_VERSION)
     message(
       VERBOSE
-        "SKBUILD_PROJECT_VERSION not found. Cannot determine project version from scikit-build-core.")
+        "SKBUILD_PROJECT_VERSION not found. Cannot determine project version from scikit-build-core."
+    )
     return()
   endif()
   set(MQT_CORE_VERSION_STRING "${SKBUILD_PROJECT_VERSION}" CACHE INTERNAL "MQT_CORE_VERSION_STRING")
@@ -172,7 +173,8 @@ function(version_from_package)
   if(NOT MQT_CORE_VERSION_MAJOR OR NOT MQT_CORE_VERSION_MINOR OR NOT MQT_CORE_VERSION_PATCH)
     message(
       VERBOSE
-        "Python package version information incomplete. Cannot determine project version from Python package.")
+        "Python package version information incomplete. Cannot determine project version from Python package."
+    )
     return()
   endif()
 
@@ -191,7 +193,8 @@ function(get_mqt_core_version)
     if(MQT_CORE_VERSION_FOUND)
       message(
         STATUS
-          "Found project version ${MQT_CORE_VERSION} from scikit-build-core (full version: ${MQT_CORE_VERSION_STRING})")
+          "Found project version ${MQT_CORE_VERSION} from scikit-build-core (full version: ${MQT_CORE_VERSION_STRING})"
+      )
       return()
     endif()
   endif()
@@ -200,7 +203,8 @@ function(get_mqt_core_version)
   if(MQT_CORE_VERSION_FOUND)
     message(
       STATUS
-        "Found project version ${MQT_CORE_VERSION} from git (full version: ${MQT_CORE_VERSION_STRING})")
+        "Found project version ${MQT_CORE_VERSION} from git (full version: ${MQT_CORE_VERSION_STRING})"
+    )
     return()
   endif()
 
@@ -208,7 +212,8 @@ function(get_mqt_core_version)
   if(MQT_CORE_VERSION_FOUND)
     message(
       STATUS
-        "Found project version ${MQT_CORE_VERSION} from Python package (full version: ${MQT_CORE_VERSION_STRING})")
+        "Found project version ${MQT_CORE_VERSION} from Python package (full version: ${MQT_CORE_VERSION_STRING})"
+    )
     return()
   endif()
 

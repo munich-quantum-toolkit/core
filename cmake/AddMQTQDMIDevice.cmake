@@ -51,7 +51,8 @@ function(mqt_configure_qdmi_device target)
   endforeach()
 
   set(device_entries
-      "      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }")
+      "      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }"
+  )
   set(configuration_ids "${ARG_ID}")
   foreach(configuration IN LISTS ARG_CONFIGURATIONS)
     string(REPLACE "|" ";" configuration_parts "${configuration}")
@@ -59,14 +60,16 @@ function(mqt_configure_qdmi_device target)
     if(NOT configuration_length EQUAL 2)
       message(
         FATAL_ERROR
-          "QDMI configuration '${configuration}' must use the form '<device-id>|<runtime-file-name>'")
+          "QDMI configuration '${configuration}' must use the form '<device-id>|<runtime-file-name>'"
+      )
     endif()
     list(GET configuration_parts 0 configuration_id)
     list(GET configuration_parts 1 configuration_file)
     if(configuration_id STREQUAL "" OR configuration_file STREQUAL "")
       message(
         FATAL_ERROR
-          "QDMI configuration '${configuration}' must use a non-empty device ID and runtime file name")
+          "QDMI configuration '${configuration}' must use a non-empty device ID and runtime file name"
+      )
     endif()
     list(FIND configuration_ids "${configuration_id}" configuration_id_index)
     if(NOT configuration_id_index EQUAL -1)
@@ -77,12 +80,15 @@ function(mqt_configure_qdmi_device target)
     if(runtime_file_index EQUAL -1)
       message(
         FATAL_ERROR
-          "QDMI configuration '${configuration_id}' refers to unknown runtime file '${configuration_file}'")
+          "QDMI configuration '${configuration_id}' refers to unknown runtime file '${configuration_file}'"
+      )
     endif()
     _mqt_qdmi_json_escape(configuration_id "${configuration_id}")
     _mqt_qdmi_json_escape(configuration_file "${configuration_file}")
-    string(APPEND device_entries
-           ",\n      {\n        \"id\": \"${configuration_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true,\n        \"session\": {\n          \"device-config\": {\n            \"file\": \"${configuration_file}\"\n          }\n        }\n      }")
+    string(
+      APPEND device_entries
+      ",\n      {\n        \"id\": \"${configuration_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true,\n        \"session\": {\n          \"device-config\": {\n            \"file\": \"${configuration_file}\"\n          }\n        }\n      }"
+    )
   endforeach()
 
   set(fragment "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${target}.qdmi.json")
@@ -90,7 +96,8 @@ function(mqt_configure_qdmi_device target)
     GENERATE
     OUTPUT "${fragment}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${device_entries}\n    ]\n  }\n}\n")
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${device_entries}\n    ]\n  }\n}\n"
+  )
 
   add_custom_command(
     TARGET ${target}
@@ -165,7 +172,8 @@ function(mqt_copy_qdmi_runtime target)
       if(NOT device_id OR NOT device_prefix)
         message(
           FATAL_ERROR
-            "QDMI device target '${device}' must define either QDMI_MANIFEST_NAME or both QDMI_DEVICE_ID and QDMI_DEVICE_PREFIX")
+            "QDMI device target '${device}' must define either QDMI_MANIFEST_NAME or both QDMI_DEVICE_ID and QDMI_DEVICE_PREFIX"
+        )
       endif()
       _mqt_qdmi_json_escape(device_id "${device_id}")
       _mqt_qdmi_json_escape(device_prefix "${device_prefix}")
@@ -176,7 +184,8 @@ function(mqt_copy_qdmi_runtime target)
         GENERATE
         OUTPUT "${manifest}"
         CONTENT
-          "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${device}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }\n    ]\n  }\n}\n")
+          "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${device}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }\n    ]\n  }\n}\n"
+      )
     else()
       set(manifest "$<TARGET_FILE_DIR:${device}>/${manifest_name}")
     endif()

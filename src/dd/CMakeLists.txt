@@ -21,7 +21,9 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-dd)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-dd
     PUBLIC
-    FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${DD_HEADERS})
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+      FILES ${DD_HEADERS})
 
   # add link libraries
   target_link_libraries(

@@ -38,7 +38,8 @@ if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE AND BUILD_MQT_CORE_QDMI_SC_DEVICE)
       GENERATE
       OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/qdmi.conf"
       CONTENT
-        "$<TARGET_FILE:mqt-core-qdmi-session-device> TEST_SESSION test.example\n$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device> MQT_DDSIM test.external-ddsim\n")
+        "$<TARGET_FILE:mqt-core-qdmi-session-device> TEST_SESSION test.example\n$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device> MQT_DDSIM test.external-ddsim\n"
+    )
     add_dependencies(${TARGET_NAME} qdmi_example_driver mqt-core-qdmi-incomplete-client
                      mqt-core-qdmi-incompatible-client)
     mqt_copy_qdmi_runtime(${TARGET_NAME})

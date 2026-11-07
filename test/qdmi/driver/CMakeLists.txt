@@ -55,7 +55,8 @@ if(TARGET MQT::CoreQDMIDriver)
     GENERATE
     OUTPUT "${diagnostic_config_file}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"broken.diagnostic\", \"library\": \"${CMAKE_CURRENT_BINARY_DIR}/missing-diagnostic-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n")
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"broken.diagnostic\", \"library\": \"${CMAKE_CURRENT_BINARY_DIR}/missing-diagnostic-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
+  )
   package_add_test(${DIAGNOSTIC_TARGET_NAME} MQT::CoreQDMIDriver test_driver_diagnostics.cpp)
   target_compile_definitions(
     ${DIAGNOSTIC_TARGET_NAME}
@@ -66,7 +67,8 @@ if(TARGET MQT::CoreQDMIDriver)
     GENERATE
     OUTPUT "${config_file}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n")
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
+  )
   file(READ "${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json" custom_sc_json)
   string(REPLACE "MQT SC Default QDMI Device" "Custom SC Driver Device" custom_sc_json
          "${custom_sc_json}")
@@ -74,7 +76,8 @@ if(TARGET MQT::CoreQDMIDriver)
   set(custom_sc_file "${CMAKE_CURRENT_BINARY_DIR}/custom-sc-device.json")
   file(WRITE "${custom_sc_file}" "${custom_sc_json}")
   string(MAKE_C_IDENTIFIER "${TARGET_NAME}-mqt-core-qdmi-metadata-device" metadata_manifest_stem)
-  set(metadata_manifest_file "$<TARGET_FILE_DIR:${TARGET_NAME}>/${metadata_manifest_stem}.qdmi.json")
+  set(metadata_manifest_file "$<TARGET_FILE_DIR:${TARGET_NAME}>/${metadata_manifest_stem}.qdmi.json"
+  )
   target_compile_definitions(
     ${TARGET_NAME}
     PRIVATE
@@ -84,7 +87,8 @@ if(TARGET MQT::CoreQDMIDriver)
       "MQT_CORE_QDMI_CUSTOM_SC_FILE=\"${custom_sc_file}\""
       "MQT_CORE_QDMI_DEFAULT_SC_FILE=\"${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json\""
       "MQT_CORE_QDMI_SC_LIBRARY=\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\""
-      "TEST_DEVICE_LIBRARIES=std::array{ std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"} }")
+      "TEST_DEVICE_LIBRARIES=std::array{ std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}, std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"} }"
+  )
 
   mqt_copy_qdmi_runtime(${TARGET_NAME})
   mqt_copy_qdmi_runtime(${TARGET_NAME} mqt-core-qdmi-metadata-device)
