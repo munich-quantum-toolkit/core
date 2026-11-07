@@ -356,6 +356,8 @@ constexpr auto toString(const QDMI_Operation_Property prop) -> const char* {
 /// Returns the string representation of the given device property @p prop.
 constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
   switch (prop) {
+  case QDMI_DEVICE_PROPERTY_ID:
+    return "ID";
   case QDMI_DEVICE_PROPERTY_NAME:
     return "NAME";
   case QDMI_DEVICE_PROPERTY_VERSION:
@@ -372,8 +374,6 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
     return "OPERATIONS";
   case QDMI_DEVICE_PROPERTY_COUPLINGMAP:
     return "COUPLING MAP";
-  case QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION:
-    return "NEEDS CALIBRATION";
   case QDMI_DEVICE_PROPERTY_LENGTHUNIT:
     return "LENGTH UNIT";
   case QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR:
@@ -384,8 +384,6 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
     return "DURATION SCALE FACTOR";
   case QDMI_DEVICE_PROPERTY_MINATOMDISTANCE:
     return "MIN ATOM DISTANCE";
-  case QDMI_DEVICE_PROPERTY_PULSESUPPORT:
-    return "PULSE SUPPORT";
   case QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS:
     return "SUPPORTED PROGRAM FORMATS";
   case QDMI_DEVICE_PROPERTY_CHILDDEVICES:

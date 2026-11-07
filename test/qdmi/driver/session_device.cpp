@@ -360,24 +360,48 @@ extern "C" int TEST_SESSION_QDMI_device_session_retrieve_device_job_by_id(
 
 extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
     QDMI_Device_Job job, const QDMI_Device_Job_Parameter parameter,
-    const size_t size, const void* value) {
+    const size_t /*size*/, const void* /*value*/) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (job->retrieved) {
     return QDMI_ERROR_BADSTATE;
   }
-  if (parameter == QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT) {
-    if (value == nullptr || size != sizeof(job->format)) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    std::memcpy(&job->format, value, size);
-  }
   if (parameter == QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM &&
       job->format == QDMI_PROGRAM_FORMAT_CUSTOM1) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
   return QDMI_SUCCESS;
+}
+
+extern "C" int TEST_SESSION_QDMI_device_job_set_programs(
+    QDMI_Device_Job job, QDMI_Program_Format format, size_t count,
+    const size_t* /*sizes*/, const void* const* programs) {
+  if (job == nullptr || count == 0) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (job->retrieved) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  if (programs != nullptr) {
+    job->format = format;
+  }
+  return QDMI_SUCCESS;
+}
+
+extern "C" int TEST_SESSION_QDMI_device_job_get_program(QDMI_Device_Job /*job*/,
+                                                        size_t /*programIndex*/,
+                                                        size_t /*size*/,
+                                                        void* /*data*/,
+                                                        size_t* /*sizeRet*/) {
+  return QDMI_ERROR_NOTSUPPORTED;
+}
+
+extern "C" int
+TEST_SESSION_QDMI_device_job_get_program_status(QDMI_Device_Job /*job*/,
+                                                size_t /*programIndex*/,
+                                                QDMI_Job_Status* /*status*/) {
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_query_property(
@@ -416,8 +440,9 @@ extern "C" int TEST_SESSION_QDMI_device_job_wait(QDMI_Device_Job /*job*/,
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_get_results(
-    QDMI_Device_Job /*job*/, QDMI_Job_Result /*result*/, size_t /*size*/,
-    void* /*value*/, size_t* /*sizeRet*/) {
+    QDMI_Device_Job /*job*/, size_t /*programIndex*/,
+    QDMI_Job_Result /*result*/, size_t /*size*/, void* /*value*/,
+    size_t* /*sizeRet*/) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

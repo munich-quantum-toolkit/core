@@ -359,6 +359,7 @@ TEST(QDMITest, OperationPropertyToString) {
 }
 
 TEST(QDMITest, DevicePropertyToString) {
+  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_ID), "ID");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_NAME), "NAME");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_VERSION), "VERSION");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_STATUS), "STATUS");
@@ -369,8 +370,6 @@ TEST(QDMITest, DevicePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_OPERATIONS), "OPERATIONS");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_COUPLINGMAP),
                "COUPLING MAP");
-  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION),
-               "NEEDS CALIBRATION");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_LENGTHUNIT), "LENGTH UNIT");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR),
                "LENGTH SCALE FACTOR");
@@ -443,9 +442,7 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
     case QDMI_PROGRAM_FORMAT_QASM3:
     case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
     case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
-    case QDMI_PROGRAM_FORMAT_CALIBRATION:
     case QDMI_PROGRAM_FORMAT_IQMJSON:
-    case QDMI_PROGRAM_FORMAT_BATCHJOB:
     case QDMI_PROGRAM_FORMAT_CUSTOM1:
     case QDMI_PROGRAM_FORMAT_CUSTOM2:
     case QDMI_PROGRAM_FORMAT_CUSTOM3:
@@ -466,10 +463,8 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
       QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
       QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
-      QDMI_PROGRAM_FORMAT_CALIBRATION,
       QDMI_PROGRAM_FORMAT_QPY,
       QDMI_PROGRAM_FORMAT_IQMJSON,
-      QDMI_PROGRAM_FORMAT_BATCHJOB,
       QDMI_PROGRAM_FORMAT_CUSTOM1,
       QDMI_PROGRAM_FORMAT_CUSTOM2,
       QDMI_PROGRAM_FORMAT_CUSTOM3,
@@ -509,10 +504,6 @@ TEST_P(DeviceTest, Sites) {
 
 TEST_P(DeviceTest, CouplingMap) {
   EXPECT_NO_THROW(std::ignore = device.getCouplingMap());
-}
-
-TEST_P(DeviceTest, NeedsCalibration) {
-  EXPECT_NO_THROW(std::ignore = device.getNeedsCalibration());
 }
 
 TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
@@ -841,56 +832,6 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
   EXPECT_THROW(std::ignore = device.submitJob(
                    textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
                std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsBatchJobs) {
-  // A batch job's program is a list of job handles, which the byte-span API
-  // cannot express, so MQT Core states that it does not support them.
-  constexpr std::array bytes{std::byte{0}};
-
-  EXPECT_THROW(std::ignore =
-                   device.submitJob(bytes, QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = device.submitJob(std::string{},
-                                              QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, SubmitJobSendsCalibrationRunsElsewhere) {
-  // A calibration run takes no shot count and an optional payload, so it has
-  // its own entry point rather than a special case in `submitJob`.
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   std::string{}, QDMI_PROGRAM_FORMAT_CALIBRATION, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, CalibrationJobReachesTheDevice) {
-  // The DD simulator needs no calibration and rejects the format itself. What
-  // matters is that the client no longer refuses before asking: the failure
-  // comes from the device, as a runtime error rather than an argument error.
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(), std::runtime_error);
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob("configuration"),
-               std::runtime_error);
-
-  constexpr std::array payload{std::byte{1}, std::byte{2}};
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(payload),
-               std::runtime_error);
-
-  constexpr std::byte emptyPayloadStorage{};
-  const std::span emptyPayload{&emptyPayloadStorage, size_t{0}};
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(emptyPayload),
-               std::runtime_error);
-
-  EXPECT_NO_THROW({
-    try {
-      std::ignore = device.submitCalibrationJob();
-    } catch (const std::invalid_argument&) {
-      FAIL() << "the client rejected the calibration run before the device saw "
-                "it";
-    } catch (const std::runtime_error&) { // NOLINT(bugprone-empty-catch)
-      // The device declined, which is its decision to make.
-    }
-  });
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {

@@ -6,6 +6,27 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI 1.4.0
+
+Rebuild downstream C++ consumers and QDMI devices against the updated MQT Core
+and QDMI 1.4.0. The driver now requires the program-list entry points and the
+indexed result-query signature. QDMI 1.3 device libraries are incompatible. Set
+programs with `QDMI_job_set_programs` or `QDMI_device_job_set_programs` instead
+of the removed `PROGRAMFORMAT` and `PROGRAM` job parameters. Retrieve original
+programs with the indexed `QDMI_job_get_program` or
+`QDMI_device_job_get_program` functions instead of the removed `PROGRAM` job
+property. Pass a zero-based program index to result queries.
+
+The C++ and Python clients still submit one program per job. DDSIM supports one
+program per job and rejects larger lists with `QDMI_ERROR_NOTSUPPORTED`.
+
+Remove calls to C++ `Device::getNeedsCalibration` and
+`Device::submitCalibrationJob`, or Python `Device.needs_calibration` and
+`Device.submit_calibration_job`. QDMI no longer provides calibration submission
+or pulse-support metadata. The `CALIBRATION` and `BATCH_JOB` program formats and
+Qiskit's `NON_CIRCUIT_FORMATS` constant are removed. Use the device vendor's
+interface for calibration. `DeviceStatus.CALIBRATION` remains available.
+
 ### DD matrix comparisons
 
 Include `dd/MatrixComparison.hpp` to compare complete matrices without ancillary

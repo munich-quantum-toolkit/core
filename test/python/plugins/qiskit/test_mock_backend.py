@@ -710,7 +710,7 @@ def test_backend_uses_replaced_qasm3_serializer(
 
 
 def test_backend_rejects_device_without_program_payload(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """A device that only accepts CALIBRATION has no format a circuit can go into."""
+    """A device without an available serializer cannot accept a circuit."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.measure_all()
@@ -719,7 +719,7 @@ def test_backend_rejects_device_without_program_payload(mock_qdmi_device_factory
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(UnsupportedFormatError, match="No program serializer for any format the device supports"):
-        backend._serialize_circuit(qc, [ProgramFormat.CALIBRATION])  # ruff:ignore[private-member-access]
+        backend._serialize_circuit(qc, [ProgramFormat.CUSTOM1])  # ruff:ignore[private-member-access]
 
 
 @pytest.mark.parametrize(

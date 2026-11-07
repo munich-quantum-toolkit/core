@@ -485,8 +485,7 @@ allows classical control, QPY carries a Qiskit circuit without loss, and
 OpenQASM 3 expresses control flow, while the QIR base profile forbids classical
 feedback and OpenQASM 2 has no control flow at all. Encoding only breaks a tie
 within one profile, because it decides how the program travels rather than what
-it may say. `CALIBRATION` and `BATCH_JOB` are absent because a serialized
-circuit is not what they carry.
+it may say.
 
 ### Device Introspection
 

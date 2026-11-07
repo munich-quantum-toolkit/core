@@ -153,13 +153,9 @@ class ProgramFormat(enum.Enum):
 
     QIR_ADAPTIVE_MODULE = 5
 
-    CALIBRATION = 6
-
     QPY = 7
 
     IQM_JSON = 8
-
-    BATCH_JOB = 9
 
     CUSTOM1 = 999999995
 
@@ -217,6 +213,10 @@ class Device:
 
         CALIBRATION = 5
 
+    @property
+    def id(self) -> str:
+        """The stable client-visible device ID."""
+
     def name(self) -> str:
         """Returns the name of the device."""
 
@@ -246,9 +246,6 @@ class Device:
 
     def coupling_map(self) -> list[tuple[Device.Site, Device.Site]] | None:
         """Returns the coupling map of the device as a list of site pairs."""
-
-    def needs_calibration(self) -> int | None:
-        """Returns whether the device needs calibration."""
 
     def queue_length(self) -> int | None:
         """Returns the current queue length, or None if unavailable."""
@@ -331,24 +328,6 @@ class Device:
         custom5: str | bool | float | None = None,
     ) -> Job:
         """Submits an exact byte payload to the device."""
-
-    def submit_calibration_job(
-        self,
-        program: str | bytes | None = None,
-        *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
-    ) -> Job:
-        """Triggers a calibration run on the device.
-
-        QDMI does not require a program for a calibration run, so ``program`` is
-        optional and may be a string or bytes. When it is given, the device defines
-        what it means, which is usually a configuration for the run. A calibration run
-        executes no circuit, so it takes no shot count.
-        """
 
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""

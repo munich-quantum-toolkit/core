@@ -126,6 +126,12 @@ struct DeviceLibrary {
   decltype(QDMI_device_job_free)* device_job_free{};
   /// Function pointer to @ref QDMI_device_job_set_parameter.
   decltype(QDMI_device_job_set_parameter)* device_job_set_parameter{};
+  /// Function pointer to @c QDMI_device_job_set_programs.
+  decltype(QDMI_device_job_set_programs)* device_job_set_programs{};
+  /// Function pointer to @c QDMI_device_job_get_program.
+  decltype(QDMI_device_job_get_program)* device_job_get_program{};
+  /// Function pointer to @c QDMI_device_job_get_program_status.
+  decltype(QDMI_device_job_get_program_status)* device_job_get_program_status{};
   /// Function pointer to @ref QDMI_device_job_query_property.
   decltype(QDMI_device_job_query_property)* device_job_query_property{};
   /// Function pointer to @ref QDMI_device_job_submit.
@@ -211,6 +217,8 @@ private:
    * libraries that are subclasses of qdmi::DeviceLibrary.
    */
   std::shared_ptr<qdmi::DeviceLibrary> library_;
+  /// @brief The configured stable device ID.
+  std::string id_;
   /// @brief The device session handle.
   QDMI_Device_Session deviceSession_ = nullptr;
   /// Client-facing wrappers for direct child devices.
@@ -242,10 +250,12 @@ public:
    * device interface functions.
    * @param config is the configuration for device session parameters.
    * @param childDevice optionally selects a child device for this wrapper.
+   * @param id is the configured stable ID for a top-level device.
    */
   explicit QDMI_Device_impl_d(std::shared_ptr<qdmi::DeviceLibrary> lib,
                               const qdmi::DeviceSessionConfig& config = {},
-                              QDMI_Child_Device childDevice = nullptr);
+                              QDMI_Child_Device childDevice = nullptr,
+                              std::string id = {});
 
   /**
    * @brief Destructor for the QDMI device.
@@ -342,6 +352,19 @@ public:
   auto setParameter(QDMI_Job_Parameter param, size_t size,
                     const void* value) const -> int;
 
+  /// @brief Forwards the atomic program-list setter to the device.
+  auto setPrograms(QDMI_Program_Format format, size_t count,
+                   const size_t* sizes, const void* const* programs) const
+      -> int;
+
+  /// @brief Retrieves one program from the device.
+  auto getProgram(size_t programIndex, size_t size, void* data,
+                  size_t* sizeRet) const -> int;
+
+  /// @brief Queries the status of one program.
+  auto getProgramStatus(size_t programIndex, QDMI_Job_Status* status) const
+      -> int;
+
   /**
    * @brief Queries a property of the job.
    * @see QDMI_job_query_property
@@ -378,8 +401,8 @@ public:
    * @brief Gets the results of the job.
    * @see QDMI_job_get_results
    */
-  auto getResults(QDMI_Job_Result result, size_t size, void* data,
-                  size_t* sizeRet) const -> int;
+  auto getResults(size_t programIndex, QDMI_Job_Result result, size_t size,
+                  void* data, size_t* sizeRet) const -> int;
 
   /**
    * @brief Frees the job.

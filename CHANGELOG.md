@@ -12,6 +12,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Backport QDMI 1.4.0 integration with the new job ABI and stable device IDs;
+  remove obsolete calibration APIs and program formats ([#2952])
+  ([**@burgholzer**], [**@denialhaag**])
 - 💥 Rename C++ `dd::export2Dot` to `dd::exportToDot` ([#2826])
   ([**@denialhaag**])
 - ⚡ Prefetch the next reusable DD entry during allocation ([#2826], [#2831])
@@ -936,6 +939,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2952]: https://github.com/munich-quantum-toolkit/core/pull/2952
 [#2942]: https://github.com/munich-quantum-toolkit/core/pull/2942
 [#2923]: https://github.com/munich-quantum-toolkit/core/pull/2923
 [#2831]: https://github.com/munich-quantum-toolkit/core/pull/2831

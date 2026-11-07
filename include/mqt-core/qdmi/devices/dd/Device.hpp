@@ -189,7 +189,7 @@ private:
   std::atomic<QDMI_Job_Status> status_{QDMI_JOB_STATUS_CREATED};
 
   /// The program format
-  QDMI_Program_Format format_ = QDMI_PROGRAM_FORMAT_QASM3;
+  QDMI_Program_Format format_ = QDMI_PROGRAM_FORMAT_MAX;
 
   /// The QASM program associated with the job.
   std::string program_;
@@ -279,11 +279,23 @@ public:
 
   /**
    * @brief Sets a parameter for the job.
-   * @note QASM text payloads include a trailing @c '\0' in the wire @p size.
    * @see MQT_DDSIM_QDMI_device_job_set_parameter
    */
   auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
                     const void* value) -> QDMI_STATUS;
+
+  /// @brief Sets one program, as specified by QDMI_device_job_set_programs.
+  auto setPrograms(QDMI_Program_Format format, size_t count,
+                   const size_t* sizes, const void* const* programs)
+      -> QDMI_STATUS;
+
+  /// @brief Retrieves the original program, including its terminating NUL.
+  auto getProgram(size_t programIndex, size_t size, void* data,
+                  size_t* sizeRet) const -> QDMI_STATUS;
+
+  /// @brief Queries the status of the single program.
+  auto getProgramStatus(size_t programIndex, QDMI_Job_Status* status) const
+      -> QDMI_STATUS;
 
   /**
    * @brief Queries a property of the job.
@@ -320,6 +332,6 @@ public:
    * @brief Gets the results of the job.
    * @see MQT_DDSIM_QDMI_device_job_get_results
    */
-  auto getResults(QDMI_Job_Result result, size_t size, void* data,
-                  size_t* sizeRet) -> QDMI_STATUS;
+  auto getResults(size_t programIndex, QDMI_Job_Result result, size_t size,
+                  void* data, size_t* sizeRet) -> QDMI_STATUS;
 };

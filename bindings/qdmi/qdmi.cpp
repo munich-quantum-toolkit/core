@@ -29,7 +29,6 @@
 #include <span>
 #include <string>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace mqt {
@@ -254,10 +253,8 @@ when the custom slot is unsupported.)pb");
       .value("QIR_BASE_MODULE", QDMI_PROGRAM_FORMAT_QIRBASEMODULE)
       .value("QIR_ADAPTIVE_STRING", QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING)
       .value("QIR_ADAPTIVE_MODULE", QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)
-      .value("CALIBRATION", QDMI_PROGRAM_FORMAT_CALIBRATION)
       .value("QPY", QDMI_PROGRAM_FORMAT_QPY)
       .value("IQM_JSON", QDMI_PROGRAM_FORMAT_IQMJSON)
-      .value("BATCH_JOB", QDMI_PROGRAM_FORMAT_BATCHJOB)
       .value("CUSTOM1", QDMI_PROGRAM_FORMAT_CUSTOM1)
       .value("CUSTOM2", QDMI_PROGRAM_FORMAT_CUSTOM2)
       .value("CUSTOM3", QDMI_PROGRAM_FORMAT_CUSTOM3)
@@ -303,6 +300,9 @@ Returns:
       .value("MAINTENANCE", QDMI_DEVICE_STATUS_MAINTENANCE)
       .value("CALIBRATION", QDMI_DEVICE_STATUS_CALIBRATION);
 
+  device.def_prop_ro("id", &qdmi::Device::getId,
+                     "The stable client-visible device ID.");
+
   device.def("name", &qdmi::Device::getName, "Returns the name of the device.");
 
   device.def("version", &qdmi::Device::getVersion,
@@ -334,9 +334,6 @@ Returns:
 
   device.def("coupling_map", &qdmi::Device::getCouplingMap,
              "Returns the coupling map of the device as a list of site pairs.");
-
-  device.def("needs_calibration", &qdmi::Device::getNeedsCalibration,
-             "Returns whether the device needs calibration.");
 
   device.def("queue_length", &qdmi::Device::getQueueLength,
              "Returns the current queue length, or None if unavailable.");
@@ -437,41 +434,6 @@ when the custom slot is unsupported.)pb");
       "custom3"_a = nb::none(), "custom4"_a = nb::none(),
       "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
       "Submits an exact byte payload to the device.");
-
-  device.def(
-      "submit_calibration_job",
-      [](const qdmi::Device& self,
-         const std::optional<std::variant<std::string, nb::bytes>>& program,
-         const std::optional<qdmi::CustomJobParameter>& custom1,
-         const std::optional<qdmi::CustomJobParameter>& custom2,
-         const std::optional<qdmi::CustomJobParameter>& custom3,
-         const std::optional<qdmi::CustomJobParameter>& custom4,
-         const std::optional<qdmi::CustomJobParameter>& custom5) {
-        if (!program.has_value()) {
-          return self.submitCalibrationJob(std::nullopt, custom1, custom2,
-                                           custom3, custom4, custom5);
-        }
-        if (const auto* text = std::get_if<std::string>(&*program);
-            text != nullptr) {
-          return self.submitCalibrationJob(*text, custom1, custom2, custom3,
-                                           custom4, custom5);
-        }
-        const auto& payload = std::get<nb::bytes>(*program);
-        const auto bytes = std::span{
-            static_cast<const std::byte*>(payload.data()), payload.size()};
-        return self.submitCalibrationJob(bytes, custom1, custom2, custom3,
-                                         custom4, custom5);
-      },
-      "program"_a = nb::none(), nb::kw_only(), "custom1"_a = nb::none(),
-      "custom2"_a = nb::none(), "custom3"_a = nb::none(),
-      "custom4"_a = nb::none(), "custom5"_a = nb::none(),
-      nb::rv_policy::reference_internal,
-      R"pb(Triggers a calibration run on the device.
-
-QDMI does not require a program for a calibration run, so ``program`` is
-optional and may be a string or bytes. When it is given, the device defines
-what it means, which is usually a configuration for the run. A calibration run
-executes no circuit, so it takes no shot count.)pb");
 
   device.def(
       "retrieve_job_by_id",
