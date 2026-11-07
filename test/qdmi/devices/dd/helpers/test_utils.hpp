@@ -41,12 +41,22 @@ struct JobGuard {
 };
 
 // Convenience queries
+/// Retrieves one program without its terminating NUL.
+std::string getProgram(MQT_DDSIM_QDMI_Device_Job job, size_t index);
+
+/// Retrieves one program's execution status.
+QDMI_Job_Status getProgramStatus(MQT_DDSIM_QDMI_Device_Job job, size_t index);
+
 std::vector<MQT_DDSIM_QDMI_Site>
 querySites(MQT_DDSIM_QDMI_Device_Session session);
 std::vector<MQT_DDSIM_QDMI_Operation>
 queryOperations(MQT_DDSIM_QDMI_Device_Session session);
 
 // Convenience setters
+/// Copies a list of text programs into a native job.
+int setPrograms(MQT_DDSIM_QDMI_Device_Job job, QDMI_Program_Format fmt,
+                const std::vector<std::string>& programs);
+
 int setProgram(MQT_DDSIM_QDMI_Device_Job job, QDMI_Program_Format fmt,
                std::string_view program);
 int setShots(MQT_DDSIM_QDMI_Device_Job job, size_t shots);

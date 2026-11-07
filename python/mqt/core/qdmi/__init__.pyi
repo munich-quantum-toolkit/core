@@ -9,11 +9,63 @@
 """QDMI entities and access to MQT Core's QDMI driver."""
 
 import enum
+import os
 from collections.abc import Sequence
 from typing import overload
 
 from mqt.core.qdmi import driver as driver
 from mqt.core.qdmi import slurm as slurm
+
+class Session:
+    """One initialized QDMI driver session."""
+
+    def __init__(
+        self,
+        *,
+        driver_path: str | os.PathLike | None = None,
+        token: str | None = None,
+        auth_file: str | os.PathLike | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        project_id: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> None: ...
+    @property
+    def devices(self) -> list[Device]:
+        """The devices visible to this authenticated session."""
+
+    @property
+    def device_ids(self) -> list[str]:
+        """The stable IDs of devices visible to this session."""
+
+    def get_device(self, device_id: str) -> Device:
+        """Find a device by stable ID within this session."""
+
+def open_device(
+    device_id: str,
+    *,
+    driver_path: str | os.PathLike | None = None,
+    token: str | None = None,
+    auth_file: str | os.PathLike | None = None,
+    auth_url: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    project_id: str | None = None,
+    custom1: str | None = None,
+    custom2: str | None = None,
+    custom3: str | None = None,
+    custom4: str | None = None,
+    custom5: str | None = None,
+) -> Device:
+    """Open a client-visible device by stable ID in a fresh session."""
+
+def device_ids() -> list[str]:
+    """Return the stable IDs visible to a fresh QDMI driver session."""
 
 class Job:
     """A job represents a submitted quantum program execution."""
@@ -34,22 +86,22 @@ class Job:
     def cancel(self) -> None:
         """Cancels the job."""
 
-    def get_shots(self) -> list[str]:
+    def get_shots(self, program_index: int = 0) -> list[str]:
         """Returns the raw shot results from the job."""
 
-    def get_counts(self) -> dict[str, int]:
+    def get_counts(self, program_index: int = 0) -> dict[str, int]:
         """Returns the measurement counts from the job."""
 
-    def get_dense_statevector(self) -> list[complex]:
+    def get_dense_statevector(self, program_index: int = 0) -> list[complex]:
         """Returns the dense statevector from the job (typically only available from simulator devices)."""
 
-    def get_dense_probabilities(self) -> list[float]:
+    def get_dense_probabilities(self, program_index: int = 0) -> list[float]:
         """Returns the dense probabilities from the job (typically only available from simulator devices)."""
 
-    def get_sparse_statevector(self) -> dict[str, complex]:
+    def get_sparse_statevector(self, program_index: int = 0) -> dict[str, complex]:
         """Returns the sparse statevector from the job (typically only available from simulator devices)."""
 
-    def get_sparse_probabilities(self) -> dict[str, float]:
+    def get_sparse_probabilities(self, program_index: int = 0) -> dict[str, float]:
         """Returns the sparse probabilities from the job (typically only available from simulator devices)."""
 
     @overload
@@ -74,18 +126,31 @@ class Job:
         """
 
     @overload
-    def get_custom_result(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
-    @overload
-    def get_custom_result(self, custom_property: CustomProperty, value_type: type[bool]) -> bool | None: ...
-    @overload
-    def get_custom_result(self, custom_property: CustomProperty, value_type: type[int]) -> int | None: ...
-    @overload
-    def get_custom_result(self, custom_property: CustomProperty, value_type: type[float]) -> float | None: ...
-    @overload
-    def get_custom_result(self, custom_property: CustomProperty, value_type: type[bytes]) -> bytes | None: ...
+    def get_custom_result(
+        self, custom_property: CustomProperty, value_type: type[str], program_index: int = 0
+    ) -> str | None: ...
     @overload
     def get_custom_result(
-        self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
+        self, custom_property: CustomProperty, value_type: type[bool], program_index: int = 0
+    ) -> bool | None: ...
+    @overload
+    def get_custom_result(
+        self, custom_property: CustomProperty, value_type: type[int], program_index: int = 0
+    ) -> int | None: ...
+    @overload
+    def get_custom_result(
+        self, custom_property: CustomProperty, value_type: type[float], program_index: int = 0
+    ) -> float | None: ...
+    @overload
+    def get_custom_result(
+        self, custom_property: CustomProperty, value_type: type[bytes], program_index: int = 0
+    ) -> bytes | None: ...
+    @overload
+    def get_custom_result(
+        self,
+        custom_property: CustomProperty,
+        value_type: type[str | bool | int | float | bytes],
+        program_index: int = 0,
     ) -> str | bool | int | float | bytes | None:
         """Return an implementation-defined custom job result.
 
@@ -104,7 +169,22 @@ class Job:
 
     @property
     def program(self) -> str:
-        """The submitted program."""
+        """The first submitted program."""
+
+    @overload
+    def get_program(self, program_index: int = 0) -> str:
+        """Return one submitted text program by input index."""
+
+    @overload
+    def get_program(self, value_type: type[bytes], program_index: int = 0) -> bytes:
+        """Return one submitted program's exact bytes by input index."""
+
+    @property
+    def num_programs(self) -> int:
+        """The number of programs in input order."""
+
+    def get_program_status(self, program_index: int = 0) -> Job.Status | None:
+        """Return one program outcome, or None when unsupported."""
 
     @property
     def program_bytes(self) -> bytes:
@@ -153,13 +233,9 @@ class ProgramFormat(enum.Enum):
 
     QIR_ADAPTIVE_MODULE = 5
 
-    CALIBRATION = 6
-
     QPY = 7
 
     IQM_JSON = 8
-
-    BATCH_JOB = 9
 
     CUSTOM1 = 999999995
 
@@ -217,6 +293,10 @@ class Device:
 
         CALIBRATION = 5
 
+    @property
+    def id(self) -> str:
+        """The stable client-visible device ID."""
+
     def name(self) -> str:
         """Returns the name of the device."""
 
@@ -246,9 +326,6 @@ class Device:
 
     def coupling_map(self) -> list[tuple[Device.Site, Device.Site]] | None:
         """Returns the coupling map of the device as a list of site pairs."""
-
-    def needs_calibration(self) -> int | None:
-        """Returns whether the device needs calibration."""
 
     def queue_length(self) -> int | None:
         """Returns the current queue length, or None if unavailable."""
@@ -302,10 +379,9 @@ class Device:
         when the custom slot is unsupported.
         """
 
-    @overload
     def submit_job(
         self,
-        program: str,
+        program: str | bytes | Sequence[str] | Sequence[bytes],
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
@@ -315,12 +391,11 @@ class Device:
         custom4: str | bool | float | None = None,
         custom5: str | bool | float | None = None,
     ) -> Job:
-        """Submits a text job to the device."""
+        """Submit one program or an ordered list with common parameters."""
 
-    @overload
-    def submit_job(
+    def try_submit_job(
         self,
-        program: bytes,
+        program: str | bytes | Sequence[str] | Sequence[bytes],
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
@@ -329,26 +404,8 @@ class Device:
         custom3: str | bool | float | None = None,
         custom4: str | bool | float | None = None,
         custom5: str | bool | float | None = None,
-    ) -> Job:
-        """Submits an exact byte payload to the device."""
-
-    def submit_calibration_job(
-        self,
-        program: str | bytes | None = None,
-        *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
-    ) -> Job:
-        """Triggers a calibration run on the device.
-
-        QDMI does not require a program for a calibration run, so ``program`` is
-        optional and may be a string or bytes. When it is given, the device defines
-        what it means, which is usually a configuration for the run. A calibration run
-        executes no circuit, so it takes no shot count.
-        """
+    ) -> Job | None:
+        """Submit programs, or return None if the device rejects them before submission."""
 
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""

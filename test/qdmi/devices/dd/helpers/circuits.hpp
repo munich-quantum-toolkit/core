@@ -12,6 +12,10 @@
 
 namespace qdmi_test {
 
+inline constexpr auto QASM3_ZERO = "OPENQASM 3; qubit q; bit c; c = measure q;";
+inline constexpr auto QASM3_ONE =
+    "OPENQASM 3; include \"stdgates.inc\"; qubit q; bit c; x q; c = measure q;";
+
 inline constexpr auto QASM3_BELL_SAMPLING = R"(
 OPENQASM 3;
 include "stdgates.inc";

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from collections import Counter
 from typing import TYPE_CHECKING, cast
-from unittest.mock import MagicMock, PropertyMock
+from unittest.mock import MagicMock, Mock, PropertyMock
 
 import numpy as np
 import pytest
@@ -25,13 +25,13 @@ from qiskit.providers import JobError
 from qiskit.quantum_info import SparsePauliOp
 from test_mock_backend import MockQDMIDevice
 
-from mqt.core.plugins.qiskit import CircuitValidationError, JobSubmissionError, QDMIBackend
+from mqt.core.plugins.qiskit import CircuitValidationError, JobSubmissionError, QDMIBackend, QDMIJob
 from mqt.core.qdmi import Job
+from mqt.core.qdmi.driver import open_device
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mqt.core.plugins.qiskit import QDMIJob
     from mqt.core.qdmi import Device, ProgramFormat
 
     RecordingBackend = tuple[QDMIBackend, list[MagicMock], list[str]]
@@ -365,3 +365,40 @@ def test_estimator_nonzero_uncertainty(recording_backend: RecordingBackend, monk
     assert len(jobs) == 1
     np.testing.assert_equal(result.data["evs"], [4, 0, 0])
     np.testing.assert_equal(result.data["stds"], [2.5, 0.5, 0.5])
+
+
+def test_native_batch_uses_indexed_results() -> None:
+    """Compatible circuits share one native job and retain their result order."""
+    native = open_device("mqt.ddsim.default")
+    device = Mock(wraps=native)
+    backend = QDMIBackend(cast("Device", device))
+    first = QuantumCircuit(1, 1)
+    first.x(0)
+    first.measure(0, 0)
+    second = QuantumCircuit(1, 1)
+    second.measure(0, 0)
+    job = backend.run([first, second], shots=4, memory=True)
+    assert job.result().get_counts() == [{"1": 4}, {"0": 4}]
+    assert job.result().get_memory(0) == ["1"] * 4
+    assert job.result().get_memory(1) == ["0"] * 4
+    device.try_submit_job.assert_called_once()
+    device.submit_job.assert_not_called()
+
+
+def test_shared_native_job_is_cancelled_once(recording_backend: RecordingBackend) -> None:
+    """Cancelling two indexed programs sends one cancellation to their shared job."""
+    backend, _jobs, _events = recording_backend
+    handle = MagicMock()
+    circuits = [QuantumCircuit(1, 1), QuantumCircuit(1, 1)]
+    job = QDMIJob(backend, [handle, handle], circuits, shots=4, memory=False, program_indices=[0, 1])
+    assert job.cancel()
+    handle.cancel.assert_called_once()
+
+
+def test_native_admission_failure_does_not_submit_scalar_duplicates(recording_backend: RecordingBackend) -> None:
+    """An admission error propagates instead of triggering speculative fallback."""
+    backend, jobs, _events = recording_backend
+    backend.device.try_submit_job = Mock(side_effect=RuntimeError("provider unavailable"))
+    with pytest.raises(JobSubmissionError, match="provider unavailable"):
+        backend.run([QuantumCircuit(1, 1), QuantumCircuit(1, 1)], shots=4)
+    assert not jobs

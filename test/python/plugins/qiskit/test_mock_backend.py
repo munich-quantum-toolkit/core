@@ -275,6 +275,10 @@ class MockQDMIDevice:
         """Return list of supported program formats."""
         return [ProgramFormat.QASM2, ProgramFormat.QASM3]
 
+    @staticmethod
+    def try_submit_job(program: object, program_format: ProgramFormat, num_shots: int) -> None:
+        """Reject native lists so tests exercise scalar fallback."""
+
     def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int) -> MockJob:  # ruff:ignore[unused-method-argument]
         """Submit a mock job to the device.
 
@@ -710,7 +714,7 @@ def test_backend_uses_replaced_qasm3_serializer(
 
 
 def test_backend_rejects_device_without_program_payload(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
-    """A device that only accepts CALIBRATION has no format a circuit can go into."""
+    """A device without an available serializer cannot accept a circuit."""
     qc = QuantumCircuit(2)
     qc.h(0)
     qc.measure_all()
@@ -719,7 +723,7 @@ def test_backend_rejects_device_without_program_payload(mock_qdmi_device_factory
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(UnsupportedFormatError, match="No program serializer for any format the device supports"):
-        backend._serialize_circuit(qc, [ProgramFormat.CALIBRATION])  # ruff:ignore[private-member-access]
+        backend._serialize_circuit(qc, [ProgramFormat.CUSTOM1])  # ruff:ignore[private-member-access]
 
 
 @pytest.mark.parametrize(

@@ -12,6 +12,13 @@ if(NOT TARGET ${TARGET_NAME})
   # Add driver library
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver)
 
+  get_target_property(driver_type ${TARGET_NAME} TYPE)
+  if(driver_type STREQUAL "STATIC_LIBRARY")
+    target_compile_definitions(${TARGET_NAME} PUBLIC QDMI_STATIC_DEFINE)
+  else()
+    target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_driver_EXPORTS)
+  endif()
+
   # Add sources to target
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
 

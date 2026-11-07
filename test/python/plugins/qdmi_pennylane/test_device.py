@@ -329,3 +329,24 @@ def test_forwards_job_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
 
     circuit()
     assert qdmi.submissions[0][3] == {"custom1": "bucket", "custom2": "prefix"}
+
+
+def test_submission_failure_keeps_native_job_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Count accepted jobs and cancel them when a later submission fails."""
+    qdmi = stub_device()
+    original = qdmi.submit_job
+
+    def submit(program: str, program_format: ProgramFormat, num_shots: int, **parameters: object) -> QDMIJobHandle:
+        if len(qdmi.submissions) == 2:
+            msg = "submission failed"
+            raise RuntimeError(msg)
+        return original(program, program_format, num_shots, **parameters)
+
+    monkeypatch.setattr(qdmi, "submit_job", submit)
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2, shots=[2, 3, 4])
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=[2, 3, 4])
+    with pytest.raises(PennyLaneExecutionError, match="submission failed"):
+        device.execute(tape)
+    assert device.submitted_jobs == 2
+    assert qdmi.events == ["submit:1", "submit:2", "cancel:1", "cancel:2"]
