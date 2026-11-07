@@ -3119,7 +3119,7 @@ TEST_F(TargetSynthesisTest, ZFramesRequireUnrestrictedRZOnEverySite) {
     auto propagated = OwningOpRef<ModuleOp>(original->clone());
     mlir::IRRewriter rewriter(context.get());
     ASSERT_TRUE(mlir::succeeded(mlir::qco::decomposition::propagateZFrames(
-        rewriter, *propagated, target, mlir::GreedyRewriteConfig{})));
+        rewriter, *propagated, target)));
     ASSERT_TRUE(mlir::succeeded(mlir::verify(*propagated)));
     ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*propagated)));
     const bool nativeRZ = support != "partial" && support != "fixed";
@@ -3127,6 +3127,69 @@ TEST_F(TargetSynthesisTest, ZFramesRequireUnrestrictedRZOnEverySite) {
     EXPECT_EQ(countOps<mlir::qco::ROp>(*propagated), nativeRZ ? 0U : 4U);
     ASSERT_TRUE(mlir::succeeded(runTargetPass(
         *propagated, target, mlir::qco::createVerifyTargetConformance())));
+    expectEquivalent(original, propagated);
+  }
+}
+
+TEST_F(TargetSynthesisTest, EquatorialFusionPreservesInterleavedRunsAndPhase) {
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("r", 1, 2)),
+                         valid(OperationCapability::create("cz", 2, 0)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
+  auto original = build([](QCOProgramBuilder& builder) {
+    auto a = builder.staticQubit(0);
+    auto b = builder.staticQubit(1);
+    a = builder.h(a);
+    a = builder.rz(0.37, a);
+    b = builder.rx(0.23, b);
+    a = builder.ry(-0.41, a);
+    b = builder.rz(0.59, b);
+    auto [c, d] = builder.cz(a, b);
+    // A cancelling run with a nontrivial global phase.
+    c = builder.rx(2. * std::numbers::pi, c);
+    c = builder.h(c);
+    c = builder.h(c);
+    builder.sink(c);
+    builder.sink(builder.ry(-0.17, d));
+    return llvm::SmallVector<Value>{};
+  });
+  auto propagated = OwningOpRef<ModuleOp>(original->clone());
+  mlir::IRRewriter rewriter(context.get());
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::decomposition::propagateZFrames(
+      rewriter, *propagated, target)));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*propagated)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*propagated)));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *propagated, target, mlir::qco::createVerifyTargetConformance())));
+  expectEquivalent(original, propagated);
+}
+
+TEST_F(TargetSynthesisTest, EquatorialFusionDropsOnlyMatrixScaleResidue) {
+  const auto target = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("r", 1, 2)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
+  for (const double angle :
+       {0.5 * mlir::qco::MATRIX_TOLERANCE, 2. * mlir::qco::MATRIX_TOLERANCE}) {
+    SCOPED_TRACE(angle);
+    auto original = build([&](QCOProgramBuilder& builder) {
+      auto q = builder.rx(0.25, builder.staticQubit(0));
+      builder.sink(builder.rx(-0.25 + angle, q));
+      return llvm::SmallVector<Value>{};
+    });
+    auto propagated = OwningOpRef<ModuleOp>(original->clone());
+    mlir::IRRewriter rewriter(context.get());
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::decomposition::propagateZFrames(
+        rewriter, *propagated, target)));
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*propagated)));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*propagated)));
+    EXPECT_EQ(countOps<mlir::qco::ROp>(*propagated),
+              angle < mlir::qco::MATRIX_TOLERANCE ? 0U : 1U);
     expectEquivalent(original, propagated);
   }
 }

@@ -1331,6 +1331,19 @@ static size_t entanglingCost(const CircuitPlan& plan) {
   return count;
 }
 
+/// CX-equivalent cost of the ancilla-free parameterized construction.
+static size_t parameterizedFallbackCost(size_t k, bool rotation) {
+  assert(k >= 2);
+  if (rotation) {
+    return k == 2 ? 4 : (k == 3 ? 10 : 12 * k - 32);
+  }
+  if (k == 2) {
+    return 6;
+  }
+  // Recursive RZ below nine controls; SP22 otherwise.
+  return k < 9 ? 6 * k * k - 26 * k + 40 : 4 * k * k - 4 * k + 2;
+}
+
 static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
                                             PatternRewriter& rewriter,
                                             DenseSet<Value>& restoredZeros,
@@ -1356,8 +1369,8 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
   if (parameterized && cleanCount == 0 && k < 5) {
     return failure();
   }
-  // Plan with a constant placeholder until acceptance: symbolic angle planning
-  // emits arithmetic and a failed match must not mutate the IR.
+  // Select before planning: symbolic angles emit arithmetic, and a failed
+  // match must not mutate the IR.
   const auto parameterizedPlan = [&](const mqt::FloatParameter& angle,
                                      size_t controls) {
     return rotation ? planMultiControlledRotation(rewriter, op.getLoc(), angle,
@@ -1371,25 +1384,28 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
     return changeRotationBasis(
         planWithDirtyRzAncillas(rewriter, op.getLoc(), angle, k), k, inner);
   };
-  auto best = parameterized ? parameterizedPlan(0.0, k)
+  auto best = parameterized ? CircuitPlan{}
                             : planOneAncillaMcx(k, ancillas.front().clean);
   const auto fallbackCost =
       parameterized
-          ? entanglingCost(best)
+          ? parameterizedFallbackCost(k, rotation)
           : (k == 3
                  ? 14
                  : entanglingCost(mczCoreForWidth(rewriter, op.getLoc(), k)));
+  auto bestCost = parameterized ? fallbackCost : entanglingCost(best);
   size_t used = parameterized ? 0 : 1;
   bool dirtyParameterized = false;
   if (parameterized && cleanCount != 0) {
-    best = planWithCleanAncillas(parameterizedPlan(0.0, k - cleanCount), k,
-                                 cleanCount);
+    bestCost =
+        6 * cleanCount + parameterizedFallbackCost(k - cleanCount, rotation);
     used = cleanCount;
   }
   if (parameterized && k >= 5 && ancillas.size() == k - 2) {
-    auto dirty = dirtyPlan(0.0);
-    if (entanglingCost(dirty) < entanglingCost(best)) {
-      best = std::move(dirty);
+    // Four RCCX toggles and two carries; phase sums widths five through k
+    // above its four-control core.
+    const auto cost = rotation ? 8 * k - 6 : 4 * k * k - 2 * k - 24;
+    if (cost < bestCost) {
+      bestCost = cost;
       used = k - 2;
       dirtyParameterized = true;
     }
@@ -1398,12 +1414,13 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
     auto many = ancillas.back().clean
                     ? planWithCleanAncillas(planBorrowedMcx(2), k, k - 2)
                     : planBorrowedMcx(k);
-    if (entanglingCost(many) < entanglingCost(best)) {
+    if (const auto cost = entanglingCost(many); cost < bestCost) {
+      bestCost = cost;
       best = std::move(many);
       used = ancillas.size();
     }
   }
-  if (entanglingCost(best) >= fallbackCost) {
+  if (bestCost >= fallbackCost) {
     return failure();
   }
   if (parameterized) {

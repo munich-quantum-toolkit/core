@@ -1637,12 +1637,7 @@ protected:
     // Propagate frames after local fusion: resynthesizing the shifted runs
     // can trade virtual Z gates for additional physical rotations.
     if (targetBasis) {
-      if (failed(decomposition::propagateZFrames(
-              rewriter, moduleOp, target,
-              GreedyRewriteConfig{}
-                  .setRegionSimplificationLevel(
-                      GreedySimplifyRegionLevel::Disabled)
-                  .setListener(&listener)))) {
+      if (failed(decomposition::propagateZFrames(rewriter, moduleOp, target))) {
         signalPassFailure();
         return;
       }
