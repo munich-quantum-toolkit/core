@@ -933,29 +933,35 @@ TEST_P(AncillaAngleTest, DirtyConstantAnglesAndMixedSelection) {
 TEST_P(AncillaAngleTest, CleanAncillaWithBorrowedResidualControls) {
   const auto family = GetParam();
   const auto axis = ancillaRotationAxis(family);
-  constexpr size_t k = 8;
-  auto moduleOp =
-      QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
-        auto reg = b.allocQubitRegister(k + 2);
-        b.ctrl(ValueRange(reg.qubits).take_front(k), reg[k], [&](Value target) {
-          return applyAncillaAngleGate(b, family, b.floatConstant(0.73),
-                                       target);
+  for (const size_t k : {3U, 4U, 8U, 9U}) {
+    SCOPED_TRACE(k);
+    auto moduleOp =
+        QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
+          auto reg = b.allocQubitRegister(static_cast<int64_t>(k + 2));
+          b.ctrl(ValueRange(reg.qubits).take_front(k), reg[k],
+                 [&](Value target) {
+                   return applyAncillaAngleGate(b, family,
+                                                b.floatConstant(0.73), target);
+                 });
+          return SmallVector<Value>{};
         });
-        return SmallVector<Value>{};
-      });
-  ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
-  expectFullyLowered(*moduleOp);
-  EXPECT_EQ(countEffectiveCxOps(*moduleOp), axis ? 58U : 158U);
-  auto package = llvm::cantFail(dd::Package::create(k + 2));
-  auto actual =
-      buildFunctionality(*moduleOp->getOps<func::FuncOp>().begin(), *package);
-  ASSERT_TRUE(succeeded(actual));
-  auto expected = makeControlledGateDD(
-      *package, k, axis ? rotationMatrix(*axis, 0.73) : phaseMatrix(0.73), k);
-  package->incRef(expected);
-  expectOperatorColumnsNear(*actual, expected, k + 2, k + 1);
-  package->decRef(expected);
-  package->decRef(*actual);
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
+    expectFullyLowered(*moduleOp);
+    const auto fallback = axis ? expectedMcrCxBudget(k) : expectedMcpCx(k);
+    const auto residual =
+        axis ? expectedMcrCxBudget(k - 1) : expectedMcpCx(k - 1);
+    EXPECT_EQ(countEffectiveCxOps(*moduleOp), std::min(fallback, 6 + residual));
+    auto package = llvm::cantFail(dd::Package::create(k + 2));
+    auto actual =
+        buildFunctionality(*moduleOp->getOps<func::FuncOp>().begin(), *package);
+    ASSERT_TRUE(succeeded(actual));
+    auto expected = makeControlledGateDD(
+        *package, k, axis ? rotationMatrix(*axis, 0.73) : phaseMatrix(0.73), k);
+    package->incRef(expected);
+    expectOperatorColumnsNear(*actual, expected, k + 2, k + 1);
+    package->decRef(expected);
+    package->decRef(*actual);
+  }
 }
 
 TEST_P(AncillaFamilyTest, OneDirtyAncillaFullOperator) {

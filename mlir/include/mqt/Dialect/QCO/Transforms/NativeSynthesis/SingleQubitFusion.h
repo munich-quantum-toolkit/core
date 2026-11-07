@@ -51,7 +51,6 @@ private:
   const CompilerTarget* target_;
   GreedyRewriteConfig config_;
   std::optional<FrozenRewritePatternSet> runtimePatterns_;
-  std::optional<FrozenRewritePatternSet> matrixPatterns_;
 };
 
 /// Populates @p patterns with the single-qubit run fusion rewrite for
@@ -76,10 +75,10 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
 
 /// Merge Z rotations through diagonal gates on native RZ or equatorial targets.
 ///
-/// Equatorial targets also lower single-qubit factors and absorb Z frames into
-/// R.
+/// Equatorial targets fuse constant single-qubit runs, lower the remaining
+/// single-qubit factors, and absorb Z frames into R. Symbolic gates and
+/// barriers bound constant runs.
 LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
-                               const CompilerTarget& target,
-                               const GreedyRewriteConfig& config);
+                               const CompilerTarget& target);
 
 } // namespace mlir::qco::decomposition

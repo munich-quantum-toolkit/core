@@ -15,19 +15,20 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/SingleQubitFusion.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Visitors.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -92,8 +93,7 @@ static bool commutesWithZFrames(UnitaryOpInterface gate) {
 }
 
 LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
-                               const CompilerTarget& target,
-                               const GreedyRewriteConfig& config) {
+                               const CompilerTarget& target) {
   const bool equatorial =
       target.synthesisBasis() &&
       target.synthesisBasis()->singleQubit == SingleQubitBasis::R;
@@ -110,15 +110,6 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
            : target.supports(CompilerTarget::GateKind::RZ));
   if (!equatorial && !nativeRZ) {
     return success();
-  }
-  if (equatorial) {
-    // Fuse local factors before converting them to equatorial gates.
-    RewritePatternSet patterns(rewriter.getContext());
-    populateFuseSingleQubitUnitaryRunsPatterns(
-        patterns, {.singleQubit = SingleQubitBasis::U}, &target);
-    if (failed(applyPatternsGreedily(moduleOp, std::move(patterns), config))) {
-      return failure();
-    }
   }
   DominanceInfo dominance;
   const WalkResult result = moduleOp->walk<
@@ -211,7 +202,8 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
           }
           frames.erase(found);
         };
-        for (auto& operation : llvm::make_early_inc_range(block)) {
+        for (auto iterator = block.begin(); iterator != block.end();) {
+          auto& operation = *iterator++;
           rewriter.setInsertionPoint(&operation);
           auto loc = operation.getLoc();
           if (isa<MeasureOp, ResetOp>(operation)) {
@@ -246,19 +238,55 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
                 continue;
               }
             }
-            if (isa<ROp>(operation) && !frames.contains(wire)) {
+            auto tail = gate;
+            std::optional<std::array<RotationParameter, 4>> fusedAngles;
+            if (equatorial) {
+              if (auto composed = gate.getUnitaryMatrix<Matrix2x2>()) {
+                auto next = dyn_cast<UnitaryOpInterface>(
+                    *tail.getOutputQubit(0).user_begin());
+                while (next && next->getBlock() == &block &&
+                       next.isSingleQubit() && !isa<BarrierOp>(next)) {
+                  const auto matrix = next.getUnitaryMatrix<Matrix2x2>();
+                  if (!matrix) {
+                    break;
+                  }
+                  composed->premultiplyBy(*matrix);
+                  tail = next;
+                  next = dyn_cast<UnitaryOpInterface>(
+                      *tail.getOutputQubit(0).user_begin());
+                }
+                if (tail != gate) {
+                  const auto angles =
+                      anglesFromUnitary(*composed, SingleQubitBasis::ZYZ);
+                  // Matrix resynthesis uses the same tolerance as Euler
+                  // emission.
+                  fusedAngles = {
+                      std::abs(angles.theta) <= MATRIX_TOLERANCE ? 0.
+                                                                 : angles.theta,
+                      angles.phi,
+                      angles.lambda,
+                      angles.phase,
+                  };
+                }
+              }
+            }
+            if (!fusedAngles && isa<ROp>(operation) && !frames.contains(wire)) {
               continue;
             }
             auto frame = take(wire);
-            if (auto rotation = dyn_cast<RZOp>(operation)) {
+            if (auto rotation = dyn_cast<RZOp>(operation);
+                rotation && !fusedAngles) {
               frame.append(rewriter, loc, normalized(rotation.getTheta()));
-            } else if (auto rotation = dyn_cast<ROp>(operation)) {
+            } else if (auto rotation = dyn_cast<ROp>(operation);
+                       rotation && !fusedAngles) {
               auto phi = rewriter.createOrFold<arith::SubFOp>(
                   loc, normalized(rotation.getPhi()),
                   frame.value(rewriter, loc));
               wire = ROp::create(rewriter, loc, wire, rotation.getTheta(), phi);
             } else {
-              auto angles = zyzAnglesFromOperation(rewriter, loc, gate);
+              auto angles = fusedAngles
+                                ? fusedAngles
+                                : zyzAnglesFromOperation(rewriter, loc, gate);
               if (!angles) {
                 operation.emitError("equatorial synthesis requires a known "
                                     "single-qubit unitary");
@@ -280,6 +308,20 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
               auto phaseValue = mqt::variantToValue(rewriter, loc, phase);
               if (!isZero(phaseValue)) {
                 GPhaseOp::create(rewriter, loc, phaseValue);
+              }
+            }
+            if (tail != gate) {
+              rewriter.replaceAllUsesWith(tail.getOutputQubit(0), wire);
+              while (tail != gate) {
+                auto previous =
+                    tail.getInputQubit(0).getDefiningOp<UnitaryOpInterface>();
+                // The next block operation can be a member of this wire's run.
+                if (iterator != block.end() &&
+                    &*iterator == tail.getOperation()) {
+                  ++iterator;
+                }
+                rewriter.eraseOp(tail);
+                tail = previous;
               }
             }
             rewriter.replaceOp(&operation, wire);
