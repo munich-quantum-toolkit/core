@@ -62,7 +62,9 @@ fp densePauliExpectation(const CVec& state, const llvm::StringRef paulis) {
 }
 
 TEST(PauliExpectations, AllThreeQubitStringsAgainstDenseOracle) {
-  auto packageOwner = mqt::test::value(Package::create(3));
+  // A tiny memo also exercises contraction without caching every node pair.
+  auto packageOwner =
+      mqt::test::value(Package::create(3, {.ctVecInnerProdNumBucket = 1}));
   auto& package = *packageOwner;
   CVec amplitudes{
       {.1, .2},  {.3, -.4}, {-.2, .3}, {.4, .1},
@@ -90,6 +92,10 @@ TEST(PauliExpectations, AllThreeQubitStringsAgainstDenseOracle) {
         {.paulis = paulis, .coefficient = -.25},
     });
   }
+  // Reuse high-only strings across observables as well as within each sum.
+  observables.push_back(observables[1]);
+  observables.push_back(observables[2]);
+  observables.push_back(observables[3]);
   const auto values =
       mqt::test::value(package.expectationValues(state, observables));
   ASSERT_EQ(values.size(), observables.size());
@@ -102,6 +108,9 @@ TEST(PauliExpectations, AllThreeQubitStringsAgainstDenseOracle) {
   }
   EXPECT_EQ(package.getRootSet<vNode>(), roots);
   EXPECT_TRUE(package.getRootSet<mNode>().empty());
+  package.garbageCollect(true);
+  EXPECT_EQ(mqt::test::value(package.expectationValues(state, observables)),
+            values);
   package.decRef(state);
   EXPECT_TRUE(package.getRootSet<vNode>().empty());
 }

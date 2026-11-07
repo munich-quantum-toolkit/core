@@ -393,7 +393,7 @@ b[0] = measure q[1];
             NUM_SHOTS);
   std::vector<std::string> first;
   std::vector<std::string> second;
-  for (const size_t workers : {0U, 4U}) {
+  for (const size_t workers : {0U, 1U, 4U}) {
     EXPECT_EQ(
         runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &first, workers),
         runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &second, workers));

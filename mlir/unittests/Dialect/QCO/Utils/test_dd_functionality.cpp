@@ -3395,10 +3395,10 @@ TEST_F(QCODDFunctionalityTest,
   }
   std::vector<std::string> fullGrant;
   std::vector<std::string> capped;
-  ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 128, 9, fullGrant,
-                                    DDArgumentBindings{}, nullptr, {}, 4)));
-  ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 128, 9, capped,
-                                    DDArgumentBindings{}, nullptr, {}, 4,
+  ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 1024, 9, fullGrant,
+                                    DDArgumentBindings{}, nullptr, {}, 0)));
+  ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 1024, 9, capped,
+                                    DDArgumentBindings{}, nullptr, {}, 0,
                                     [](size_t) { return size_t{1}; })));
   EXPECT_EQ(capped, fullGrant);
 }
