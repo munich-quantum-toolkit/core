@@ -225,6 +225,12 @@ plain tuples represent placements without calibration. Routing uses undirected
 adjacency, and synthesis checks the supported operand directions on each site.
 Branch exits and loop backedges must retain compatible physical sites.
 
+Explicit coupling graphs keep source SWAPs before later interactions because
+they can help routing. The compiler elides terminal straight-line SWAPs and
+records the output permutation in the qubit layout. All-to-all targets also
+elide nonterminal permutations through supported tensor accesses and structured
+control flow.
+
 Mapping runs multiple initial-layout trials. Set `MappingOptions.trials` and
 `CompilationOptions.seed` for reproducible choices. Each trial retains the
 layout with the fewest native two-qubit gates across its refinement and final
