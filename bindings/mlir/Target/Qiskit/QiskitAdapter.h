@@ -831,7 +831,8 @@ standardGateMapping(const std::string_view name) {
 /// GPI and GPI2 are target names for fixed-angle R gates with one phase.
 [[nodiscard]] static std::optional<double>
 nativeRAngle(nb::handle operation, const std::string_view name) {
-  if ((name != "gpi" && name != "gpi2") ||
+  const auto alias = mlir::nativeRAlias(name);
+  if (!alias ||
       !nb::isinstance(operation,
                       nb::module_::import_("qiskit.circuit").attr("Gate"))) {
     return std::nullopt;
@@ -841,13 +842,11 @@ nativeRAngle(nb::handle operation, const std::string_view name) {
       nb::cast<size_t>(operation.attr("num_qubits")) != 1) {
     return std::nullopt;
   }
-  const auto angle = name == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+  const auto angle = alias->angle;
   try {
     auto expected = nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
     expected.attr("r")(angle, parameters[nb::int_(0)], 0);
-    if (name == "gpi") {
-      expected.attr("global_phase") = std::numbers::pi / 2.;
-    }
+    expected.attr("global_phase") = alias->globalPhase;
     if (operation.attr("definition").equal(expected)) {
       return angle;
     }
@@ -2459,9 +2458,8 @@ public:
       throw std::runtime_error("Qiskit gate '" + std::string(gate->name) +
                                "' has incompatible arity");
     }
-    if (nativeName == "gpi" || nativeName == "gpi2") {
-      const auto angle =
-          nativeName == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+    if (const auto alias = mlir::nativeRAlias(nativeName)) {
+      const auto angle = alias->angle;
       if (mapping != StandardGateMapping{mlir::qc::StandardGate::R, 0} ||
           parameters[0].getNumber() == nullptr ||
           !(std::abs(parameters[0].getNumber()->value - angle) <=
@@ -2476,11 +2474,11 @@ public:
       auto definition =
           nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
       definition.attr("r")(angle, values[0], 0);
-      if (nativeName == "gpi") {
-        definition.attr("global_phase") = std::numbers::pi / 2.;
+      definition.attr("global_phase") = alias->globalPhase;
+      if (alias->globalPhase != 0.) {
         pythonCircuit_.attr("global_phase") =
             pythonCircuit_.attr("global_phase")
-                .attr("__sub__")(std::numbers::pi / 2.);
+                .attr("__sub__")(alias->globalPhase);
       }
       operation.attr("definition") = definition;
       pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
@@ -3212,8 +3210,7 @@ public:
                   nb::cast<uint64_t>(instruction.attr("num_ctrl_qubits")))) {
         reason = "open controls";
       } else if (!nativeName ||
-                 ((operationName == "gpi" || operationName == "gpi2") &&
-                  !rAngle)) {
+                 (mlir::nativeRAlias(operationName) && !rAngle)) {
         reason = "custom or unsupported operation";
       } else if (operationName != *nativeName &&
                  (*nativeName == "measure" || *nativeName == "reset")) {

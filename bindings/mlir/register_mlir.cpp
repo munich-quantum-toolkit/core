@@ -1664,6 +1664,10 @@ Capability construction requires a positive minimum.)pb")
           R"pb(Fixed values or None per parameter; empty means unrestricted.
 
 Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
+      .def_prop_ro(
+          "native_r_global_phase",
+          &mlir::CompilerTarget::OperationCapability::nativeRGlobalPhase,
+          "The native R alias phase, or None for other capabilities.")
       .def_prop_ro("duration",
                    &mlir::CompilerTarget::OperationCapability::duration,
                    "The raw default duration, if available.")

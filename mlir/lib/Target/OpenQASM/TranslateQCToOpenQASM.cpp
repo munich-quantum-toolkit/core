@@ -3122,13 +3122,10 @@ private:
         }
       }
       StringRef canonical = call.symbol;
-      const bool nativePulse =
-          (call.symbol == "gpi" || call.symbol == "gpi2") &&
-          parameters.size() == 1;
+      const auto alias = nativeRAlias(call.symbol);
+      const bool nativePulse = alias && parameters.size() == 1;
       if (nativePulse) {
-        parameters.insert(parameters.begin(), call.symbol == "gpi"
-                                                  ? std::numbers::pi
-                                                  : std::numbers::pi / 2.);
+        parameters.insert(parameters.begin(), alias->angle);
         canonical = "r";
       }
       const auto selected = nativeTarget_->findOperation(
@@ -3261,21 +3258,27 @@ private:
       }
       call.parameters.push_back(std::move(*expression));
     }
-    if (capability->canonicalName() == "r" &&
-        (call.symbol == "gpi" || call.symbol == "gpi2")) {
+    if (const auto alias = nativeRAlias(call.symbol);
+        capability->canonicalName() == "r" && alias) {
       if (version2_) {
         return fail(unitary, "native GPI pulses require OpenQASM 3");
       }
-      const double angle =
-          call.symbol == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+      const double angle = alias->angle;
       if (!parameters.front() || std::abs(*parameters.front() - angle) >
                                      mqt::PARAMETER_COMPARISON_TOLERANCE) {
         return fail(unitary,
                     "native GPI pulse requires its fixed rotation angle");
       }
       call.parameters.erase(call.parameters.begin());
-      if (call.symbol == "gpi") {
-        call.globalPhase = "-pi / 2";
+      if (alias->globalPhase != 0.) {
+        auto phase =
+            emitConstant(FloatAttr::get(Float64Type::get(unitary.getContext()),
+                                        -alias->globalPhase),
+                         unitary.getLoc());
+        if (failed(phase)) {
+          return failure();
+        }
+        call.globalPhase = std::move(*phase);
       }
     }
     for (auto qubit : qubits) {

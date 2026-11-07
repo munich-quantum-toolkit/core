@@ -390,6 +390,10 @@ class CompilerTarget:
             """
 
         @property
+        def native_r_global_phase(self) -> float | None:
+            """The native R alias phase, or None for other capabilities."""
+
+        @property
         def duration(self) -> int | None:
             """The raw default duration, if available."""
 
