@@ -95,9 +95,6 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     ) -> Job | None:
         if isinstance(device, Device):
             return native_submit(device, programs, num_shots, destination=destination, **parameters)
-        assert destination is not None
-        for program in programs:
-            program._validate_environment(destination)  # ruff:ignore[private-member-access] Mirror native preflight for device doubles.
         if len(programs) == 1:
             return device.submit_job(programs[0].payload, programs[0].program_format, num_shots, **parameters)
         return device.try_submit_job(

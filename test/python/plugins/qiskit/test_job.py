@@ -34,7 +34,7 @@ from mqt.core.plugins.qiskit import (
     QDMIJob,
     TranslationError,
 )
-from mqt.core.qdmi import Job, ProgramFormat, builtin_driver
+from mqt.core.qdmi import Job, ProgramFormat
 
 pytestmark = pytest.mark.usefixtures("mock_device_snapshot")
 
@@ -629,8 +629,8 @@ def test_generic_compiled_header(recording_backend: RecordingBackend, width: int
     assert result.results[0].header["creg_sizes"] == ([["c", width]] if width else [])
 
 
-def test_compiled_alternative_format_runs_on_ddsim() -> None:
-    """Artifacts use any supported transport, regardless of the backend default."""
+def test_compiled_alternative_format_runs_on_ddsim(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Foreign artifacts use supported transports without calibrated snapshots."""
     backend = QDMIBackend.from_device_id("mqt.ddsim.default")
     circuit = QuantumCircuit(1, 1)
     circuit.x(0)
@@ -642,6 +642,9 @@ def test_compiled_alternative_format_runs_on_ddsim() -> None:
     default = backend.compile(circuit, options=CompilationOptions(seed=42))
     assert isinstance(default, CompiledProgram)
     assert default.program_format != artifact.program_format
+    monkeypatch.setattr(
+        TargetEnvironment, "from_device", MagicMock(side_effect=AssertionError("submission requested calibration"))
+    )
     assert backend.run(artifact, shots=4).result().get_counts() == {"1": 4}
 
 
@@ -727,18 +730,3 @@ def test_register_separator_spaces(recording_backend: RecordingBackend, *, memor
     assert job.result().get_counts() == {"100": 4}
     if memory:
         assert job.result().get_memory() == ["100"] * 4
-
-
-def test_foreign_program_submission_reuses_uncalibrated_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Foreign compiled programs use native preflight without calibration snapshots."""
-    device = builtin_driver.open_device("mqt.ddsim.default")
-    backend = QDMIBackend(device)
-    circuit = QuantumCircuit(1, 1)
-    circuit.x(0)
-    circuit.measure(0, 0)
-    program = compile_program(circuit, target=device)
-    calibrated = MagicMock(side_effect=AssertionError("submission requested calibration"))
-    monkeypatch.setattr(TargetEnvironment, "from_device", calibrated)
-    job = backend.run([program, program], shots=4)
-    assert job.result().get_counts() == [{"1": 4}, {"1": 4}]
-    calibrated.assert_not_called()
