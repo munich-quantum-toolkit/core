@@ -1,0 +1,79 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+services:
+  login:
+    command:
+      - /bin/sh
+      - -ec
+      - |
+        systemctl enable mqt-slurm-rest.socket nginx.service
+        exec /usr/local/sbin/mqt-slurm-start login
+    volumes:
+      - ./monitoring/mqt-slurm-rest.socket:/etc/systemd/system/mqt-slurm-rest.socket:ro
+      - ./monitoring/mqt-slurm-rest@.service:/etc/systemd/system/mqt-slurm-rest@.service:ro
+      - ./monitoring/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - systemctl is-active --quiet munge.service && systemctl is-active --quiet nginx.service && systemctl is-active --quiet mqt-slurm-rest.socket
+
+  prometheus:
+    image: prom/prometheus:v3.15.0
+    restart: unless-stopped
+    logging:
+      driver: local
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - cluster
+    healthcheck:
+      test: [CMD, wget, --spider, -q, http://localhost:9090/-/ready]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  grafana:
+    image: ${COMPOSE_PROJECT_NAME:-slurm}-grafana
+    build:
+      context: ./monitoring/grafana
+    restart: unless-stopped
+    logging:
+      driver: local
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_SECURITY_DISABLE_INITIAL_ADMIN_CREATION: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/runtime.json
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:${MQT_CORE_SLURM_GRAFANA_PORT:-3000}:3000"
+    networks:
+      - cluster
+      - egress
+    healthcheck:
+      test: [CMD, wget, --spider, -q, http://localhost:3000/api/health]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  prometheus-data:

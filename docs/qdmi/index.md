@@ -55,7 +55,9 @@ states.
 - **Use an SDK:** connect through {doc}`Qiskit <qdmi_backend>` or
   {doc}`PennyLane <pennylane_device>`.
 - **Run on a cluster:** use the
-  {doc}`Slurm guide and workflow playground <slurm>`.
+  {doc}`Slurm guide and workflow playground <slurm>`, including
+  {ref}`runtime monitoring <slurm-runtime-monitoring>` with Prometheus and
+  Grafana.
 - **Implement a device:** follow the
   [QDMI device interface](https://munich-quantum-software-stack.github.io/QDMI/)
   and use MQT Core's bundled devices as implementation examples.

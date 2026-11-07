@@ -1,0 +1,442 @@
+{
+  "uid": "mqt-runtime",
+  "title": "MQT Runtime",
+  "description": "Slurm scheduling, resource allocation and accounting for clusters running MQT Core with QDMI devices.",
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "refresh": "1m",
+  "timezone": "browser",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "prometheus",
+        "label": "Prometheus",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "prometheus" },
+        "refresh": 1
+      },
+      {
+        "name": "controller",
+        "label": "Slurm controller",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+        "query": {
+          "qryType": 1,
+          "query": "label_values(up{job=\"slurm_nodes\"}, instance)",
+          "label": "instance",
+          "metric": "up",
+          "labelFilters": [
+            { "label": "job", "op": "=", "value": "slurm_nodes" }
+          ],
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "current": { "text": "controller:6817", "value": "controller:6817" },
+        "refresh": 1,
+        "sort": 1
+      },
+      {
+        "name": "accounting",
+        "label": "Slurm REST",
+        "description": "Select the read-only Slurm REST data source for the selected controller's cluster.",
+        "type": "datasource",
+        "query": "yesoreyeram-infinity-datasource",
+        "current": { "text": "Slurm accounting", "value": "slurm-accounting" },
+        "refresh": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "What this view measures",
+      "type": "text",
+      "gridPos": { "x": 0, "y": 0, "w": 24, "h": 3 },
+      "options": {
+        "mode": "markdown",
+        "content": "Live Slurm jobs, nodes, CPU allocations and device license reservations, with persistent job history below. Allocation is **not actual CPU or QPU usage**. Missing samples remain unavailable."
+      }
+    },
+    {
+      "id": 2,
+      "title": "Metrics endpoint health",
+      "description": "Whether Prometheus can scrape itself and each endpoint on the selected Slurm controller. A Prometheus outage prevents this panel from loading.",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 3, "w": 24, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "up{job=~\"slurm_(jobs|nodes|partitions|scheduler)\",instance=\"$controller\"} or up{job=\"prometheus\"}",
+          "legendFormat": "{{job}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "No data",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "Down", "color": "red" },
+                "1": { "text": "Up", "color": "green" }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "reduceOptions": { "calcs": ["last"], "fields": "", "values": false }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Running jobs by partition",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 7, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "slurm_partition_jobs_running{job=\"slurm_partitions\",instance=\"$controller\"}",
+          "legendFormat": "{{partition}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 4,
+      "title": "Pending jobs by partition",
+      "description": "Jobs waiting in each partition, including dependency, resource and policy waits.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 7, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "slurm_partition_jobs_pending{job=\"slurm_partitions\",instance=\"$controller\"}",
+          "legendFormat": "{{partition}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "Registered nodes and states",
+      "description": "State flags can overlap; do not add these series together.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "slurm_nodes{job=\"slurm_nodes\",instance=\"$controller\"}",
+          "legendFormat": "Registered"
+        },
+        {
+          "refId": "B",
+          "expr": "slurm_nodes_idle{job=\"slurm_nodes\",instance=\"$controller\"}",
+          "legendFormat": "Idle"
+        },
+        {
+          "refId": "C",
+          "expr": "slurm_nodes_alloc{job=\"slurm_nodes\",instance=\"$controller\"}",
+          "legendFormat": "Allocated"
+        },
+        {
+          "refId": "D",
+          "expr": "slurm_nodes_mixed{job=\"slurm_nodes\",instance=\"$controller\"}",
+          "legendFormat": "Mixed"
+        },
+        {
+          "refId": "E",
+          "expr": "slurm_nodes_down{job=\"slurm_nodes\",instance=\"$controller\"}",
+          "legendFormat": "Down"
+        },
+        {
+          "refId": "F",
+          "expr": "slurm_nodes_drain{job=\"slurm_nodes\",instance=\"$controller\"}",
+          "legendFormat": "Drain flag"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "CPU allocation",
+      "description": "Scheduled CPU allocations and configured CPUs across registered nodes, not CPU utilization.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(slurm_node_cpus_alloc{job=\"slurm_nodes\",instance=\"$controller\"})",
+          "legendFormat": "Allocated CPUs"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(slurm_node_cpus{job=\"slurm_nodes\",instance=\"$controller\"})",
+          "legendFormat": "Configured CPUs"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "CPU allocation by partition",
+      "description": "Scheduled CPU allocations and configured CPUs in each partition. Nodes can belong to more than one partition.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 21, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "slurm_partition_nodes_cpus_alloc{job=\"slurm_partitions\",instance=\"$controller\"}",
+          "legendFormat": "{{partition}} allocated"
+        },
+        {
+          "refId": "B",
+          "expr": "slurm_partition_cpus{job=\"slurm_partitions\",instance=\"$controller\"}",
+          "legendFormat": "{{partition}} configured"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "decimals": 0,
+          "noValue": "No data"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Last scheduler cycle duration",
+      "description": "Duration of the most recent scheduling cycle, converted from microseconds. This is not job execution or queue time.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 21, "w": 12, "h": 7 },
+      "datasource": { "type": "prometheus", "uid": "${prometheus}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "slurm_schedule_cycle_last{job=\"slurm_scheduler\",instance=\"$controller\"} / 1000000",
+          "legendFormat": "Main scheduler"
+        },
+        {
+          "refId": "B",
+          "expr": "slurm_bf_cycle_last{job=\"slurm_scheduler\",instance=\"$controller\"} / 1000000",
+          "legendFormat": "Backfill scheduler"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "min": 0, "noValue": "No data" },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "title": "Device licenses",
+      "description": "Latest local Slurm license state, cached for up to 60 seconds and independent of the dashboard time range. The QDMI monitor reserves capacity while probing, after failure, or when stopped. Free includes reserved capacity; an unreserved license does not prove current device health.",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 28, "w": 24, "h": 6 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${accounting}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/slurm/v0.0.44/licenses/",
+          "url_options": { "method": "GET" },
+          "root_selector": "$count(errors) > 0 ? $error(\"Slurm license request failed: \" & $string(errors)) : [licenses[Remote = false].{\"device\": LicenseName, \"reservation\": Reserved >= Total ? \"Fully reserved\" : Reserved > 0 ? \"Partly reserved\" : \"Unreserved\", \"total\": Total, \"allocated\": Used, \"free\": Free, \"reserved\": Reserved}]",
+          "columns": [
+            {
+              "selector": "device",
+              "text": "Device license",
+              "type": "string"
+            },
+            {
+              "selector": "reservation",
+              "text": "Reservation",
+              "type": "string"
+            },
+            { "selector": "total", "text": "Total", "type": "number" },
+            { "selector": "allocated", "text": "Allocated", "type": "number" },
+            { "selector": "free", "text": "Free", "type": "number" },
+            { "selector": "reserved", "text": "Reserved", "type": "number" }
+          ]
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "Device license": 0,
+              "Reservation": 1,
+              "Total": 2,
+              "Allocated": 3,
+              "Free": 4,
+              "Reserved": 5
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "noValue": "—", "decimals": 0 },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Device license", "desc": false }]
+      }
+    },
+    {
+      "id": 9,
+      "title": "Job accounting",
+      "description": "Jobs available through the configured accounting data source, selected by the dashboard time range, including short jobs between scrapes. CPU time is user plus system time. Max task RSS is the largest recorded task memory across job steps, not total job memory. Exit code is status:signal; missing accounting values remain blank.",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 34, "w": 24, "h": 9 },
+      "datasource": {
+        "type": "yesoreyeram-infinity-datasource",
+        "uid": "${accounting}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "/slurmdb/v0.0.44/jobs/",
+          "url_options": {
+            "method": "GET",
+            "params": [
+              {
+                "key": "start_time",
+                "value": "${__timeFrom:date:seconds}"
+              },
+              {
+                "key": "end_time",
+                "value": "${__timeTo:date:seconds}"
+              }
+            ]
+          },
+          "root_selector": "$count(errors) > 0 ? $error(\"Slurm accounting request failed: \" & $string(errors)) : [jobs.{\"job_id\": job_id, \"name\": name, \"partition\": partition, \"state\": $join(state.current, \", \"), \"exit_code\": (exit_code.return_code.set or exit_code.signal.id.set) ? ($string(exit_code.return_code.set ? exit_code.return_code.number : 0) & \":\" & $string(exit_code.signal.id.set ? exit_code.signal.id.number : 0)) : null, \"start\": time.start > 0 ? time.start : null, \"end\": time.end > 0 ? time.end : null, \"elapsed\": time.elapsed, \"cpu_time\": $count(steps) > 0 ? $sum(steps.time.total.seconds) + $sum(steps.time.total.microseconds) / 1000000 : null, \"max_rss\": $max(steps.tres.requested.max[type = \"mem\" and count >= 0].count), \"cpus\": tres.allocated[type = \"cpu\"][0].count, \"licenses\": $join(tres.allocated[type = \"license\"].(name & \"=\" & $string(count)), \", \")}]",
+          "columns": [
+            { "selector": "job_id", "text": "Job ID", "type": "number" },
+            { "selector": "name", "text": "Name", "type": "string" },
+            { "selector": "partition", "text": "Partition", "type": "string" },
+            { "selector": "state", "text": "State", "type": "string" },
+            { "selector": "exit_code", "text": "Exit code", "type": "string" },
+            {
+              "selector": "start",
+              "text": "Start",
+              "type": "timestamp_epoch_s"
+            },
+            { "selector": "end", "text": "End", "type": "timestamp_epoch_s" },
+            { "selector": "elapsed", "text": "Elapsed", "type": "number" },
+            { "selector": "cpu_time", "text": "CPU time", "type": "number" },
+            { "selector": "max_rss", "text": "Max task RSS", "type": "number" },
+            { "selector": "cpus", "text": "CPUs", "type": "number" },
+            { "selector": "licenses", "text": "Licenses", "type": "string" }
+          ]
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "indexByName": {
+              "Job ID": 0,
+              "State": 1,
+              "Exit code": 2,
+              "Elapsed": 3,
+              "CPU time": 4,
+              "Max task RSS": 5,
+              "CPUs": 6,
+              "Licenses": 7,
+              "Partition": 8,
+              "Name": 9,
+              "Start": 10,
+              "End": 11
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "noValue": "—" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Elapsed" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "CPU time" },
+            "properties": [{ "id": "unit", "value": "s" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Max task RSS" },
+            "properties": [{ "id": "unit", "value": "bytes" }]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Job ID" },
+            "properties": [
+              { "id": "unit", "value": "none" },
+              { "id": "decimals", "value": 0 }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "Job ID", "desc": true }]
+      }
+    }
+  ]
+}

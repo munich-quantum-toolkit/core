@@ -1,0 +1,33 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 60s
+  - name: Slurm accounting
+    uid: slurm-accounting
+    type: yesoreyeram-infinity-datasource
+    access: proxy
+    url: http://login:8080
+    editable: false
+    jsonData:
+      allowedHosts:
+        - http://login:8080/slurmdb/v0.0.44/jobs/
+        - http://login:8080/slurmdb/v0.0.44/ping/
+        - http://login:8080/slurm/v0.0.44/licenses/
+      timeoutInSeconds: 10
+      customHealthCheckEnabled: true
+      customHealthCheckUrl: http://login:8080/slurmdb/v0.0.44/ping/
