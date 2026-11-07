@@ -2409,6 +2409,7 @@ public:
                const std::vector<Parameter>& parameters) override {
     const auto* gate = versionGate(mapping);
     std::string nativeName;
+    bool fixedExchange = false;
     if (target_ != nullptr) {
       std::vector<mlir::CompilerTarget::SiteId> sites(qubits.begin(),
                                                       qubits.end());
@@ -2438,9 +2439,21 @@ public:
         selected = target_->findOperation(gate->name, qubits.size(), values,
                                           sites, 0, compatible);
       }
+      if (selected.capability == nullptr &&
+          mapping == StandardGateMapping{mlir::qc::StandardGate::XXPlusYY, 0} &&
+          values.size() == 2 && values[0] && values[1] &&
+          std::abs(*values[0] + std::numbers::pi / 2.) <=
+              mlir::mqt::PARAMETER_COMPARISON_TOLERANCE &&
+          std::abs(*values[1]) <= mlir::mqt::PARAMETER_COMPARISON_TOLERANCE) {
+        selected =
+            target_->findOperation("sqrt_iswap", qubits.size(), {}, sites);
+        fixedExchange = selected.capability != nullptr;
+      }
       if (selected.capability != nullptr && !selected.genericControls) {
         const auto& operation = *selected.capability;
-        gate = versionGate(operation.canonicalName());
+        if (!fixedExchange) {
+          gate = versionGate(operation.canonicalName());
+        }
         if (const auto* named = versionGate(operation.name());
             named != nullptr && named->translation == mapping) {
           gate = named;
@@ -2521,8 +2534,8 @@ public:
         auto definition = circuitModule.attr("QuantumCircuit")(qubits.size());
         definition.attr("append")(operation, definition.attr("qubits"),
                                   nb::arg("copy") = false);
-        auto alias =
-            circuitModule.attr("Gate")(nativeName, qubits.size(), values);
+        auto alias = circuitModule.attr("Gate")(
+            nativeName, qubits.size(), fixedExchange ? nb::list() : values);
         alias.attr("definition") = definition;
         operation = std::move(alias);
       }

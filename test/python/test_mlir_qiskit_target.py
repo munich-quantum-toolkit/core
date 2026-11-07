@@ -734,7 +734,44 @@ def test_export_standard_aliases_on_ordered_sites(*, qco: bool, symbolic: bool) 
     assert Operator(restored).equiv(Operator(circuit))
 
     reverse = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; cx $1, $0;')
-    assert reverse.to_qiskit(target=target).count_ops() == {"cx": 1}
+    with pytest.raises(RuntimeError, match="target operation cannot be emitted as native Qiskit"):
+        reverse.to_qiskit(target=target)
+
+
+@pytest.mark.parametrize(
+    ("theta", "beta", "sites"),
+    [(-np.pi / 2, 0.0, (1, 0)), (0.2, 0.0, (1, 0)), (-np.pi / 2, 0.2, (1, 0)), (-np.pi / 2, 0.0, (0, 1))],
+)
+def test_export_sqrt_iswap_native_signature(theta: float, beta: float, sites: tuple[int, int]) -> None:
+    """The fixed exchange alias retains its parameters and ordered placement."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity([(0, 1)]),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("sqrt_iswap", 2, 0, site_tuples=[CompilerTarget.SiteTuple([1, 0])])
+        ]),
+    )
+    circuit = QuantumCircuit(2)
+    circuit.append(library.XXPlusYYGate(theta, beta), sites)
+    program = QCProgram.from_mlir_str(f"""module {{
+  func.func @main() attributes {{mqt.entry_point}} {{
+    %theta = arith.constant {theta} : f64
+    %beta = arith.constant {beta} : f64
+    %a = qc.static {sites[0]} : !qc.qubit
+    %b = qc.static {sites[1]} : !qc.qubit
+    qc.xx_plus_yy(%theta, %beta) %a, %b : !qc.qubit, !qc.qubit
+    return
+  }}
+}}
+""")
+    if (theta, beta, sites) != (-np.pi / 2, 0.0, (1, 0)):
+        with pytest.raises(RuntimeError, match="target operation cannot be emitted as native Qiskit"):
+            program.to_qiskit(target=target)
+        return
+    exported = program.to_qiskit(target=target)
+    assert exported.count_ops() == {"sqrt_iswap": 1}
+    assert exported.data[0].operation.params == []
+    assert Operator(exported).equiv(Operator(circuit))
 
 
 def test_export_aliases_inside_control_flow() -> None:
