@@ -11,16 +11,17 @@ set -eu
 
 role=${1:-node}
 case "$role" in
-    controller) set -- slurmctld.service qdmi-admission.service ;;
+    controller) set -- slurmctld.service ;;
     accounting)
         set -- slurmdbd.service slurm-accounting.service
         install -o slurm -g slurm -m 0600 /usr/local/share/mqt-slurm/slurmdbd.conf /etc/slurm/slurmdbd.conf
         printf 'StoragePass=%s\n' "$(cat /run/secrets/accounting_password)" >> /etc/slurm/slurmdbd.conf
         ;;
-    node|qan)
+    node)
         set -- slurmd.service
-        install -D -m 0644 "/usr/local/share/mqt-slurm/$role.conf" /etc/systemd/system/slurmd.service.d/mqt-node.conf
+        install -D -m 0644 /usr/local/share/mqt-slurm/node.conf /etc/systemd/system/slurmd.service.d/mqt-node.conf
         ;;
+    qan) set -- slurmd.service ;;
     login) set -- ;;
     *) echo "Expected controller, accounting, login, node, or qan" >&2; exit 1 ;;
 esac

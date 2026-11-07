@@ -10,7 +10,7 @@
 
 <svg xmlns="http://www.w3.org/2000/svg" width="680" height="854" viewBox="0 0 680 854" role="img" aria-labelledby="title desc">
   <title id="title">Slurm Cluster With Classical And Quantum Stages</title>
-  <desc id="desc">The login node submits jobs to the Slurm controller. The controller schedules classical nodes and quantum access nodes, monitors device availability, and records jobs through accounting. A shared filesystem connects the login node and both kinds of compute node, carrying application files and results. QDMI is the device interface attached to the quantum access nodes. DDSIM, IQM, and Amazon Braket connect to that shared interface.</desc>
+  <desc id="desc">The login node submits jobs to the Slurm controller. The controller schedules classical nodes and quantum access nodes, uses HRES to check device availability, and records jobs through accounting. A shared filesystem connects the login node and both kinds of compute node, carrying application files and results. QDMI is the device interface attached to the quantum access nodes. DDSIM, IQM, and Amazon Braket connect to that shared interface.</desc>
   <!-- Rack pictogram and palette adapted from MQT Core's MQSF 2026 presentation
        (MIT, same copyright holders as this diagram). -->
   <defs>
@@ -102,7 +102,7 @@
     <g font-size="18" fill="#425b75">
       <text x="134" y="102">sbatch · squeue</text>
       <text x="500" y="125" text-anchor="middle">scheduling</text>
-      <text x="500" y="150" text-anchor="middle">device monitoring</text>
+      <text x="500" y="150" text-anchor="middle">HRES admission</text>
       <text x="180" y="306" text-anchor="middle">application files · results</text>
       <text x="448" y="290">slurmdbd · MariaDB</text>
       <text x="180" y="490" text-anchor="middle">compute partition</text>
