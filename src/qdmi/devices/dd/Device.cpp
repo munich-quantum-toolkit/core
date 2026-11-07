@@ -832,11 +832,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   execution->workerLimit = executor.limit;
   const size_t perProgramLimit =
       std::max(size_t{1}, executor.limit / execution->programs.size());
-  const size_t desired = std::min({
-      maxWorkers_ == 0 ? perProgramLimit : maxWorkers_,
-      perProgramLimit,
-      std::max(size_t{1}, numShots_),
-  });
+  const size_t shotLimit = std::max(size_t{1}, numShots_);
+  const size_t requested =
+      maxWorkers_ == 0 ? shotLimit : std::min(maxWorkers_, shotLimit);
   execution->remaining = execution->programs.size();
   execution->status = QDMI_JOB_STATUS_QUEUED;
   for (auto& program : execution->programs) {
@@ -852,12 +850,13 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
                                                 index}
                       : std::nullopt,
           .captureOutput = captureQIROutput_,
-          .maxWorkers = desired,
+          .maxWorkers =
+              seed_ ? requested : std::min(requested, perProgramLimit),
           .automaticWorkers = maxWorkers_ == 0,
           .maxQubits = session_->qubitsNum(),
       };
       executor.threads.async([pending = std::weak_ptr(execution), index,
-                              request, &executor]() mutable {
+                              request, perProgramLimit, &executor]() mutable {
         executor.slots.acquire();
         size_t grant = 1;
         const llvm::scope_exit releaseSlots(
@@ -923,7 +922,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
           qdmi::dd::WorkerResponse response;
           reusable =
               worker && worker->execute(request, response, [&](size_t desired) {
-                while (grant < desired && executor.slots.try_acquire()) {
+                while (grant < std::min(desired, perProgramLimit) &&
+                       executor.slots.try_acquire()) {
                   ++grant;
                 }
                 return grant;

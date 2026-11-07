@@ -14,6 +14,7 @@
 #include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
+#include "dd/ShotStreams.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
@@ -3146,6 +3147,7 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
     workers = std::clamp(shots / 256, size_t{1}, size_t{8});
   }
   workers = std::min(workers, shots);
+  const size_t requested = workers;
   if (!func.getContext()->isMultithreadingEnabled()) {
     workers = 1;
   }
@@ -3160,21 +3162,20 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
     releaseSamplingWorkers(grant - workers);
     grant = workers;
   }
-  if (workers == 1) {
+  const size_t streamCount = seed != 0 ? requested : workers;
+  if (streamCount == 1) {
     return sampleImpl(func, *dd, shots, rng, *prepared, shotResults, nullptr,
                       *plan, options, collectCounts, /*forceDynamic=*/true);
   }
   struct Worker {
     std::unique_ptr<dd::Package> dd;
     PreparedState prepared;
-    std::vector<std::string> shots;
   };
   std::vector<Worker> work;
   work.reserve(workers);
   work.push_back({
       .dd = std::move(dd),
       .prepared = std::move(*prepared),
-      .shots = {},
   });
   for (size_t i = 1; i < workers; ++i) {
     auto created = dd::Package::create(0);
@@ -3189,48 +3190,53 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
     work.push_back({
         .dd = std::move(package),
         .prepared = std::move(*next),
-        .shots = {},
     });
   }
-  std::vector<std::future<FailureOr<std::map<std::string, size_t>>>> tasks;
-  tasks.reserve(workers);
-  std::vector<uint64_t> workerSeeds(workers);
-  for (auto& workerSeed : workerSeeds) {
-    workerSeed = rng();
-  }
-  for (size_t i = 0; i < workers; ++i) {
-    tasks.push_back(std::async(std::launch::async, [&, i] {
-      auto& worker = work[i];
-      std::mt19937_64 workerRng(workerSeeds[i]);
-      const size_t count = (shots / workers) + (i < shots % workers);
+  const auto streams =
+      dd::makeShotStreams(shots, streamCount, seed != 0 ? seed : rng());
+  SmallVector<std::map<std::string, size_t>, 8> parts(streamCount);
+  SmallVector<std::vector<std::string>, 8> samples(
+      shotResults != nullptr ? streamCount : 0);
+  const auto run = [&](size_t index) {
+    auto& worker = work[index];
+    for (size_t i = index; i < streamCount; i += workers) {
+      std::mt19937_64 streamRng(streams[i].seed);
       if (shotResults != nullptr) {
-        worker.shots.reserve(count);
+        samples[i].reserve(streams[i].shots);
       }
-      return sampleImpl(func, *worker.dd, count, workerRng, worker.prepared,
-                        shotResults != nullptr ? &worker.shots : nullptr,
-                        nullptr, *plan, options, collectCounts,
-                        /*forceDynamic=*/true);
-    }));
+      auto part = sampleImpl(func, *worker.dd, streams[i].shots, streamRng,
+                             worker.prepared,
+                             shotResults != nullptr ? &samples[i] : nullptr,
+                             nullptr, *plan, options, collectCounts,
+                             /*forceDynamic=*/true);
+      if (failed(part)) {
+        return failure();
+      }
+      parts[i] = std::move(*part);
+    }
+    return success();
+  };
+  SmallVector<std::future<LogicalResult>, 8> tasks;
+  for (size_t i = 1; i < workers; ++i) {
+    tasks.push_back(std::async(std::launch::async, run, i));
+  }
+  bool allSucceeded = succeeded(run(0));
+  for (auto& task : tasks) {
+    allSucceeded &= succeeded(task.get());
+  }
+  if (!allSucceeded) {
+    return failure();
   }
   std::map<std::string, size_t> counts;
-  bool allSucceeded = true;
-  for (size_t i = 0; i < workers; ++i) {
-    auto part = tasks[i].get();
-    if (failed(part)) {
-      allSucceeded = false;
-      continue;
-    }
-    for (const auto& [outcome, count] : *part) {
+  for (size_t i = 0; i < streamCount; ++i) {
+    for (const auto& [outcome, count] : parts[i]) {
       counts[outcome] += count;
     }
     if (shotResults != nullptr) {
       shotResults->insert(shotResults->end(),
-                          std::make_move_iterator(work[i].shots.begin()),
-                          std::make_move_iterator(work[i].shots.end()));
+                          std::make_move_iterator(samples[i].begin()),
+                          std::make_move_iterator(samples[i].end()));
     }
-  }
-  if (!allSucceeded) {
-    return failure();
   }
   return counts;
 }

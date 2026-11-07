@@ -1864,6 +1864,47 @@ TEST_F(QCODDFunctionalityTest, ConcurrentSamplingSharesReadOnlyContext) {
   EXPECT_EQ(*a, *b);
 }
 
+TEST_F(QCODDFunctionalityTest, SeededSamplingDoesNotDependOnWorkerGrant) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+module {
+func.func @coin(%q: !qco.qubit) -> (i1, !qco.qubit) {
+ %h = qco.h %q : !qco.qubit
+ %m, %b = qco.measure %h : !qco.qubit
+ return %b, %m : i1, !qco.qubit
+}
+func.func @main() -> i1 attributes {mqt.entry_point} {
+ %q = qco.static 0 : !qco.qubit
+ %a:2 = func.call @coin(%q) : (!qco.qubit) -> (i1, !qco.qubit)
+ %r = qco.reset %a#1 : !qco.qubit
+ %b:2 = func.call @coin(%r) : (!qco.qubit) -> (i1, !qco.qubit)
+ qco.sink %b#1 : !qco.qubit
+ return %b#0 : i1
+}
+}
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  std::map<std::string, size_t> expected;
+  std::vector<std::string> expectedSamples;
+  for (const size_t grant : {1U, 2U, 4U}) {
+    SCOPED_TRACE(grant);
+    std::vector<std::string> samples;
+    auto counts = sample(
+        mainFunc(*mod), 1024, 17, DDArgumentBindings{}, &samples, nullptr, {},
+        4, [grant](size_t requested) { return std::min(grant, requested); });
+    ASSERT_TRUE(succeeded(counts));
+    ASSERT_EQ(samples.size(), 1024);
+    ASSERT_EQ(counts->size(), 2);
+    if (grant == 1) {
+      expected = *counts;
+      expectedSamples = samples;
+    } else {
+      EXPECT_EQ(*counts, expected);
+      EXPECT_EQ(samples, expectedSamples);
+    }
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, DisabledContextUsesOneSamplingWorker) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto [q, bit] = b.measure(b.h(b.staticQubit(0)));
@@ -3352,22 +3393,14 @@ TEST_F(QCODDFunctionalityTest,
     }
     EXPECT_EQ(sampleCounts, *histogram);
   }
-  std::vector<std::string> serial;
+  std::vector<std::string> fullGrant;
   std::vector<std::string> capped;
-  ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 128, 9, serial,
-                                    DDArgumentBindings{}, nullptr, {}, 1)));
+  ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 128, 9, fullGrant,
+                                    DDArgumentBindings{}, nullptr, {}, 4)));
   ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 128, 9, capped,
                                     DDArgumentBindings{}, nullptr, {}, 4,
                                     [](size_t) { return size_t{1}; })));
-  std::map<std::string, size_t> serialCounts;
-  std::map<std::string, size_t> cappedCounts;
-  for (const auto& shot : serial) {
-    ++serialCounts[shot];
-  }
-  for (const auto& shot : capped) {
-    ++cappedCounts[shot];
-  }
-  EXPECT_EQ(cappedCounts, serialCounts);
+  EXPECT_EQ(capped, fullGrant);
 }
 
 TEST_F(QCODDFunctionalityTest, SampleDefersNestedTerminalMeasurement) {
