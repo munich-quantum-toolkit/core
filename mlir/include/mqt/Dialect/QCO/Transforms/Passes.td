@@ -342,6 +342,9 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Each search limits retained nodes using `search-memory-limit`, an estimated
     byte budget for the nodes and their qubit layouts (256 MiB by default).
     At least the root node is retained; zero disables node expansion.
+    Candidates are discarded when the same layout already has an equal or
+    lower search cost. They skip heuristic evaluation and do not consume
+    retained-node capacity.
     The pass stops allocating nodes at the limit, checks the remaining queue,
     and, if no solution is queued, completes the route with SWAPs that reduce
     the leading pair's distance. This always makes progress on a connected
@@ -370,8 +373,10 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     Otherwise, the pass option `ntrials` determines the number of initial refinement trials:
     a greedy layout when available, then identity if a slot remains, and random
-    layouts for the remaining slots. Every trial uses `niterations` refinement
-    rounds before scoring; zero scores the initial layouts directly.
+    layouts for the remaining slots. Every trial uses up to `niterations`
+    refinement rounds, stopping when a round leaves both the layout and wire
+    cursors unchanged. Final scoring starts from the original wire roots; zero
+    scores the initial layouts directly.
     The defaults are at least eight trials and two refinement rounds. The trial
     count uses the number of available logical CPUs reported by LLVM, taking CPU
     affinity into account, with a minimum of eight. Disabling multithreading
@@ -427,7 +432,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
        Option<"lambda", "lambda", "float", "0.5F",
               "The lambda factor in the cost function.">,
        Option<"niterations", "niterations", "std::size_t", "2",
-              "The number of forwards and backwards traversal to "
+              "The maximum number of forwards and backwards traversals to "
               "improve the initial layout. Must be >= 0.">,
        Option<
            "ntrials", "ntrials", "std::size_t",
