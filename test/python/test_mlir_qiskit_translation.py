@@ -3768,6 +3768,7 @@ def test_original_parameter_identity_is_shared_in_control_flow() -> None:
     restored = QCProgram.from_qiskit(circuit).to_qco().to_qiskit()
 
     assert restored.parameters == {theta}
+    assert isinstance(restored.global_phase, ParameterExpression)
     assert restored.global_phase.parameters == {theta}
     assert restored.data[0].operation.params[0] == theta
     for block in restored.data[1].operation.blocks:

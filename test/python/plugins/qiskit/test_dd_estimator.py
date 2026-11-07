@@ -25,7 +25,7 @@ from mqt.core.plugins.qiskit import DDEstimator
 from mqt.core.plugins.qiskit import estimator as estimator_module
 
 if TYPE_CHECKING:
-    from qiskit.primitives.containers import EstimatorPubLike
+    from qiskit.primitives.containers import BindingsArrayLike, EstimatorPubLike
 
 
 def test_exact_estimator_dense_oracle_and_phase() -> None:
@@ -78,7 +78,7 @@ def test_exact_estimator_parameter_vectors_and_keyed_expressions() -> None:
     circuit = QuantumCircuit(1)
     circuit.global_phase = theta[1]
     circuit.ry(theta[0].sin() + 2 * theta[1] ** 2, 0)
-    values = {(theta[1], theta[0]): np.array([[0.2, 0.1], [0.4, -0.3]])}
+    values: BindingsArrayLike = {(theta[1], theta[0]): np.array([[0.2, 0.1], [0.4, -0.3]])}
     result = DDEstimator().run([(circuit, "Z", values)]).result()[0]
     np.testing.assert_allclose(
         result.data["evs"], np.cos([np.sin(0.1) + 2 * 0.2**2, np.sin(-0.3) + 2 * 0.4**2]), atol=1e-12
