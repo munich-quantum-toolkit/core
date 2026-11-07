@@ -455,14 +455,15 @@ def test_native_pulse_requires_its_declared_native_name() -> None:
 
 
 @pytest.mark.parametrize("name", ["gpi", "gpi2"])
-def test_native_r_alias_round_trip(monkeypatch: pytest.MonkeyPatch, name: str) -> None:
+@pytest.mark.parametrize("phase", [None, 0.25])
+def test_native_r_alias_round_trip(monkeypatch: pytest.MonkeyPatch, name: str, phase: float | None) -> None:
     """Backend pulse definitions are recognized by strict native target import."""
     capability = CompilerTarget.OperationCapability
     target = CompilerTarget(
         1,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            capability(name, 1, 1),
+            capability(name, 1, 1, fixed_parameters=[phase]),
             capability("gphase", 0, 1),
             capability("measure", 1, 0),
         ]),
@@ -477,4 +478,3 @@ def test_native_r_alias_round_trip(monkeypatch: pytest.MonkeyPatch, name: str) -
         assert actual.name == original.name
         assert actual.canonical_name == original.canonical_name
         assert actual.fixed_parameters == original.fixed_parameters
-        assert actual.native_r_global_phase == original.native_r_global_phase

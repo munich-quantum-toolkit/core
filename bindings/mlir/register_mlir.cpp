@@ -1664,16 +1664,31 @@ Capability construction requires a positive minimum.)pb")
           R"pb(Fixed values or None per parameter; empty means unrestricted.
 
 Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
-      .def_prop_ro(
-          "native_r_global_phase",
-          &mlir::CompilerTarget::OperationCapability::nativeRGlobalPhase,
-          "The native R alias phase, or None for other capabilities.")
       .def_prop_ro("duration",
                    &mlir::CompilerTarget::OperationCapability::duration,
                    "The raw default duration, if available.")
       .def_prop_ro("fidelity",
                    &mlir::CompilerTarget::OperationCapability::fidelity,
                    "The default fidelity, if available.");
+
+  m.def(
+      "_native_r_gate",
+      [](const mlir::CompilerTarget::OperationCapability& capability) {
+        if (capability.canonicalName() != "r") {
+          return nb::object(nb::none());
+        }
+        const auto fixed = capability.fixedParameters();
+        nb::object phase = fixed.size() == 2 && fixed[1]
+                               ? nb::object(nb::float_(*fixed[1]))
+                               : nb::module_::import_("qiskit.circuit")
+                                     .attr("Parameter")("phi");
+        return bindings::qiskit::nativeRGate(capability.name().str(), phase);
+      },
+      "capability"_a,
+      nb::sig("def _native_r_gate(capability: "
+              "mqt.core.mlir.CompilerTarget.OperationCapability) "
+              "-> qiskit.circuit.Gate | None"),
+      "Construct the Qiskit native pulse definition, if applicable.");
 
   nb::enum_<mlir::CompilerTarget::GateKind>(
       compilerTarget, "GateKind", "Recognized native gate capability.")

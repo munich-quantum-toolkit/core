@@ -57,6 +57,7 @@ from mqt.core.mlir import (
     CompilerTarget,
     ProgramCapability,
     TargetEnvironment,
+    _native_r_gate,
     compile_program,
     serialize_program,
 )
@@ -290,11 +291,8 @@ class QDMIBackend(BackendV2):
                 gate = Gate(
                     name, capability.arity.value, [Parameter(f"p{i}") for i in range(capability.num_parameters)]
                 )
-            if capability.native_r_global_phase is not None:
-                gate = Gate(capability.name, 1, [Parameter("phi")])
-                definition = QuantumCircuit(1, global_phase=capability.native_r_global_phase)
-                definition.r(capability.fixed_parameters[0], gate.params[0], 0)
-                gate.definition = definition
+            if (native_gate := _native_r_gate(capability)) is not None:
+                gate = native_gate
             name = ("mcphase" if name == "mcp" else name) if isinstance(gate, type) else gate.name
             self._operation_names[capability.name] = name
             projections.append((capability, gate, name))
@@ -322,9 +320,10 @@ class QDMIBackend(BackendV2):
             gate = projected_gate
             fixed = capability.fixed_parameters
             bounds = capability.parameter_bounds
-            if capability.native_r_global_phase is not None:
-                fixed = fixed[1:]
-                bounds = bounds[1:]
+            if not isinstance(gate, type):
+                offset = capability.num_parameters - len(gate.params)
+                fixed = fixed[offset:]
+                bounds = bounds[offset:]
             key = (
                 name,
                 None if isinstance(gate, type) else gate.num_qubits,

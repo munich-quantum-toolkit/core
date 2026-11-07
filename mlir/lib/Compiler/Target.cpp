@@ -587,14 +587,6 @@ StringRef CompilerTarget::OperationCapability::canonicalName() const noexcept {
   return canonicalName_;
 }
 
-std::optional<double>
-CompilerTarget::OperationCapability::nativeRGlobalPhase() const noexcept {
-  const auto alias = nativeRAlias(name_);
-  return canonicalName_ == "r" && alias
-             ? std::optional<double>(alias->globalPhase)
-             : std::nullopt;
-}
-
 CompilerTarget::OperationCapability::Arity
 CompilerTarget::OperationCapability::arity() const noexcept {
   return arity_;

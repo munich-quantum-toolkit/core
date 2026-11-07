@@ -390,10 +390,6 @@ class CompilerTarget:
             """
 
         @property
-        def native_r_global_phase(self) -> float | None:
-            """The native R alias phase, or None for other capabilities."""
-
-        @property
         def duration(self) -> int | None:
             """The raw default duration, if available."""
 
@@ -675,6 +671,9 @@ class CompilerTarget:
             parameters: Known parameter values. Omitted or None values require
                 unrestricted support.
         """
+
+def _native_r_gate(capability: CompilerTarget.OperationCapability) -> qiskit.circuit.Gate | None:
+    """Construct the Qiskit native pulse definition, if applicable."""
 
 class TargetEnvironment(Generic[_TargetResultT_co]):
     """A compiler target and its selected payload specification."""

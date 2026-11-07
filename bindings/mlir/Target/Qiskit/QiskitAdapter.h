@@ -17,6 +17,7 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
+#include "Qiskit.h"
 #include "QiskitTranslation.h"
 #include "Result.hpp"
 
@@ -844,10 +845,8 @@ nativeRAngle(nb::handle operation, const std::string_view name) {
   }
   const auto angle = alias->angle;
   try {
-    auto expected = nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
-    expected.attr("r")(angle, parameters[nb::int_(0)], 0);
-    expected.attr("global_phase") = alias->globalPhase;
-    if (operation.attr("definition").equal(expected)) {
+    auto expected = nativeRGate(name, parameters[nb::int_(0)]);
+    if (operation.attr("definition").equal(expected.attr("definition"))) {
       return angle;
     }
   } catch (const nb::python_error&) {
@@ -2467,20 +2466,12 @@ public:
         throw std::runtime_error("Qiskit native gate '" + nativeName +
                                  "' requires its fixed-angle R definition");
       }
-      nb::list values;
-      values.append(pythonParameter(parameters[1]));
-      auto operation = nb::module_::import_("qiskit.circuit")
-                           .attr("Gate")(nativeName, 1, values);
-      auto definition =
-          nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
-      definition.attr("r")(angle, values[0], 0);
-      definition.attr("global_phase") = alias->globalPhase;
+      auto operation = nativeRGate(nativeName, pythonParameter(parameters[1]));
       if (alias->globalPhase != 0.) {
         pythonCircuit_.attr("global_phase") =
             pythonCircuit_.attr("global_phase")
                 .attr("__sub__")(alias->globalPhase);
       }
-      operation.attr("definition") = definition;
       pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
       return;
     }

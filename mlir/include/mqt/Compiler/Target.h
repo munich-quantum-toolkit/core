@@ -230,9 +230,6 @@ public:
     /// Return the compiler operation name, independently of its reported name.
     [[nodiscard]] llvm::StringRef canonicalName() const noexcept;
 
-    /// Return the native R alias phase, or nullopt for other capabilities.
-    [[nodiscard]] std::optional<double> nativeRGlobalPhase() const noexcept;
-
     /// Return the accepted operation arity.
     [[nodiscard]] Arity arity() const noexcept;
 
