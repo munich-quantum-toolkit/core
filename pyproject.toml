@@ -282,6 +282,7 @@ test-groups = [ "test" ]
 test-sources = [
   "bindings/mlir/Target/Qiskit/SupportedVersions.inc",
   "json",
+  "mlir/unittests/Compiler/compile",
   "pyproject.toml",
   "test/circuits",
   "test/python",
