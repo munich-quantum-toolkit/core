@@ -485,8 +485,7 @@ allows classical control, QPY carries a Qiskit circuit without loss, and
 OpenQASM 3 expresses control flow, while the QIR base profile forbids classical
 feedback and OpenQASM 2 has no control flow at all. Encoding only breaks a tie
 within one profile, because it decides how the program travels rather than what
-it may say. `CALIBRATION` and `BATCH_JOB` are absent because a serialized
-circuit is not what they carry.
+it may say.
 
 ### Device Introspection
 
@@ -505,3 +504,10 @@ For complete API documentation, see:
 - {py:class}`~mqt.core.plugins.qiskit.QDMIBackend` — BackendV2 implementation
 - {py:class}`~mqt.core.plugins.qiskit.QDMIJob` — Job wrapper and result handling
 - {py:mod}`~mqt.core.plugins.qiskit.exceptions` — Exception types
+
+## Native program lists
+
+The backend groups compatible circuits with the same program format and shot
+count into native QDMI jobs. Each result retains its original circuit index.
+Devices that reject native lists use separate single-program submissions. Other
+submission errors propagate without starting duplicate jobs.

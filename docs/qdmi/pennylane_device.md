@@ -348,3 +348,11 @@ decompositions reach operations advertised by the QDMI device.
 
 The interface does not implement pulse programming, device-specific non-gate
 properties, routing, analytic execution, or QDMI batch jobs.
+
+## Native program lists
+
+The device groups tapes and shot partitions with the same program format and
+shot count into native QDMI jobs. Results retain the original tape and
+shot-partition order. Devices that reject native lists use independent jobs.
+`submitted_jobs` counts native jobs, while PennyLane's tracker counts program
+executions and shots.

@@ -138,6 +138,10 @@ class StubDevice:
             return None
         return [(_site(first), _site(second)) for first, second in self._coupling_map]
 
+    @staticmethod
+    def try_submit_job(program: object, program_format: ProgramFormat, num_shots: int, **parameters: object) -> None:
+        """Reject native lists so tests exercise scalar fallback."""
+
     def submit_job(
         self,
         program: str,

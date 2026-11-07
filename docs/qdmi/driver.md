@@ -60,5 +60,78 @@ from mqt.core.qdmi.driver import open_device, registered_device_ids
 
 for device_id in registered_device_ids():
     device = open_device(device_id)
-    print(device.name())
+    print(device.id, device.name())
 ```
+
+The read-only {py:attr}`~mqt.core.qdmi.Device.id` property returns the stable ID
+of an opened device. Save this value to select the same configured device in a
+later call to {py:func}`~mqt.core.qdmi.driver.open_device`. The C++ equivalent
+is {cpp:func}`qdmi::Device::getId`.
+
+The driver implements QDMI 1.4.0 program submission through
+`QDMI_job_set_programs`. C clients use a zero-based program index when querying
+programs, program status, or results.
+
+### Selecting a driver
+
+Use {py:class}`~mqt.core.qdmi.Session` to access devices through a compatible
+QDMI Client Interface. Pass `driver_path` to load another driver library. When
+this argument is omitted, `MQT_CORE_QDMI_DRIVER` selects the library, or the
+session uses MQT Core's built-in driver. The client checks the ABI major and
+minor versions and all required symbols before it allocates a session. Patch
+versions can differ. Devices and jobs retain their session and driver library.
+
+```{code-cell} ipython3
+from mqt.core.qdmi import Session
+
+session = Session()
+device = session.get_device("mqt.ddsim.default")
+print(device.id)
+```
+
+For a replacement driver, use `Session(driver_path="/path/to/driver")` or
+`mqt.core.qdmi.open_device(device_id, driver_path="/path/to/driver")`. Driver
+sessions accept QDMI authentication parameters such as `token` and `auth_file`.
+In C++, set `qdmi::SessionConfig::driverPath` and construct a `qdmi::Session`.
+Use `getDeviceIds()` and `getDevice(id)` to access its device catalog.
+
+The existing `mqt.core.qdmi.driver` functions register and open devices with MQT
+Core's built-in driver. Those functions keep their per-device configuration and
+ignore `MQT_CORE_QDMI_DRIVER`.
+
+### Program lists
+
+`Device.submit_job` accepts one program or an ordered list with a common format
+and job parameters. Text programs use strings. For exact-byte submission, pass
+bytes with the terminating null byte included for text formats. The shot count
+applies to every program in the list.
+
+```{code-cell} ipython3
+from mqt.core.qdmi import ProgramFormat
+
+device = open_device("mqt.ddsim.default")
+program = "OPENQASM 3; qubit q; bit c; c = measure q;"
+job = device.submit_job([program, program], ProgramFormat.QASM3, num_shots=32)
+assert job.wait()
+for index in range(job.num_programs):
+    print(job.get_program_status(index), job.get_counts(index))
+```
+
+The C++ `Device::submitJob` overloads accept spans of strings or spans of byte
+spans. Use `Job::getNumPrograms()` to inspect the count. Program and result
+queries accept an optional index that defaults to `0`, preserving existing
+single-program calls. In Python, use `job.get_program(index)` for text or
+`job.get_program(bytes, index)` for exact bytes. The `program` and
+`program_bytes` properties continue to return the first program.
+
+Use `job.get_program_status(index)` to inspect individual outcomes when the
+device supports them. A successful program's results remain accessible when
+another program fails or is cancelled. The list shares one job handle, wait
+operation, and cancellation operation.
+
+Use `Device.try_submit_job` (C++ `Device::trySubmitJob`) to try list submission.
+It returns `None` (`std::nullopt`) if the device rejects the programs before
+submission. The caller can then submit separate jobs. Validation,
+authentication, and submission errors still raise exceptions and must not
+trigger fallback. Text strings can include one final null byte. Embedded null
+bytes are invalid.

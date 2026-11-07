@@ -22,6 +22,8 @@ from mqt.core.qdmi import (
     Device,
     Job,
     ProgramFormat,
+    Session,
+    device_ids,
     is_binary_program_format,
 )
 from mqt.core.qdmi.driver import (
@@ -162,11 +164,10 @@ def test_device_coupling_map(device: Device) -> None:
         assert all(isinstance(site, Device.Site) for pair in cm for site in pair)
 
 
-def test_device_needs_calibration(device: Device) -> None:
-    """Test that the device needs calibration is an integer."""
-    needs_cal = device.needs_calibration()
-    if needs_cal is not None:
-        assert isinstance(needs_cal, int)
+def test_device_id_is_stable(device: Device) -> None:
+    """Reopening a configured device preserves its stable ID."""
+    assert device.id
+    assert open_device(device.id).id == device.id
 
 
 def test_device_queue_length(device: Device) -> None:
@@ -492,11 +493,6 @@ c = measure q;
     assert job.num_shots == 100
 
 
-def test_program_format_includes_batch_job() -> None:
-    """Expose every standard QDMI program format."""
-    assert ProgramFormat.BATCH_JOB.value == 9
-
-
 def test_is_binary_program_format() -> None:
     """Classify the program formats that require exact-byte submission."""
     binary = {ProgramFormat.QIR_BASE_MODULE, ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QPY}
@@ -507,7 +503,7 @@ def test_is_binary_program_format() -> None:
 @pytest.mark.parametrize("program", [b"OPENQASM 3.0;", b"OPENQASM 3.0;\0garbage\0", "OPENQASM 3.0;\0garbage"])
 def test_device_rejects_invalid_text_payloads(ddsim_device: Device, program: str | bytes) -> None:
     """Reject payloads that do not satisfy QDMI's text contract."""
-    with pytest.raises(ValueError, match=r"Setting program: Invalid argument\."):
+    with pytest.raises(ValueError, match=r"Invalid argument|embedded null"):
         ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=1)
 
 
@@ -515,30 +511,6 @@ def test_device_rejects_text_for_binary_format(ddsim_device: Device) -> None:
     """Require exact byte submission for known binary formats."""
     with pytest.raises(ValueError, match="require exact-byte submission"):
         ddsim_device.submit_job("not bitcode", ProgramFormat.QIR_BASE_MODULE, num_shots=1)
-
-
-def test_device_rejects_batch_jobs(ddsim_device: Device) -> None:
-    """State that MQT Core does not support batch jobs."""
-    with pytest.raises(ValueError, match="does not support batch jobs"):
-        ddsim_device.submit_job(b"", ProgramFormat.BATCH_JOB, num_shots=1)
-
-
-def test_device_sends_calibration_runs_elsewhere(ddsim_device: Device) -> None:
-    """Point a calibration run at its own entry point."""
-    with pytest.raises(ValueError, match="submit_calibration_job"):
-        ddsim_device.submit_job(b"", ProgramFormat.CALIBRATION, num_shots=1)
-
-
-@pytest.mark.parametrize("program", [None, "configuration", b"", b"\x01\x02"])
-def test_calibration_job_reaches_the_device(ddsim_device: Device, program: str | bytes | None) -> None:
-    """Let the device decide about a calibration run, with or without a payload.
-
-    The DD simulator needs no calibration and declines the format itself. What
-    matters is that the client no longer refuses before asking, so the failure
-    is a device error rather than a `ValueError` about the argument.
-    """
-    with pytest.raises(RuntimeError, match="Setting program format"):
-        ddsim_device.submit_calibration_job(program)
 
 
 def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
@@ -907,3 +879,27 @@ def test_operation_keeps_fresh_session_alive() -> None:
     """An operation should remain usable after its device wrapper is destroyed."""
     operation = open_device("mqt.sc.default").operations()[0]
     assert operation.name()
+
+
+def test_driver_session_retains_devices_and_descendants() -> None:
+    """Driver-based devices and results survive their Python Session wrapper."""
+    session = Session()
+    assert "mqt.ddsim.default" in session.device_ids
+    assert session.device_ids == device_ids()
+    dev = session.get_device("mqt.ddsim.default")
+    site = dev.sites()[0]
+    del session
+    assert site.index() == 0
+    job = dev.submit_job("OPENQASM 3; qubit q; bit c; c = measure q;", ProgramFormat.QASM3, 4)
+    del dev
+    assert job.wait()
+    assert job.get_counts() == {"0": 4}
+
+
+def test_driver_selection_validates_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reject unavailable and empty driver overrides before session allocation."""
+    monkeypatch.setenv("MQT_CORE_QDMI_DRIVER", "missing-qdmi-driver")
+    with pytest.raises(RuntimeError, match="Cannot load QDMI driver"):
+        Session()
+    with pytest.raises(ValueError, match="must not be empty"):
+        Session(driver_path="")

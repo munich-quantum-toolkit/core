@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "TestUtils.hpp"
 #include "qdmi/Client.hpp"
 #include "qdmi/common/Common.hpp"
 
@@ -22,6 +23,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <new>
 #include <numbers>
 #include <optional>
@@ -359,6 +361,7 @@ TEST(QDMITest, OperationPropertyToString) {
 }
 
 TEST(QDMITest, DevicePropertyToString) {
+  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_ID), "ID");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_NAME), "NAME");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_VERSION), "VERSION");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_STATUS), "STATUS");
@@ -369,8 +372,6 @@ TEST(QDMITest, DevicePropertyToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_OPERATIONS), "OPERATIONS");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_COUPLINGMAP),
                "COUPLING MAP");
-  EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION),
-               "NEEDS CALIBRATION");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_LENGTHUNIT), "LENGTH UNIT");
   EXPECT_STREQ(qdmi::toString(QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR),
                "LENGTH SCALE FACTOR");
@@ -443,9 +444,7 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
     case QDMI_PROGRAM_FORMAT_QASM3:
     case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
     case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING:
-    case QDMI_PROGRAM_FORMAT_CALIBRATION:
     case QDMI_PROGRAM_FORMAT_IQMJSON:
-    case QDMI_PROGRAM_FORMAT_BATCHJOB:
     case QDMI_PROGRAM_FORMAT_CUSTOM1:
     case QDMI_PROGRAM_FORMAT_CUSTOM2:
     case QDMI_PROGRAM_FORMAT_CUSTOM3:
@@ -466,10 +465,8 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
       QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
       QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
-      QDMI_PROGRAM_FORMAT_CALIBRATION,
       QDMI_PROGRAM_FORMAT_QPY,
       QDMI_PROGRAM_FORMAT_IQMJSON,
-      QDMI_PROGRAM_FORMAT_BATCHJOB,
       QDMI_PROGRAM_FORMAT_CUSTOM1,
       QDMI_PROGRAM_FORMAT_CUSTOM2,
       QDMI_PROGRAM_FORMAT_CUSTOM3,
@@ -509,10 +506,6 @@ TEST_P(DeviceTest, Sites) {
 
 TEST_P(DeviceTest, CouplingMap) {
   EXPECT_NO_THROW(std::ignore = device.getCouplingMap());
-}
-
-TEST_P(DeviceTest, NeedsCalibration) {
-  EXPECT_NO_THROW(std::ignore = device.getNeedsCalibration());
 }
 
 TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
@@ -841,56 +834,6 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
   EXPECT_THROW(std::ignore = device.submitJob(
                    textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0),
                std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsBatchJobs) {
-  // A batch job's program is a list of job handles, which the byte-span API
-  // cannot express, so MQT Core states that it does not support them.
-  constexpr std::array bytes{std::byte{0}};
-
-  EXPECT_THROW(std::ignore =
-                   device.submitJob(bytes, QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
-               std::invalid_argument);
-  EXPECT_THROW(std::ignore = device.submitJob(std::string{},
-                                              QDMI_PROGRAM_FORMAT_BATCHJOB, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, SubmitJobSendsCalibrationRunsElsewhere) {
-  // A calibration run takes no shot count and an optional payload, so it has
-  // its own entry point rather than a special case in `submitJob`.
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   std::string{}, QDMI_PROGRAM_FORMAT_CALIBRATION, 0),
-               std::invalid_argument);
-}
-
-TEST_F(DDSimulatorDeviceTest, CalibrationJobReachesTheDevice) {
-  // The DD simulator needs no calibration and rejects the format itself. What
-  // matters is that the client no longer refuses before asking: the failure
-  // comes from the device, as a runtime error rather than an argument error.
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(), std::runtime_error);
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob("configuration"),
-               std::runtime_error);
-
-  constexpr std::array payload{std::byte{1}, std::byte{2}};
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(payload),
-               std::runtime_error);
-
-  constexpr std::byte emptyPayloadStorage{};
-  const std::span emptyPayload{&emptyPayloadStorage, size_t{0}};
-  EXPECT_THROW(std::ignore = device.submitCalibrationJob(emptyPayload),
-               std::runtime_error);
-
-  EXPECT_NO_THROW({
-    try {
-      std::ignore = device.submitCalibrationJob();
-    } catch (const std::invalid_argument&) {
-      FAIL() << "the client rejected the calibration run before the device saw "
-                "it";
-    } catch (const std::runtime_error&) { // NOLINT(bugprone-empty-catch)
-      // The device declined, which is its decision to make.
-    }
-  });
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
@@ -1478,5 +1421,89 @@ INSTANTIATE_TEST_SUITE_P(
       std::ranges::replace(name, ' ', '_');
       return name;
     });
+
+TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
+  const mqt::test::ScopedEnvironmentVariable config{
+      "QDMI_CONF", MQT_CORE_QDMI_EXAMPLE_CONFIG};
+  const mqt::test::ScopedEnvironmentVariable driver{"MQT_CORE_QDMI_DRIVER",
+                                                    "missing-driver"};
+  const auto makeConfig = [](const std::filesystem::path& path,
+                             const std::optional<std::string>& token =
+                                 std::nullopt) {
+    SessionConfig configuration;
+    configuration.driverPath = path;
+    configuration.token = token;
+    return configuration;
+  };
+  EXPECT_THAT([] { return Session{}; },
+              testing::ThrowsMessage<std::runtime_error>(
+                  testing::HasSubstr("Cannot load QDMI driver")));
+  EXPECT_THAT([&] { return Session{makeConfig({})}; },
+              testing::ThrowsMessage<std::invalid_argument>(
+                  testing::HasSubstr("QDMI driver path must not be empty")));
+  EXPECT_THAT(
+      [&] { return Session{makeConfig(MQT_CORE_QDMI_INCOMPLETE_DRIVER)}; },
+      testing::ThrowsMessage<std::runtime_error>(
+          testing::HasSubstr("missing symbol QDMI_session_alloc")));
+  EXPECT_THAT(
+      [&] { return Session{makeConfig(MQT_CORE_QDMI_INCOMPATIBLE_DRIVER)}; },
+      testing::ThrowsMessage<std::runtime_error>(
+          testing::HasSubstr("incompatible ABI")));
+
+  // The upstream example requires a token. A failed initialization must allow
+  // retry.
+  EXPECT_THAT([&] { return Session{makeConfig(MQT_CORE_QDMI_TEST_DRIVER)}; },
+              testing::ThrowsMessage<std::runtime_error>(
+                  testing::HasSubstr("Permission denied")));
+  const auto firstConfig = makeConfig(MQT_CORE_QDMI_TEST_DRIVER, "first-token");
+  Session first(firstConfig);
+  Session second(makeConfig(MQT_CORE_QDMI_TEST_DRIVER, "second-token"));
+  EXPECT_EQ(first.getDeviceIds(),
+            (std::vector<std::string>{"test.example", "test.external-ddsim"}));
+  EXPECT_THAT(first.getDevice("test.example").getName(),
+              testing::HasSubstr("token=first-token"));
+  EXPECT_THAT(second.getDevice("test.example").getName(),
+              testing::HasSubstr("token=second-token"));
+
+  const auto retained = Session(firstConfig).getDevice("test.example");
+  EXPECT_THAT(retained.getName(), testing::HasSubstr("token=first-token"));
+  const auto job = Session(firstConfig)
+                       .getDevice("test.example")
+                       .submitJob("payload", QDMI_PROGRAM_FORMAT_CUSTOM1);
+  EXPECT_EQ(job.getId(), "session-job");
+  const auto batch = Session(firstConfig)
+                         .getDevice("test.external-ddsim")
+                         .submitJob(
+                             std::vector<std::string>{
+                                 "OPENQASM 3; qubit q; bit c; c = measure q;",
+                                 "OPENQASM 3; include \"stdgates.inc\"; qubit "
+                                 "q; bit c; x q; c = measure q;",
+                             },
+                             QDMI_PROGRAM_FORMAT_QASM3, 4);
+  EXPECT_TRUE(batch.wait());
+  EXPECT_EQ(batch.getNumPrograms(), 2);
+  EXPECT_EQ(batch.getProgramStatus(1), QDMI_JOB_STATUS_DONE);
+  EXPECT_EQ(batch.getCounts(0), (std::map<std::string, size_t>{{"0", 4}}));
+  EXPECT_EQ(batch.getCounts(1), (std::map<std::string, size_t>{{"1", 4}}));
+}
+
+TEST_F(DDSimulatorDeviceTest, NormalizesTextAndProbesAdmission) {
+  std::string text = "OPENQASM 3; qubit q; bit c; c = measure q;";
+  text.push_back('\0');
+  const auto single = device.submitJob(text, QDMI_PROGRAM_FORMAT_QASM3, 4);
+  EXPECT_TRUE(single.wait());
+  EXPECT_EQ(single.getCounts(), (std::map<std::string, size_t>{{"0", 4}}));
+  const std::vector programs{text, text};
+  const auto batch =
+      device.trySubmitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 4);
+  ASSERT_TRUE(batch.has_value());
+  EXPECT_TRUE(batch->wait());
+  EXPECT_EQ(batch->getNumPrograms(), 2);
+  EXPECT_EQ(batch->getProgram(1), text.substr(0, text.size() - 1));
+  EXPECT_FALSE(device.trySubmitJob("payload", QDMI_PROGRAM_FORMAT_CUSTOM1));
+  EXPECT_THROW(static_cast<void>(device.trySubmitJob(
+                   std::string("bad\0text", 8), QDMI_PROGRAM_FORMAT_QASM3)),
+               std::invalid_argument);
+}
 
 } // namespace qdmi

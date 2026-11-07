@@ -18,7 +18,9 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
+#include <complex>
 #include <cstddef>
 #include <string>
 #include <thread>
@@ -40,7 +42,7 @@ TEST(Concurrency, ConcurrentStatevectorReads) {
   auto const worker = [&] {
     std::vector<double> buf(stateSize / sizeof(double));
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                  j.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, stateSize,
+                  j.job, 0, QDMI_JOB_RESULT_STATEVECTOR_DENSE, stateSize,
                   buf.data(), nullptr),
               QDMI_SUCCESS);
   };
@@ -72,15 +74,15 @@ TEST(Concurrency, ConcurrentHistogramReads) {
   auto const keysWorker = [&] {
     std::string buf(keysSize > 0 ? keysSize - 1 : 0, '\0');
     EXPECT_EQ(
-        MQT_DDSIM_QDMI_device_job_get_results(j.job, QDMI_JOB_RESULT_HIST_KEYS,
-                                              keysSize, buf.data(), nullptr),
+        MQT_DDSIM_QDMI_device_job_get_results(
+            j.job, 0, QDMI_JOB_RESULT_HIST_KEYS, keysSize, buf.data(), nullptr),
         QDMI_SUCCESS);
   };
   auto const valsWorker = [&] {
     std::vector<size_t> v(valsSize / sizeof(size_t));
     EXPECT_EQ(
         MQT_DDSIM_QDMI_device_job_get_results(
-            j.job, QDMI_JOB_RESULT_HIST_VALUES, valsSize, v.data(), nullptr),
+            j.job, 0, QDMI_JOB_RESULT_HIST_VALUES, valsSize, v.data(), nullptr),
         QDMI_SUCCESS);
   };
 
@@ -118,4 +120,50 @@ TEST(Concurrency, ConcurrentCheckDuringRun) {
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
   done.store(true);
   poller.join();
+}
+
+TEST(Concurrency, KeepsStateAndCachesSeparateAcrossPrograms) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(qdmi_test::setPrograms(
+                j.job, QDMI_PROGRAM_FORMAT_QASM3,
+                {qdmi_test::QASM3_ZERO,
+                 "OPENQASM 3; include \"stdgates.inc\"; qubit[2] q; x q;"}),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+  const auto read = [&](const size_t index, const bool probabilities) {
+    const auto result = probabilities ? QDMI_JOB_RESULT_PROBABILITIES_DENSE
+                                      : QDMI_JOB_RESULT_STATEVECTOR_DENSE;
+    size_t size = 0;
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, index, result, 0,
+                                                    nullptr, &size),
+              QDMI_SUCCESS);
+    const size_t dimension = index == 0 ? 2 : 4;
+    if (probabilities) {
+      std::vector<double> values(size / sizeof(double));
+      ASSERT_EQ(values.size(), dimension);
+      ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                    j.job, index, result, size, values.data(), nullptr),
+                QDMI_SUCCESS);
+      EXPECT_DOUBLE_EQ(values[index == 0 ? 0 : 3], 1.0);
+    } else {
+      std::vector<std::complex<double>> values(size /
+                                               sizeof(std::complex<double>));
+      ASSERT_EQ(values.size(), dimension);
+      ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                    j.job, index, result, size, values.data(), nullptr),
+                QDMI_SUCCESS);
+      EXPECT_EQ(values[index == 0 ? 0 : 3], std::complex<double>(1.0, 0.0));
+    }
+  };
+  std::array<std::thread, 4> readers{
+      std::thread(read, 0, false),
+      std::thread(read, 0, true),
+      std::thread(read, 1, false),
+      std::thread(read, 1, true),
+  };
+  for (auto& reader : readers) {
+    reader.join();
+  }
 }

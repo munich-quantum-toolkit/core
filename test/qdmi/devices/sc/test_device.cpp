@@ -503,11 +503,10 @@ TEST_F(ScQDMISpecificationTest, JobSetParameter) {
 }
 
 TEST_F(ScQDMIJobSpecificationTest, JobSetParameter) {
-  QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
-  EXPECT_THAT(MQT_SC_QDMI_device_job_set_parameter(
-                  job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                  sizeof(QDMI_Program_Format), &value),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+  const QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
+  EXPECT_THAT(
+      MQT_SC_QDMI_device_job_set_programs(job, value, 1, nullptr, nullptr),
+      testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   EXPECT_EQ(MQT_SC_QDMI_device_job_set_parameter(
                 job, QDMI_DEVICE_JOB_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
@@ -585,16 +584,16 @@ TEST_F(ScQDMIJobSpecificationTest, JobWait) {
 }
 
 TEST_F(ScQDMISpecificationTest, JobGetResults) {
-  EXPECT_EQ(MQT_SC_QDMI_device_job_get_results(nullptr, QDMI_JOB_RESULT_MAX, 0,
-                                               nullptr, nullptr),
+  EXPECT_EQ(MQT_SC_QDMI_device_job_get_results(nullptr, 0, QDMI_JOB_RESULT_MAX,
+                                               0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST_F(ScQDMIJobSpecificationTest, JobGetResults) {
-  EXPECT_THAT(MQT_SC_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_SHOTS, 0,
-                                                 nullptr, nullptr),
+  EXPECT_THAT(MQT_SC_QDMI_device_job_get_results(job, 0, QDMI_JOB_RESULT_SHOTS,
+                                                 0, nullptr, nullptr),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-  EXPECT_EQ(MQT_SC_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_MAX, 0,
+  EXPECT_EQ(MQT_SC_QDMI_device_job_get_results(job, 0, QDMI_JOB_RESULT_MAX, 0,
                                                nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }

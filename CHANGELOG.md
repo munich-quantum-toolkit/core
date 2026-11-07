@@ -10,22 +10,35 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Select compatible QDMI driver libraries through owning C++ and Python
+  sessions, with ABI checks and stable device discovery ([#2952])
+  ([**@burgholzer**], [**@denialhaag**], [**@ystade**])
+- ✨ Submit ordered QDMI program lists with indexed programs, status, and
+  results in C++ and Python. Qiskit and PennyLane group compatible programs into
+  native jobs and fall back to single-program jobs when needed. DDSIM executes
+  batches serially and preserves successful results when other programs fail or
+  are cancelled ([#2952]) ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add normalized Frobenius comparisons for DD identity and measured-output
+  diagonal blocks with conservative early rejection, and use complex distance
+  for structural ancillary checks ([#2942]) ([**@burgholzer**])
+
 ### Changed
 
-- 💥 Rename C++ `dd::export2Dot` to `dd::exportToDot` ([#2826])
-  ([**@denialhaag**])
+- ⬆️ Update QDMI to 1.4.0 with the new job ABI and stable device IDs, and remove
+  obsolete calibration APIs and program formats ([#2952]) ([**@burgholzer**],
+  [**@denialhaag**])
+- 💥 Rename C++ `dd::export2Dot` to `dd::exportToDot` and propagate DD
+  allocation and table-index errors through exceptions instead of terminating
+  ([#2826], [#2814]) ([**@burgholzer**], [**@denialhaag**])
 - ⚡ Prefetch the next reusable DD entry during allocation ([#2826], [#2831])
   ([**@burgholzer**], [**@denialhaag**])
-- 💥 Propagate DD allocation and table-index errors through exceptions instead
-  of terminating ([#2826], [#2814]) ([**@burgholzer**], [**@denialhaag**])
-- ♻️ Defer selected Python imports until first use on Python 3.15. Older Python
-  versions retain eager imports. ([#2760]) ([**@denialhaag**])
+- ♻️ Defer selected Python imports until first use on Python 3.15 ([#2760])
+  ([**@denialhaag**])
 
 ### Fixed
 
-- 🐛 Add normalized Frobenius comparisons for DD identity and measured-output
-  diagonal blocks, with conservative early rejection; use complex distance for
-  structural ancillary checks ([#2942]) ([**@burgholzer**])
 - 🐛 Ship one copy of each shared library in Linux and macOS wheels while
   retaining the ABI-versioned library names ([#2923]) ([**@burgholzer**])
 - 🐛 Keep DD states and permutation mappings valid when allocation fails during
@@ -936,6 +949,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2952]: https://github.com/munich-quantum-toolkit/core/pull/2952
 [#2942]: https://github.com/munich-quantum-toolkit/core/pull/2942
 [#2923]: https://github.com/munich-quantum-toolkit/core/pull/2923
 [#2831]: https://github.com/munich-quantum-toolkit/core/pull/2831

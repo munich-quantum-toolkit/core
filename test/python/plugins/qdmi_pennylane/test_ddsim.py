@@ -145,3 +145,16 @@ def test_qaoa_application() -> None:
     assert all(len(bitstring) == 4 and set(bitstring) <= {"0", "1"} for bitstring in bitstrings)
     assert all(0 <= cut <= len(GRAPH_EDGES) for cut in cuts)
     assert device.submitted_jobs > 1
+
+
+def test_native_batches_keep_tape_and_shot_partition_order() -> None:
+    """Group equal shot counts while retaining different circuits and partitions."""
+    device = DDSIMDevice(wires=1)
+    first = qp.tape.QuantumScript([qp.PauliX(0)], [qp.sample(wires=[0])], shots=[4, 8, 4])
+    second = qp.tape.QuantumScript([], [qp.sample(wires=[0])], shots=[4, 8, 4])
+    results = device.execute((first, second))
+    assert device.submitted_jobs == 2
+    assert [samples.shape for samples in results[0]] == [(4, 1), (8, 1), (4, 1)]
+    assert [samples.shape for samples in results[1]] == [(4, 1), (8, 1), (4, 1)]
+    assert all(np.all(samples == 1) for samples in results[0])
+    assert all(np.all(samples == 0) for samples in results[1])

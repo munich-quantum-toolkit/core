@@ -9,9 +9,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(mqt-core-installed-consumer LANGUAGES C CXX)
 
-# QDMI 1.3 applies its compiler-cache policy on first import.
-find_package(qdmi CONFIG REQUIRED)
-
 set(CMAKE_EXPORT_COMPILE_COMMANDS OFF)
 set(CMAKE_C_COMPILER_LAUNCHER "${CMAKE_COMMAND};-E;env")
 set(CMAKE_CXX_COMPILER_LAUNCHER "${CMAKE_COMMAND};-E;env")
