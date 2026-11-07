@@ -27,7 +27,9 @@ target_link_libraries(
 target_sources(
   MLIRTestSupport
   PUBLIC
-  FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES Support/IRVerification.h)
+  FILE_SET HEADERS
+    BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+    FILES Support/IRVerification.h)
 mqt_mlir_target_use_project_options(MLIRTestSupport)
 
 add_library(MLIRTestCaseUtils INTERFACE)
@@ -37,7 +39,9 @@ target_link_libraries(
 target_sources(
   MLIRTestCaseUtils
   INTERFACE
-  FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES TestCaseUtils.h)
+  FILE_SET HEADERS
+    BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+    FILES TestCaseUtils.h)
 
 add_library(MLIRExactUnitaryTest INTERFACE)
 target_link_libraries(
@@ -46,7 +50,9 @@ target_link_libraries(
 target_sources(
   MLIRExactUnitaryTest
   INTERFACE
-  FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES ExactUnitaryTest.h)
+  FILE_SET HEADERS
+    BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+    FILES ExactUnitaryTest.h)
 
 function(mqt_mlir_configure_unittest_target target_name)
   cmake_parse_arguments(PARSE_ARGV 1 arg "REQUIRES_EH" "" "")

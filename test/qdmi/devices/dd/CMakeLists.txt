@@ -32,7 +32,8 @@ add_dependencies(${TARGET_NAME} qdmi_test_mqt_ddsim_device_defs)
 # Set the executable path and version information
 target_compile_definitions(
   ${TARGET_NAME}
-  PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}" QIR_FILES_DIR="${PROJECT_SOURCE_DIR}/test/circuits")
+  PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}" QIR_FILES_DIR="${PROJECT_SOURCE_DIR}/test/circuits"
+)
 target_include_directories(
   ${TARGET_NAME}
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/src/qdmi/devices/dd)

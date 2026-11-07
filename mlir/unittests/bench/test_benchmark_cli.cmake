@@ -171,7 +171,8 @@ execute_process(
 if(NOT evaluation_result EQUAL 0)
   message(
     FATAL_ERROR
-      "evaluation failed with exit code ${evaluation_result}:\n${evaluation_output}${evaluation_error}")
+      "evaluation failed with exit code ${evaluation_result}:\n${evaluation_output}${evaluation_error}"
+  )
 endif()
 string(JSON evaluated_case_id GET "${evaluation_output}" case_id)
 string(JSON total_variation_distance GET "${evaluation_output}" metrics total_variation_distance)
@@ -196,7 +197,8 @@ execute_process(
   ERROR_VARIABLE jeff_error)
 if(NOT jeff_result EQUAL 0)
   message(
-    FATAL_ERROR "jeff generation failed with exit code ${jeff_result}:\n${jeff_output}${jeff_error}")
+    FATAL_ERROR "jeff generation failed with exit code ${jeff_result}:\n${jeff_output}${jeff_error}"
+  )
 endif()
 string(JSON jeff_case_id GET "${jeff_output}" case_id)
 string(JSON jeff_path GET "${jeff_output}" program_path)

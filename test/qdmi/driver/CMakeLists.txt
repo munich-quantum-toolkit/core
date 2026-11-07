@@ -63,7 +63,8 @@ if(TARGET MQT::CoreQDMIDriver)
     GENERATE
     OUTPUT "${diagnostic_config_file}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"broken.diagnostic\", \"library\": \"${CMAKE_CURRENT_BINARY_DIR}/missing-diagnostic-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n")
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"broken.diagnostic\", \"library\": \"${CMAKE_CURRENT_BINARY_DIR}/missing-diagnostic-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
+  )
   package_add_test(${DIAGNOSTIC_TARGET_NAME} mqt-core-qdmi-driver-testing
                    test_driver_diagnostics.cpp)
   target_include_directories(
@@ -74,10 +75,13 @@ if(TARGET MQT::CoreQDMIDriver)
     PRIVATE "MQT_CORE_QDMI_DIAGNOSTIC_CONFIG_FILE=\"${diagnostic_config_file}\"")
 
   set(configured_devices
-      "      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"}")
+      "      {\"id\": \"mqt.sc.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"}"
+  )
   set(test_device_libraries "std::pair{\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"MQT_SC\"}")
-  string(APPEND configured_devices
-         ",\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"}")
+  string(
+    APPEND configured_devices
+    ",\n      {\"id\": \"mqt.ddsim.default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"prefix\": \"MQT_DDSIM\"}"
+  )
   string(APPEND test_device_libraries
          ", std::pair{\"$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>\", \"MQT_DDSIM\"}")
 
@@ -122,9 +126,11 @@ if(TARGET MQT::CoreQDMIDriver)
     GENERATE
     OUTPUT "${config_file}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${configured_devices},\n      {\"id\": \"test.session-overrides\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"base-url\": \"registered-base\", \"token\": \"registered-token\", \"custom1\": \"registered-custom\"}},\n      {\"id\": \"test.session-with-child\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"custom5\": \"with-child\"}},\n      {\"id\": \"test.typed-configuration\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"device-config\": {\"inline\": {\"name\": \"inline\"}}}},\n      {\"id\": \"test.sc.runtime-default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"test.sc.runtime-custom\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${custom_sc_file}\"}}},\n      {\"id\": \"test.sc.runtime-invalid\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"inline\": {}}}},\n      {\"id\": \"test.sc.runtime-one\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${runtime_one_file}\"}}},\n      {\"id\": \"test.sc.runtime-two\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${runtime_two_file}\"}}},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n")
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${configured_devices},\n      {\"id\": \"test.session-overrides\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"base-url\": \"registered-base\", \"token\": \"registered-token\", \"custom1\": \"registered-custom\"}},\n      {\"id\": \"test.session-with-child\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"custom5\": \"with-child\"}},\n      {\"id\": \"test.typed-configuration\", \"library\": \"$<TARGET_FILE:mqt-core-qdmi-session-device>\", \"prefix\": \"TEST_SESSION\", \"session\": {\"device-config\": {\"inline\": {\"name\": \"inline\"}}}},\n      {\"id\": \"test.sc.runtime-default\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\"},\n      {\"id\": \"test.sc.runtime-custom\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${custom_sc_file}\"}}},\n      {\"id\": \"test.sc.runtime-invalid\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"inline\": {}}}},\n      {\"id\": \"test.sc.runtime-one\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${runtime_one_file}\"}}},\n      {\"id\": \"test.sc.runtime-two\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${runtime_two_file}\"}}},\n      {\"id\": \"test.disabled\", \"enabled\": false},\n      {\"id\": \"broken.example\", \"library\": \"missing-device-library\", \"prefix\": \"BROKEN\"}\n    ]\n  }\n}\n"
+  )
   string(MAKE_C_IDENTIFIER "${TARGET_NAME}-mqt-core-qdmi-metadata-device" metadata_manifest_stem)
-  set(metadata_manifest_file "$<TARGET_FILE_DIR:${TARGET_NAME}>/${metadata_manifest_stem}.qdmi.json")
+  set(metadata_manifest_file "$<TARGET_FILE_DIR:${TARGET_NAME}>/${metadata_manifest_stem}.qdmi.json"
+  )
   target_compile_definitions(
     ${TARGET_NAME}
     PRIVATE
