@@ -146,8 +146,12 @@ preparation, a worker requests extra slots only for parallel adaptive sampling;
 terminal and structured-branch sampling keep one slot. Extra slots return to the
 budget when the worker responds. An earlier adaptive program can occupy all
 slots until it finishes. Each program creates its own compiler, JIT, runtime,
-and DD state; results retain independent DD packages after workers become
-available again. DDSIM requires an LLVM build with threading enabled.
+and DD state. Results retain serialized state after workers become available
+again and reconstruct an independent DD package on the first state or
+probability query. Sampling-only queries do not reconstruct the state. An
+invalid serialized state returns `QDMI_ERROR_FATAL` from state and probability
+queries; the completed program and its samples remain available. DDSIM requires
+an LLVM build with threading enabled.
 
 One failing or cancelled program does not discard completed siblings. Cancelling
 a job stops its active workers and prevents its queued programs from running.

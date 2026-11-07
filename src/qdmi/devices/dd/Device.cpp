@@ -263,9 +263,13 @@ struct ProgramResult {
   std::map<std::string_view, size_t> counts_;
   std::once_flag countsOnce_;
 
-  /// Owns an extracted state or an uncollapsed terminal-sampling state.
-  ///
-  /// A null package means that no state result is available.
+  /// Retains state bytes until the first state or probability query.
+  std::optional<std::string> serializedState_;
+  uint32_t stateQubits_ = 0;
+  std::once_flag stateOnce_;
+  QDMI_STATUS stateStatus_ = QDMI_ERROR_NOTSUPPORTED;
+
+  /// Owns the state nodes after successful deserialization.
   std::unique_ptr<::dd::Package> dd_;
 
   /// The retained state, valid while dd_ owns its nodes.
@@ -274,6 +278,8 @@ struct ProgramResult {
   /// Number of amplitudes visited by the sparse result traversal.
   size_t sparseAmplitudeCount_ = 0;
   std::once_flag sparseAmplitudeCountOnce_;
+
+  auto materializeState() -> QDMI_STATUS;
 
   /// Materialize the QIR stream directly into the caller's buffer.
   auto getQIROutput(size_t size, void* data, size_t* sizeRet) const
@@ -956,37 +962,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
             result->compactCounts_ = std::move(response.counts);
             result->qirOutput_ = std::move(response.output);
             result->outputTemplate_ = std::move(response.outputTemplate);
-            if (response.state) {
-              auto package =
-                  dd::Package::create(response.qubits, RESULT_PACKAGE_CONFIG);
-              if (!package) {
-                qdmi::diagnostics::error("DDSIM worker failed: {0}",
-                                         llvm::toString(package.takeError()));
-                result.reset();
-                reusable = false;
-                return;
-              }
-              result->dd_ = std::move(*package);
-              auto state =
-                  result->dd_->deserialize<dd::vNode>(*response.state, true);
-              if (!state) {
-                qdmi::diagnostics::error("DDSIM worker failed: {0}",
-                                         llvm::toString(state.takeError()));
-                result.reset();
-                reusable = false;
-                return;
-              }
-              result->stateVecDD_ = *state;
-              const auto root = result->stateVecDD_;
-              const auto qubits =
-                  root.isTerminal() ? 0U : static_cast<uint32_t>(root.p->v) + 1;
-              if (qubits != response.qubits) {
-                result.reset();
-                reusable = false;
-              } else {
-                result->dd_->incRef(root);
-              }
-            }
+            result->serializedState_ = std::move(response.state);
+            result->stateQubits_ = response.qubits;
           }
         } catch (const std::exception& error) {
           result.reset();
@@ -1060,6 +1037,41 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::wait(size_t timeout) const
   }
   return QDMI_SUCCESS;
 }
+auto qdmi::dd::ProgramResult::materializeState() -> QDMI_STATUS {
+  std::call_once(stateOnce_, [this] {
+    if (!serializedState_) {
+      return;
+    }
+    stateStatus_ = QDMI_ERROR_FATAL;
+    auto package = ::dd::Package::create(stateQubits_, RESULT_PACKAGE_CONFIG);
+    if (!package) {
+      qdmi::diagnostics::error("DDSIM state result failed: {0}",
+                               llvm::toString(package.takeError()));
+      serializedState_.reset();
+      return;
+    }
+    auto state = (*package)->deserialize<::dd::vNode>(*serializedState_, true);
+    if (!state) {
+      qdmi::diagnostics::error("DDSIM state result failed: {0}",
+                               llvm::toString(state.takeError()));
+      serializedState_.reset();
+      return;
+    }
+    const auto qubits =
+        state->isTerminal() ? 0U : static_cast<uint32_t>(state->p->v) + 1;
+    if (qubits != stateQubits_) {
+      serializedState_.reset();
+      return;
+    }
+    (*package)->incRef(*state);
+    stateVecDD_ = *state;
+    dd_ = std::move(*package);
+    serializedState_.reset();
+    stateStatus_ = QDMI_SUCCESS;
+  });
+  return stateStatus_;
+}
+
 auto qdmi::dd::ProgramResult::getShots(const size_t size, void* data,
                                        size_t* sizeRet) const -> QDMI_STATUS {
   size_t required = shots_.size();
@@ -1363,16 +1375,16 @@ auto qdmi::dd::ProgramResult::getResults(const QDMI_Job_Result result,
     return getHistogram(result, size, data, sizeRet);
   case QDMI_JOB_RESULT_STATEVECTOR_DENSE:
   case QDMI_JOB_RESULT_PROBABILITIES_DENSE:
-    if (!dd_) {
-      return QDMI_ERROR_NOTSUPPORTED;
+    if (const auto status = materializeState(); status != QDMI_SUCCESS) {
+      return status;
     }
     return getDenseResults(result, size, data, sizeRet);
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES:
   case QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS:
   case QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES:
-    if (!dd_) {
-      return QDMI_ERROR_NOTSUPPORTED;
+    if (const auto status = materializeState(); status != QDMI_SUCCESS) {
+      return status;
     }
     return getSparseResults(result, size, data, sizeRet);
   default:
