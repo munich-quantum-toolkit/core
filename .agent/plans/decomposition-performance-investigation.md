@@ -1,7 +1,7 @@
 # Decomposition and native-synthesis performance
 
-Status: complete. The coordinate-reuse and Z-frame improvements are implemented
-and locally validated.
+Status: the coordinate-reuse and Z-frame improvements are published in PR #2959.
+The larger-circuit ancilla follow-up is complete and locally validated.
 
 ## Outcome and scope
 
@@ -18,7 +18,9 @@ collision-checked lookup. A missing representative falls back to decomposition.
 Keeping six keys means table coverage does **not** increase.
 
 Z-frame propagation also avoids repeated control-flow cleanup and reuses cached
-all-site RZ support, with the existing per-site check as a fallback.
+all-site RZ support, with the existing per-site check as a fallback. Ancilla
+discovery advances through live wires in source order and classifies tensor
+slots during history traversal, preserving candidate selection.
 
 The regression in `test_target_synthesis.cpp` compares shared and independent
 cost queries for all six orientations, two seeds, near-zero and chamber-boundary
@@ -92,7 +94,7 @@ numerical API, or reversed local-factor construction. Aggregate counters across
 trials suffice for this stopping decision; no per-traversal cache redesign is
 justified by these workloads.
 
-### 3. Ancilla search: stop at the measurement gate
+### 3. Ancilla search: initial measurement gate
 
 The proposed multiplexer and modular-multiplier workloads make **zero**
 `findAncillas` calls: their controls are below the ancilla-candidate threshold.
@@ -109,9 +111,9 @@ Supplemental Grover workloads hold the width at eight and double iterations:
 
 The scan count is superlinear, but pass CPU time grows 2.22× and 2.26×, below
 the threefold threshold. Retain the current clean-first/source-order selection.
-A forward sweep would introduce mutable wire/occupancy state without meeting
-this investigation's acceptance gate. This does not establish linear scaling for
-larger circuits or long tensor histories.
+At these sizes, a forward sweep did not meet this investigation's acceptance
+gate. The larger-circuit follow-up below supersedes that stopping decision. This
+does not establish linear scaling for larger circuits or long tensor histories.
 
 ### 4. Cross-pass sharing: no change
 
@@ -231,3 +233,91 @@ Before PR submission, the changes were applied to current `main` at
 `0b17881c6c`. The native release build and all 4348 CTest tests passed;
 repository lint also passed. The benchmark measurements above retain their
 original baseline and were not repeated on this updated base.
+
+## Larger-circuit ancilla follow-up
+
+Baseline: PR #2959 head `4d1389d4c4`. The toolchain and CPU affinity match the
+experiments above. Inputs and temporary probes are outside the repository in
+`ancilla-scaling-20261107`. The isolated public CLI runs
+`compile --run-pipeline --pass-pipeline='builtin.module(decompose-multi-controlled)'`.
+
+Workloads cover 7 and 15 controls, 64/128/256 repeated MCX gates with one clean
+spare wire, a control with enough early clean spares, dense and sparse tensor
+histories of 256/1024/4096 extract/H/insert steps followed by 32 seven-control
+gates, and 1024/4096 live scalar wires with four seven-control gates. An H gate
+between MCX gates prevents adjacent inverses from cancelling. Dense histories
+cycle through ten slots; sparse histories touch only slot zero.
+
+The larger controlled cases exceed the original scaling gate. For 15 controls,
+128 to 256 gates increases baseline median decomposition CPU from 262.847 to
+856.463 ms (3.26x), and search CPU from 127.593 to 571.698 ms. Prefix operation
+visits increase from 3,523,776 to 14,141,824.
+
+Retained changes:
+
+- Advance a cursor through the current block during the existing input-gate
+  sweep. Keep live quantum values in source order, with indexed removal when
+  their sole user is reached. Anchor the cursor at a surviving predecessor so
+  the next search sees the emitted replacement. Reset on block changes and
+  discard all state before greedy rewriting. The ordered list avoids both
+  repeated block-order reconstruction and quadratic removal at large live width.
+- Classify tensor slots at their nearest insertion/allocation origin during
+  discovery, retaining unknown-state handling and sorted slot order. Stop when
+  every slot has been touched. This avoids rewalking the tensor prefix for each
+  returned slot without adding a persistent occupancy cache.
+
+Five alternating instrumented pairs produced identical output in all 15 cases.
+Median thread CPU times in milliseconds:
+
+| Workload                   | Pass before | Pass after | Search before | Search after |
+| -------------------------- | ----------: | ---------: | ------------: | -----------: |
+| 15 controls, 128 gates     |     262.847 |    134.243 |       127.593 |        1.756 |
+| 15 controls, 256 gates     |     856.463 |    299.781 |       571.698 |        3.815 |
+| 7 controls, 256 gates      |     238.127 |    119.742 |       111.706 |        0.807 |
+| Dense history, 4096 steps  |      43.197 |     17.889 |        25.527 |        0.851 |
+| Sparse history, 4096 steps |      27.821 |     20.412 |        19.788 |       12.026 |
+| 4096 scalar wires, 4 gates |       5.368 |      5.288 |         0.466 |        0.503 |
+
+The 15-control prefix visits become 55,024 and 110,448 for 128 and 256 gates.
+Sparse histories still require repeated backward walks; no general linear-time
+claim applies to tensor discovery. The wide-scalar case slightly increases
+search cost while total pass CPU is flat. Shared-host timing variation remains.
+
+Untargeted generated Grover programs preserve loops: even 256 iterations produce
+only two candidate searches. These are a control case, not evidence of expanded
+circuit scaling. Garnet target compilation expands the circuits. Three
+alternating instrumented pairs for Grover at 8 qubits with 64/128 iterations and
+16 qubits with 16/32 iterations produced identical output in all 24
+compilations. Median search CPU fell from 1.417/5.551/0.206/0.738 ms to
+0.149/0.294/0.085/0.156 ms, respectively, but median total compilation CPU
+remained approximately 4.4/10.0/9.0/16.9 seconds. Search is too small a fraction
+to claim a meaningful end-to-end improvement for these generated programs.
+
+Five alternating uninstrumented pairs for each of the 15 isolated cases also
+produced identical output in all 150 compilations. These include parser,
+verification, decomposition, and textual output costs. Representative median
+process CPU times (milliseconds):
+
+| Workload                   |  Before |   After |
+| -------------------------- | ------: | ------: |
+| 15 controls, 256 gates     | 842.459 | 568.426 |
+| 7 controls, 256 gates      | 290.611 | 237.957 |
+| Dense history, 4096 steps  |  68.922 |  49.078 |
+| Sparse history, 4096 steps |  61.289 |  53.314 |
+| 4096 scalar wires, 4 gates |  29.035 |  29.440 |
+
+The supported benefit is eliminating repeated prefix work on long expanded
+controlled circuits, with lower tensor-history overhead. The small wide-scalar
+case is effectively flat, with about 0.4 ms additional process CPU. Neither
+instrumented nor uninstrumented runs reserve the shared host; small timing
+changes remain inconclusive.
+
+`AncillaDiscoveryRestartsForEachBlock` uses two borrowed-qubit helper functions,
+repeated gates, and full seven-qubit functionality comparison. Removing the
+block-state reset makes it fail with cross-region operands; the correct version
+passes. Existing tests cover clean/dirty preference, repeated restored ancillas,
+dynamic-index barriers, sparse huge tensors, and target capacity. Independent
+specialist critique and a final Ponytail review found no remaining issue. The
+final native release build passes, as do all 4349 CTest tests and whole-file C++
+lint for both changed source files. Repository lint passes. No profiling code or
+mutation remains. Hosted CI and Windows/macOS validation were not run.
