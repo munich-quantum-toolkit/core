@@ -19,10 +19,12 @@ switch between these two modes, either set the
 `QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` parameter to the desired number of shots
 for weak simulation or to `0` for strong simulation.
 
-Each DDSIM job accepts one program. Pass a count of `1` to
-`QDMI_device_job_set_programs` and a program index of `0` when querying
-programs, program status, or results. Larger program lists return
-`QDMI_ERROR_NOTSUPPORTED`.
+Each DDSIM job accepts an ordered list of programs with one format and a common
+shot count. Programs in a batch execute serially. Use the zero-based input index
+when querying a program, its status, or its results. A failed program does not
+prevent the remaining programs from executing. Successful results remain
+available even when the job fails or is cancelled. Cancellation waits for the
+active simulation to finish and prevents queued programs from starting.
 
 Under the hood, the QDMI device uses the MQT Core OpenQASM parser (see
 {cpp:func}`qasm3::Importer::imports`) to parse the program into a

@@ -17,8 +17,18 @@ programs with the indexed `QDMI_job_get_program` or
 `QDMI_device_job_get_program` functions instead of the removed `PROGRAM` job
 property. Pass a zero-based program index to result queries.
 
-The C++ and Python clients still submit one program per job. DDSIM supports one
-program per job and rejects larger lists with `QDMI_ERROR_NOTSUPPORTED`.
+The C++ and Python clients accept one program or an ordered list with one format
+and common job parameters. Existing single-program calls remain valid. Use
+Python `job.num_programs` or C++ `Job::getNumPrograms()` to inspect the program
+count, and pass a zero-based program index to program and result queries. The
+default index is `0`. The Python `program` and `program_bytes` properties retain
+the first program. Use `job.get_program(index)` for text or
+`job.get_program(bytes, index)` for exact bytes from another program.
+
+DDSIM executes each batch serially. A failed program does not discard successful
+siblings. Cancellation waits for the active simulation to finish and prevents
+remaining programs from starting. Results from successful programs remain
+available after a batch fails or is cancelled.
 
 Remove calls to C++ `Device::getNeedsCalibration` and
 `Device::submitCalibrationJob`, or Python `Device.needs_calibration` and

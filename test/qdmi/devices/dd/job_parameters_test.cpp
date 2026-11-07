@@ -124,7 +124,7 @@ TEST(JobParameters, ProgramReplacementIsAtomic) {
             QDMI_SUCCESS);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
                 j.job, QDMI_PROGRAM_FORMAT_QASM3, 2, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+            QDMI_SUCCESS);
   QDMI_Program_Format format{};
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
                 j.job, QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT, sizeof(format),

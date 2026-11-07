@@ -70,5 +70,34 @@ is {cpp:func}`qdmi::Device::getId`.
 
 The driver implements QDMI 1.4.0 program submission through
 `QDMI_job_set_programs`. C clients use a zero-based program index when querying
-programs, program status, or results. MQT Core's C++ and Python clients continue
-to submit one program per job through their existing submission methods.
+programs, program status, or results.
+
+### Program lists
+
+`Device.submit_job` accepts one program or an ordered list with a common format
+and job parameters. Text programs use strings. For exact-byte submission, pass
+bytes with the terminating null byte included for text formats. The shot count
+applies to every program in the list.
+
+```{code-cell} ipython3
+from mqt.core.qdmi import ProgramFormat
+
+device = open_device("mqt.ddsim.default")
+program = "OPENQASM 3; qubit q; bit c; c = measure q;"
+job = device.submit_job([program, program], ProgramFormat.QASM3, num_shots=32)
+assert job.wait()
+for index in range(job.num_programs):
+    print(job.get_program_status(index), job.get_counts(index))
+```
+
+The C++ `Device::submitJob` overloads accept spans of strings or spans of byte
+spans. Use `Job::getNumPrograms()` to inspect the count. Program and result
+queries accept an optional index that defaults to `0`, preserving existing
+single-program calls. In Python, use `job.get_program(index)` for text or
+`job.get_program(bytes, index)` for exact bytes. The `program` and
+`program_bytes` properties continue to return the first program.
+
+Use `job.get_program_status(index)` to inspect individual outcomes when the
+device supports them. A successful program's results remain accessible when
+another program fails or is cancelled. The list shares one job handle, wait
+operation, and cancellation operation.

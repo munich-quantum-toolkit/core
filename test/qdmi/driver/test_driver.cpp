@@ -29,6 +29,7 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -1486,6 +1487,27 @@ TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
   EXPECT_THROW(std::ignore = device.submitJob(
                    payload, QDMI_PROGRAM_FORMAT_CUSTOM1, size_t{1}),
                std::runtime_error);
+}
+
+TEST(DeviceRegistrationTest, BatchPreservesExactBinaryPayloads) {
+  registerSessionTestDevice();
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  std::array first{std::byte{0}, std::byte{255}, std::byte{0}};
+  const std::array second{std::byte{128}};
+  const std::array<std::span<const std::byte>, 2> programs{
+      std::span(first),
+      std::span(second),
+  };
+  const auto job = device.submitJob(programs, QDMI_PROGRAM_FORMAT_CUSTOM1);
+  first[1] = std::byte{0};
+  EXPECT_EQ(job.getNumPrograms(), 2);
+  EXPECT_EQ(job.getProgramFormat(), QDMI_PROGRAM_FORMAT_CUSTOM1);
+  EXPECT_EQ(job.getProgramBytes(0),
+            (std::vector{std::byte{0}, std::byte{255}, std::byte{0}}));
+  EXPECT_EQ(job.getProgramBytes(1), (std::vector{std::byte{128}}));
+  EXPECT_EQ(job.getProgramStatus(0), std::nullopt);
+  EXPECT_THROW(std::ignore = job.getProgramBytes(2), std::out_of_range);
+  EXPECT_THROW(std::ignore = job.getProgramStatus(2), std::out_of_range);
 }
 
 TEST(DeviceRegistrationTest, TextJobDoesNotRequireShots) {

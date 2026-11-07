@@ -22,7 +22,6 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
 #include <future>
 #include <limits>
 #include <map>
@@ -31,6 +30,7 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace qdmi::dd {
@@ -191,76 +191,73 @@ private:
   /// The program format
   QDMI_Program_Format format_ = QDMI_PROGRAM_FORMAT_MAX;
 
-  /// The QASM program associated with the job.
-  std::string program_;
+  /// One program and its independently owned execution results.
+  struct Program {
+    explicit Program(std::string code) : code_(std::move(code)) {}
+    std::string code_;
+    std::atomic<QDMI_Job_Status> status_{QDMI_JOB_STATUS_CREATED};
+    /// The measurement counts for the program
+    std::map<std::string, std::size_t> counts_;
 
-  /// The number of shots for the job
+    /// Measurement outcomes in sampling order.
+    std::vector<std::string> shots_;
+
+    /// The DD package used for the state vector simulation
+    std::unique_ptr<dd::Package> dd_;
+
+    /// The final DD at the end of the state vector simulation
+    dd::VectorDD stateVecDD_{};
+
+    /// The state vector for the program (only available if no mid-circuit
+    /// measurements are used).
+    dd::CVec stateVec_;
+
+    /// The sparse state vector for the program (only available if no
+    /// mid-circuit measurements are used).
+    dd::SparseCVec stateVecSparse_;
+
+    /// One-time flags to lazily materialize vectors in a thread-safe way
+    std::once_flag stateVecOnce_;
+    std::once_flag stateVecSparseOnce_;
+
+    /// Translate counts to QDMI histogram
+    auto getHistogram(QDMI_Job_Result result, size_t size, void* data,
+                      size_t* sizeRet) -> QDMI_STATUS;
+
+    /// Copy ordered outcomes to the QDMI comma-separated shot representation.
+    auto getShots(size_t size, void* data, size_t* sizeRet) const
+        -> QDMI_STATUS;
+
+    /// Translate the state vector DD to a dense state vector for QDMI
+    auto getStateVector(size_t size, void* data, size_t* sizeRet)
+        -> QDMI_STATUS;
+
+    /// Translate the state vector DD to sparse representations for QDMI
+    auto getSparseResults(QDMI_Job_Result result, size_t size, void* data,
+                          size_t* sizeRet) -> QDMI_STATUS;
+
+    /// Translate the state vector DD to a dense vector of probabilities for
+    /// QDMI
+    auto getProbabilities(size_t size, void* data, size_t* sizeRet)
+        -> QDMI_STATUS;
+
+    /// Executes this program with the common job shot count.
+    auto run(size_t numShots) -> void;
+    /// Retrieves results after this program has completed successfully.
+    auto getResults(QDMI_Job_Result result, size_t numShots, size_t size,
+                    void* data, size_t* sizeRet) -> QDMI_STATUS;
+  };
+
+  /// Protects program replacement, submission, and cancellation.
+  mutable std::mutex mutex_;
+  /// Whether cancellation was requested, guarded by mutex_.
+  bool cancelRequested_ = false;
+  /// Programs in input order, unchanged after submission.
+  std::vector<std::unique_ptr<Program>> programs_;
+  /// Common shot count for all programs.
   size_t numShots_ = 1024U;
-
-  /// Handle for the asynchronous job
+  /// Declared last so destruction waits before releasing program state.
   std::future<void> jobHandle_;
-
-  /// The measurement counts for the job
-  std::map<std::string, std::size_t> counts_;
-
-  /// Measurement outcomes in sampling order.
-  std::vector<std::string> shots_;
-
-  /// The DD package used for the state vector simulation
-  std::unique_ptr<dd::Package> dd_;
-
-  /// The final DD at the end of the state vector simulation
-  dd::VectorDD stateVecDD_{};
-
-  /// The state vector for the job (only available if no mid-circuit
-  /// measurements are used).
-  dd::CVec stateVec_;
-
-  /// The sparse state vector for the job (only available if no mid-circuit
-  /// measurements are used).
-  dd::SparseCVec stateVecSparse_;
-
-  /// One-time flags to lazily materialize vectors in a thread-safe way
-  std::once_flag stateVecOnce_;
-  std::once_flag stateVecSparseOnce_;
-
-  /// Translate counts to QDMI histogram
-  auto getHistogram(QDMI_Job_Result result, size_t size, void* data,
-                    size_t* sizeRet) -> QDMI_STATUS;
-
-  /// Copy ordered outcomes to the QDMI comma-separated shot representation.
-  auto getShots(size_t size, void* data, size_t* sizeRet) const -> QDMI_STATUS;
-
-  /// Translate the state vector DD to a dense state vector for QDMI
-  auto getStateVector(size_t size, void* data, size_t* sizeRet) -> QDMI_STATUS;
-
-  /// Translate the state vector DD to sparse representations for QDMI
-  auto getSparseResults(QDMI_Job_Result result, size_t size, void* data,
-                        size_t* sizeRet) -> QDMI_STATUS;
-
-  /// Translate the state vector DD to a dense vector of probabilities for QDMI
-  auto getProbabilities(size_t size, void* data, size_t* sizeRet)
-      -> QDMI_STATUS;
-
-  /// Run @p body on a worker thread with the standard job lifecycle:
-  /// - increase the running-job count,
-  /// - set status to RUNNING,
-  /// - run @p body,
-  /// - set status to DONE or FAILED, and
-  /// - decrease the running-job count.
-  /// Typically, @p body will:
-  /// - parse the program,
-  /// - run or simulate it, and
-  /// - store the results in the job's output fields.
-  /// @returns @c QDMI_SUCCESS once the worker has been spawned.
-  /// Failures inside @p body are reported through the job status (FAILED),
-  /// not through the return value.
-  auto submitProgramAsync(std::function<void()> body) -> QDMI_STATUS;
-
-  /// Sampling path for a QASM program (@c numShots_ > 0).
-  auto submitQASMProgramSampling() -> QDMI_STATUS;
-  /// State-extraction path for a QASM program (@c numShots_ == 0).
-  auto submitQASMProgramStateExtraction() -> QDMI_STATUS;
 
 public:
   /// Constructor for the MQT_DDSIM_QDMI_Device_Job_impl_d.
@@ -284,7 +281,8 @@ public:
   auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
                     const void* value) -> QDMI_STATUS;
 
-  /// @brief Sets one program, as specified by QDMI_device_job_set_programs.
+  /// @brief Sets the program list, as specified by
+  /// QDMI_device_job_set_programs.
   auto setPrograms(QDMI_Program_Format format, size_t count,
                    const size_t* sizes, const void* const* programs)
       -> QDMI_STATUS;
@@ -293,7 +291,7 @@ public:
   auto getProgram(size_t programIndex, size_t size, void* data,
                   size_t* sizeRet) const -> QDMI_STATUS;
 
-  /// @brief Queries the status of the single program.
+  /// @brief Queries the status of one program.
   auto getProgramStatus(size_t programIndex, QDMI_Job_Status* status) const
       -> QDMI_STATUS;
 

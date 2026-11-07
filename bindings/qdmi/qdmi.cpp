@@ -28,7 +28,9 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt {
@@ -41,6 +43,37 @@ void registerSlurm(nb::module_& qdmiModule);
 }
 
 namespace {
+using PythonProgram =
+    std::variant<std::string, nb::bytes, std::vector<std::string>,
+                 std::vector<nb::bytes>>;
+
+/// Converts Python payloads to the ordered lists accepted by the C++ client.
+template <typename Submit>
+auto withProgramPayload(const PythonProgram& program, Submit submit) {
+  return std::visit(
+      [&](const auto& value) {
+        using Value = std::decay_t<decltype(value)>;
+        if constexpr (std::is_same_v<Value, nb::bytes>) {
+          const auto bytes = std::span(
+              static_cast<const std::byte*>(value.data()), value.size());
+          return submit(std::span(&bytes, 1));
+        } else if constexpr (std::is_same_v<Value, std::vector<nb::bytes>>) {
+          std::vector<std::span<const std::byte>> payloads;
+          payloads.reserve(value.size());
+          for (const auto& bytes : value) {
+            payloads.emplace_back(static_cast<const std::byte*>(bytes.data()),
+                                  bytes.size());
+          }
+          return submit(payloads);
+        } else if constexpr (std::is_same_v<Value, std::string>) {
+          return submit(std::span(&value, 1));
+        } else {
+          return submit(value);
+        }
+      },
+      program);
+}
+
 template <typename Query>
 [[nodiscard]] nb::object queryCustomValue(Query query,
                                           const nb::handle valueType) {
@@ -140,29 +173,34 @@ Args:
 Returns:
     True if the job completed within the timeout, False otherwise.)pb");
 
-  job.def("cancel", &qdmi::Job::cancel, "Cancels the job.");
+  job.def("cancel", &qdmi::Job::cancel,
+          nb::call_guard<nb::gil_scoped_release>(), "Cancels the job.");
 
-  job.def("get_shots", &qdmi::Job::getShots,
+  job.def("get_shots", &qdmi::Job::getShots, "program_index"_a = 0,
           nb::call_guard<nb::gil_scoped_release>(),
           "Returns the raw shot results from the job.");
 
-  job.def("get_counts", &qdmi::Job::getCounts,
+  job.def("get_counts", &qdmi::Job::getCounts, "program_index"_a = 0,
           nb::call_guard<nb::gil_scoped_release>(),
           "Returns the measurement counts from the job.");
 
   job.def("get_dense_statevector", &qdmi::Job::getDenseStateVector,
+          "program_index"_a = 0,
           "Returns the dense statevector from the job (typically only "
           "available from simulator devices).");
 
   job.def("get_dense_probabilities", &qdmi::Job::getDenseProbabilities,
+          "program_index"_a = 0,
           "Returns the dense probabilities from the job (typically only "
           "available from simulator devices).");
 
   job.def("get_sparse_statevector", &qdmi::Job::getSparseStateVector,
+          "program_index"_a = 0,
           "Returns the sparse statevector from the job (typically only "
           "available from simulator devices).");
 
   job.def("get_sparse_probabilities", &qdmi::Job::getSparseProbabilities,
+          "program_index"_a = 0,
           "Returns the sparse probabilities from the job (typically only "
           "available from simulator devices).");
 
@@ -190,17 +228,19 @@ when the custom slot is unsupported.)pb");
   job.def(
       "get_custom_result",
       [](const qdmi::Job& self, const qdmi::CustomProperty customProperty,
-         const nb::handle valueType) {
+         const nb::handle valueType, const size_t programIndex) {
         return queryCustomValue(
-            [&self, customProperty]<qdmi::custom_property_value T> {
-              return self.getCustomResult<T>(customProperty);
+            [&self, customProperty,
+             programIndex]<qdmi::custom_property_value T> {
+              return self.getCustomResult<T>(customProperty, programIndex);
             },
             valueType);
       },
-      "custom_property"_a, "value_type"_a,
+      "custom_property"_a, "value_type"_a, "program_index"_a = 0,
       nb::sig("def get_custom_result(self, custom_property: CustomProperty, "
               "value_type: type[str] | type[bool] | type[int] | type[float] | "
-              "type[bytes]) -> str | bool | int | float | bytes | None"),
+              "type[bytes], program_index: int = 0) -> str | bool | int | "
+              "float | bytes | None"),
       R"pb(Return an implementation-defined custom job result.
 
 The caller must provide the type documented by the device implementation.
@@ -212,7 +252,33 @@ when the custom slot is unsupported.)pb");
   job.def_prop_ro("program_format", &qdmi::Job::getProgramFormat,
                   "The format of the submitted program.");
 
-  job.def_prop_ro("program", &qdmi::Job::getProgram, "The submitted program.");
+  job.def_prop_ro(
+      "program", [](const qdmi::Job& self) { return self.getProgram(); },
+      "The first submitted program.");
+
+  job.def("get_program", &qdmi::Job::getProgram, "program_index"_a = 0,
+          nb::call_guard<nb::gil_scoped_release>(),
+          "Return one submitted text program by input index.");
+  job.def(
+      "get_program",
+      [](const qdmi::Job& self, const nb::handle valueType,
+         const size_t programIndex) {
+        if (!valueType.is(nb::builtins()["bytes"])) {
+          throw nb::type_error("value_type must be bytes");
+        }
+        const auto program = self.getProgramBytes(programIndex);
+        return nb::bytes(program.data(), program.size());
+      },
+      "value_type"_a, "program_index"_a = 0,
+      nb::sig("def get_program(self, value_type: type[bytes], program_index: "
+              "int = 0) -> bytes"),
+      "Return one submitted program's exact bytes by input index.");
+
+  job.def_prop_ro("num_programs", &qdmi::Job::getNumPrograms,
+                  "The number of programs in input order.");
+  job.def("get_program_status", &qdmi::Job::getProgramStatus,
+          "program_index"_a = 0,
+          "Return one program outcome, or None when unsupported.");
 
   job.def_prop_ro(
       "program_bytes",
@@ -391,49 +457,24 @@ when the custom slot is unsupported.)pb");
 
   device.def(
       "submit_job",
-      [](const qdmi::Device& self, const std::string& program,
+      [](const qdmi::Device& self, const PythonProgram& program,
          const QDMI_Program_Format format, const std::optional<size_t> numShots,
          const std::optional<qdmi::CustomJobParameter>& custom1,
          const std::optional<qdmi::CustomJobParameter>& custom2,
          const std::optional<qdmi::CustomJobParameter>& custom3,
          const std::optional<qdmi::CustomJobParameter>& custom4,
          const std::optional<qdmi::CustomJobParameter>& custom5) {
-        if (numShots.has_value()) {
-          return self.submitJob(program, format, *numShots, custom1, custom2,
+        return withProgramPayload(program, [&](const auto& payloads) {
+          const nb::gil_scoped_release release;
+          return self.submitJob(payloads, format, numShots, custom1, custom2,
                                 custom3, custom4, custom5);
-        }
-        return self.submitJob(program, format, custom1, custom2, custom3,
-                              custom4, custom5);
+        });
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
       nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
       "custom3"_a = nb::none(), "custom4"_a = nb::none(),
       "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
-      "Submits a text job to the device.");
-
-  device.def(
-      "submit_job",
-      [](const qdmi::Device& self, const nb::bytes& program,
-         const QDMI_Program_Format format, const std::optional<size_t> numShots,
-         const std::optional<qdmi::CustomJobParameter>& custom1,
-         const std::optional<qdmi::CustomJobParameter>& custom2,
-         const std::optional<qdmi::CustomJobParameter>& custom3,
-         const std::optional<qdmi::CustomJobParameter>& custom4,
-         const std::optional<qdmi::CustomJobParameter>& custom5) {
-        const auto bytes = std::span{
-            static_cast<const std::byte*>(program.data()), program.size()};
-        if (numShots.has_value()) {
-          return self.submitJob(bytes, format, *numShots, custom1, custom2,
-                                custom3, custom4, custom5);
-        }
-        return self.submitJob(bytes, format, custom1, custom2, custom3, custom4,
-                              custom5);
-      },
-      "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
-      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
-      "Submits an exact byte payload to the device.");
+      "Submit one program or an ordered list with common parameters.");
 
   device.def(
       "retrieve_job_by_id",

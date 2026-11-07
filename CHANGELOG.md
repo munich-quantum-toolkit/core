@@ -12,6 +12,10 @@ releases may include breaking changes.
 
 ### Added
 
+- ✨ Submit ordered QDMI program lists with indexed programs, status, and
+  results in C++ and Python. DDSIM executes batches serially and preserves
+  successful results when other programs fail or are cancelled ([#2952])
+  ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add normalized Frobenius comparisons for DD identity and measured-output
   diagonal blocks with conservative early rejection, and use complex distance
   for structural ancillary checks ([#2942]) ([**@burgholzer**])

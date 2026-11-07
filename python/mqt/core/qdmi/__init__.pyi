@@ -34,22 +34,22 @@ class Job:
     def cancel(self) -> None:
         """Cancels the job."""
 
-    def get_shots(self) -> list[str]:
+    def get_shots(self, program_index: int = 0) -> list[str]:
         """Returns the raw shot results from the job."""
 
-    def get_counts(self) -> dict[str, int]:
+    def get_counts(self, program_index: int = 0) -> dict[str, int]:
         """Returns the measurement counts from the job."""
 
-    def get_dense_statevector(self) -> list[complex]:
+    def get_dense_statevector(self, program_index: int = 0) -> list[complex]:
         """Returns the dense statevector from the job (typically only available from simulator devices)."""
 
-    def get_dense_probabilities(self) -> list[float]:
+    def get_dense_probabilities(self, program_index: int = 0) -> list[float]:
         """Returns the dense probabilities from the job (typically only available from simulator devices)."""
 
-    def get_sparse_statevector(self) -> dict[str, complex]:
+    def get_sparse_statevector(self, program_index: int = 0) -> dict[str, complex]:
         """Returns the sparse statevector from the job (typically only available from simulator devices)."""
 
-    def get_sparse_probabilities(self) -> dict[str, float]:
+    def get_sparse_probabilities(self, program_index: int = 0) -> dict[str, float]:
         """Returns the sparse probabilities from the job (typically only available from simulator devices)."""
 
     @overload
@@ -74,18 +74,31 @@ class Job:
         """
 
     @overload
-    def get_custom_result(self, custom_property: CustomProperty, value_type: type[str]) -> str | None: ...
-    @overload
-    def get_custom_result(self, custom_property: CustomProperty, value_type: type[bool]) -> bool | None: ...
-    @overload
-    def get_custom_result(self, custom_property: CustomProperty, value_type: type[int]) -> int | None: ...
-    @overload
-    def get_custom_result(self, custom_property: CustomProperty, value_type: type[float]) -> float | None: ...
-    @overload
-    def get_custom_result(self, custom_property: CustomProperty, value_type: type[bytes]) -> bytes | None: ...
+    def get_custom_result(
+        self, custom_property: CustomProperty, value_type: type[str], program_index: int = 0
+    ) -> str | None: ...
     @overload
     def get_custom_result(
-        self, custom_property: CustomProperty, value_type: type[str | bool | int | float | bytes]
+        self, custom_property: CustomProperty, value_type: type[bool], program_index: int = 0
+    ) -> bool | None: ...
+    @overload
+    def get_custom_result(
+        self, custom_property: CustomProperty, value_type: type[int], program_index: int = 0
+    ) -> int | None: ...
+    @overload
+    def get_custom_result(
+        self, custom_property: CustomProperty, value_type: type[float], program_index: int = 0
+    ) -> float | None: ...
+    @overload
+    def get_custom_result(
+        self, custom_property: CustomProperty, value_type: type[bytes], program_index: int = 0
+    ) -> bytes | None: ...
+    @overload
+    def get_custom_result(
+        self,
+        custom_property: CustomProperty,
+        value_type: type[str | bool | int | float | bytes],
+        program_index: int = 0,
     ) -> str | bool | int | float | bytes | None:
         """Return an implementation-defined custom job result.
 
@@ -104,7 +117,22 @@ class Job:
 
     @property
     def program(self) -> str:
-        """The submitted program."""
+        """The first submitted program."""
+
+    @overload
+    def get_program(self, program_index: int = 0) -> str:
+        """Return one submitted text program by input index."""
+
+    @overload
+    def get_program(self, value_type: type[bytes], program_index: int = 0) -> bytes:
+        """Return one submitted program's exact bytes by input index."""
+
+    @property
+    def num_programs(self) -> int:
+        """The number of programs in input order."""
+
+    def get_program_status(self, program_index: int = 0) -> Job.Status | None:
+        """Return one program outcome, or None when unsupported."""
 
     @property
     def program_bytes(self) -> bytes:
@@ -299,10 +327,9 @@ class Device:
         when the custom slot is unsupported.
         """
 
-    @overload
     def submit_job(
         self,
-        program: str,
+        program: str | bytes | Sequence[str] | Sequence[bytes],
         program_format: ProgramFormat,
         num_shots: int | None = None,
         *,
@@ -312,22 +339,7 @@ class Device:
         custom4: str | bool | float | None = None,
         custom5: str | bool | float | None = None,
     ) -> Job:
-        """Submits a text job to the device."""
-
-    @overload
-    def submit_job(
-        self,
-        program: bytes,
-        program_format: ProgramFormat,
-        num_shots: int | None = None,
-        *,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
-    ) -> Job:
-        """Submits an exact byte payload to the device."""
+        """Submit one program or an ordered list with common parameters."""
 
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""
