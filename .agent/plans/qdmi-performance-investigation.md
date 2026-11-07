@@ -1,308 +1,259 @@
 # QDMI performance and efficiency investigation
 
-Status: proposed. No item is measured or implemented yet. Work items 1–4 are
-ready to start. Items 5 and 6 need a maintainer decision after measurement.
+Status: implemented and validated against `b6d06d45fc`. Three local changes
+remain: lazy state reconstruction, shared-deadline shutdown, and hinted
+histogram insertion. Shared readout on main supplies item 3. Catalog opening and
+idle-worker retention remain unchanged.
 
-## Goal and scope
+## Scope and baseline
 
-Find and remove avoidable work in the QDMI libraries on paths that users hit
-repeatedly: batch sampling on the DDSIM device, sample readout in the PennyLane
-and Catalyst frontends, process exit after DDSIM use, and the first device open.
-Every change must keep the QDMI Client interface, result formats, error codes,
-and the documented DDSIM contract
-([`docs/qdmi/ddsim_device.md`](../../docs/qdmi/ddsim_device.md)) unchanged
-unless the item names a decision for the maintainer.
+Integration baseline: `b6d06d45fc`. Paired measurement baseline: `92b9fef855`.
+Historical measurement baseline: `328b426c17`. Preserve the QDMI Client
+interface, result formats, and DDSIM sampling and state-result availability. The
+approved failure-timing change is limited to invalid retained states: valid
+samples remain available from a completed program, and state/probability queries
+return `QDMI_ERROR_FATAL`.
 
-The review covered these components:
+The investigation covers DDSIM result ownership and worker shutdown, the shared
+Catalyst/PennyLane readout, C++ sparse-result construction, catalog opening, and
+idle-worker retention. It excludes external providers, simulation/JIT
+algorithms, MLIR passes, new public parameters, and container return-type
+changes.
 
-- the QDMI driver: `src/qdmi/driver/Driver.cpp`, `DeviceRegistry.cpp`;
-- the C++ QDMI library: `include/mqt-core/qdmi/QDMI.hpp`, `src/qdmi/QDMI.cpp`;
-- the DDSIM device: `src/qdmi/devices/dd/Device.cpp`, `Worker.cpp`,
-  `WorkerProtocol.cpp`, `WorkerMain.cpp`;
-- the SC device: `src/qdmi/devices/sc/Device.cpp`;
-- bindings: `bindings/qdmi/qdmi.cpp`, `bindings/mlir/Target/PennyLane/`;
-- consumers: `mlir/lib/Compiler/QDMIAdapter.cpp`,
-  `mlir/lib/Runtime/Catalyst/QDMIDevice.cpp`, `python/mqt/core/plugins/`.
+Earlier decisions remain in force:
 
-Out of scope: the QDMI standard, external QDMI device libraries (IQM, Amazon
-Braket), simulation and QIR JIT algorithms, and MLIR passes.
+- [Driver performance audit](../audits/qdmi-driver-performance-2026-09-08.md):
+  no registry index, job pool, metadata cache, or extra loader cache.
+- [Result performance audit](../audits/qdmi-main-performance-2026-09-08.md):
+  retain dense-result bounds and allocation-free size queries where applicable.
+- [Pre-release audit](../audits/qdmi-pre-release-performance-2026-09-10.md):
+  full target snapshots still enumerate sites; session width bounds this work.
+- [Python concurrency audit](../audits/qdmi-python-gil.md): retain eager child
+  initialization and eager client-catalog opening.
 
-### Earlier decisions to respect
+## Current integration contracts
 
-These audits already fixed or declined several candidates. Do not reopen them
-without new evidence:
+- Shared `decodeShots` and `decodeCounts` own result validation and layout
+  projection across Qiskit, Catalyst, and the runner (#2954). Catalyst
+  aggregates prefer counts and reuse the same job if ordered samples are later
+  requested (#2953). Samples stay MSB-first until consumption, and expansion
+  writes into a checked, pre-sized array (#2960). Item 3 needs no local frontend
+  loop.
+- DDSIM's requested logical shot streams are independent of granted execution
+  threads for seeded jobs (#2958). QCO automatic worker selection belongs to the
+  sampler (#2965). These contracts remain unchanged by lazy result ownership and
+  idle-process shutdown.
+- Worker response serialization and the parent state-reconstruction path still
+  carry the same retained-state contract. The worker pool and the C++ sparse
+  result parser are unchanged upstream, so items 1, 2, and 4 remain applicable.
+- PennyLane scopes implicit DDSIM sessions to declared wires (#2960). Full
+  65,535-site snapshots remain relevant to unscoped or explicitly full-width
+  sessions, rather than the normal fixed-wire PennyLane path. Catalog opening
+  itself remains eager and sequential.
+- Native Qiskit submission (#2955), target-aware exports (#2957), tensor
+  cancellation (#2966), and reduced QIR export preparation (#2967) affect
+  surrounding work. Historical end-to-end timings and seeded fingerprints must
+  not be treated as incremental results against this integration baseline.
+  Parallel compilation and import-once sampling remain separate follow-ups in
+  [the adapter plan](qdmi-adapter-performance.md), outside this task.
 
-- [`qdmi-driver-performance-2026-09-08`](../audits/qdmi-driver-performance-2026-09-08.md):
-  module-level initialization locking and configuration copies are fixed.
-  Registry indexing, a job pool, a metadata cache, and an extra loader cache are
-  declined.
-- [`qdmi-main-performance-2026-09-08`](../audits/qdmi-main-performance-2026-09-08.md):
-  dense-result guards and allocation-free size queries are fixed. Note that
-  `stateVecOnce_` no longer exists. The DDSIM result code now lives in
-  `qdmi::dd::ProgramResult`.
-- [`qdmi-pre-release-performance-2026-09-10`](../audits/qdmi-pre-release-performance-2026-09-10.md):
-  GIL release and scalar site queries are fixed. A full DDSIM target snapshot
-  still visits all 65,535 sites. Users can limit this with the session width
-  (`CUSTOM1`, see the DDSIM documentation).
-- [`qdmi-python-gil`](../audits/qdmi-python-gil.md): the maintainer kept eager
-  initialization of child devices and of the client catalog.
+## Current-main comparison
 
-Those audits refer to `include/mqt-core/qdmi/Client.hpp` and
-`src/qdmi/Client.cpp`. These files are now `QDMI.hpp` and `QDMI.cpp`.
+A focused paired check uses the current worker executable for both variants,
+with the device library built from `92b9fef855` or the local implementation.
+Five alternating pairs per workload use 100 OpenQASM 3 programs, 12 qubits,
+1,000 shots per program, and an eight-worker budget. Circuit construction
+matches the historical method below. All runs created eight workers and left no
+child processes after finalization.
 
-## Work items
+| Workload | Main parent RSS | Local parent RSS | Main finalization | Local finalization |
+| -------- | --------------: | ---------------: | ----------------: | -----------------: |
+| GHZ      |        67.8 MiB |         15.6 MiB |           80.6 ms |            10.2 ms |
+| Random   |       124.6 MiB |         48.6 MiB |           80.6 ms |            10.2 ms |
 
-Order is by expected effect and confidence. Each item lists evidence from the
-current code, a measurement, the threshold for acting, and the smallest fix.
-Record each measurement with the workload, baseline revision, machine, and
-median of at least five runs
-([performance evidence](../../AGENTS.md#performance-evidence)). Keep harnesses
-outside the repository.
+Values are medians; RSS is sampled while the completed job owns its results.
+This confirms that the memory reduction and shared shutdown still apply after
+integration. It does not establish an isolated end-to-end throughput gain. Raw
+measurements are in `/tmp/qdmi-performance/rebase-92b9fef855/paired.jsonl`.
 
-### 1. DDSIM moves and keeps the sampled state even when no caller asks for it
+## Historical measurement method
 
-**Evidence.** When a sampling program uses terminal sampling, the worker keeps
-the uncollapsed state. `execute` in `WorkerMain.cpp` serializes it with
-`dd::serialize`. `encode(const WorkerResponse&)` copies it into the frame.
-`decode(StringRef, WorkerResponse&)` copies it again with `state->str()`. The
-submit task in `MQT_DDSIM_QDMI_Device_Job_impl_d::submit` then creates a
-separate `dd::Package` for each program, deserializes the state, and keeps both
-until the job is freed. The DDSIM documentation promises state results for these
-jobs, so the state must stay available. However, no frontend queries it: the
-Qiskit, PennyLane, and Catalyst paths read only shots or counts.
+The measurements below compare `328b426c17` with the original implementation;
+they explain the retained design choices, not current-main speedups. Native
+measurements use the DGX Spark's ARM64 CPU, Clang 23.1.6, LLVM/MLIR 23.1.0,
+Release, ThinLTO, and mold. The host is shared. Wall-clock runs overlap other
+work, so they establish workload behavior and memory use, not an isolated
+end-to-end speedup. Report medians of five runs unless explicitly marked as a
+single pilot. Harnesses and raw measurements remain outside the repository.
 
-**Expected impact.** CPU time on both sides of the socket, plus parent memory
-that grows with Σ (DD size) across all programs in a batch. Structured circuits
-produce small DDs. Highly entangled 16–24-qubit circuits can produce DDs with
-roughly 2^n nodes, multiplied by the number of programs (for example, a
-400-circuit PennyLane batch).
+The maintainer approved a bounded matrix: 100-program GHZ batches at 12, 16, 20,
+and 22 qubits; random 12-qubit batches of 100 and 16-qubit batches of eight;
+OpenQASM 3 and Base QIR; 1,000 shots per program. Random circuits use seed 42,
+eight layers of per-qubit RY/RZ rotations and shuffled CX pairs. A single
+100-program random 16-qubit pilot supplements the repeated smaller rows. Full
+100-program random 20/22-qubit rows are excluded from this bounded run.
 
-**Measure.** Use OpenQASM 3 and Base QIR batches of 100 programs at 12, 16, 20,
-and 22 qubits. Use both GHZ-like circuits and random circuits with full
-entanglement, at 1,000 shots each. Record:
+## 1. Lazy retained-state reconstruction
 
-1. the serialized state size for each program;
-2. worker time in `dd::serialize`;
-3. parent time from `readFrame` to the end of `deserialize`;
-4. peak and retained parent RSS until the job is freed;
-5. end-to-end time to read counts.
+`ProgramResult` owns the serialized state and its declared width. All state and
+probability queries pass through one `std::call_once` before accessing the
+package, state edge, or cached status. The initializer builds a local package,
+validates the root width, retains its root, and publishes it. Explicit failures
+are cached, their LLVM errors consumed, and unusable serialized bytes released.
+An allocation exception leaves the bytes available for a later retry.
 
-Compare against a local prototype that drops `response.state` in the worker. Use
-this prototype only as a measurement baseline, never as a fix.
+Sampling-only queries never construct a result package. State queries retain the
+same dense/sparse values and availability. The approved deferred-error behavior
+is documented in [the DDSIM guide](../../docs/qdmi/ddsim_device.md).
 
-**Act if** deserialization or retained parent memory accounts for at least 5 %
-of end-to-end time, or adds at least 100 MiB for a 100-program batch, in any
-realistic row.
+Five-run parent RSS medians, while the completed job still owns its results:
 
-**Smallest fix (no contract change).** Keep the received serialized bytes in
-`ProgramResult` and deserialize them at most once, on the first state or
-probability query, behind a `std::once_flag`. This follows the pattern of
-`countsOnce_` and `sparseAmplitudeCountOnce_`. It removes the per-program
-`dd::Package` and the deserialization cost for results that nobody queries. Move
-the frame payload into the result instead of calling `.str()` on a view into it,
-so the copy is removed too.
+| OpenQASM workload              |  Baseline | Lazy state |
+| ------------------------------ | --------: | ---------: |
+| 100 GHZ programs, 12 qubits    |  67.1 MiB |   15.5 MiB |
+| 100 GHZ programs, 22 qubits    |  67.9 MiB |   15.7 MiB |
+| 100 random programs, 12 qubits | 124.0 MiB |   48.8 MiB |
+| 8 random programs, 16 qubits   | 144.2 MiB |   72.4 MiB |
 
-Decide and document one change in failure timing. Today, a qubit-count mismatch
-marks the program `FAILED`. With lazy deserialization, the program finishes as
-`DONE` with valid samples, and the first state query returns `QDMI_ERROR_FATAL`.
-The worker is a trusted child process, so this case indicates an internal
-defect.
+The single 100-program random 16-qubit pilot fell from 1,035.6 to 420.2 MiB. The
+five-run Base QIR random 12-qubit batches fell from 126.2 to 50.6 MiB. An
+instrumented baseline compared normal workers with a measurement-only prototype
+that omits state serialization. For 100 random 12-qubit programs, the retained
+parent RSS increase fell from 109.15 to 7.00 MiB, independently meeting the
+100-MiB action threshold. Each state was 237,534 bytes; summed worker
+serialization CPU time was 163.65 ms per batch. GHZ states were 1,358 bytes
+each, with 9.54 ms summed serialization CPU. These rows do not justify a new
+skip-state parameter. The measured benefit is memory reduction; no isolated
+end-to-end latency gain is claimed. A separate five-run random 12-qubit batch
+comparison recorded Linux `ru_maxrss` medians of 123.3 MiB before and 47.6 MiB
+after. These high-water diagnostics use the kernel's peak accounting; the table
+above uses retained `/proc` RSS snapshots. Transport read/decode time was not
+isolated from deserialization, so no separate transport-speed claim is made.
 
-**Escalation (maintainer decision).** Lazy deserialization still pays for
-serialization and transfer. If those costs remain material, the options are:
+Single-program random 20/22-qubit pilots hit a 120-second bound on the loaded
+host and were canceled through the public API. They provide no latency result.
 
-- (a) a new DDSIM job parameter that skips state retention, which Qiskit,
-  PennyLane, and Catalyst would set;
-- (b) keep the state in the worker until the job is freed, which reduces how
-  often the pool can reuse workers.
+Retain the decoder's separate state-byte copy. Moving the entire response frame
+would also retain its capacity for output records and histogram keys,
+potentially keeping a large frame for a tiny state. The lazy-package change does
+not require that ownership tradeoff or a new worker protocol representation.
 
-Option (a) is a new public device contract, so document it in
-`docs/qdmi/ddsim_device.md` and in the PR's migration notes.
+External instrumentation verifies zero deserializations for counts-only use and
+one per result for eight cold concurrent-read cases, including terminal
+sampling. An adversarial worker returns valid counts with corrupt state bytes:
+the job completes, counts remain readable, and repeated state queries return a
+cached fatal error. The native concurrent-read regression covers both extraction
+and terminal sampling.
 
-**Tests.** In `test/qdmi/devices/dd/results_statevector_test.cpp` and
-`results_sampling_test.cpp`, check that a sampling job still returns
-statevectors, probabilities, and sparse results that match today's values. Check
-that cold concurrent state queries on one result deserialize once and agree.
-Check that sampling-only consumers never deserialize the state. Count
-deserializations through the public API (for example, query timing or a test
-build of the device), not through a private hook in production code.
+## 2. Close idle workers before waiting
 
-### 2. Shutting down the DDSIM worker pool takes time linear in the number of idle workers
+`WorkerPool::shutdown` requests closure from every idle worker, then waits using
+one shared one-second deadline. Each wait first checks for exit; an expired
+deadline does not introduce another sleep. Remaining processes are terminated
+and reaped. Active-worker termination and the `accepting_` contract are
+unchanged. The single-worker shutdown path uses the same helpers with its own
+deadline.
 
-**Evidence.** `WorkerPool::shutdown` in `Worker.cpp` calls `Worker::shutdown`
-for each idle worker in turn. Each call writes the close frame and then polls
-`hasExited` in 10 ms sleeps for up to 1 s, before it moves on to the next
-worker. The pool can grow to `Executor::limit` workers (physical cores, or
-`MQT_CORE_DD_WORKER_BUDGET`). The static `Executor` destructor runs this path at
-process exit. `MQT_DDSIM_QDMI_device_finalize` also runs it. The driver leaks
-its device-library cache on purpose, so in practice the exit path is the one
-that runs.
+Five-run interleaved finalization medians were 15/19 ms before/after with one
+worker, 85/14 ms with eight, and 220/18 ms with twenty. Every run observed the
+requested number of idle workers and no children after finalization. The Linux
+regression holds programs at a file barrier to ensure multiple workers start,
+reads child PIDs as streams from procfs, finalizes through the public C API, and
+checks that those processes no longer exist. It imposes no wall-clock
+performance assertion and respects the configured worker budget.
 
-**Expected impact.** Process exit is delayed by about 10 ms or more per idle
-worker. On a 64-core node, this is 0.6 s or more after any batch that used the
-whole budget. CLI calls, test suites, and SLURM job steps all pay this delay.
+## 3. Use the shared readout on main
 
-**Measure.** Run a Python script that submits a batch with as many programs as
-`limit`, reads the counts, and exits. Time interpreter exit with 1, 8, and
-`limit` idle workers.
+`mlir::decodeShots` validates and decodes each distinct raw outcome once,
+keeping shot order and correlations. `mlir::decodeCounts` validates totals and
+merges outcomes projected onto the same logical bits. The runtime consumes these
+results directly, without a second reversal or normalization pass.
 
-**Act if** exit time grows with the number of workers. The code predicts this,
-so the measurement mainly sizes the gain.
+Adjacent compaction in the frontend would run after the shared decoder and no
+longer avoid the original repeated decoding work. No additional cache, grouped
+representation, or shared-decoder rewrite is justified by the historical
+measurements. Keep the shared decoder and the runtime counts-first policy.
 
-**Smallest fix.** Use two phases in `WorkerPool::shutdown`. First, write the
-close frame to every idle worker and reset its stream. Then wait for all of them
-against one shared 1 s deadline. Terminate any worker that has not exited by
-then. Keep the existing behavior for active workers (`terminate`) and for
-`accepting_`. Do not change `Worker::shutdown` for its single-worker caller in
-`WorkerPool::release`.
+The compiler adapter's ordered-shot/layout tests and Catalyst's
+`AggregateReadoutKeepsCountsAndSamplesFromOneJob` test cover layout projection,
+malformed input, nonadjacent repeated outcomes, and counts-to-samples reuse.
 
-**Tests.** Add a regression to `session_lifecycle_test.cpp` or
-`concurrency_test.cpp`. It warms N workers, calls the device finalizer through
-the public C API, and requires that no worker process remains. Do not assert a
-wall-clock bound. Use a generous bound only if one is needed, and give its
-reason.
+## 4. Hint sparse-result insertion
 
-### 3. Catalyst and PennyLane readout repeats string work for every shot
+Use `std::map::insert_or_assign(end(), key, value)`. Sorted unique DDSIM keys
+use the end hint; the standard library handles unsorted input and duplicate
+keys. Duplicate keys keep their last value, matching the existing contract.
+There is no sorting scan, extra container, or public return-type change.
 
-**Evidence.** `readout` in `mlir/lib/Runtime/Catalyst/QDMIDevice.cpp` reads
-`qdmi::Job::getShots`. `detail::parseShots` allocates one `std::string` per shot
-(a heap allocation for widths above the SSO limit). `readout` then runs
-`std::erase`, `ResultLayout::decodeBits` (another new string), a digit check,
-and `std::ranges::reverse` for every shot. Finally, `decodeSamples` expands the
-results into `int8_t`. For DDSIM jobs without captured output, the device has
-already expanded SHOTS from a compact histogram (`ProgramResult::getShots`), so
-the number of distinct outcomes is often far below the number of shots. The
-Qiskit frontend already encodes each distinct bitstring only once (`QDMIJob`,
-`encoded = {bits: ... for bits in set(shots)}`).
+Five-run parent-CPU medians for C++ `Job::getCounts`, after one warm-up, using
+uniform-superposition circuits and one million shots:
 
-**Measure.** Time `mqt.core.mlir._pennylane.samples` on DDSIM with {1,000,
-100,000, 1,000,000} shots × {4, 32} wires, with and without a result layout.
-Report the share of time spent in `getShots`/`parseShots` and in the per-shot
-loop of `readout`.
+| Qubits | Outcomes |   Baseline | Hinted insertion |
+| ------ | -------: | ---------: | ---------------: |
+| 16     |   65,536 |  12.394 ms |         7.279 ms |
+| 20     |  644,497 | 143.925 ms |        75.734 ms |
+| 24     |  970,693 | 166.447 ms |       111.997 ms |
 
-**Act if** the per-shot loop takes at least 20 % of `samples()` at 100,000
-shots.
+Provider-copy timings were 1.5–23 ms; parsing and map construction dominate
+these native rows. Public Python `get_counts()` CPU medians, measured separately
+on CPU 19 with the same driver for both variants, fell from 16.17 to 13.17 ms at
+16 qubits, 262.24 to 237.77 ms at 20, and 449.25 to 376.90 ms at 24. Full result
+fingerprints and million-shot totals agree. The existing indexed-histogram
+driver fixture checks unsorted and duplicate keys through `Job::getCounts`.
 
-**Smallest fix.** In `readout`, validate, decode, and reverse each distinct raw
-bitstring once, using an `llvm::StringMap`, and keep shot order. Keep every
-current error message and every validation of width, digits, and total count.
-Change only `readout`. A new C++ QDMI library API that returns one contiguous
-SHOTS buffer would add a public commitment. Propose it separately, and only if
-`parseShots` still dominates after this fix.
+## 5. Keep eager sequential catalog opening
 
-**Tests.** The existing Catalyst and PennyLane sample tests in
-`mlir/unittests/Runtime/Catalyst/test_qdmi_device.cpp` and
-`test/python/plugins/qdmi_pennylane/` must pass unchanged. Add one case with
-repeated outcomes and a non-identity layout, and one malformed-sample case that
-appears only after the first occurrence of an outcome.
+With one fixture library adding 200 ms to each session initialization, first
+catalog access took median 0.211, 0.814, and 1.623 seconds for 1, 4, and 8
+registrations. Concurrent opening would still serialize these registrations on
+the library's module mutex. The maintainer retained eager sequential opening; no
+targeted-session routing or concurrency is added.
 
-### 4. The histogram in the C++ QDMI library allocates one map node and key per outcome
+## 6. Keep idle-worker reuse
 
-**Evidence.** `getSparseResult` in `src/qdmi/QDMI.cpp` builds
-`std::map<std::string, T>`. This costs a node allocation, a key string, and an
-O(log n) insert per outcome. The bindings then convert the result into a Python
-`dict`. High-entropy sampling (20 qubits or more, 10^6 shots) yields up to 10^6
-distinct keys.
+After GHZ programs at 4, 16, and 22 qubits, each idle worker retained about 46.7
+MiB. Five-run cold execution medians were 13.6–15.8 ms, versus 4.5–7.3 ms for a
+warm worker. A wide pool therefore retains substantial aggregate memory but
+avoids repeated startup. The maintainer retained the current policy: no idle
+cap, timer, or configuration parameter is added.
 
-**Measure.** Time `Job::getCounts` and Python `Job.get_counts` on DDSIM with
-uniform-superposition circuits at 16, 20, and 24 qubits and 10^6 shots. Split
-the time into provider copy, parsing and map insert, and Python conversion.
+## Publication review
 
-**Act if** map construction takes at least 25 % of `get_counts`. If so, insert
-with `emplace_hint(end())` when the provider keys are already sorted. DDSIM keys
-come from `std::map` in `ProgramResult`, so they are already in sorted order.
-QDMI does not guarantee key order, so keep a fallback for unsorted keys. Do not
-change the return type of `Job::getCounts`. Doing so would break
-`mlir/tools/run/Run.cpp`, Catalyst, and the bindings, and it needs maintainer
-approval.
-
-### 5. The first `open_device` opens every configured device in sequence (decision required)
-
-**Evidence.** Python `qdmi.open_device`, `qdmi.device_ids`,
-`QDMIBackend.from_device_id`, and `compilerTargetFromDeviceId` all reach
-`qdmi::Session::create`. This calls `QDMI_session_alloc` and
-`Driver::materializeClientCatalog`, which opens every configured device, one
-after another, the first time any session is allocated. With N remote devices,
-the first open of any device costs Σ (session-init latency). The targeted path
-`builtin_driver::openDevice` (`Driver::sessionAllocForDevice`) avoids this cost.
-The maintainer previously kept eager catalog opening because lazy opening
-changes when errors appear.
-
-**Measure.** Use an ad hoc device library with 200 ms of session-init delay.
-`test/qdmi/driver/session_device.cpp` is a starting point, but it has no delay
-today. Register it K = 1, 4, and 8 times with a manifest. Time the first
-`open_device("mqt.ddsim.default")`.
-
-**Options for the maintainer.**
-
-- (a) Open the catalog devices concurrently in `materializeClientCatalog`. Eager
-  semantics, error timing, warning text, and registration order all stay the
-  same, and latency drops from Σ to max. Devices in the same library already
-  serialize on the module mutex.
-- (b) Route ID-specific entry points through the targeted session. This changes
-  session sharing and how strict parameter handling is.
-
-Option (a) is the smaller contract change. Do not implement either option
-without a decision.
-
-### 6. Idle DDSIM workers never shut down (decision required)
-
-**Evidence.** `WorkerPool::release` keeps every reusable worker until the
-process exits, so a burst of `limit` concurrent programs leaves `limit` worker
-processes alive. Each idle worker keeps the resident memory of its last program,
-depending on the allocator. Long-lived hosts are affected: Jupyter kernels, the
-SLURM availability service in `examples/slurm/`, and the PennyLane device.
-
-**Measure.** Record per-worker RSS after it is idle, following programs at 4,
-16, and 22 qubits, and the total idle RSS after a `limit`-wide batch.
-
-**Options for the maintainer.** Cap the number of idle workers, add an idle
-timeout, or keep the current behavior. All of these are policy choices. Keep the
-trade-off with startup cost in view: measure the latency of the first program on
-a cold worker (process spawn, socket accept, and LLVM/MLIR start-up in
-`Worker::start`) before deciding.
-
-## Candidates not promoted
-
-These candidates were checked and not promoted. The reasons are given so that
-nobody repeats the same work:
-
-- **Driver path resolution on every open.** `packagedDriverPath` probes up to
-  seven candidates. `normalizePath` calls `weakly_canonical`. The cost is
-  microseconds per open, far below provider session initialization.
-- **`std::shared_ptr` copies in `Site` and `Operation` wrappers.** There are
-  65,535 atomic increments per full DDSIM `getSites`. This is small next to the
-  five provider queries per site that the snapshot already makes, and those
-  queries are a retained decision.
-- **`std::vector<QDMI_Site>` in `Operation::queryProperty`.** It allocates only
-  when sites are passed. The snapshot passes sites once per calibrated tuple.
-- **Growth of the `readFrame` buffer in 64 KiB chunks.** Doubling amortizes this
-  growth. It also deliberately avoids trusting an announced length. Fold the
-  related copies into item 1 instead.
-- **SC device queries.** These are binary searches over sorted tuples, with no
-  global locks.
-- **`discover_qdmi_manifests` at import time.** It scans the entry-point group
-  once per process. Measure it with
-  `python -X importtime -c "import mqt.core.qdmi"` only if import latency is
-  reported.
-- **Sorted SHOTS output for compact DDSIM jobs.** This is documented behavior
-  ("the sequence of shots has no defined meaning"), not a defect.
+Lazy reconstruction belongs to the result owner: samples avoid creating a DD
+package, while state consumers pay reconstruction once. Worker serialization
+remains necessary for later state queries. Root registration can allocate, so
+serialized bytes remain owned until registration and publication succeed. Pool
+shutdown owns the common deadline; standalone worker cleanup retains its bounded
+wait. Histogram insertion retains arbitrary input ordering and
+last-duplicate-wins behavior through the standard container fallback. No new
+public API, protocol variant, or dependency is needed.
 
 ## Validation
 
-For every implemented item:
+Current integration validation passed:
 
-- Configure and build with `cmake --preset release`, then
-  `cmake --build --preset release`.
-- Run the focused native tests, `ctest --preset release -R qdmi`, and the
-  affected component binaries with GoogleTest filters.
-- Run the focused Python tests,
-  `uv run --no-sync pytest test/python/qdmi test/python/plugins`.
-- Run `uvx nox -s cpp-lint` and `uvx nox -s lint`. If a binding signature
-  changes, also run `uvx nox -s stubs`.
-- Report before and after measurements for the item's workload, and state the
-  limits of the evidence (a single machine, no hardware, no free-threaded
-  Python).
+- Clang 23 release build with ThinLTO and matching Python 3.14 editable install.
+- 98 DDSIM, 316 C++ client, 8 Catalyst runtime, and 432 compiler tests,
+  including shared readout decoding, plus 8 QDMI configuration checks.
+- 3 focused QCO sampling tests covering seeded worker grants, disabled contexts,
+  and adaptive workers.
+- 2,046 Python QDMI, plugin, MLIR, and QCO tests; 2 optional Catalyst tests
+  skipped.
+- Whole-file C++ lint and repository lint.
+- The paired retained-memory and worker-cleanup comparison above (at
+  `92b9fef855`).
+- A publication-head fault-injection probe throws `std::bad_alloc` immediately
+  before root registration. The first query returns `QDMI_ERROR_OUTOFMEM`; a
+  retry returns the correct GHZ amplitudes. Moving byte release before root
+  registration makes the same probe fail with `QDMI_ERROR_FATAL`.
 
-Items 1–3 do not change any public API. Item 1 escalation (a), item 4 beyond
-hint insertion, and items 5 and 6 need maintainer approval first.
+The historical implementation passed its native and Python suites and both
+lints. External probes established zero counts-only deserializations, one decode
+per result under concurrent state queries, cached corruption errors, and a
+cleanup regression that detects omitted finalization. These are historical
+checks until repeated on the integration baseline.
+
+No public binding signature changes are required. Windows, hardware providers,
+free-threaded Python, and the full high-width random matrix remain outside this
+validation run. Shared-host timing does not establish an isolated end-to-end
+speedup.
