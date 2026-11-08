@@ -921,7 +921,7 @@ static CircuitPlan planMcpForWidth(OpBuilder& builder, Location loc,
   return plan;
 }
 
-/// Exact MCZ core, shared by Pauli/SWAP lowering and ancilla cost comparison.
+/// Exact MCZ core for Pauli/SWAP lowering.
 static CircuitPlan mczCoreForWidth(OpBuilder& builder, Location loc,
                                    size_t numControls) {
   // For k >= 9, SP22 costs 4k²−4k+2 CX equivalents; HP24 costs 88k−54
@@ -1386,12 +1386,17 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
   };
   auto best = parameterized ? CircuitPlan{}
                             : planOneAncillaMcx(k, ancillas.front().clean);
-  const auto fallbackCost =
-      parameterized
-          ? parameterizedFallbackCost(k, rotation)
-          : (k == 3
-                 ? 14
-                 : entanglingCost(mczCoreForWidth(rewriter, op.getLoc(), k)));
+  // Count the fallback without constructing a plan that will not be emitted.
+  const auto fallbackCost = [&]() -> size_t {
+    if (parameterized) {
+      return parameterizedFallbackCost(k, rotation);
+    }
+    if (k == 3) {
+      return 14;
+    }
+    return k < 23 ? parameterizedFallbackCost(k, false)
+                  : (k % 2 == 1 ? 88 * k - 54 : 96 * k - 154);
+  }();
   auto bestCost = parameterized ? fallbackCost : entanglingCost(best);
   size_t used = parameterized ? 0 : 1;
   bool dirtyParameterized = false;
