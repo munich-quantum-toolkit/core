@@ -3510,13 +3510,18 @@ TEST_F(CompilerPipelineTest, TargetLayoutRecoversRoutedUnitary) {
   for (const llvm::StringRef mode :
        {"routed", "placed", "indexed", "synthesis"}) {
     SCOPED_TRACE(mode.str());
-    for (const auto* gates : {
-             "h q[0]; rx(0.3) q[1]; rz(0.7) q[3]; "
-             "cx q[0], q[3]; cx q[1], q[3];",
-             "h q[0]; rx(0.3) q[2]; rz(0.7) q[3]; "
-             "cx q[0], q[3]; cx q[2], q[3]; cx q[0], q[2]; "
-             "swap q[0], q[2]; ry(0.41) q[0]; "
-             "swap q[2], q[3]; h q[2];",
+    for (const auto& [gates, discrete] : {
+             std::pair{"h q[0]; rx(0.3) q[1]; rz(0.7) q[3]; "
+                       "cx q[0], q[3]; cx q[1], q[3];",
+                       false},
+             std::pair{"h q[0]; rx(0.3) q[2]; rz(0.7) q[3]; "
+                       "cx q[0], q[3]; cx q[2], q[3]; cx q[0], q[2]; "
+                       "swap q[0], q[2]; ry(0.41) q[0]; "
+                       "swap q[2], q[3]; h q[2];",
+                       false},
+             std::pair{"h q[0]; t q[0]; t q[0]; t q[1]; h q[2]; h q[3]; "
+                       "cx q[0], q[3]; cx q[2], q[3]; cx q[0], q[2];",
+                       true},
          }) {
       SCOPED_TRACE(gates);
       const auto source =
@@ -3527,7 +3532,16 @@ TEST_F(CompilerPipelineTest, TargetLayoutRecoversRoutedUnitary) {
           mode == "routed" ? CompilerTarget::Connectivity::fromCouplings(
                                  {{0, 1}, {1, 2}, {2, 3}})
                            : CompilerTarget::Connectivity::allToAll(),
-          CompilerTarget::NativeOperations::unrestricted()));
+          discrete
+              ? CompilerTarget::NativeOperations::fromOperations({
+                    llvm::cantFail(
+                        CompilerTarget::OperationCapability::create("h", 1, 0)),
+                    llvm::cantFail(
+                        CompilerTarget::OperationCapability::create("t", 1, 0)),
+                    llvm::cantFail(CompilerTarget::OperationCapability::create(
+                        "cx", 2, 0)),
+                })
+              : CompilerTarget::NativeOperations::unrestricted()));
       auto qc = QCProgram::fromOpenQASMString(source);
       MQT_ASSERT_SUCCESS(qc);
       auto program = std::move(*qc).intoQCO();
@@ -6445,30 +6459,81 @@ TEST_F(CompilerPipelineTest, TargetSynthesisResynthesizesTwoQubitBlocks) {
       makeSparseUCZTarget(true), makePayloadSpecification()))));
 }
 
-TEST_F(CompilerPipelineTest, TargetPipelinesRequireSynthesisBasis) {
+TEST_F(CompilerPipelineTest, TargetPipelinesAcceptNativeDiscreteOperations) {
   using Capability = CompilerTarget::OperationCapability;
-  for (const auto& native : {
-           llvm::cantFail(Capability::create("s", 1, 0)),
-           llvm::cantFail(Capability::create("rx", 1, 1, {}, std::nullopt,
-                                             std::nullopt, {0.37})),
-       }) {
+  for (const bool fixedRotation : {false, true}) {
+    const auto native = llvm::cantFail(
+        fixedRotation ? Capability::create("rx", 1, 1, {}, std::nullopt,
+                                           std::nullopt, {0.37})
+                      : Capability::create("s", 1, 0));
     const auto target = llvm::cantFail(CompilerTarget::create(
         1, CompilerTarget::Connectivity::allToAll(),
         CompilerTarget::NativeOperations::fromOperations({native})));
     EXPECT_FALSE(target.synthesisBasis());
     for (const bool synthesisOnly : {false, true}) {
       auto input = QCProgram::fromOpenQASMString(
-          "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; s q;");
+          std::string("OPENQASM 3.0; include \"stdgates.inc\"; qubit q; ") +
+          (fixedRotation ? "rx(0.37) q;" : "s q;"));
       MQT_ASSERT_SUCCESS(input);
       auto program = std::move(*input).intoQCO();
-      ASSERT_TRUE(mlir::succeeded(program));
-      const auto before = program->str();
+      ASSERT_TRUE(succeeded(program));
+      auto reference = program->copy();
       const TargetEnvironment environment(target, makePayloadSpecification());
-      EXPECT_TRUE(mlir::failed(synthesisOnly
-                                   ? program->synthesizeForTarget(environment)
-                                   : program->compileForTarget(environment)));
-      EXPECT_EQ(program->str(), before);
+      ASSERT_TRUE(succeeded(synthesisOnly
+                                ? program->synthesizeForTarget(environment)
+                                : program->compileForTarget(environment)));
+      expectFullUnitaryEqual(reference.module(), program->module(), 1);
     }
+  }
+}
+
+TEST_F(CompilerPipelineTest, DiscreteTargetPreservesNativeGates) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("h", 1, 0)),
+          llvm::cantFail(Capability::create("t", 1, 0)),
+          llvm::cantFail(Capability::create("cx", 2, 0)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      })));
+  ASSERT_FALSE(target.synthesisBasis());
+  for (const bool synthesisOnly : {false, true}) {
+    auto context = createCompilerContext();
+    auto moduleOp =
+        QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
+          auto q0 = builder.h(builder.staticQubit(0));
+          q0 = builder.t(builder.t(q0));
+          auto q1 = builder.staticQubit(1);
+          auto q2 = builder.staticQubit(2);
+          std::tie(q0, q1) = builder.cx(q0, q1);
+          std::tie(q1, q2) = builder.cx(q1, q2);
+          builder.gphase(0.17);
+          return SmallVector<Value>{};
+        });
+    auto reference = OwningOpRef<ModuleOp>(moduleOp->clone());
+    auto program = QCOProgram::fromModule(context, std::move(moduleOp));
+    ASSERT_TRUE(succeeded(program));
+    const TargetEnvironment environment(target, makePayloadSpecification());
+    ASSERT_TRUE(succeeded(synthesisOnly
+                              ? program->synthesizeForTarget(environment)
+                              : program->compileForTarget(environment)));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+    expectFullUnitaryEqual(*reference, program->module(), 3);
+  }
+
+  auto input = QCProgram::fromOpenQASMString(
+      "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; rz(0.2) q;");
+  MQT_ASSERT_SUCCESS(input);
+  auto original = std::move(*input).intoQCO();
+  ASSERT_TRUE(succeeded(original));
+  for (const bool synthesisOnly : {false, true}) {
+    auto program = original->copy();
+    EXPECT_TRUE(failed(synthesisOnly
+                           ? program.synthesizeForTarget(TargetEnvironment(
+                                 target, makePayloadSpecification()))
+                           : program.compileForTarget(TargetEnvironment(
+                                 target, makePayloadSpecification()))));
   }
 }
 
@@ -6555,10 +6620,6 @@ TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
     auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
     ASSERT_TRUE(mlir::succeeded(program));
 
-    if (!testCase.target.synthesisBasis()) {
-      EXPECT_TRUE(mlir::failed(program->compileForTarget(environment)));
-      continue;
-    }
     ASSERT_TRUE(mlir::succeeded(program->compileForTarget(environment)));
     ASSERT_TRUE(verify(program->module()).succeeded());
     ASSERT_TRUE(qco::verifyLinearity(program->module()).succeeded());

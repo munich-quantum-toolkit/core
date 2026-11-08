@@ -364,6 +364,58 @@ TEST_F(TargetSynthesisTest, TargetPassesRequireTypedEnvironment) {
       << diagnostics;
 }
 
+TEST_F(TargetSynthesisTest, DiscreteTargetLowersRoutingGatesExactly) {
+  for (const bool genericControls : {false, true}) {
+    for (const bool swap : {false, true}) {
+      for (const bool hasHadamards : {false, true}) {
+        SCOPED_TRACE(genericControls);
+        SCOPED_TRACE(swap);
+        SCOPED_TRACE(hasHadamards);
+        std::vector operations{
+            genericControls
+                ? valid(OperationCapability::create(
+                      "x", OperationCapability::Arity::variadic(2), 0))
+                : valid(OperationCapability::create(
+                      "cx", 2, 0, {valid(SiteTuple::create({1, 0}))})),
+        };
+        if (hasHadamards) {
+          operations.push_back(valid(OperationCapability::create("h", 1, 0)));
+        }
+        const auto target = valid(Target::create(
+            2, Target::Connectivity::allToAll(),
+            Target::NativeOperations::fromOperations(operations)));
+        ASSERT_FALSE(target.synthesisBasis());
+        auto actual = build([&](QCOProgramBuilder& builder) {
+          auto q0 = builder.staticQubit(0);
+          auto q1 = builder.staticQubit(1);
+          if (swap) {
+            builder.swap(q0, q1);
+          } else {
+            builder.cx(q0, q1);
+          }
+          return llvm::SmallVector<Value>{};
+        });
+        auto expected = OwningOpRef<ModuleOp>(actual->clone());
+        attachTestEnvironment(*actual, target);
+        if (hasHadamards || genericControls) {
+          ASSERT_TRUE(succeeded(
+              runPass(*actual, mlir::qco::createTargetNativeSynthesis())));
+          EXPECT_TRUE(succeeded(
+              runPass(*actual, mlir::qco::createVerifyTargetConformance())));
+          EXPECT_TRUE(succeeded(mlir::qco::verifyLinearity(*actual)));
+        } else {
+          EXPECT_TRUE(
+              llvm::StringRef(
+                  expectFailure(*actual,
+                                mlir::qco::createTargetNativeSynthesis()))
+                  .contains("no usable synthesis basis"));
+        }
+        expectFullUnitaryEqual(*expected, *actual, 2);
+      }
+    }
+  }
+}
+
 TEST_F(TargetSynthesisTest, GPIPulsesPreserveFullUnitary) {
   const auto pulse = [](const char* name, double theta) {
     return valid(OperationCapability::create(name, 1, 2, {}, std::nullopt,

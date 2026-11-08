@@ -144,14 +144,6 @@ protected:
       return;
     }
     const auto& target = environment_.target();
-    if (target.nativeOperationsKind() ==
-            CompilerTarget::NativeOperations::Kind::Explicit &&
-        !target.synthesisBasis()) {
-      getOperation().emitError(
-          "target compilation requires a single-qubit synthesis basis");
-      signalPassFailure();
-      return;
-    }
     if (failed(mqt::verifyQuantumAllocations(getOperation()))) {
       signalPassFailure();
       return;
@@ -398,7 +390,10 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   const auto& target = environment.target();
   populateTargetPreparationCleanup(pm);
   pm.addPass(qco::createCombineControlledGates(target));
-  pm.addPass(mqt::createSimplifyQuantum());
+  // Discrete targets may not support the gates produced by composition.
+  if (target.synthesisBasis()) {
+    pm.addPass(mqt::createSimplifyQuantum());
+  }
   // Eliminate identity loops before unrolling applies its clone budget.
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createSCCPPass());
@@ -443,7 +438,9 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   const auto& target = environment.target();
   populateTargetPreparationCleanup(pm);
   pm.addPass(qco::createCombineControlledGates(target));
-  pm.addPass(mqt::createSimplifyQuantum());
+  if (target.synthesisBasis()) {
+    pm.addPass(mqt::createSimplifyQuantum());
+  }
   // Remove identity branches before checking payload control-flow support.
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());

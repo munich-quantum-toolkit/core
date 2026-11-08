@@ -474,8 +474,11 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     other runs are left for individual lowering to retain exportability.
 
     Unknown native-operation metadata is valid when no
-    surviving unitary operation needs it. Otherwise, the pass fails when the
-    metadata is unknown, no complete basis exists, or an operation has no
+    surviving unitary operation needs it. Targets without a complete synthesis
+    basis retain native operations and can lower SWAPs and reversed CX gates
+    using native CX and H gates. They do not approximate arbitrary rotations.
+    Otherwise, the pass fails when the metadata is unknown, a non-native
+    operation needs a missing synthesis basis, or an operation has no
     compile-time unitary matrix and cannot be synthesized as a parameterized
     single-qubit gate or a single-controlled phase gate.
 
