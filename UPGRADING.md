@@ -18,44 +18,42 @@ wheel repair, replace each `libmqt-core-*.so.3.11` entry with the corresponding
 
 ### QDMI 1.4.0
 
-Use Python `mqt.core.qdmi.Session(driver_path=...)` or C++
-`SessionConfig::driverPath` to select a QDMI driver library. When omitted,
-`MQT_CORE_QDMI_DRIVER` selects the driver, or MQT Core uses its built-in driver.
-The client checks the driver's ABI and required entry points before allocating
-sessions. Devices, sites, operations, and jobs retain the selected driver and
-session. Python `mqt.core.qdmi.open_device` opens a device by its stable ID
-through this interface. The existing `mqt.core.qdmi.driver` registration and
-opening functions continue to use MQT Core's built-in driver.
+Rebuild C++ consumers and QDMI device libraries against MQT Core and QDMI 1.4.0.
+QDMI 1.3 device libraries are incompatible.
 
-Rebuild downstream C++ consumers and QDMI devices against the updated MQT Core
-and QDMI 1.4.0. The driver now requires the program-list entry points and the
-indexed result-query signature. QDMI 1.3 device libraries are incompatible. Set
-programs with `QDMI_job_set_programs` or `QDMI_device_job_set_programs` instead
-of the removed `PROGRAMFORMAT` and `PROGRAM` job parameters. Retrieve original
-programs with the indexed `QDMI_job_get_program` or
-`QDMI_device_job_get_program` functions instead of the removed `PROGRAM` job
-property. Pass a zero-based program index to result queries.
+Select a driver with Python `mqt.core.qdmi.Session(driver_path=...)` or C++
+`qdmi::SessionConfig::driverPath`. When omitted, `MQT_CORE_QDMI_DRIVER` selects
+the driver, or MQT Core uses its built-in driver. Python
+`mqt.core.qdmi.open_device` opens a device by its stable ID through this
+interface. The existing `mqt.core.qdmi.driver` API continues to use MQT Core's
+built-in driver.
 
 The C++ and Python clients accept one program or an ordered list with one format
-and common job parameters. Existing single-program calls remain valid. Use
-Python `job.num_programs` or C++ `Job::getNumPrograms()` to inspect the program
-count, and pass a zero-based program index to program and result queries. The
-default index is `0`. The Python `program` and `program_bytes` properties retain
-the first program. Use `job.get_program(index)` for text or
-`job.get_program(bytes, index)` for exact bytes from another program.
+and common job parameters. Single-program calls remain valid. Use Python
+`job.num_programs` or C++ `Job::getNumPrograms()` to inspect the program count.
+Program and result queries accept a zero-based index that defaults to `0`. The
+Python `program` and `program_bytes` properties retain the first program. Use
+`job.get_program(index)` for text or `job.get_program(bytes, index)` for exact
+bytes from another program. Text strings accept one final null byte and reject
+embedded null bytes.
 
 Qiskit groups circuits with the same program format. PennyLane groups tapes and
 shot partitions with the same format and shot count. Both adapters preserve
-input and result order, and fall back to independent jobs only when the device
-rejects the native program list before submission. Python `try_submit_job` and
-C++ `trySubmitJob` expose this admission result as `None` or `std::nullopt`.
-Other errors still raise exceptions. Text submission accepts an optional final
-null byte and rejects embedded null bytes.
+input and result order, and fall back to single-program jobs when the device
+rejects the program list before submission. Custom callers can use Python
+`Device.try_submit_job` or C++ `Device::trySubmitJob`, which return `None` or
+`std::nullopt` for this rejection. Other errors raise exceptions.
 
 DDSIM executes each batch serially. A failed program does not discard successful
 siblings. Cancellation waits for the active simulation to finish and prevents
 remaining programs from starting. Results from successful programs remain
 available after a batch fails or is cancelled.
+
+In the C API, replace the removed `PROGRAMFORMAT` and `PROGRAM` job parameters
+with `QDMI_job_set_programs` or `QDMI_device_job_set_programs`. Replace queries
+for the removed `PROGRAM` job property with `QDMI_job_get_program` or
+`QDMI_device_job_get_program`. Program and result queries now require a
+zero-based program index.
 
 Remove calls to C++ `Device::getNeedsCalibration` and
 `Device::submitCalibrationJob`, or Python `Device.needs_calibration` and
@@ -80,35 +78,34 @@ callers. It bounds complex edge-weight distances from zero or one, allowing a
 zero lower diagonal. Off-diagonal amplitudes formerly accepted up to `sqrt(tol)`
 can now be rejected. This structural tolerance does not bound a matrix norm.
 
+### DD export
+
+Replace C++ calls to `dd::export2Dot` with `dd::exportToDot`.
+
+C++ `dd::exportToDot` and Python `to_svg` report DOT file failures through
+exceptions. Python `to_svg` raises `RuntimeError` if the Graphviz fallback
+cannot start or render the SVG. On Windows, put Graphviz's `dot.exe` on `PATH`.
+
+Invalid or truncated serialized DD inputs raise exceptions. Textual weights
+accept `i` and `I` as the imaginary unit. C++ file serialization reports write
+failures through `std::runtime_error`.
+
 ### DD error handling
+
+Pass extraction widths that cover the DD and size `addToVector` destinations for
+the full vector. Dense dimensions and sparse basis indices must fit in `size_t`.
+Invalid C++ requests now throw `std::out_of_range`. Python `MatrixDD.get_matrix`
+raises `ValueError` when `num_qubits` is too small.
 
 Use positive initial memory-manager capacities. Zero raises
 `std::invalid_argument`, and allocation-size overflow raises `std::bad_alloc`.
 Measurement-fidelity queries accept zero-qubit states and reject widths or
 permutation indices that do not fit the result representation.
 
-Pass extraction widths that cover the DD and size `addToVector` destinations for
-the full vector. Dense dimensions and sparse basis indices must fit in `size_t`.
-Invalid requests now throw `std::out_of_range` in C++; Python
-`MatrixDD.get_matrix` raises `ValueError` when `num_qubits` is too small.
-
 `dd::MemoryManager::reset(bool)`, `dd::Package::incRef`, and the indexed
 `dd::UniqueTable::getStats` overload are no longer `noexcept`. Remove `noexcept`
 requirements from corresponding member-function pointer types and handle
 exceptions in wrappers that assumed these calls could not throw.
-
-### DD export
-
-Invalid or truncated serialized DD inputs raise exceptions. Textual weights
-accept `i` and `I` as the imaginary unit. C++ file serialization reports write
-failures through `std::runtime_error`.
-
-Replace C++ calls to `dd::export2Dot` with `dd::exportToDot`.
-
-C++ `dd::exportToDot` and Python `to_svg` now report DOT file failures through
-exceptions. The native Graphviz fallback also throws when the executable cannot
-start or rendering fails; Python receives `RuntimeError`. Handle these failures
-at the call site. On Windows, put Graphviz's `dot.exe` on `PATH`.
 
 ### DD compute tables
 
