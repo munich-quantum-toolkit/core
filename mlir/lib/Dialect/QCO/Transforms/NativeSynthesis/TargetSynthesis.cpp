@@ -1202,7 +1202,7 @@ lowerDiscreteRoutingOperation(IRRewriter& rewriter, UnitaryOpInterface op,
   return success();
 }
 
-// Plan the complete exact word before replacing an operation.
+// Plan the complete gate sequence before replacing an operation.
 static LogicalResult
 synthesizeExactCliffordT(IRRewriter& rewriter, UnitaryOpInterface op,
                          const CompilerTarget& target,
@@ -1334,11 +1334,11 @@ synthesizeExactCliffordT(IRRewriter& rewriter, UnitaryOpInterface op,
     if (previous[power] < 0) {
       return false;
     }
-    SmallVector<CliffordGate, 4> word;
+    SmallVector<CliffordGate, 4> gateSequence;
     for (int next = power; next != 0; next = previous[next]) {
-      word.push_back(gates[via[next]]);
+      gateSequence.push_back(gates[via[next]]);
     }
-    for (auto gate : llvm::reverse(word)) {
+    for (auto gate : llvm::reverse(gateSequence)) {
       plan.emplace_back(gate, wire);
     }
     return true;
