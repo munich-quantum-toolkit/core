@@ -79,6 +79,7 @@ using decomposition::decomposeUnitary2QWeyl;
 using decomposition::emitUnitary2QWeyl;
 
 #define GEN_PASS_DEF_TARGETNATIVESYNTHESIS
+#define GEN_PASS_DEF_TARGETNATIVESINGLEQUBITLOWERING
 #define GEN_PASS_DEF_VERIFYTARGETCONFORMANCE
 #define GEN_PASS_DEF_FUSETWOQUBITGATES
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
@@ -1138,6 +1139,35 @@ int64_t NativeCostTracker::swapCostAdjustment(size_t first, size_t second,
          static_cast<int64_t>(standaloneCost);
 }
 
+static LogicalResult
+synthesizeSingleQubitOperation(IRRewriter& rewriter, UnitaryOpInterface op,
+                               const CompilerTarget::SynthesisBasis& basis) {
+  Operation* const operation = op.getOperation();
+  rewriter.setInsertionPoint(operation);
+  Matrix2x2 matrix;
+  if (!op.getUnitaryMatrix2x2(matrix)) {
+    if (!decomposition::canSynthesizeParameterizedUnitary1Q(operation)) {
+      return operation->emitError()
+             << "target-native synthesis cannot lower operation '"
+             << operation->getName()
+             << "': its unitary matrix is not available at compile time";
+    }
+    decomposition::synthesizeParameterizedUnitary1Q(rewriter, operation, basis);
+    return success();
+  }
+  const auto synthesized = decomposition::synthesizeUnitary1QEuler(
+      rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
+      /*runSize=*/1, /*hasNonBasisGate=*/true, basis);
+  if (!synthesized) {
+    llvm::reportFatalInternalError(
+        "target single-qubit basis failed to synthesize a unitary matrix");
+  }
+  decomposition::emitGPhaseIfNeeded(rewriter, operation->getLoc(),
+                                    synthesized->globalPhase);
+  rewriter.replaceOp(operation, synthesized->qubit);
+  return success();
+}
+
 static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
     std::optional<CompilerTarget::SynthesisBasis> basis,
@@ -1171,27 +1201,7 @@ static LogicalResult synthesizeTargetOperation(
   }
   rewriter.setInsertionPoint(operation);
   if (op.isSingleQubit()) {
-    Matrix2x2 matrix;
-    if (!op.getUnitaryMatrix2x2(matrix)) {
-      if (!decomposition::canSynthesizeParameterizedUnitary1Q(operation)) {
-        return unsupported(
-            "its unitary matrix is not available at compile time");
-      }
-      decomposition::synthesizeParameterizedUnitary1Q(rewriter, operation,
-                                                      *basis);
-      return success();
-    }
-    const auto synthesized = decomposition::synthesizeUnitary1QEuler(
-        rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
-        /*runSize=*/1, /*hasNonBasisGate=*/true, *basis);
-    if (!synthesized) {
-      llvm::reportFatalInternalError(
-          "target single-qubit basis failed to synthesize a unitary matrix");
-    }
-    decomposition::emitGPhaseIfNeeded(rewriter, operation->getLoc(),
-                                      synthesized->globalPhase);
-    rewriter.replaceOp(operation, synthesized->qubit);
-    return success();
+    return synthesizeSingleQubitOperation(rewriter, op, *basis);
   }
 
   if (!basis->entangler) {
@@ -1501,6 +1511,81 @@ struct ComposePauliRotations final
   }
 };
 
+struct TargetNativeSingleQubitLoweringPass final
+    : impl::TargetNativeSingleQubitLoweringBase<
+          TargetNativeSingleQubitLoweringPass> {
+  using TargetNativeSingleQubitLoweringBase::
+      TargetNativeSingleQubitLoweringBase;
+
+protected:
+  void runOnOperation() override {
+    ModuleOp moduleOp = getOperation();
+    const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!environment) {
+      moduleOp.emitError() << "target-native single-qubit lowering requires a "
+                              "valid mqt.target_env: "
+                           << environment.error();
+      signalPassFailure();
+      return;
+    }
+    const CompilerTarget& target = environment.environment().target();
+    const auto& targetBasis = target.synthesisBasis();
+    const bool indexed = environment.environment().supportsIndexedQubits();
+    auto sites = target.hasDeviceConstraints()
+                     ? collectStaticSites(moduleOp, indexed)
+                     : FailureOr<SiteMap>(SiteMap{});
+    if (failed(sites)) {
+      signalPassFailure();
+      return;
+    }
+    SmallVector<UnitaryOpInterface> candidates;
+    moduleOp->walk<WalkOrder::PreOrder>([&](Operation* operation) {
+      auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+      if (!unitary) {
+        return WalkResult::advance();
+      }
+      if (isWalkableUnitaryShell(operation) && unitary.isSingleQubit()) {
+        candidates.push_back(unitary);
+      }
+      // A modifier is one operation; its body must not become an independent
+      // correction. Multi-qubit shells and their operand order remain intact.
+      return WalkResult::skip();
+    });
+    SynthesisListener listener(&getContext(), *sites);
+    IRRewriter rewriter(&getContext(), &listener);
+    for (auto op : candidates) {
+      auto placement = getOperationSites(op.getOperation(), *sites);
+      const auto operationSites = knownSites(placement);
+      if (operationSites ? target.supports(op.getOperation(), *operationSites)
+                         : target.supports(op.getOperation())) {
+        continue;
+      }
+      if (isa<IdOp>(op.getOperation())) {
+        rewriter.replaceOp(op.getOperation(), op.getInputQubit(0));
+        continue;
+      }
+      if (!targetBasis) {
+        op.emitError()
+            << "target-native single-qubit lowering cannot lower operation '"
+            << op->getName() << "': the target has no usable synthesis basis";
+        signalPassFailure();
+        return;
+      }
+      if (failed(synthesizeSingleQubitOperation(rewriter, op, *targetBasis))) {
+        signalPassFailure();
+        return;
+      }
+    }
+    // Hoist and share emitted constants only after all candidates are visited.
+    listener.foldPending();
+    // Single-qubit emission accounts for modifier-relative phases. Preserve
+    // other unitary shells; whole-module phase normalization can rewrite them.
+    if (!target.supportsOperation("gphase", 0, 1)) {
+      mqt::dropGlobalPhases(moduleOp, rewriter);
+    }
+  }
+};
+
 struct TargetNativeSynthesisPass final
     : impl::TargetNativeSynthesisBase<TargetNativeSynthesisPass> {
   using TargetNativeSynthesisBase::TargetNativeSynthesisBase;
@@ -1772,14 +1857,25 @@ std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
   return std::make_unique<FuseTwoQubitGatesPass>(target);
 }
 
-void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
+void populateTargetNativeSingleQubitLoweringPipeline(OpPassManager& pm) {
+  pm.addPass(createTargetNativeSingleQubitLowering());
+  pm.addPass(createVerifyTargetConformance());
+}
+
+void populateTargetNativeSynthesisPipeline(OpPassManager& pm,
+                                           bool enablePauliTwirling) {
   pm.addPass(createCanonicalizerPass());
   // Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
   pm.addPass(std::make_unique<TargetDeadValueCleanupPass>());
   pm.addPass(createTargetNativeSynthesis());
   pm.addPass(createCSEPass());
-  pm.addPass(createVerifyTargetConformance());
+  if (enablePauliTwirling) {
+    pm.addPass(createPauliTwirl2QGates());
+    populateTargetNativeSingleQubitLoweringPipeline(pm);
+  } else {
+    pm.addPass(createVerifyTargetConformance());
+  }
 }
 
 } // namespace mlir::qco

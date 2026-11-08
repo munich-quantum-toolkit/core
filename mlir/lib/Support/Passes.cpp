@@ -87,6 +87,7 @@ void registerMQTCompilerPasses() {
     qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
+    qco::registerTargetNativeSingleQubitLowering();
     qco::registerTargetNativeSynthesis();
     qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();

@@ -41,6 +41,7 @@
 #include "ExactUnitaryTest.h"
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
+#include "TwirlingTest.h"
 #include "qasm_programs.h"
 #include "qc_programs.h"
 #include "qco_programs.h"
@@ -3258,26 +3259,41 @@ cx q[0], q[2];
 
 TEST_F(CompilerPipelineTest,
        CompilationSeedSurvivesReproducerAndRestoresInput) {
-  auto source = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
-  MQT_ASSERT_SUCCESS(source);
-  auto moduleOp = source->module();
-  const auto previousSeed =
-      Builder(moduleOp.getContext()).getI64IntegerAttr(12);
-  moduleOp->setAttr(COMPILATION_SEED_ATTR, previousSeed);
-  llvm::SmallString<128> path;
-  ASSERT_FALSE(
-      llvm::sys::fs::createTemporaryFile("mqt-seed-reproducer", "mlir", path));
-  const llvm::FileRemover cleanup(path);
-  PassManager pm(moduleOp.getContext());
-  registerMQTCompilerPasses();
-  pm.enableCrashReproducerGeneration(path);
-  pm.addPass(qco::createVerifyTargetConformance());
-  EXPECT_TRUE(failed(runWithCompilationOptions(pm, moduleOp, {.seed = 9876})));
-  EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
-  auto reproducer = llvm::MemoryBuffer::getFile(path);
-  ASSERT_TRUE(reproducer);
-  EXPECT_TRUE(
-      (*reproducer)->getBuffer().contains("mqt.compilation_seed = 9876"));
+  for (const auto seed : {0ULL, 9876ULL}) {
+    for (const bool stored : {false, true}) {
+      SCOPED_TRACE(seed);
+      SCOPED_TRACE(stored);
+      auto source = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
+      MQT_ASSERT_SUCCESS(source);
+      auto moduleOp = source->module();
+      const auto previousSeed =
+          Builder(moduleOp.getContext()).getI64IntegerAttr(12);
+      if (stored) {
+        moduleOp->setAttr(COMPILATION_SEED_ATTR, previousSeed);
+      }
+      llvm::SmallString<128> path;
+      ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-seed-reproducer",
+                                                      "mlir", path));
+      const llvm::FileRemover cleanup(path);
+      PassManager pm(moduleOp.getContext());
+      registerMQTCompilerPasses();
+      pm.enableCrashReproducerGeneration(path);
+      pm.addPass(qco::createVerifyTargetConformance());
+      EXPECT_TRUE(
+          failed(runWithCompilationOptions(pm, moduleOp, {.seed = seed})));
+      if (stored) {
+        EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
+      } else {
+        EXPECT_FALSE(moduleOp->hasAttr(COMPILATION_SEED_ATTR));
+      }
+      auto reproducer = llvm::MemoryBuffer::getFile(path);
+      ASSERT_TRUE(reproducer);
+      EXPECT_TRUE(
+          (*reproducer)
+              ->getBuffer()
+              .contains("mqt.compilation_seed = " + std::to_string(seed)));
+    }
+  }
 }
 
 namespace {
@@ -6631,6 +6647,8 @@ TEST_F(CompilerPipelineTest, TargetCompilationFusesRoutingSwaps) {
           llvm::cantFail(Capability::create("measure", 1, 0)),
           llvm::cantFail(Capability::create("gphase", 0, 1)),
       })));
+  const CompilationOptions options{.seed = 42, .mapping = {.trials = 1}};
+  const TargetEnvironment environment(target, makePayloadSpecification());
   for (size_t basis = 0; basis < 8; ++basis) {
     SCOPED_TRACE(basis);
     auto ownedContext = createCompilerContext();
@@ -6658,8 +6676,12 @@ TEST_F(CompilerPipelineTest, TargetCompilationFusesRoutingSwaps) {
     ASSERT_TRUE(succeeded(expected));
     auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
     ASSERT_TRUE(mlir::succeeded(program));
-    ASSERT_TRUE(mlir::succeeded(program->compileForTarget(
-        TargetEnvironment(target, makePayloadSpecification()))));
+    auto repeated = program->copy();
+    ASSERT_TRUE(
+        mlir::succeeded(program->compileForTarget(environment, options)));
+    ASSERT_TRUE(
+        mlir::succeeded(repeated.compileForTarget(environment, options)));
+    EXPECT_EQ(program->str(), repeated.str());
     ASSERT_TRUE(succeeded(verify(program->module())));
     ASSERT_TRUE(succeeded(qco::verifyLinearity(program->module())));
     size_t entanglers = 0;
@@ -7806,6 +7828,483 @@ TEST_F(CompilerPipelineTest, GateSetSynthesisPreservesOwnedWireOrder) {
   EXPECT_TRUE(succeeded(again.cleanup()));
   EXPECT_EQ(again.inspect().numQubits, 4);
   expectFullUnitaryEqual(expected->module(), again.module(), 4);
+}
+
+TEST_F(CompilerPipelineTest, TargetTwirlingPropagatesAcrossEntryPoints) {
+  using OperationCapability = CompilerTarget::OperationCapability;
+  const auto gates = CompilerTarget::NativeOperations::fromOperations({
+      llvm::cantFail(OperationCapability::create("u", 1, 3)),
+      llvm::cantFail(OperationCapability::create("cx", 2, 0)),
+      llvm::cantFail(OperationCapability::create("gphase", 0, 1)),
+  });
+  for (const StringRef shape :
+       {"gate-set", "static-device", "dynamic-device"}) {
+    SCOPED_TRACE(shape.str());
+    const bool gateSet = shape == "gate-set";
+    const bool staticSites = shape == "static-device";
+    const auto target =
+        gateSet ? llvm::cantFail(CompilerTarget::forGateSet(gates))
+                : llvm::cantFail(CompilerTarget::create(
+                      2, CompilerTarget::Connectivity::allToAll(), gates));
+    const TargetEnvironment environment(target, makePayloadSpecification());
+    auto ownedContext = createCompilerContext();
+    auto moduleOp = QCOProgramBuilder::build(
+        ownedContext.get(), [&](QCOProgramBuilder& builder) {
+          auto q0 = staticSites ? builder.staticQubit(0) : builder.allocQubit();
+          auto q1 = staticSites ? builder.staticQubit(1) : builder.allocQubit();
+          q0 = builder.h(q0);
+          std::tie(q1, q0) = builder.cx(q1, q0);
+          builder.sink(q0);
+          builder.sink(q1);
+          return SmallVector<Value>{};
+        });
+    auto original = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
+    ASSERT_TRUE(succeeded(original));
+    for (const auto seed : {
+             std::optional<uint64_t>{},
+             std::optional<uint64_t>{0},
+             std::optional<uint64_t>{42},
+         }) {
+      SCOPED_TRACE(seed ? std::to_string(*seed) : "omitted");
+      CompilationOptions options;
+      options.seed = seed;
+      options.enablePauliTwirling = true;
+      std::string synthesisResult;
+      for (const bool compile : {false, true}) {
+        SCOPED_TRACE(compile);
+        auto actual = original->copy();
+        ASSERT_TRUE(succeeded(
+            compile ? actual.compileForTarget(environment, options)
+                    : actual.synthesizeForTarget(environment, options)));
+        auto expected = original->copy();
+        auto disabled = options;
+        disabled.enablePauliTwirling = false;
+        ASSERT_TRUE(succeeded(
+            compile ? expected.compileForTarget(environment, disabled)
+                    : expected.synthesizeForTarget(environment, disabled)));
+        EXPECT_NE(actual.str(), expected.str());
+        PassManager manual(expected.module().getContext());
+        manual.addPass(
+            qco::createPauliTwirl2QGates({.seed = options.seed.value_or(42)}));
+        qco::populateTargetNativeSingleQubitLoweringPipeline(manual);
+        auto manualOptions = options;
+        manualOptions.seed.reset();
+        ASSERT_TRUE(succeeded(runWithCompilationOptions(
+            manual, expected.module(), manualOptions, true)));
+        EXPECT_EQ(actual.str(), expected.str());
+        EXPECT_FALSE(actual.module()->hasAttr(COMPILATION_SEED_ATTR));
+        EXPECT_FALSE(expected.module()->hasAttr(COMPILATION_SEED_ATTR));
+        if (compile) {
+          auto wrapped =
+              runDefaultPipeline(original->copy(), ProgramFormat::QCOOptimized,
+                                 environment, options);
+          MQT_ASSERT_SUCCESS(wrapped);
+          EXPECT_EQ(std::get<QCOProgram>(*wrapped).str(), actual.str());
+          auto qc = original->copy().intoQC();
+          ASSERT_TRUE(succeeded(qc));
+          auto typed =
+              runDefaultPipeline(std::move(*qc), ProgramFormat::QCOOptimized,
+                                 environment, options);
+          MQT_ASSERT_SUCCESS(typed);
+          auto& typedQCO = std::get<QCOProgram>(*typed);
+          EXPECT_EQ(typedQCO.str(), actual.str());
+          expectFullUnitaryEqual(original->module(), typedQCO.module(), 2);
+          EXPECT_TRUE(succeeded(qco::verifyLinearity(typedQCO.module())));
+        }
+        EXPECT_TRUE(succeeded(verify(actual.module())));
+        EXPECT_TRUE(succeeded(qco::verifyLinearity(actual.module())));
+        expectFullUnitaryEqual(original->module(), actual.module(), 2);
+        EXPECT_EQ(actual.inspect().numQubits, 2);
+        if (staticSites) {
+          EXPECT_EQ(actual.inspect().staticQubits,
+                    original->inspect().staticQubits);
+        }
+        if (gateSet) {
+          EXPECT_TRUE(actual.inspect().staticQubits.empty());
+          EXPECT_FALSE(actual.module()->hasAttr("mqt.layout"));
+          if (compile) {
+            EXPECT_EQ(actual.str(), synthesisResult);
+          } else {
+            synthesisResult = actual.str();
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest, TargetTwirlingRejectsBypassedCompilation) {
+  constexpr auto source =
+      "OPENQASM 3.0; include \"stdgates.inc\"; qubit[2] q; cx q[0], q[1];";
+  CompilationOptions enabled;
+  enabled.enablePauliTwirling = true;
+  for (const auto output : {
+           ProgramFormat::QCImport,
+           ProgramFormat::QCO,
+           ProgramFormat::QCOOptimized,
+           ProgramFormat::QC,
+       }) {
+    auto rejected = runDefaultPipeline(OpenQASMProgram(source), output,
+                                       "mqt-qco-default", enabled);
+    ASSERT_FALSE(rejected);
+    EXPECT_NE(llvm::toString(rejected.takeError())
+                  .find("Target Pauli twirling requires a target environment"),
+              std::string::npos);
+    auto disabled = runDefaultPipeline(OpenQASMProgram(source), output);
+    MQT_ASSERT_SUCCESS(disabled);
+  }
+  const TargetEnvironment environment(makeUnrestrictedTarget(),
+                                      makePayloadSpecification());
+  for (const auto output : {ProgramFormat::QCImport, ProgramFormat::QCO}) {
+    for (const bool twirling : {false, true}) {
+      SCOPED_TRACE(twirling);
+      auto options = enabled;
+      options.enablePauliTwirling = twirling;
+      auto rejected = runDefaultPipeline(OpenQASMProgram(source), output,
+                                         environment, options);
+      ASSERT_FALSE(rejected);
+      EXPECT_NE(llvm::toString(rejected.takeError())
+                    .find("stop before target compilation"),
+                std::string::npos);
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest, TargetTwirlingCoversRoutingIntroducedEntanglers) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto gates = CompilerTarget::NativeOperations::fromOperations({
+      llvm::cantFail(Capability::create("u", 1, 3)),
+      llvm::cantFail(Capability::create("rzz", 2, 1, {}, std::nullopt,
+                                        std::nullopt, {0.31})),
+      llvm::cantFail(Capability::create("cz", 2, 0)),
+      llvm::cantFail(Capability::create("gphase", 0, 1)),
+  });
+  const auto makeEnvironment = [&](bool routed) {
+    return TargetEnvironment(
+        llvm::cantFail(CompilerTarget::create(
+            3,
+            routed
+                ? CompilerTarget::Connectivity::fromCouplings({{0, 1}, {1, 2}})
+                : CompilerTarget::Connectivity::allToAll(),
+            gates)),
+        makePayloadSpecification());
+  };
+  auto ownedContext = createCompilerContext();
+  auto moduleOp = QCOProgramBuilder::build(
+      ownedContext.get(), [](QCOProgramBuilder& builder) {
+        auto q0 = builder.allocQubit();
+        auto q1 = builder.allocQubit();
+        auto q2 = builder.allocQubit();
+        std::tie(q0, q1) = builder.rzz(0.31, q0, q1);
+        std::tie(q1, q2) = builder.rzz(0.31, q1, q2);
+        std::tie(q2, q0) = builder.rzz(0.31, q2, q0);
+        builder.sink(q0);
+        builder.sink(q1);
+        builder.sink(q2);
+        return SmallVector<Value>{};
+      });
+  auto original = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
+  ASSERT_TRUE(succeeded(original));
+  const auto countControlled = [](ModuleOp moduleOp) {
+    size_t count = 0;
+    moduleOp.walk([&](qco::CtrlOp) { ++count; });
+    return count;
+  };
+  EXPECT_EQ(countControlled(original->module()), 0U);
+  const CompilationOptions disabled{.seed = 42, .mapping = {.trials = 1}};
+  auto allToAll = original->copy();
+  ASSERT_TRUE(
+      succeeded(allToAll.compileForTarget(makeEnvironment(false), disabled)));
+  ASSERT_EQ(countControlled(allToAll.module()), 0U);
+  auto native = original->copy();
+  const auto environment = makeEnvironment(true);
+  ASSERT_TRUE(succeeded(native.compileForTarget(environment, disabled)));
+  ASSERT_GT(countControlled(native.module()), 0U);
+
+  using SiteId = CompilerTarget::SiteId;
+  using EntanglerSites = std::pair<std::string, SmallVector<SiteId, 2>>;
+  const auto captureSequence = [](ModuleOp moduleOp,
+                                  SmallVector<EntanglerSites>& sequence) {
+    auto& body = ::mlir::mqt::getEntryPoint(moduleOp).getFunctionBody();
+    if (!llvm::hasSingleElement(body)) {
+      return failure();
+    }
+    llvm::DenseMap<Value, SiteId> sites;
+    for (Operation& operation : body.front()) {
+      if (auto site = dyn_cast<qco::StaticOp>(operation)) {
+        sites.try_emplace(site.getQubit(), site.getIndex());
+        continue;
+      }
+      auto gate = dyn_cast<qco::UnitaryOpInterface>(operation);
+      if (!gate) {
+        if (!isa<arith::ConstantOp, qco::SinkOp, func::ReturnOp>(operation)) {
+          return failure();
+        }
+        continue;
+      }
+      SmallVector<SiteId, 2> orderedSites;
+      for (auto input : gate.getInputQubits()) {
+        auto found = sites.find(input);
+        if (found == sites.end()) {
+          return failure();
+        }
+        orderedSites.push_back(found->second);
+      }
+      if (gate.isTwoQubit()) {
+        sequence.emplace_back(gate.getBaseSymbol().str(), orderedSites);
+      }
+      for (const auto [index, output] :
+           llvm::enumerate(gate.getOutputQubits())) {
+        sites.try_emplace(output, orderedSites[index]);
+      }
+    }
+    return success();
+  };
+  SmallVector<EntanglerSites> nativeSequence;
+  ASSERT_TRUE(succeeded(captureSequence(native.module(), nativeSequence)));
+  ASSERT_FALSE(nativeSequence.empty());
+
+  auto options = disabled;
+  options.enablePauliTwirling = true;
+  auto actual = original->copy();
+  ASSERT_TRUE(succeeded(actual.compileForTarget(environment, options)));
+  EXPECT_NE(actual.str(), native.str());
+  auto expected = native.copy();
+  PassManager manual(expected.module().getContext());
+  manual.addPass(qco::createPauliTwirl2QGates());
+  qco::populateTargetNativeSingleQubitLoweringPipeline(manual);
+  ASSERT_TRUE(succeeded(
+      runWithCompilationOptions(manual, expected.module(), options, true)));
+  EXPECT_EQ(actual.str(), expected.str());
+  SmallVector<EntanglerSites> actualSequence;
+  ASSERT_TRUE(succeeded(captureSequence(actual.module(), actualSequence)));
+  EXPECT_EQ(nativeSequence, actualSequence);
+  EXPECT_EQ(countControlled(actual.module()), countControlled(native.module()));
+  expectFullUnitaryEqual(native.module(), actual.module(), 3);
+  EXPECT_TRUE(succeeded(verify(actual.module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(actual.module())));
+}
+
+TEST_F(CompilerPipelineTest, TargetTwirlingSurvivesNormalExports) {
+  using Capability = CompilerTarget::OperationCapability;
+  for (const StringRef family : {"cx", "cz", "ecr", "iswap", "none"}) {
+    SCOPED_TRACE(family.str());
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        2, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations({
+            llvm::cantFail(Capability::create("u", 1, 3)),
+            llvm::cantFail(Capability::create(
+                family == "none" ? "cx" : family.str(), 2, 0)),
+            llvm::cantFail(Capability::create("gphase", 0, 1)),
+        })));
+    const TargetEnvironment environment(target, makePayloadSpecification());
+    auto ownedContext = createCompilerContext();
+    auto moduleOp = QCOProgramBuilder::build(
+        ownedContext.get(), [&](QCOProgramBuilder& builder) {
+          builder.gphase(.37);
+          auto q0 = builder.rx(.29, builder.staticQubit(0));
+          auto q1 = builder.ry(.43, builder.staticQubit(1));
+          if (family == "cx") {
+            std::tie(q1, q0) = builder.cx(q1, q0);
+          } else if (family == "cz") {
+            std::tie(q1, q0) = builder.cz(q1, q0);
+          } else if (family == "ecr") {
+            std::tie(q1, q0) = builder.ecr(q1, q0);
+          } else if (family == "iswap") {
+            std::tie(q1, q0) = builder.iswap(q1, q0);
+          }
+          builder.sink(builder.rz(.61, q0));
+          builder.sink(q1);
+          return SmallVector<Value>{};
+        });
+    auto original = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
+    ASSERT_TRUE(succeeded(original));
+    const CompilationOptions options{
+        .seed = 42,
+        .mapping = {.trials = 1},
+        .enablePauliTwirling = true,
+    };
+    auto expected = original->copy();
+    ASSERT_TRUE(succeeded(expected.compileForTarget(environment, options)));
+    TwirlingCheckpoint selected;
+    ASSERT_TRUE(captureTwirlingCheckpoint(expected.module(), selected));
+    ASSERT_EQ(selected.entanglers.size(), family == "none" ? 0U : 1U);
+    for (const auto format : {
+             ProgramFormat::QC,
+             ProgramFormat::OpenQASM3,
+             ProgramFormat::OpenQASM2,
+             ProgramFormat::Jeff,
+         }) {
+      SCOPED_TRACE(static_cast<int>(format));
+      auto output =
+          runDefaultPipeline(original->copy(), format, environment, options);
+      MQT_ASSERT_SUCCESS(output);
+      if (format == ProgramFormat::OpenQASM2) {
+        // Target OpenQASM 2 uses opaque native declarations. Its importer
+        // cannot reconstruct those unitaries, so compare the complete gate
+        // stream against direct export of the verified native checkpoint.
+        auto qc = expected.copy().intoQC();
+        ASSERT_TRUE(succeeded(qc));
+        auto direct = std::move(*qc).intoOpenQASM2(&environment);
+        ASSERT_TRUE(succeeded(direct));
+        EXPECT_EQ(std::get<OpenQASMProgram>(*output).source(),
+                  direct->source());
+        continue;
+      }
+      auto restored = [&]() -> FailureOr<QCOProgram> {
+        if (auto* qc = std::get_if<QCProgram>(&*output)) {
+          return std::move(*qc).intoQCO();
+        }
+        if (auto* jeff = std::get_if<JeffProgram>(&*output)) {
+          auto serialized = JeffProgram::fromBytes(jeff->toBytes());
+          if (!serialized) {
+            llvm::consumeError(serialized.takeError());
+            return failure();
+          }
+          return std::move(*serialized).intoQCO();
+        }
+        auto qc = QCProgram::fromOpenQASMString(
+            std::get<OpenQASMProgram>(*output).source());
+        if (!qc) {
+          llvm::consumeError(qc.takeError());
+          return failure();
+        }
+        return std::move(*qc).intoQCO();
+      }();
+      ASSERT_TRUE(succeeded(restored));
+      if (format == ProgramFormat::Jeff) {
+        // jeff numbers allocated wires in order; this fixture uses compact
+        // static sites 0 and 1 in the same order before serialization.
+        size_t site = 0;
+        auto main = *restored->module().getOps<func::FuncOp>().begin();
+        for (auto allocation :
+             llvm::make_early_inc_range(main.getOps<qco::AllocOp>())) {
+          OpBuilder builder(allocation);
+          auto wire = qco::StaticOp::create(builder, allocation.getLoc(),
+                                            allocation.getType(), site++);
+          allocation.getResult().replaceAllUsesWith(wire.getResult());
+          allocation.erase();
+        }
+        ASSERT_EQ(site, 2U);
+      }
+      TwirlingCheckpoint after;
+      ASSERT_TRUE(captureTwirlingCheckpoint(restored->module(), after));
+      expectLocalSegmentsEquivalent(selected, after);
+      expectFullUnitaryEqual(expected.module(), restored->module(), 2);
+      attachTargetEnvironment(restored->module(), environment);
+      PassManager verifier(restored->module().getContext());
+      verifier.addPass(qco::createVerifyTargetConformance());
+      ASSERT_TRUE(succeeded(verifier.run(restored->module())));
+    }
+    // QIR has no importer. Compare ordered QIS calls, including every constant
+    // parameter and physical wire, against direct conversion of the selected
+    // native realization without QC cleanup or QIR preparation.
+    const auto quantumCalls = [](QIRProgram& program,
+                                 std::vector<std::string>& calls) {
+      bool valid = true;
+      program.module().walk([&](LLVM::CallOp call) {
+        if (!call.getCallee() ||
+            !call.getCallee()->starts_with("__quantum__qis__")) {
+          return;
+        }
+        std::string signature;
+        llvm::raw_string_ostream stream(signature);
+        stream << *call.getCallee();
+        for (auto operand : call.getOperands()) {
+          stream << " ";
+          if (auto pointer = operand.getDefiningOp<LLVM::IntToPtrOp>()) {
+            operand = pointer.getArg();
+          }
+          if (auto constant = operand.getDefiningOp<LLVM::ConstantOp>()) {
+            stream << constant.getValue();
+          } else if (operand.getDefiningOp<LLVM::ZeroOp>()) {
+            stream << "0 : i64";
+          } else {
+            valid = false;
+          }
+        }
+        calls.push_back(std::move(signature));
+      });
+      return valid;
+    };
+    for (const auto format :
+         {ProgramFormat::QIRBase, ProgramFormat::QIRAdaptive}) {
+      SCOPED_TRACE(static_cast<int>(format));
+      auto output =
+          runDefaultPipeline(original->copy(), format, environment, options);
+      MQT_ASSERT_SUCCESS(output);
+      auto directQC = expected.copy().intoQC();
+      ASSERT_TRUE(succeeded(directQC));
+      auto direct = std::move(*directQC).intoQIR(
+          format == ProgramFormat::QIRBase ? QIRProfile::Base
+                                           : QIRProfile::Adaptive,
+          &environment);
+      ASSERT_TRUE(succeeded(direct));
+      ASSERT_TRUE(succeeded(direct->cleanup()));
+      auto& actual = std::get<QIRProgram>(*output);
+      std::vector<std::string> expectedCalls;
+      std::vector<std::string> actualCalls;
+      ASSERT_TRUE(quantumCalls(*direct, expectedCalls));
+      ASSERT_TRUE(quantumCalls(actual, actualCalls));
+      ASSERT_FALSE(expectedCalls.empty());
+      EXPECT_EQ(actualCalls, expectedCalls);
+      EXPECT_TRUE(succeeded(std::move(actual).intoLLVMIR()));
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest, InvalidTargetTwirlingFailsWithoutPayload) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("cz", 2, 0)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      })));
+  const TargetEnvironment environment(target, makePayloadSpecification());
+  const auto makeInput = [] {
+    auto context = createCompilerContext();
+    auto moduleOp =
+        QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
+          auto [q0, q1] =
+              builder.cz(builder.staticQubit(0), builder.staticQubit(1));
+          builder.sink(q0);
+          builder.sink(q1);
+          return SmallVector<Value>{};
+        });
+    return QCOProgram::fromModule(context, std::move(moduleOp));
+  };
+  for (const auto format : {
+           ProgramFormat::QCOOptimized,
+           ProgramFormat::QC,
+           ProgramFormat::OpenQASM3,
+           ProgramFormat::Jeff,
+           ProgramFormat::QIRBase,
+       }) {
+    SCOPED_TRACE(static_cast<int>(format));
+    auto input = makeInput();
+    ASSERT_TRUE(succeeded(input));
+    auto rejected =
+        runDefaultPipeline(input->copy(), format, environment,
+                           {.seed = 42, .enablePauliTwirling = true});
+    ASSERT_FALSE(rejected);
+    const auto diagnostics = llvm::toString(rejected.takeError());
+    EXPECT_NE(
+        diagnostics.find(
+            "no site supports the operations required for qubit placement"),
+        std::string::npos);
+    EXPECT_FALSE(input->module()->hasAttr(COMPILATION_SEED_ATTR));
+    EXPECT_FALSE(input->module()->hasAttr(::mlir::mqt::TargetEnvAttr::name));
+    const TargetEnvironment supported(
+        llvm::cantFail(CompilerTarget::create(
+            2, CompilerTarget::Connectivity::allToAll(),
+            CompilerTarget::NativeOperations::unrestricted())),
+        makePayloadSpecification());
+    auto recovered =
+        runDefaultPipeline(input->copy(), format, supported,
+                           {.seed = 0, .enablePauliTwirling = true});
+    MQT_ASSERT_SUCCESS(recovered);
+  }
 }
 
 } // namespace mqt::test::compiler

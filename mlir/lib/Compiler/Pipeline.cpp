@@ -522,7 +522,8 @@ LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
           mod(),
           [&](OpPassManager& pm) {
             populateTargetCompilationPipeline(pm, *compilationEnvironment,
-                                              options.mapping);
+                                              options.mapping,
+                                              options.enablePauliTwirling);
           },
           "failed to compile the QCO program for the target", options, true))) {
     return failure();
@@ -537,7 +538,8 @@ QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
   return runQCOTransformPasses(
       mod(),
       [&environment, &options](OpPassManager& pm) {
-        populateTargetSynthesisPipeline(pm, environment, options.mapping);
+        populateTargetSynthesisPipeline(pm, environment, options.mapping,
+                                        options.enablePauliTwirling);
       },
       "failed to synthesize the QCO program for the target", options, true);
 }
@@ -898,6 +900,11 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
                   const TargetEnvironment* environment,
                   std::string_view qcoPipeline,
                   const CompilationOptions& options) {
+  if (options.enablePauliTwirling && environment == nullptr) {
+    return createStringError(
+        std::errc::invalid_argument,
+        "Target Pauli twirling requires a target environment");
+  }
   if (output == ProgramFormat::IQMJSON &&
       (environment == nullptr ||
        !environment->target().hasDeviceConstraints() ||

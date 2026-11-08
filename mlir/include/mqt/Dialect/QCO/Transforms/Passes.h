@@ -61,9 +61,19 @@ createFuseTwoQubitGates(const CompilerTarget& target);
 createDecomposeMultiControlled(const CompilerTarget& target,
                                uint64_t minQubits = 3);
 
+/// Lower single-qubit corrections and verify final target support.
+///
+/// Requires a valid target environment and placed qubits for device targets.
+/// Multi-qubit operations remain unchanged and must already be native.
+void populateTargetNativeSingleQubitLoweringPipeline(OpPassManager& pm);
+
 /// Normalize placed QCO, synthesize native gates, and verify target support.
 ///
-/// Requires a valid target environment and placed qubits.
-void populateTargetNativeSynthesisPipeline(OpPassManager& pm);
+/// Requires a valid target environment and placed qubits. When enabled, Pauli
+/// twirling follows native synthesis; restricted single-qubit lowering
+/// preserves the twirled entangler sequence before final conformance
+/// verification.
+void populateTargetNativeSynthesisPipeline(OpPassManager& pm,
+                                           bool enablePauliTwirling = false);
 
 } // namespace mlir::qco
