@@ -480,7 +480,7 @@ cx q[0], q[1];
 c = measure q;
 """
 
-    job = ddsim_device.submit_job(qasm3_program + "\0", ProgramFormat.QASM3, num_shots=100)
+    job = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
 
     # Job should have a non-empty ID
     assert len(job.id) > 0
