@@ -4169,7 +4169,8 @@ TEST_F(MappingPassFixture, PreserveCoherenceAcrossRoutedRegionResults) {
     for (size_t i = 0; i < 4; ++i) {
       qubits.push_back(builder.allocQubit());
     }
-    auto spectator = builder.allocQubit();
+    auto spectator = builder.h(builder.allocQubit());
+    std::tie(spectator, qubits[0]) = builder.cx(spectator, qubits[0]);
     // Prepare a phased GHZ state, or undo it. A line must route this star.
     const auto transform = [&](MutableArrayRef<Value> values, bool inverse) {
       if (!inverse) {
@@ -4224,6 +4225,8 @@ TEST_F(MappingPassFixture, PreserveCoherenceAcrossRoutedRegionResults) {
         builder.qcoIf(true, spectator, [&](Value q) { return builder.h(q); });
     spectator = builder.h(spectator);
     transform(qubits, true);
+    std::tie(spectator, qubits[0]) = builder.cx(spectator, qubits[0]);
+    spectator = builder.h(spectator);
     qubits.push_back(spectator);
     for (auto [index, qubit] : llvm::enumerate(qubits)) {
       auto measured = builder.measure(qubit, bits, static_cast<int64_t>(index));
@@ -4232,7 +4235,12 @@ TEST_F(MappingPassFixture, PreserveCoherenceAcrossRoutedRegionResults) {
     auto input = builder.finalize(bits);
     ASSERT_TRUE(succeeded(verify(*input)));
     ASSERT_TRUE(succeeded(verifyLinearity(*input)));
-    for (const auto& target : {topology, withNativeBasis(topology, "cz")}) {
+    for (const auto& target : {
+             topology,
+             withNativeBasis(topology, "cz"),
+             getSquareGridTarget(3),
+             withNativeBasis(getSquareGridTarget(3), "cz"),
+         }) {
       for (size_t seed : {7U, 99U}) {
         for (size_t budget : {size_t{0}, size_t{1024} * 1024}) {
           std::string serial;

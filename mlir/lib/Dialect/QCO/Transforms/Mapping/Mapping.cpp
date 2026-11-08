@@ -576,6 +576,7 @@ private:
   struct Environment {
     const CompilerTarget& target;
     uint64_t seed;
+    QubitIndex numProgramQubits;
     std::unique_ptr<const NativeCostTable> nativeCosts;
     std::optional<size_t> nativeSwapCost;
     DenseSet<Operation*> routingMeasurements;
@@ -680,7 +681,10 @@ private:
 
   /// Describes a node in the A* search graph.
   struct Node {
-    Layout<QubitIndex> layout;
+    /// Positions of all original program qubits, including idle spectators.
+    SmallVector<QubitIndex> programToHardware;
+    /// Complete token permutation, including unused-site labels.
+    SmallVector<QubitIndex> hardwareToProgram;
     QubitIndexPair swap;
     Node* parent = nullptr;
     int64_t cost = 0;
@@ -688,24 +692,41 @@ private:
     float f = 0;
 
     /// Reuse layout capacity when starting a new search.
-    void initializeRoot(const Layout<QubitIndex>& initialLayout) {
-      layout = initialLayout;
+    void initializeRoot(const Layout<QubitIndex>& initialLayout,
+                        QubitIndex programQubits) {
+      auto mapping = initialLayout.getProgramToHardware();
+      programToHardware.assign(mapping.begin(),
+                               mapping.begin() + programQubits);
+      hardwareToProgram.resize(initialLayout.nHardwareQubits());
+      layoutHash = 0;
+      for (size_t hardware = 0; hardware < hardwareToProgram.size();
+           ++hardware) {
+        const auto program = initialLayout.getProgramIndex(hardware);
+        hardwareToProgram[hardware] = program;
+        layoutHash ^= hashEntry(program, static_cast<QubitIndex>(hardware));
+      }
       swap = {};
       parent = nullptr;
-      layoutHash = hashLayout(layout);
       cost = 0;
       f = 0;
     }
 
     /// Initialize a child from its parent while reusing layout capacity.
     void initializeChild(Node* nextParent, const SwapCandidate& candidate) {
-      layout = nextParent->layout;
+      programToHardware = nextParent->programToHardware;
+      hardwareToProgram = nextParent->hardwareToProgram;
       const auto [a, b] = candidate.indices;
-      const auto pa = layout.getProgramIndex(a);
-      const auto pb = layout.getProgramIndex(b);
+      const auto pa = hardwareToProgram[a];
+      const auto pb = hardwareToProgram[b];
       layoutHash = nextParent->layoutHash ^ hashEntry(pa, a) ^
                    hashEntry(pb, b) ^ hashEntry(pa, b) ^ hashEntry(pb, a);
-      layout.swap(a, b);
+      std::swap(hardwareToProgram[a], hardwareToProgram[b]);
+      if (pa < programToHardware.size()) {
+        programToHardware[pa] = b;
+      }
+      if (pb < programToHardware.size()) {
+        programToHardware[pb] = a;
+      }
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
              candidate.prefix;
       swap = candidate.indices;
@@ -723,8 +744,8 @@ private:
     /// Return whether the leading interaction is executable.
     [[nodiscard]] bool isGoal(const QubitIndexPair& front,
                               const CompilerTarget& target) const {
-      const auto [hw0, hw1] =
-          layout.getHardwareIndices(front.first, front.second);
+      const auto hw0 = programToHardware[front.first];
+      const auto hw1 = programToHardware[front.second];
       return target.areAdjacent(hw0, hw1);
     }
 
@@ -746,15 +767,6 @@ private:
       return llvm::hash_value((uint64_t{program} << 32U) | hardware);
     }
 
-    static size_t hashLayout(const Layout<QubitIndex>& layout) {
-      size_t hash = 0;
-      for (auto [program, hardware] :
-           enumerate(layout.getProgramToHardware())) {
-        hash ^= hashEntry(static_cast<QubitIndex>(program), hardware);
-      }
-      return hash;
-    }
-
     /// Calculate the heuristic cost for the A* search algorithm.
     ///
     /// Sum the distance-based SWAP estimates for the window's interactions,
@@ -767,7 +779,8 @@ private:
 
       for (const auto& progs : window) {
         const auto [prog0, prog1] = progs;
-        const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
+        const auto hw0 = programToHardware[prog0];
+        const auto hw1 = programToHardware[prog1];
         const size_t nswaps = distances(hw0, hw1) - 1;
         costs += decay * static_cast<float>(nswaps);
         decay *= params.lambda;
@@ -831,8 +844,7 @@ private:
           return true;
         }
         return lhs->layoutHash == rhs->layoutHash &&
-               lhs->layout.getProgramToHardware() ==
-                   rhs->layout.getProgramToHardware();
+               lhs->hardwareToProgram == rhs->hardwareToProgram;
       }
     };
 
@@ -853,7 +865,8 @@ private:
     ///    `searchMemoryLimit / (sizeof(Node) + 2 * nsites *
     ///    sizeof(QubitIndex))`
     ///
-    /// where the final summand accounts for the Node's layout member.
+    /// The full-layout allowance keeps the search-node limit independent of
+    /// compact layout storage, so storage changes do not change routing.
     explicit Arena(size_t nsites, size_t searchMemoryLimit)
         : budget(std::max<size_t>(
               1, searchMemoryLimit /
@@ -1086,6 +1099,7 @@ protected:
     Environment env{
         .target = target,
         .seed = compilationSeed(moduleOp, seed),
+        .numProgramQubits = static_cast<QubitIndex>(computation->wires.size()),
         .routingMeasurements = findRoutingMeasurements(func),
     };
     const auto [layout, expectedScore] =
@@ -1613,7 +1627,7 @@ private:
     Node* root = arena.allocate();
     assert(root != nullptr && "expected root allocation to succeed");
 
-    root->initializeRoot(state.layout);
+    root->initializeRoot(state.layout, env.numProgramQubits);
     if (root->isGoal(window.front(), env.target)) {
       return SmallVector<QubitIndexPair>{};
     }
@@ -1636,7 +1650,7 @@ private:
 
       llvm::SmallDenseSet<QubitIndexPair, 8> seen;
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
-        const auto hw0 = curr->layout.getHardwareIndex(prog);
+        const auto hw0 = curr->programToHardware[prog];
         env.target.forEachNeighbour(hw0, [&](const QubitIndex hw1) {
           const QubitIndexPair indices(std::minmax(hw0, hw1));
           if (seen.contains(indices)) {
