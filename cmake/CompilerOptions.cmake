@@ -59,7 +59,8 @@ function(enable_project_options target_name)
     target_compile_options(
       ${target_name}
       INTERFACE
-        "$<$<CONFIG:DEBUG>:-fno-omit-frame-pointer;-fno-optimize-sibling-calls;-fno-inline-functions>")
+        "$<$<CONFIG:DEBUG>:-fno-omit-frame-pointer;-fno-optimize-sibling-calls;-fno-inline-functions>"
+    )
   endif()
 
   option(BINDINGS "Configure for building Python bindings")

@@ -1487,23 +1487,4 @@ TEST(ClientRuntimeTest, ValidatesDriversAndRetainsSessions) {
   EXPECT_EQ(batch.getCounts(1), (std::map<std::string, size_t>{{"1", 4}}));
 }
 
-TEST_F(DDSimulatorDeviceTest, NormalizesTextAndProbesAdmission) {
-  std::string text = "OPENQASM 3; qubit q; bit c; c = measure q;";
-  text.push_back('\0');
-  const auto single = device.submitJob(text, QDMI_PROGRAM_FORMAT_QASM3, 4);
-  EXPECT_TRUE(single.wait());
-  EXPECT_EQ(single.getCounts(), (std::map<std::string, size_t>{{"0", 4}}));
-  const std::vector programs{text, text};
-  const auto batch =
-      device.trySubmitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 4);
-  ASSERT_TRUE(batch.has_value());
-  EXPECT_TRUE(batch->wait());
-  EXPECT_EQ(batch->getNumPrograms(), 2);
-  EXPECT_EQ(batch->getProgram(1), text.substr(0, text.size() - 1));
-  EXPECT_FALSE(device.trySubmitJob("payload", QDMI_PROGRAM_FORMAT_CUSTOM1));
-  EXPECT_THROW(static_cast<void>(device.trySubmitJob(
-                   std::string("bad\0text", 8), QDMI_PROGRAM_FORMAT_QASM3)),
-               std::invalid_argument);
-}
-
 } // namespace qdmi

@@ -10,19 +10,18 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+## [3.12.0] - 2026-11-08
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3120)._
+
 ### Added
 
-- ✨ Select compatible QDMI driver libraries through owning C++ and Python
-  sessions, with ABI checks and stable device discovery ([#2952])
-  ([**@burgholzer**], [**@denialhaag**], [**@ystade**])
-- ✨ Submit ordered QDMI program lists with indexed programs, status, and
-  results in C++ and Python. Qiskit and PennyLane group compatible programs into
-  native jobs and fall back to single-program jobs when needed. DDSIM executes
-  batches serially and preserves successful results when other programs fail or
-  are cancelled ([#2952]) ([**@burgholzer**], [**@denialhaag**])
+- ✨ Add QDMI driver selection and batch jobs with indexed status and results in
+  C++ and Python, including native batch submission from Qiskit and PennyLane
+  ([#2952]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add normalized Frobenius comparisons for DD identity and measured-output
-  diagonal blocks with conservative early rejection, and use complex distance
-  for structural ancillary checks ([#2942]) ([**@burgholzer**])
+  diagonal blocks, and tighten structural ancillary checks ([#2942])
+  ([**@burgholzer**])
 
 ### Changed
 
@@ -31,9 +30,9 @@ releases may include breaking changes.
 - ⬆️ Update QDMI to 1.4.0 with the new job ABI and stable device IDs, and remove
   obsolete calibration APIs and program formats ([#2952]) ([**@burgholzer**],
   [**@denialhaag**])
-- 💥 Rename C++ `dd::export2Dot` to `dd::exportToDot` and propagate DD
-  allocation and table-index errors through exceptions instead of terminating
-  ([#2826], [#2814]) ([**@burgholzer**], [**@denialhaag**])
+- 💥 Rename C++ `dd::export2Dot` to `dd::exportToDot` and report DD allocation
+  and table-index errors through exceptions ([#2826], [#2814])
+  ([**@burgholzer**], [**@denialhaag**])
 - ⚡ Prefetch the next reusable DD entry during allocation ([#2826], [#2831])
   ([**@burgholzer**], [**@denialhaag**])
 - ♻️ Defer selected Python imports until first use on Python 3.15 ([#2760])
@@ -41,21 +40,19 @@ releases may include breaking changes.
 
 ### Fixed
 
-- 🐛 Preserve imaginary DD weights, reject invalid or truncated serialized DDs,
-  and report file-write failures ([#2969], [#2854], [#2734], [#2731])
-  ([**@burgholzer**], [**@denialhaag**])
-- 🐛 Validate DD allocation sizes and measurement-fidelity indices, and handle
-  zero-qubit fidelity queries ([#2969], [#2841], [#2734]) ([**@burgholzer**],
+- 🐛 Preserve imaginary DD weights, reject malformed serialized DDs, and report
+  file-write failures ([#2969], [#2854], [#2734], [#2731]) ([**@burgholzer**],
   [**@denialhaag**])
+- 🐛 Reject invalid DD allocation sizes and measurement-fidelity indices, and
+  handle zero-qubit fidelity queries ([#2969], [#2841], [#2734])
+  ([**@burgholzer**], [**@denialhaag**])
 - 🐛 Ship one copy of each shared library in Linux and macOS wheels while
   retaining the ABI-versioned library names ([#2923]) ([**@burgholzer**])
-- 🐛 Keep DD states and permutation mappings valid when allocation fails during
-  global-phase or permutation updates ([#2826]) ([**@denialhaag**])
+- 🐛 Preserve DD states, permutation mappings, and memory-manager state on
+  allocation failure, and roll back incomplete unique-table growth ([#2826],
+  [#2814]) ([**@burgholzer**], [**@denialhaag**])
 - 🐛 Reject DD extraction widths, dimensions, and output vectors that cannot
   represent the requested result ([#2826], [#2814]) ([**@burgholzer**],
-  [**@denialhaag**])
-- 🐛 Preserve memory-manager state on failed reset allocation and roll back
-  incomplete unique-table growth ([#2826], [#2814]) ([**@burgholzer**],
   [**@denialhaag**])
 - 🐛 Avoid counting edges twice in DD active and peak memory estimates ([#2826],
   [#2814]) ([**@burgholzer**], [**@denialhaag**])
@@ -928,7 +925,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.11.0...v3.x
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.12.0...v3.x
+[3.12.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.12.0
 [3.11.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.11.0
 [3.10.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.1
 [3.10.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.0

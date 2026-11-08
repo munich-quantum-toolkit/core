@@ -22,7 +22,9 @@ if(NOT TARGET MQT::CoreIR)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-ir
     PUBLIC
-    FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${IR_HEADERS})
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+      FILES ${IR_HEADERS})
 
   # generate export header
   include(GenerateExportHeader)

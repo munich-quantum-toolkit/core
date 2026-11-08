@@ -21,7 +21,9 @@ if(NOT TARGET MQT::CoreQASM)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-qasm
     PUBLIC
-    FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${QASM_HEADERS})
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+      FILES ${QASM_HEADERS})
 
   # add link libraries
   target_link_libraries(${MQT_CORE_TARGET_NAME}-qasm PUBLIC MQT::CoreIR)
