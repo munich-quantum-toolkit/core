@@ -66,11 +66,22 @@ protected:
       signalPassFailure();
       return;
     }
-    RewritePatternSet comparisons(&getContext());
-    cbit::populateRegisterComparisonPatterns(comparisons,
-                                             /*forPromotion=*/true);
-    if (failed(applyPatternsGreedily(getOperation(), std::move(comparisons))) ||
-        failed(runPipeline(pipeline_, getOperation()))) {
+    // Only wide snapshots need comparison lowering before promotion.
+    const auto wideRead = getOperation().walk([](cbit::ReadOp read) {
+      return read.getType().getWidth() > 64 ? WalkResult::interrupt()
+                                            : WalkResult::advance();
+    });
+    if (wideRead.wasInterrupted()) {
+      RewritePatternSet comparisons(&getContext());
+      cbit::populateRegisterComparisonPatterns(comparisons,
+                                               /*forPromotion=*/true);
+      if (failed(
+              applyPatternsGreedily(getOperation(), std::move(comparisons)))) {
+        signalPassFailure();
+        return;
+      }
+    }
+    if (failed(runPipeline(pipeline_, getOperation()))) {
       signalPassFailure();
     }
   }

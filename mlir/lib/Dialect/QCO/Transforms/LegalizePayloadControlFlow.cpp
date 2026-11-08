@@ -406,11 +406,16 @@ protected:
         signalPassFailure();
         return;
       }
-      RewritePatternSet patterns(&getContext());
-      patterns.add<UpliftStaticWhile>(&getContext(), *support);
-      if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
-        signalPassFailure();
-        return;
+      const auto whileLoop = getOperation().walk(
+          [](scf::WhileOp) { return WalkResult::interrupt(); });
+      if (whileLoop.wasInterrupted()) {
+        RewritePatternSet patterns(&getContext());
+        patterns.add<UpliftStaticWhile>(&getContext(), *support);
+        if (failed(
+                applyPatternsGreedily(getOperation(), std::move(patterns)))) {
+          signalPassFailure();
+          return;
+        }
       }
       SmallVector<std::pair<scf::ForOp, llvm::APInt>> loops;
       SmallVector<scf::ForOp> repetitions;
