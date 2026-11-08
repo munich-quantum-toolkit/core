@@ -91,6 +91,12 @@ static constexpr std::array K_ANCILLA_ANGLES = {
     2 * std::numbers::pi,
     -2 * std::numbers::pi,
 };
+static constexpr std::array K_TWO_QUBIT_ROTATIONS = {
+    std::tuple{"rxx", &QCOProgramBuilder::rxx, &RXXOp::unitaryMatrix},
+    std::tuple{"ryy", &QCOProgramBuilder::ryy, &RYYOp::unitaryMatrix},
+    std::tuple{"rzx", &QCOProgramBuilder::rzx, &RZXOp::unitaryMatrix},
+    std::tuple{"rzz", &QCOProgramBuilder::rzz, &RZZOp::unitaryMatrix},
+};
 /// Additional fully-lowered/CX checks across the SP22/HP24 crossover.
 ///
 /// Selected widths also receive coherent DD coverage above.
@@ -937,7 +943,7 @@ TEST_P(AncillaAngleTest, CleanAncillaWithBorrowedResidualControls) {
     SCOPED_TRACE(k);
     auto moduleOp =
         QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
-          auto reg = b.allocQubitRegister(static_cast<int64_t>(k + 2));
+          auto reg = b.allocQubitRegister(static_cast<int64_t>(k) + 2);
           b.ctrl(ValueRange(reg.qubits).take_front(k), reg[k],
                  [&](Value target) {
                    return applyAncillaAngleGate(b, family,
@@ -1954,12 +1960,123 @@ TEST_F(MultiControlledDecompositionTest, ControlledSwapRespectsMinQubits) {
   }
 }
 
+TEST_F(MultiControlledDecompositionTest,
+       ControlledPauliRotationsPreserveRuntimeAngles) {
+  for (const auto& [name, emitRotation, matrix] : K_TWO_QUBIT_ROTATIONS) {
+    SCOPED_TRACE(name);
+    for (const size_t numControls : {1U, 2U, 4U}) {
+      SCOPED_TRACE(numControls);
+      Value parameter;
+      OwningOpRef<ModuleOp> moduleOp =
+          QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& builder) {
+            parameter = builder.floatConstant(0.73);
+            SmallVector<Value> controls;
+            for (size_t i = numControls; i > 0; --i) {
+              controls.push_back(builder.staticQubit(i));
+            }
+            SmallVector<Value> targets{
+                builder.staticQubit(numControls + 1),
+                builder.staticQubit(0),
+            };
+            builder.ctrl(controls, targets, [&](ValueRange args) {
+              Value angle = arith::NegFOp::create(builder, parameter);
+              auto [first, second] =
+                  (builder.*emitRotation)(angle, args[1], args[0]);
+              return SmallVector<Value>{second, first};
+            });
+            return SmallVector<Value>{};
+          });
+      ASSERT_TRUE(moduleOp);
+      auto funcOp = *moduleOp->getOps<func::FuncOp>().begin();
+      ASSERT_TRUE(succeeded(funcOp.insertArgument(
+          0, Float64Type::get(context()), {}, funcOp.getLoc())));
+      parameter.replaceAllUsesWith(funcOp.getArgument(0));
+      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(*moduleOp)));
+      expectFullyDecomposed(funcOp);
+      auto package = llvm::cantFail(dd::Package::create(numControls + 2));
+      dd::Controls controls;
+      for (size_t i = 1; i <= numControls; ++i) {
+        controls.emplace(static_cast<dd::Qubit>(i));
+      }
+      for (const double theta : K_ANCILLA_ANGLES) {
+        SCOPED_TRACE(theta);
+        const DDArgumentBindings bindings{
+            {
+                funcOp.getArgument(0),
+                FloatAttr::get(Float64Type::get(context()), theta),
+            },
+        };
+        const auto actual = buildFunctionality(funcOp, *package, bindings);
+        ASSERT_TRUE(succeeded(actual));
+        const auto expected = llvm::cantFail(
+            makeGateDD(*package, DynamicMatrix{matrix(-theta)},
+                       {0, static_cast<dd::Qubit>(numControls + 1)}, controls));
+        EXPECT_EQ(*actual, expected);
+        package->decRef(*actual);
+      }
+    }
+  }
+}
+
+TEST_F(MultiControlledDecompositionTest,
+       ControlledPauliRotationsRespectNativeTargetAndMinQubits) {
+  for (const auto& [name, emitRotation, matrix] : K_TWO_QUBIT_ROTATIONS) {
+    SCOPED_TRACE(name);
+    using Capability = CompilerTarget::OperationCapability;
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        3, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations({
+            llvm::cantFail(
+                Capability::create(name, Capability::Arity::variadic(3), 1)),
+        })));
+    for (const StringRef mode : {"width", "target", "lowered"}) {
+      SCOPED_TRACE(mode.str());
+      OwningOpRef<ModuleOp> moduleOp =
+          QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& builder) {
+            Value control = builder.staticQubit(2);
+            SmallVector<Value> targets{
+                builder.staticQubit(0),
+                builder.staticQubit(1),
+            };
+            builder.ctrl(ValueRange{control}, targets, [&](ValueRange args) {
+              auto [first, second] =
+                  (builder.*emitRotation)(0.73, args[0], args[1]);
+              return SmallVector<Value>{first, second};
+            });
+            return SmallVector<Value>{};
+          });
+      ASSERT_TRUE(moduleOp);
+      DecomposeMultiControlledOptions options;
+      options.minQubits = mode == "width" ? 4 : 3;
+      PassManager pm(context());
+      pm.addPass(mode == "target" ? createDecomposeMultiControlled(target)
+                                  : createDecomposeMultiControlled(options));
+      ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+      ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+      size_t rotations = 0;
+      moduleOp->walk([&](UnitaryOpInterface op) {
+        rotations += op.getBaseSymbol() == name;
+      });
+      EXPECT_EQ(rotations, mode == "lowered" ? 0U : 1U);
+      auto package = llvm::cantFail(dd::Package::create(3));
+      const auto actual = buildFunctionality(
+          *moduleOp->getOps<func::FuncOp>().begin(), *package);
+      ASSERT_TRUE(succeeded(actual));
+      const auto expected =
+          llvm::cantFail(makeGateDD(*package, DynamicMatrix{matrix(0.73)},
+                                    {0, 1}, dd::Controls{dd::Control{2}}));
+      EXPECT_EQ(*actual, expected);
+      package->decRef(*actual);
+    }
+  }
+}
+
 TEST_F(MultiControlledDecompositionTest, LeavesUnsupportedCtrlUntouched) {
   auto moduleOp =
       QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
         builder.mch({builder.staticQubit(0), builder.staticQubit(1)},
                     builder.staticQubit(2));
-        // Two-target non-SWAP body: passes min-qubits but is not lowered.
+        // This two-target body passes min-qubits but is not lowered.
         std::ignore =
             builder.cdcx(builder.staticQubit(3), builder.staticQubit(4),
                          builder.staticQubit(5));
