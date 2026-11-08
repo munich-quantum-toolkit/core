@@ -60,28 +60,9 @@ topology, and payload capabilities. IQM JSON also checks site names. Changes to
 calibration values alone do not invalidate a compiled program. Raw payloads can
 be submitted with `device.submit_job`.
 
-QDMI target snapshots omit the unsupported IQM dynamic primitives `cc_prx` and
-`measure_ff`. Native GPI/GPI2 capabilities use fixed-angle R semantics
-internally and export as one-parameter OpenQASM pulses with their phase
-correction.
-
-Target compilation places qubits only on sites with a supported single-qubit
-gate. If the target supports measurement, these sites must also support readout.
-With explicit couplings, it uses their largest connected component, including
-connections through resonators. Targets with ordered `move(qubit, resonator)`
-placements can route CZ gates through idle resonators. MQT Core emits closed
-`move; cz; move` sandwiches before readout. Use
-`compile_program(circuit, target=device)` with `submit_program`,
-`backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.
-Qiskit `transpile` does not support these targets. Native circuits that already
-contain MOVE use `serialize_program` instead. QCO and Jeff compiler checkpoints
-retain virtual CZs. Conversion to QC expands them using the attached execution
-target, including after custom target stages. Native serialization consumes the
-result without routing.
-
-IQM execution requires its default
-[full MOVE frame tracking](https://docs.iqm.tech/iqm-client/api/iqm.iqm_client.models.CircuitCompilationOptions.html)
-to correct MOVE frames.
+See [placement and routing](#placement-and-routing) for site eligibility and
+[resonator-mediated compilation](#resonator-mediated-compilation) for MOVE
+routing on supported devices.
 
 ### Unused qubits
 
@@ -219,10 +200,31 @@ conformance checks each emitted operation at its assigned sites. Neutral-atom
 zone models are not supported. The bundled SC snapshots are compilation models,
 not executing devices; see {doc}`../qdmi/sc_device`.
 
+QDMI target snapshots omit the unsupported IQM dynamic primitives `cc_prx` and
+`measure_ff`. Native GPI/GPI2 capabilities use fixed-angle R semantics
+internally and export as one-parameter OpenQASM pulses with their phase
+correction.
+
 Use `CompilerTarget.SiteTuple` to attach duration or fidelity to a placement;
 plain tuples represent placements without calibration. Routing uses undirected
 adjacency, and synthesis checks the supported operand directions on each site.
 Branch exits and loop backedges must retain compatible physical sites.
+
+### Placement and routing
+
+Placement assigns each {term}`program qubit` to a target site. The
+{py:attr}`~mqt.core.mlir.CompilerTarget.placeable_sites` property lists
+candidate sites: each must support a compiler-recognized single-qubit gate with
+the expected parameter count. If the target advertises measurement, each
+candidate must also support readout. Reset and barriers alone do not make a site
+placeable. Targets with unrestricted native-operation support allow every site.
+
+A {term}`placeable site` need not support every operation in the circuit or be
+connected to every other candidate. Target preparation can narrow this set to a
+connected subset; synthesis and target-conformance checks enforce the required
+gate support. When excluding sites from an explicit topology, preparation keeps
+the largest connected component, including any
+[virtual resonator connections](#resonator-mediated-compilation).
 
 Mapping runs multiple initial-layout trials. Set `MappingOptions.trials` and
 `CompilationOptions.seed` for reproducible choices. Each trial retains the
@@ -371,6 +373,41 @@ behavior fails compilation. See `legalize-control-flow` and
 `unroll-loops-for-payload` in {doc}`QCO`, and
 {py:class}`~mqt.core.mlir.ProgramCapability` /
 {py:class}`~mqt.core.mlir.ProgramConstraint` for explicit restrictions.
+
+## Resonator-mediated compilation
+
+A {term}`computational resonator` can store a device qubit's state temporarily
+and mediate gates between device qubits. Supported IQM devices expose an ordered
+`move(qubit, resonator)` operation to transfer the state into the resonator and
+back. The resonator is a target site, but it is excluded from program-qubit
+placement because it lacks the required single-qubit gates and readout.
+
+Target preparation combines native MOVE and CZ placements to expose virtual CZ
+connections between placeable sites. For example, `move(a, r)` and `cz(r, b)`
+permit a virtual `cz(a, b)` through an idle resonator `r`. Conversion to QC
+expands that virtual gate into a closed sequence:
+
+```text
+move(a, r); cz(r, b); move(a, r)
+```
+
+The native CZ operand order follows the target's advertised placement. Each
+sequence returns the transferred state to its device qubit, and terminal readout
+follows the MOVE sequences. The `mqt-lower-resonator-cz` module pass performs
+this expansion using the attached execution target. It rewrites CZs on static
+sites with a matching MOVE route and leaves directly supported CZs unchanged.
+Conversion to QC runs it automatically, including after custom target stages.
+QCO and jeff compiler checkpoints retain virtual CZs. Without a target, the pass
+leaves the module unchanged; an invalid target environment fails the pass.
+
+Use `compile_program(circuit, target=device)` with `submit_program`,
+`backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.
+Qiskit `transpile` does not support these targets. Native circuits that already
+contain MOVE use `serialize_program`; native serialization does not route. See
+[IQM JSON circuits](#iqm-json-circuits) for the serialization contract. IQM
+execution requires its default
+[full MOVE frame tracking](https://docs.iqm.tech/iqm-client/api/iqm.iqm_client.models.CircuitCompilationOptions.html)
+to correct MOVE frames.
 
 ## IQM JSON circuits
 

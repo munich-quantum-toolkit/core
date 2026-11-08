@@ -11,14 +11,17 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Support/Passes.h"
 
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Verifier.h"
 
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
@@ -251,6 +254,41 @@ TEST(ResonatorRouting, RawAdaptiveQIRSchedulesReadoutAfterMoves) {
   ASSERT_NE(lastMove, std::string::npos);
   ASSERT_NE(firstMeasure, std::string::npos) << *ir;
   EXPECT_LT(lastMove, firstMeasure);
+}
+
+TEST(ResonatorRouting, LowersStaticQCThroughTextualPassPipeline) {
+  auto program = llvm::cantFail(QCProgram::fromOpenQASMString(
+      "OPENQASM 3; include \"stdgates.inc\"; bit[2] c; cz $5,$17; "
+      "c[0]=measure $5; c[1]=measure $17;"));
+  ASSERT_TRUE(succeeded(verify(program.module())));
+  registerTargetCompilationPasses();
+  const auto source = program.str();
+  ASSERT_TRUE(
+      succeeded(runPassPipeline(program.module(), "mqt-lower-resonator-cz")));
+  EXPECT_EQ(program.str(), source);
+
+  const TargetEnvironment environment(
+      starTarget(SCENARIOS.front()),
+      llvm::cantFail(
+          PayloadSpecification::forProgramFormat(ProgramFormat::IQMJSON)));
+  ASSERT_TRUE(succeeded(runPassPipeline(
+      program.module(), "mqt-lower-resonator-cz", {}, &environment, true)));
+  ASSERT_TRUE(succeeded(verify(program.module())));
+  auto compiled = CompiledProgram::serialize(std::move(program), environment);
+  ASSERT_TRUE(static_cast<bool>(compiled))
+      << llvm::toString(compiled.takeError());
+  const auto json = llvm::cantFail(llvm::json::parse(compiled->payload()));
+  const auto& instructions = *json.getAsObject()->getArray("instructions");
+  ASSERT_EQ(instructions.size(), 5U);
+  EXPECT_EQ(instructions[0].getAsObject()->getString("name"), "move");
+  EXPECT_EQ(*instructions[0].getAsObject()->getArray("locus"),
+            (llvm::json::Array{"QB1", "CR"}));
+  EXPECT_EQ(instructions[1].getAsObject()->getString("name"), "cz");
+  EXPECT_EQ(*instructions[1].getAsObject()->getArray("locus"),
+            (llvm::json::Array{"QB2", "CR"}));
+  EXPECT_EQ(instructions[2], instructions[0]);
+  EXPECT_EQ(instructions[3].getAsObject()->getString("name"), "measure");
+  EXPECT_EQ(instructions[4].getAsObject()->getString("name"), "measure");
 }
 
 TEST(ResonatorPlacement, PlacementRequiresGateAndMeasurement) {

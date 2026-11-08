@@ -10,6 +10,7 @@
 
 #include "mqt/Compiler/TargetCompilation.h"
 
+#include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
@@ -24,6 +25,8 @@
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 
+#include "ResonatorRouting.h"
+
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/DialectRegistry.h"
@@ -35,6 +38,7 @@
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -45,9 +49,136 @@
 #include <memory>
 #include <numeric>
 #include <optional>
+#include <set>
+#include <system_error>
 #include <utility>
+#include <vector>
 
 namespace mlir {
+
+static llvm::Expected<CompilerTarget>
+placementTarget(const CompilerTarget& target) {
+  auto placeable = target.placeableSites();
+  if (placeable.empty()) {
+    return llvm::createStringError(
+        std::errc::invalid_argument,
+        "no site supports the operations required for qubit placement");
+  }
+  if (placeable.size() == target.numSites()) {
+    return target;
+  }
+  std::set<CompilerTarget::Coupling> edges;
+  for (const auto& edge : target.couplings()) {
+    if (llvm::is_contained(placeable, edge.first) &&
+        llvm::is_contained(placeable, edge.second)) {
+      edges.insert(edge);
+    }
+  }
+  std::set<CompilerTarget::Coupling> virtualPairs;
+  forEachVirtualCZ(target, placeable, [&](auto a, auto b, auto, bool) {
+    virtualPairs.emplace(a, b);
+    virtualPairs.emplace(b, a);
+    edges.emplace(a, b);
+  });
+  if (target.connectivityKind() !=
+      CompilerTarget::Connectivity::Kind::AllToAll) {
+    llvm::EquivalenceClasses<CompilerTarget::SiteId> components;
+    for (const auto site : placeable) {
+      components.insert(site);
+    }
+    for (const auto& [a, b] : edges) {
+      components.unionSets(a, b);
+    }
+    std::set<CompilerTarget::SiteId> visited;
+    auto largest = placeable.front();
+    size_t largestSize = 0;
+    for (const auto site : placeable) {
+      if (visited.insert(components.getLeaderValue(site)).second) {
+        const auto size = llvm::range_size(components.members(site));
+        if (size > largestSize) {
+          largest = site;
+          largestSize = size;
+        }
+      }
+    }
+    std::erase_if(placeable, [&](auto site) {
+      return !components.isEquivalent(largest, site);
+    });
+    std::erase_if(edges, [&](const auto& edge) {
+      return !llvm::is_contained(placeable, edge.first) ||
+             !llvm::is_contained(placeable, edge.second);
+    });
+  }
+  std::vector<CompilerTarget::Site> sites;
+  for (const auto& site : target.sites()) {
+    if (llvm::is_contained(placeable, site.id())) {
+      sites.push_back(site);
+    }
+  }
+  using Capability = CompilerTarget::OperationCapability;
+  std::vector<Capability> operations;
+  for (const auto& op : target.operations()) {
+    if (op.arity().value() > placeable.size()) {
+      continue;
+    }
+    std::vector<CompilerTarget::SiteTuple> tuples;
+    for (const auto& tuple : op.siteTuples()) {
+      if (llvm::all_of(tuple.sites(), [&](auto site) {
+            return llvm::is_contained(placeable, site);
+          })) {
+        tuples.push_back(tuple);
+      }
+    }
+    if (!op.siteTuples().empty() && tuples.empty()) {
+      continue;
+    }
+    operations.push_back(llvm::cantFail(Capability::create(
+        op.name().str(), op.arity(), op.numParameters(), std::move(tuples),
+        op.duration(), op.fidelity(),
+        {op.fixedParameters().begin(), op.fixedParameters().end()},
+        op.canonicalName().str(),
+        {op.parameterBounds().begin(), op.parameterBounds().end()})));
+  }
+  std::vector<CompilerTarget::SiteTuple> virtualCZs;
+  for (const auto& [a, b] : virtualPairs) {
+    if (llvm::is_contained(placeable, a) && llvm::is_contained(placeable, b)) {
+      virtualCZs.push_back(
+          llvm::cantFail(CompilerTarget::SiteTuple::create({a, b})));
+    }
+  }
+  if (!virtualCZs.empty()) {
+    operations.push_back(
+        llvm::cantFail(Capability::create("cz", 2, 0, std::move(virtualCZs))));
+  }
+  const std::vector<CompilerTarget::Coupling> couplings(edges.begin(),
+                                                        edges.end());
+  const auto connectivity =
+      target.connectivityKind() == CompilerTarget::Connectivity::Kind::AllToAll
+          ? CompilerTarget::Connectivity::allToAll()
+          : CompilerTarget::Connectivity::fromCouplings(couplings);
+  const auto native =
+      CompilerTarget::NativeOperations::fromOperations(operations);
+  return target.name() ? CompilerTarget::create(target.name()->str(),
+                                                std::move(sites), connectivity,
+                                                native, target.durationUnit())
+                       : CompilerTarget::create(std::move(sites), connectivity,
+                                                native, target.durationUnit());
+}
+
+llvm::Expected<TargetEnvironment>
+createTargetCompilationEnvironment(ModuleOp moduleOp,
+                                   const TargetEnvironment& environment) {
+  if (!environment.target().hasDeviceConstraints()) {
+    return environment;
+  }
+  auto routing = QuantumProgramAnalysis(moduleOp).info().numQubits == 0
+                     ? llvm::Expected<CompilerTarget>(environment.target())
+                     : placementTarget(environment.target());
+  if (!routing) {
+    return routing.takeError();
+  }
+  return TargetEnvironment(*routing, environment.payloadSpecification());
+}
 
 /// Retain source order before cleanup removes idle inputs or shrinks tensors.
 static LogicalResult prepareLayout(ModuleOp moduleOp,
@@ -356,6 +487,7 @@ void registerTargetCompilationPasses() {
   static const auto REGISTERED = [] {
     PassRegistration<PrepareStagedTargetCompilationPass>();
     PassRegistration<FinalizeStagedTargetCompilationPass>();
+    registerPass(createLowerResonatorCZPass);
     return true;
   }();
   static_cast<void>(REGISTERED);

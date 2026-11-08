@@ -112,6 +112,7 @@ add_mlir_library(
   MQTCompilerPipeline
   PARTIAL_SOURCES_INTENDED
   Pipeline.cpp
+  ResonatorRouting.cpp
   TerminalReadout.cpp
   TargetCompilation.cpp
   ADDITIONAL_HEADER_DIRS
