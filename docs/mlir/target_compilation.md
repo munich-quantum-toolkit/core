@@ -52,8 +52,9 @@ payload capabilities. For native synthesis, pass the circuit's width as
 
 Discrete targets, including Clifford+T, accept circuits whose gates are already
 native. Routing can lower SWAPs to CX gates and reverse CX direction when H is
-supported on both sites. Other non-native gates require a supported synthesis
-basis. MQT Core does not approximate arbitrary rotations with Clifford+T gates.
+supported on both sites. Gates that remain non-native after decomposition
+require a supported synthesis basis. MQT Core does not approximate arbitrary
+rotations with Clifford+T gates.
 
 A list or tuple of one input kind returns results in input order. Typed MLIR
 inputs are consumed unless `copy=True`; source text and Qiskit circuits remain

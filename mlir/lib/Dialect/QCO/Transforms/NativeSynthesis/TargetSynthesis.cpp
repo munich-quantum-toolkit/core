@@ -1189,10 +1189,11 @@ lowerDiscreteRoutingOperation(IRRewriter& rewriter, UnitaryOpInterface op,
       applyHadamards();
     }
   };
-  emitCX(0);
+  const size_t first = swap && !direct[0] ? 1 : 0;
+  emitCX(first);
   if (swap) {
-    emitCX(1);
-    emitCX(0);
+    emitCX(1 - first);
+    emitCX(first);
   }
   rewriter.replaceOp(op, wires);
   return success();
