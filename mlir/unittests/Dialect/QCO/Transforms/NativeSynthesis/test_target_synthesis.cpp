@@ -13,6 +13,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
@@ -413,6 +414,195 @@ TEST_F(TargetSynthesisTest, DiscreteTargetLowersRoutingGatesExactly) {
               .contains("no usable synthesis basis"));
     }
     expectFullUnitaryEqual(*expected, *actual, 2);
+  }
+}
+
+TEST_F(TargetSynthesisTest, ExactCliffordTRotationsPreserveFullUnitary) {
+  for (const bool minimal : {false, true}) {
+    std::vector operations{
+        valid(OperationCapability::create("h", 1, 0)),
+        valid(OperationCapability::create("t", 1, 0)),
+        valid(OperationCapability::create("cx", 2, 0)),
+        valid(OperationCapability::create("gphase", 0, 1)),
+    };
+    if (!minimal) {
+      for (const auto* name : {"tdg", "s", "sdg", "z"}) {
+        operations.push_back(valid(OperationCapability::create(name, 1, 0)));
+      }
+    }
+    const auto target =
+        valid(Target::create(2, Connectivity::allToAll(),
+                             NativeOperations::fromOperations(operations)));
+    ASSERT_FALSE(target.synthesisBasis());
+    for (const llvm::StringRef kind : {
+             "p",
+             "rx",
+             "ry",
+             "rz",
+             "rxx",
+             "ryy",
+             "rzx",
+             "rzz",
+             "cp",
+             "crx",
+             "cry",
+             "crz",
+         }) {
+      const bool controlled = kind.starts_with("c");
+      for (const int n : {-8, -4, -1, 0, 1, 2, 3, 4, 8}) {
+        SCOPED_TRACE(testing::Message()
+                     << minimal << " " << kind.str() << " " << n);
+        const double angle = n * std::numbers::pi / (controlled ? 2. : 4.);
+        auto original = build([&](QCOProgramBuilder& builder) {
+          auto q0 = builder.staticQubit(0);
+          auto q1 = builder.staticQubit(1);
+          const auto base = controlled ? kind.drop_front() : kind;
+          const auto rotate = [&](Value q) {
+            if (base == "p") {
+              return builder.p(angle, q);
+            }
+            if (base == "rx") {
+              return builder.rx(angle, q);
+            }
+            if (base == "ry") {
+              return builder.ry(angle, q);
+            }
+            return builder.rz(angle, q);
+          };
+          if (controlled) {
+            std::tie(q0, q1) = builder.ctrl(q0, q1, rotate);
+          } else if (kind == "rxx") {
+            std::tie(q0, q1) = builder.rxx(angle, q0, q1);
+          } else if (kind == "ryy") {
+            std::tie(q0, q1) = builder.ryy(angle, q0, q1);
+          } else if (kind == "rzx") {
+            std::tie(q0, q1) = builder.rzx(angle, q0, q1);
+          } else if (kind == "rzz") {
+            std::tie(q0, q1) = builder.rzz(angle, q0, q1);
+          } else {
+            q0 = rotate(q0);
+          }
+          return llvm::SmallVector<Value>{};
+        });
+        auto actual = OwningOpRef<ModuleOp>(original->clone());
+        ASSERT_TRUE(succeeded(runTargetPass(
+            *actual, target, mlir::qco::createTargetNativeSynthesis())));
+        EXPECT_TRUE(succeeded(
+            runPass(*actual, mlir::qco::createVerifyTargetConformance())));
+        EXPECT_TRUE(succeeded(mlir::qco::verifyLinearity(*actual)));
+        expectFullUnitaryEqual(*original, *actual, 2);
+      }
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, ExactCliffordTFixedGatesAndDirectedControls) {
+  for (const llvm::StringRef kind : {
+           "x",
+           "y",
+           "z",
+           "s",
+           "sdg",
+           "tdg",
+           "sx",
+           "sxdg",
+           "cs",
+           "csdg",
+           "csx",
+           "csxdg",
+       }) {
+    const auto target = valid(
+        Target::create(2, Connectivity::allToAll(),
+                       NativeOperations::fromOperations({
+                           valid(OperationCapability::create("h", 1, 0)),
+                           valid(OperationCapability::create("t", 1, 0)),
+                           valid(OperationCapability::create(
+                               "cx", 2, 0, {valid(SiteTuple::create({1, 0}))})),
+                           valid(OperationCapability::create("gphase", 0, 1)),
+                       })));
+    auto original = build([&](QCOProgramBuilder& builder) {
+      auto q0 = builder.staticQubit(0);
+      auto q1 = builder.staticQubit(1);
+      const bool controlled = kind.starts_with("c");
+      const auto base = controlled ? kind.drop_front() : kind;
+      const auto gate = [&](Value q) {
+        if (base == "x") {
+          return builder.x(q);
+        }
+        if (base == "y") {
+          return builder.y(q);
+        }
+        if (base == "z") {
+          return builder.z(q);
+        }
+        if (base == "s") {
+          return builder.s(q);
+        }
+        if (base == "sdg") {
+          return builder.sdg(q);
+        }
+        if (base == "tdg") {
+          return builder.tdg(q);
+        }
+        if (base == "sx") {
+          return builder.sx(q);
+        }
+        return builder.sxdg(q);
+      };
+      if (controlled) {
+        std::tie(q0, q1) = builder.ctrl(q0, q1, gate);
+      } else {
+        q0 = gate(q0);
+      }
+      return llvm::SmallVector<Value>{};
+    });
+    auto actual = OwningOpRef<ModuleOp>(original->clone());
+    ASSERT_TRUE(succeeded(runTargetPass(
+        *actual, target, mlir::qco::createTargetNativeSynthesis())));
+    EXPECT_TRUE(succeeded(
+        runPass(*actual, mlir::qco::createVerifyTargetConformance())));
+    expectFullUnitaryEqual(*original, *actual, 2);
+  }
+}
+
+TEST_F(TargetSynthesisTest, ExactCliffordTRejectsUnsupportedAnglesAndSites) {
+  for (const int scenario : {0, 1, 2, 3, 4}) {
+    const auto target = valid(Target::create(
+        2, Connectivity::allToAll(),
+        NativeOperations::fromOperations({
+            valid(OperationCapability::create("h", 1, 0)),
+            valid(OperationCapability::create(
+                "t", 1, 0,
+                scenario == 3 ? std::vector{valid(SiteTuple::create({0}))}
+                              : std::vector<SiteTuple>{})),
+            valid(OperationCapability::create("cx", 2, 0)),
+        })));
+    auto actual = build([&](QCOProgramBuilder& builder) {
+      builder.cp(scenario == 0   ? std::numbers::pi / 4.
+                 : scenario == 2 ? std::numeric_limits<double>::infinity()
+                 : scenario == 4 ? std::ldexp(4. * std::numbers::pi, 50)
+                                 : std::numbers::pi / 2.,
+                 builder.staticQubit(0), builder.staticQubit(1));
+      return llvm::SmallVector<Value>{};
+    });
+    if (scenario == 1) {
+      auto function = mainFunction(*actual);
+      auto gate = *function.getOps<CtrlOp>().begin();
+      auto phase = mlir::cast<POp>(
+          mlir::mqt::getSoleBodyUnitary<mlir::qco::UnitaryOpInterface>(
+              *gate.getBody())
+              .getOperation());
+      ASSERT_TRUE(succeeded(function.insertArgument(
+          0, mlir::Float64Type::get(context.get()), {}, function.getLoc())));
+      phase.getThetaMutable().assign(function.getArgument(0));
+    }
+    attachTestEnvironment(*actual, target);
+    const auto before = printModule(*actual);
+    EXPECT_TRUE(
+        llvm::StringRef(
+            expectFailure(*actual, mlir::qco::createTargetNativeSynthesis()))
+            .contains("no usable synthesis basis"));
+    EXPECT_EQ(printModule(*actual), before);
   }
 }
 
