@@ -1824,7 +1824,7 @@ TEST_F(MultiControlledDecompositionTest, AncillaWideFallbackPhasesAndCounts) {
 
 TEST_F(MultiControlledDecompositionTest,
        AncillaWideBorrowingAndDirtyRestoration) {
-  for (size_t k : {23U, 24U}) {
+  for (size_t k : {8U, 9U, 22U, 23U, 24U}) {
     SCOPED_TRACE(k);
     auto moduleOp =
         QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
