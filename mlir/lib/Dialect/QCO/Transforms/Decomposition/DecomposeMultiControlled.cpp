@@ -1298,40 +1298,9 @@ static CircuitPlan planOneAncillaMcx(size_t k, bool clean) {
   return plan;
 }
 
-/// Pre-routing CX-equivalent estimate, not a promise about final mapped cost.
-static size_t entanglingCost(const CircuitPlan& plan) {
-  size_t count = 0;
-  for (const auto& operation : plan.ops) {
-    switch (operation.kind) {
-    case PlanOpKind::CX:
-      count += 1;
-      break;
-    case PlanOpKind::CP:
-    case PlanOpKind::CRX:
-    case PlanOpKind::CRZ:
-      count += 2;
-      break;
-    case PlanOpKind::CCX:
-      count += 6;
-      break;
-    case PlanOpKind::CCCX:
-      count += 14;
-      break;
-    case PlanOpKind::RCCX:
-      count += 3;
-      break;
-    case PlanOpKind::CCP:
-      count += 6;
-      break;
-    case PlanOpKind::H:
-    case PlanOpKind::X:
-    case PlanOpKind::P:
-    case PlanOpKind::RZ:
-    case PlanOpKind::RY:
-      break;
-    }
-  }
-  return count;
+/// CX-equivalent cost of the borrowed-MCX construction.
+static size_t borrowedMcxCost(size_t k) {
+  return k == 1 ? 1 : k == 2 ? 6 : k == 3 ? 14 : 8 * k - 6;
 }
 
 /// CX-equivalent cost of the ancilla-free parameterized construction.
@@ -1387,8 +1356,8 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
     return changeRotationBasis(
         planWithDirtyRzAncillas(rewriter, op.getLoc(), angle, k), k, inner);
   };
-  auto best = parameterized ? CircuitPlan{}
-                            : planOneAncillaMcx(k, ancillas.front().clean);
+  CircuitPlan best;
+  bool fullAncillaPlan = false;
   // Count the fallback without constructing a plan that will not be emitted.
   const auto fallbackCost = [&]() -> size_t {
     if (parameterized) {
@@ -1400,7 +1369,11 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
     return k < 23 ? parameterizedFallbackCost(k, false)
                   : (k % 2 == 1 ? 88 * k - 54 : 96 * k - 154);
   }();
-  auto bestCost = parameterized ? fallbackCost : entanglingCost(best);
+  const size_t split = (k + 1) / 2;
+  auto bestCost = parameterized ? fallbackCost
+                                : 2 * borrowedMcxCost(split) +
+                                      (ancillas.front().clean ? 1 : 2) *
+                                          borrowedMcxCost(k - split + 1);
   size_t used = parameterized ? 0 : 1;
   bool dirtyParameterized = false;
   if (parameterized && cleanCount != 0) {
@@ -1419,12 +1392,10 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
     }
   }
   if (!parameterized && ancillas.size() == k - 2) {
-    auto many = ancillas.back().clean
-                    ? planWithCleanAncillas(planBorrowedMcx(2), k, k - 2)
-                    : planBorrowedMcx(k);
-    if (const auto cost = entanglingCost(many); cost < bestCost) {
+    const auto cost = ancillas.back().clean ? 6 * k - 6 : borrowedMcxCost(k);
+    if (cost < bestCost) {
       bestCost = cost;
-      best = std::move(many);
+      fullAncillaPlan = true;
       used = ancillas.size();
     }
   }
@@ -1439,6 +1410,12 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
                ? dirtyPlan(theta)
                : planWithCleanAncillas(parameterizedPlan(theta, k - used), k,
                                        used);
+  } else if (fullAncillaPlan) {
+    best = ancillas.back().clean
+               ? planWithCleanAncillas(planBorrowedMcx(2), k, k - 2)
+               : planBorrowedMcx(k);
+  } else {
+    best = planOneAncillaMcx(k, ancillas.front().clean);
   }
   ancillas.resize(used);
   SmallVector<Value> wires(op.getControlsIn());
