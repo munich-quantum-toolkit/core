@@ -90,10 +90,19 @@ lines appear in the final run, leaving a net loss of three covered lines.
 Coverage is measured separately for native source and Python source; this does
 not claim coverage of every nanobind adapter or equivalence to hosted Codecov.
 
-The original and reduced release suites pass in full. The debug coverage build
-has the same 24 IQM/resonator failures before and after the change, aborting in
-LLVM JSON with `Unknown kind`. Those tests pass in release. These pre-existing
-failures limit the coverage result and remain visible.
+The original and reduced release suites pass in full. Both Clang debug coverage
+runs above encountered 24 IQM/resonator failures in LLVM JSON (`Unknown kind`).
+These share a local toolchain cause: the portable LLVM SDK was built with GCC,
+and its weak inline JSON callback interprets a Clang-built lambda's captures in
+the wrong order. A standalone JSON writer reproduces the abort without Core;
+debugger inspection confirms the swapped stream and value pointers. Optimized
+Clang builds inline away the conflicting callback.
+
+Using GCC for the debug coverage build resolves all 24 failures with coverage
+and assertions enabled. The full reduced suite then passes all 3,763 CTest
+entries. No production workaround or test changes are needed. The table retains
+the paired Clang measurements, including their shared coverage limitation; GCC
+instrumentation is not substituted into that comparison.
 
 Python 3.14 regular dependencies pass all 1,662 cases, with two optional
 Catalyst skips. Python 3.11 minimum dependencies pass all 1,662 cases, with
@@ -106,8 +115,11 @@ Reproduction uses `cmake --preset release-clang-ipo`, the corresponding build
 and CTest presets, `uv run --no-sync pytest -n 4 --cov`, and
 `uvx nox --non-interactive -s minimums-3.11 -- -n 4`. The release preset is the
 local machine override; ordinary contributors use the repository release preset.
-Compare coverage using the same filters and build configuration on both
-revisions. Raw logs and coverage reports are retained outside the source tree.
+The local `coverage-gcc` configure, build, and CTest presets inherit the
+repository coverage settings and select GCC to match the portable LLVM SDK's
+compiler family. Compare coverage using the same filters and build configuration
+on both revisions. Raw logs and coverage reports are retained outside the source
+tree.
 
 Hosted CI, the full interpreter/dependency/platform matrix, optional Catalyst
 Python integration, external QPUs, and rendered documentation were not checked.
