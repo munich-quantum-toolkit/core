@@ -5396,3 +5396,26 @@ def test_qpy_serialization_accepts_variadic_native_controls(controls: int) -> No
     assert isinstance(program.payload, bytes)
     restored = qpy.load(BytesIO(program.payload))[0]
     np.testing.assert_allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_native_import_omits_idle_sites_in_nested_control_flow() -> None:
+    """Referenced physical IDs dominate nested blocks without importing idle sites."""
+    circuit = QuantumCircuit(65535, 2)
+    circuit.x(60000)
+    circuit.measure(60000, 0)
+    with circuit.if_test((circuit.clbits[0], True)), circuit.for_loop(range(2)):
+        circuit.x(42)
+    program = QCProgram.from_qiskit(circuit, native=True)
+    text = str(program)
+    assert text.count("qc.static") == 2
+    assert "qc.static 60000" in text
+    assert "qc.static 42" in text
+    restored = program.to_qiskit()
+    assert restored.num_clbits == 2
+    assert restored.num_qubits == 60001
+    branch = restored.data[-1]
+    loop = branch.operation.blocks[0].data[0]
+    body = loop.operation.blocks[0]
+    local = body.find_bit(body.data[0].qubits[0]).index
+    enclosing = branch.operation.blocks[0].find_bit(loop.qubits[local]).index
+    assert restored.find_bit(branch.qubits[enclosing]).index == 42

@@ -25,9 +25,11 @@
 #include "nanobind/stl/variant.h"
 #include "nanobind/stl/vector.h"
 
+#include <algorithm>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <span>
@@ -195,6 +197,27 @@ void registerBindings(nb::module_& m) {
             return context.trySubmit(programs, shots);
           },
           "programs"_a, "num_shots"_a);
+
+  pennylane.def(
+      "counts",
+      [](const qdmi::Job& job, size_t width, size_t shots, size_t programIndex,
+         const std::optional<mlir::ResultLayout>& layout) {
+        auto values = [&] {
+          const nb::gil_scoped_release release;
+          return catalyst::decodeCounts(job, width, shots, programIndex,
+                                        layout);
+        }();
+        nb::typed<nb::dict, nb::str, size_t> result;
+        while (!values.empty()) {
+          auto entry = values.extract(values.begin());
+          auto& bits = entry.key();
+          std::ranges::reverse(bits);
+          result[nb::str(bits.data(), bits.size())] = nb::int_(entry.mapped());
+        }
+        return result;
+      },
+      "job"_a, "num_wires"_a, "shots"_a, "program_index"_a = 0,
+      "result_layout"_a = nb::none());
 
   pennylane.def(
       "samples",

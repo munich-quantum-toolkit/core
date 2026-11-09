@@ -117,6 +117,12 @@ using bindings::PythonCustomJobParameter;
 using bindings::toCustomJobParameter;
 using bindings::unwrap;
 
+namespace {
+struct ResultDecodingError : std::runtime_error {
+  using std::runtime_error::runtime_error;
+};
+} // namespace
+
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
 using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
@@ -2944,12 +2950,30 @@ and error contracts.)pb");
           "raw"_a,
           "Decode one MSB-first binary sample to logical output order.");
 
+  const nb::exception<ResultDecodingError> resultDecodingError(
+      m, "_ResultDecodingError", PyExc_ValueError);
+  m.def(
+      "_get_decoded_shots",
+      [](const qdmi::Job& job, std::optional<size_t> width, size_t shots,
+         size_t programIndex, const std::optional<mlir::ResultLayout>& layout) {
+        const nb::gil_scoped_release release;
+        auto decoded = mlir::decodeShots(unwrap(job.getShots(programIndex)),
+                                         width, shots, layout);
+        if (!decoded) {
+          throw ResultDecodingError(llvm::toString(decoded.takeError()));
+        }
+        return std::move(*decoded);
+      },
+      "job"_a, "width"_a, "shots"_a, "program_index"_a = 0,
+      "layout"_a = nb::none(),
+      "Read and decode ordered shots without an intermediate Python list.");
+
   m.def(
       "decode_counts",
-      [](const std::map<std::string, size_t>& counts,
-         std::optional<size_t> width, size_t shots,
-         const std::optional<mlir::ResultLayout>& layout) {
-        return unwrap(mlir::decodeCounts(counts, width, shots, layout));
+      [](std::map<std::string, size_t> counts, std::optional<size_t> width,
+         size_t shots, const std::optional<mlir::ResultLayout>& layout) {
+        return unwrap(
+            mlir::decodeCounts(std::move(counts), width, shots, layout));
       },
       "counts"_a, "width"_a, "shots"_a, "layout"_a = nb::none(),
       "Validate binary counts and reconstruct logical outcomes, ignoring ASCII "

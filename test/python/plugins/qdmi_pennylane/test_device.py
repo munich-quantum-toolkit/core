@@ -31,6 +31,8 @@ from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from pennylane.typing import Result, ResultBatch
 
 
@@ -77,7 +79,7 @@ def test_compiles_only_requested_wires(*, all_wires: bool) -> None:
     np.testing.assert_array_equal(result, np.tile(expected, (2, 1)))
     assert device.last_job is not None
     entry = device.last_job.entries[0]
-    assert entry.result is not None
+    assert isinstance(entry.result, np.ndarray)
     assert entry.result.shape == (2, 8 if all_wires else 1)
 
 
@@ -276,3 +278,45 @@ def test_local_results_need_no_provider_job(*, measured: bool) -> None:
     assert device.submitted_jobs == 0
     assert device.last_job is not None
     assert all(entry.result is not None for entry in device.last_job.entries)
+
+
+def test_aggregate_readout_preserves_wires_and_shot_partitions() -> None:
+    """Histograms retain all-wire measurements, subset ordering, and cached results."""
+    wires = ["left", "idle", "right"]
+    device = QDMIDevice("mqt.ddsim.default", wires=wires)
+    tape = qp.tape.QuantumScript(
+        [qp.X("right")],
+        [
+            qp.probs(),
+            qp.counts(),
+            qp.counts(wires=["right", "left"], all_outcomes=True),
+            qp.expval(2 * qp.Z("right")),
+            qp.var(2 * qp.Z("left")),
+        ],
+        shots=[2, 3],
+    )
+    batch = device.submit(tape)
+    actual = batch.result()
+    (expected,) = qp.execute((tape,), qp.device("default.qubit", wires=wires), diff_method=None)
+    np.testing.assert_equal(actual, expected)
+    assert [entry.result for entry in batch.entries] == [{"001": 2}, {"001": 3}]
+    retained = batch.entries[0].result
+    np.testing.assert_equal(batch.result(), actual)
+    assert batch.collect()[0].result is retained
+
+
+def test_custom_measurement_keeps_sample_processing() -> None:
+    """A custom sample processor is not replaced by inherited counts processing."""
+
+    class TwiceExpectation(qp.measurements.ExpectationMP):
+        def process_samples(
+            self,
+            samples: Sequence[complex],
+            wire_order: qp.wires.Wires,
+            shot_range: tuple[int, ...] | None = None,
+            bin_size: int | None = None,
+        ) -> np.ndarray:
+            return 2 * super().process_samples(samples, wire_order, shot_range, bin_size)
+
+    tape = qp.tape.QuantumScript([qp.X(0)], [TwiceExpectation(qp.Z(0))], shots=2)
+    assert QDMIDevice("mqt.ddsim.default", wires=1).execute(tape) == -2

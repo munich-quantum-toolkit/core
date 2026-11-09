@@ -3017,8 +3017,22 @@ mlir::QCProgram importCircuit(const nb::handle circuit, const bool native,
   llvm::SmallVector<mlir::Value> qubits;
   qubits.reserve(view->numQubits());
   if (native) {
-    for (uint32_t index = 0; index < view->numQubits(); ++index) {
-      qubits.push_back(builder.staticQubit(index));
+    qubits.resize(view->numQubits());
+    size_t remaining = qubits.size();
+    // Root qargs include nested block operands; create their sites in the entry
+    // block.
+    for (size_t index = 0; index < view->numInstructions() && remaining != 0;
+         ++index) {
+      const auto sites =
+          view->instructionKind(index) == OperationKind::ControlFlow
+              ? view->controlFlow(index)->qubitMap()
+              : view->instruction(index, true).qubits;
+      for (const auto site : sites) {
+        if (!qubits[site]) {
+          qubits[site] = builder.staticQubit(site);
+          --remaining;
+        }
+      }
     }
   } else {
     if (looseQubits != 0U) {

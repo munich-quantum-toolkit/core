@@ -26,7 +26,7 @@ uv pip install "mqt-core[qiskit]"
 from qiskit import QuantumCircuit
 from mqt.core.plugins.qiskit import QDMIBackend
 
-backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+backend = QDMIBackend.from_device_id("mqt.ddsim.default", custom1="2")
 qc = QuantumCircuit(2)
 qc.h(0)
 qc.cx(0, 1)
@@ -36,6 +36,11 @@ job = backend.run(native, shots=1024, memory=True)
 result = job.result()
 print(f"Bell counts: {result.get_counts()}")
 ```
+
+For DDSIM, `custom1` bounds the session width. Choose enough sites for the
+circuit before transpiling. An explicit Qiskit layout can expand a circuit to
+the target width, which defaults to 65,535 sites for an unscoped DDSIM session.
+See {doc}`ddsim_device` for session configuration.
 
 `run` validates, serializes, and submits; it does not synthesize or route. Bind
 parameters before compilation when their values affect native legality. Use a

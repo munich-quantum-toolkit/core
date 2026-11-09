@@ -1600,6 +1600,13 @@ class ResultLayout:
     def decode_bits(self, raw: str) -> str:
         """Decode one MSB-first binary sample to logical output order."""
 
+class _ResultDecodingError(ValueError): ...
+
+def _get_decoded_shots(
+    job: mqt.core.qdmi.Job, width: int | None, shots: int, program_index: int = 0, layout: ResultLayout | None = None
+) -> list[str]:
+    """Read and decode ordered shots without an intermediate Python list."""
+
 def decode_counts(
     counts: Mapping[str, int], width: int | None, shots: int, layout: ResultLayout | None = None
 ) -> dict[str, int]:

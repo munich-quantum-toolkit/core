@@ -34,7 +34,13 @@ from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
-from mqt.core.mlir import _prepare_qdmi_programs, _try_submit_programs, decode_counts, decode_shots
+from mqt.core.mlir import (
+    _get_decoded_shots,
+    _prepare_qdmi_programs,
+    _ResultDecodingError,
+    _try_submit_programs,
+    decode_counts,
+)
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 from mqt.core.plugins.qiskit.exceptions import JobExecutionError, JobSubmissionError
 from mqt.core.qdmi import Job as QDMIJobHandle
@@ -254,14 +260,12 @@ class QDMIJob(JobV1):
         width = header["memory_slots"]
         if self._memory:
             try:
-                shots = job.get_shots(program_index)
+                shots = _get_decoded_shots(job, width, self._shots, program_index, layout)
+            except _ResultDecodingError as exc:
+                raise JobError(str(exc)) from exc
             except Exception as exc:
                 exc.add_note("memory=True and BackendSamplerV2 require valid QDMI SHOTS results.")
                 raise
-            try:
-                shots = decode_shots(shots, width, self._shots, layout)
-            except (ValueError, RuntimeError) as exc:
-                raise JobError(str(exc)) from exc
             encoded = {bits: hex(int(bits, 2)) if bits else "0x0" for bits in set(shots)}
             memory = [encoded[bits] for bits in shots]
             data = {"memory": memory, "counts": dict(Counter(memory))}

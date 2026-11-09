@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Unpack, cast
 
 import pytest
 
-from mqt.core.mlir import CompilerTarget, PayloadSpecification, TargetEnvironment
+from mqt.core.mlir import CompilerTarget, PayloadSpecification, TargetEnvironment, decode_shots
 from mqt.core.mlir import _prepare_qdmi_programs as native_prepare  # ruff:ignore[import-private-name] Native-boundary device doubles.
 from mqt.core.mlir import _try_submit_programs as native_submit  # ruff:ignore[import-private-name] Native-boundary device doubles.
 from mqt.core.plugins.qiskit import job as job_module
@@ -23,7 +23,7 @@ from mqt.core.qdmi import Device, Job, ProgramFormat
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mqt.core.mlir import CompiledProgram
+    from mqt.core.mlir import CompiledProgram, ResultLayout
     from mqt.core.typing import QDMIJobParameters
 
 
@@ -117,3 +117,15 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(job_module, "_prepare_qdmi_programs", prepare)
     monkeypatch.setattr(job_module, "_try_submit_programs", submit_programs)
+    native_shots = job_module._get_decoded_shots  # ruff:ignore[private-member-access] Native-boundary job doubles.
+
+    def decoded_shots(job: Job, width: int, shots: int, program_index: int, layout: ResultLayout | None) -> list[str]:
+        if isinstance(job, Job):
+            return native_shots(job, width, shots, program_index, layout)
+        values = job.get_shots(program_index)
+        try:
+            return decode_shots(values, width, shots, layout)
+        except (ValueError, RuntimeError) as exc:
+            raise job_module._ResultDecodingError(str(exc)) from exc  # ruff:ignore[private-member-access] Match native decoding errors.
+
+    monkeypatch.setattr(job_module, "_get_decoded_shots", decoded_shots)

@@ -27,6 +27,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -108,13 +109,13 @@ static Parameters borrowParameters(const JobParameters& parameters) {
   return result;
 }
 
-static Readout readout(const qdmi::Job& job, size_t width, size_t shots,
-                       size_t programIndex,
-                       const std::optional<mlir::ResultLayout>& layout,
-                       bool samples) {
+template <typename Result = Readout>
+static Result
+readout(const qdmi::Job& job, size_t width, size_t shots, size_t programIndex,
+        const std::optional<mlir::ResultLayout>& layout, bool samples) {
   validateShots(shots);
-  const auto load = [&](bool loadSamples) -> llvm::Expected<Readout> {
-    Readout result;
+  const auto load = [&](bool loadSamples) -> llvm::Expected<Result> {
+    Result result;
     if (loadSamples) {
       auto values = job.getShots(programIndex);
       if (!values) {
@@ -125,9 +126,15 @@ static Readout readout(const qdmi::Job& job, size_t width, size_t shots,
       }
       *values =
           unwrap(mlir::decodeShots(std::move(*values), width, shots, layout));
-      result.reserve(values->size());
-      for (auto& bits : *values) {
-        result.emplace_back(std::move(bits), 1);
+      if constexpr (std::is_same_v<Result, Readout>) {
+        result.reserve(values->size());
+        for (auto& bits : *values) {
+          result.emplace_back(std::move(bits), 1);
+        }
+      } else {
+        for (auto& bits : *values) {
+          ++result.try_emplace(result.end(), std::move(bits), 0)->second;
+        }
       }
     } else {
       auto counts = job.getCounts(programIndex);
@@ -137,11 +144,17 @@ static Readout readout(const qdmi::Job& job, size_t width, size_t shots,
       if (counts->empty()) {
         return result;
       }
-      *counts = unwrap(mlir::decodeCounts(*counts, width, shots, layout));
-      for (const auto& [bits, count] : *counts) {
-        if (count != 0) {
-          result.emplace_back(bits, count);
+      *counts =
+          unwrap(mlir::decodeCounts(std::move(*counts), width, shots, layout));
+      if constexpr (std::is_same_v<Result, Readout>) {
+        result.reserve(counts->size());
+        for (const auto& [bits, count] : *counts) {
+          if (count != 0) {
+            result.emplace_back(bits, count);
+          }
         }
+      } else {
+        return std::move(*counts);
       }
     }
     return result;
@@ -235,6 +248,14 @@ qdmi::Job Context::submit(const mlir::CompiledProgram& program,
   require(job.has_value(),
           "Device declined the compiled program before submission.");
   return std::move(*job);
+}
+
+std::map<std::string, size_t>
+decodeCounts(const qdmi::Job& job, size_t width, size_t shots,
+             size_t programIndex,
+             const std::optional<mlir::ResultLayout>& layout) {
+  return readout<std::map<std::string, size_t>>(job, width, shots, programIndex,
+                                                layout, false);
 }
 
 std::vector<int8_t>

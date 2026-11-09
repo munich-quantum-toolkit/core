@@ -90,22 +90,28 @@ decodeSample(std::string raw, std::optional<size_t>& width,
 }
 
 llvm::Expected<std::map<std::string, size_t>>
-decodeCounts(const std::map<std::string, size_t>& counts,
-             std::optional<size_t> width, size_t shots,
-             const std::optional<ResultLayout>& layout) {
+decodeCounts(std::map<std::string, size_t> counts, std::optional<size_t> width,
+             size_t shots, const std::optional<ResultLayout>& layout) {
   std::map<std::string, size_t> result;
   size_t total = 0;
-  for (const auto& [bits, count] : counts) {
-    auto decoded = decodeSample(bits, width, layout);
+  while (!counts.empty()) {
+    auto entry = counts.extract(counts.begin());
+    auto decoded = decodeSample(std::move(entry.key()), width, layout);
     if (!decoded) {
       return decoded.takeError();
     }
+    const auto count = entry.mapped();
     if (count > shots - total) {
       return llvm::createStringError("Invalid QDMI histogram: too many shots");
     }
     total += count;
     if (count != 0) {
-      result[std::move(*decoded)] += count;
+      entry.key() = std::move(*decoded);
+      auto inserted = result.insert(result.end(), std::move(entry));
+      // NOLINTNEXTLINE(bugprone-use-after-move): Duplicates retain the node.
+      if (!entry.empty()) {
+        inserted->second += count;
+      }
     }
   }
   if (total != shots) {

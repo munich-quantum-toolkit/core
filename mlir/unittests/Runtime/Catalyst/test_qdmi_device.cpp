@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numbers>
 #include <optional>
@@ -41,6 +42,7 @@ namespace {
 
 using mqt::catalyst::Context;
 using mqt::catalyst::createDevice;
+using mqt::catalyst::decodeCounts;
 using mqt::catalyst::decodeSamples;
 using mqt::catalyst::JobParameters;
 using mqt::catalyst::QDMIDevice;
@@ -139,7 +141,12 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
             (std::vector<int8_t>{1, 0, 0, 1, 0, 0}));
   api.device_job_get_results = getResults;
   returnedKeys.clear();
+  returnedShots = "100,100";
+  EXPECT_EQ(decodeCounts(job, 3, 2),
+            (std::map<std::string, size_t>{{"100", 2}}));
   returnedShots = "10 0,001";
+  EXPECT_EQ(decodeCounts(job, 3, 2),
+            (std::map<std::string, size_t>{{"001", 1}, {"100", 1}}));
   EXPECT_EQ(decodeSamples(job, 3, 2), (std::vector<int8_t>{0, 0, 1, 1, 0, 0}));
   const mlir::ResultLayout layout{
       .rawWidth = 3,
@@ -156,6 +163,12 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   returnedShots.reset();
   returnedKeys = "10 0,001";
   returnedCounts = {2, 3};
+  queries.clear();
+  EXPECT_EQ(decodeCounts(job, 4, 5, 0, layout),
+            (std::map<std::string, size_t>{{"0100", 3}, {"1001", 2}}));
+  EXPECT_TRUE(std::ranges::none_of(queries, [](const auto& query) {
+    return query.second == QDMI_JOB_RESULT_SHOTS;
+  }));
   const auto samples = decodeSamples(job, 3, 5);
   EXPECT_EQ(samples,
             (std::vector<int8_t>{1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 1}));
@@ -166,6 +179,8 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   EXPECT_THROW(decodeSamples(job, 3, 6), std::runtime_error);
   returnedKeys = "10x,001";
   EXPECT_THROW(decodeSamples(job, 3, 5), std::runtime_error);
+  returnedShots = "100,001,001,100,001";
+  EXPECT_THROW(decodeCounts(job, 3, 5), std::runtime_error);
 }
 
 TEST(CatalystQDMI, AggregateReadoutKeepsCountsAndSamplesFromOneJob) {

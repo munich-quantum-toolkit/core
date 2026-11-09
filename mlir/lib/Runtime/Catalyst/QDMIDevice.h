@@ -26,6 +26,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <random>
@@ -141,6 +142,12 @@ private:
 decodeSamples(const qdmi::Job& job, size_t width, size_t shots,
               size_t programIndex = 0,
               const std::optional<mlir::ResultLayout>& layout = std::nullopt);
+
+/// Read logical MSB-first outcomes, preferring histograms.
+[[nodiscard]] std::map<std::string, size_t>
+decodeCounts(const qdmi::Job& job, size_t width, size_t shots,
+             size_t programIndex = 0,
+             const std::optional<mlir::ResultLayout>& layout = std::nullopt);
 
 /// Resolve a retained configuration for Catalyst's device factory.
 [[nodiscard]] Catalyst::Runtime::QuantumDevice*
