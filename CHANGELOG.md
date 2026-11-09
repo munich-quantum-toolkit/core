@@ -1542,7 +1542,6 @@ for previous changelogs._
 <!-- Version links -->
 
 [4.2.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.2.0
-
 [4.1.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.1.1
 [4.1.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.1.0
 [4.0.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.0.0
@@ -1722,23 +1721,6 @@ for previous changelogs._
 [#2766]: https://github.com/munich-quantum-toolkit/core/pull/2766
 [#2764]: https://github.com/munich-quantum-toolkit/core/pull/2764
 [#2759]: https://github.com/munich-quantum-toolkit/core/pull/2759
-[#2716]: https://github.com/munich-quantum-toolkit/core/pull/2716
-[#2701]: https://github.com/munich-quantum-toolkit/core/pull/2701
-[#2683]: https://github.com/munich-quantum-toolkit/core/pull/2683
-[#2595]: https://github.com/munich-quantum-toolkit/core/pull/2595
-[#2591]: https://github.com/munich-quantum-toolkit/core/pull/2591
-[#2590]: https://github.com/munich-quantum-toolkit/core/pull/2590
-[#2585]: https://github.com/munich-quantum-toolkit/core/pull/2585
-[#2584]: https://github.com/munich-quantum-toolkit/core/pull/2584
-[#2583]: https://github.com/munich-quantum-toolkit/core/pull/2583
-[#2582]: https://github.com/munich-quantum-toolkit/core/pull/2582
-[#2581]: https://github.com/munich-quantum-toolkit/core/pull/2581
-[#2580]: https://github.com/munich-quantum-toolkit/core/pull/2580
-[#2577]: https://github.com/munich-quantum-toolkit/core/pull/2577
-[#2574]: https://github.com/munich-quantum-toolkit/core/pull/2574
-[#2573]: https://github.com/munich-quantum-toolkit/core/pull/2573
-[#2545]: https://github.com/munich-quantum-toolkit/core/pull/2545
-
 [#2758]: https://github.com/munich-quantum-toolkit/core/pull/2758
 [#2757]: https://github.com/munich-quantum-toolkit/core/pull/2757
 [#2756]: https://github.com/munich-quantum-toolkit/core/pull/2756
@@ -1764,8 +1746,10 @@ for previous changelogs._
 [#2719]: https://github.com/munich-quantum-toolkit/core/pull/2719
 [#2718]: https://github.com/munich-quantum-toolkit/core/pull/2718
 [#2717]: https://github.com/munich-quantum-toolkit/core/pull/2717
+[#2716]: https://github.com/munich-quantum-toolkit/core/pull/2716
 [#2715]: https://github.com/munich-quantum-toolkit/core/pull/2715
 [#2707]: https://github.com/munich-quantum-toolkit/core/pull/2707
+[#2701]: https://github.com/munich-quantum-toolkit/core/pull/2701
 [#2698]: https://github.com/munich-quantum-toolkit/core/pull/2698
 [#2697]: https://github.com/munich-quantum-toolkit/core/pull/2697
 [#2695]: https://github.com/munich-quantum-toolkit/core/pull/2695
@@ -1773,6 +1757,7 @@ for previous changelogs._
 [#2690]: https://github.com/munich-quantum-toolkit/core/pull/2690
 [#2687]: https://github.com/munich-quantum-toolkit/core/pull/2687
 [#2686]: https://github.com/munich-quantum-toolkit/core/pull/2686
+[#2683]: https://github.com/munich-quantum-toolkit/core/pull/2683
 [#2680]: https://github.com/munich-quantum-toolkit/core/pull/2680
 [#2679]: https://github.com/munich-quantum-toolkit/core/pull/2679
 [#2678]: https://github.com/munich-quantum-toolkit/core/pull/2678
@@ -1804,9 +1789,21 @@ for previous changelogs._
 [#2604]: https://github.com/munich-quantum-toolkit/core/pull/2604
 [#2602]: https://github.com/munich-quantum-toolkit/core/pull/2602
 [#2599]: https://github.com/munich-quantum-toolkit/core/pull/2599
+[#2595]: https://github.com/munich-quantum-toolkit/core/pull/2595
 [#2594]: https://github.com/munich-quantum-toolkit/core/pull/2594
+[#2591]: https://github.com/munich-quantum-toolkit/core/pull/2591
+[#2590]: https://github.com/munich-quantum-toolkit/core/pull/2590
+[#2585]: https://github.com/munich-quantum-toolkit/core/pull/2585
+[#2584]: https://github.com/munich-quantum-toolkit/core/pull/2584
+[#2583]: https://github.com/munich-quantum-toolkit/core/pull/2583
+[#2582]: https://github.com/munich-quantum-toolkit/core/pull/2582
+[#2581]: https://github.com/munich-quantum-toolkit/core/pull/2581
+[#2580]: https://github.com/munich-quantum-toolkit/core/pull/2580
 [#2578]: https://github.com/munich-quantum-toolkit/core/pull/2578
+[#2577]: https://github.com/munich-quantum-toolkit/core/pull/2577
 [#2575]: https://github.com/munich-quantum-toolkit/core/pull/2575
+[#2574]: https://github.com/munich-quantum-toolkit/core/pull/2574
+[#2573]: https://github.com/munich-quantum-toolkit/core/pull/2573
 [#2567]: https://github.com/munich-quantum-toolkit/core/pull/2567
 [#2566]: https://github.com/munich-quantum-toolkit/core/pull/2566
 [#2565]: https://github.com/munich-quantum-toolkit/core/pull/2565
@@ -1821,15 +1818,12 @@ for previous changelogs._
 [#2549]: https://github.com/munich-quantum-toolkit/core/pull/2549
 [#2547]: https://github.com/munich-quantum-toolkit/core/pull/2547
 [#2546]: https://github.com/munich-quantum-toolkit/core/pull/2546
+[#2545]: https://github.com/munich-quantum-toolkit/core/pull/2545
 [#2544]: https://github.com/munich-quantum-toolkit/core/pull/2544
 [#2543]: https://github.com/munich-quantum-toolkit/core/pull/2543
 [#2542]: https://github.com/munich-quantum-toolkit/core/pull/2542
-[#2537]: https://github.com/munich-quantum-toolkit/core/pull/2537
-[#2373]: https://github.com/munich-quantum-toolkit/core/pull/2373
-[#2260]: https://github.com/munich-quantum-toolkit/core/pull/2260
-[#2233]: https://github.com/munich-quantum-toolkit/core/pull/2233
-[#2229]: https://github.com/munich-quantum-toolkit/core/pull/2229
 [#2538]: https://github.com/munich-quantum-toolkit/core/pull/2538
+[#2537]: https://github.com/munich-quantum-toolkit/core/pull/2537
 [#2535]: https://github.com/munich-quantum-toolkit/core/pull/2535
 [#2531]: https://github.com/munich-quantum-toolkit/core/pull/2531
 [#2526]: https://github.com/munich-quantum-toolkit/core/pull/2526
@@ -1919,6 +1913,7 @@ for previous changelogs._
 [#2399]: https://github.com/munich-quantum-toolkit/core/pull/2399
 [#2398]: https://github.com/munich-quantum-toolkit/core/pull/2398
 [#2380]: https://github.com/munich-quantum-toolkit/core/pull/2380
+[#2373]: https://github.com/munich-quantum-toolkit/core/pull/2373
 [#2369]: https://github.com/munich-quantum-toolkit/core/pull/2369
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
 [#2358]: https://github.com/munich-quantum-toolkit/core/pull/2358
@@ -1970,6 +1965,7 @@ for previous changelogs._
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
 [#2266]: https://github.com/munich-quantum-toolkit/core/pull/2266
 [#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
+[#2260]: https://github.com/munich-quantum-toolkit/core/pull/2260
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
@@ -1977,7 +1973,9 @@ for previous changelogs._
 [#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2240]: https://github.com/munich-quantum-toolkit/core/pull/2240
+[#2233]: https://github.com/munich-quantum-toolkit/core/pull/2233
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
+[#2229]: https://github.com/munich-quantum-toolkit/core/pull/2229
 [#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228
 [#2224]: https://github.com/munich-quantum-toolkit/core/pull/2224
 [#2223]: https://github.com/munich-quantum-toolkit/core/pull/2223
