@@ -405,6 +405,10 @@ when its size crosses a relevant limit or exposes a complexity defect. Keep
 statistical tolerances well above sampling noise and justify expensive sampling
 budgets.
 
+Share expensive setup and conversion work when several independent observations
+fit in one small program. Keep each result separately observable and failures
+easy to identify; combining test names without reducing work adds no value.
+
 Coverage is a diagnostic for missing workflows, not a requirement to exercise
 every branch. Aim for roughly 90% overall; inspect meaningful losses rather than
 adding tests to satisfy a patch percentage. When pruning, identify the retained

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import operator
 from typing import TYPE_CHECKING
 
 import pytest
@@ -67,26 +68,40 @@ def _check_paths(program: QCProgram, width: int, expected: int) -> None:
 
 
 @pytest.mark.parametrize("width", [1, 9, 64])
-@pytest.mark.parametrize("predicate", ["eq", "ne", "ult", "ule", "ugt", "uge", "slt", "sle", "sgt", "sge"])
-def test_integer_comparison_interchange(width: int, predicate: str) -> None:
-    """Signedness belongs to the operation, including computed operands."""
-    high = 1 << (width - 1)
-    program = _program(
-        width,
-        f"""
+def test_integer_comparison_interchange(width: int) -> None:
+    """Signedness belongs to each predicate, including computed operands."""
+    predicates = ["eq", "ne", "ult", "ule", "ugt", "uge", "slt", "sle", "sgt", "sge"]
+    result_width = len(predicates)
+    body = f"""
       %zero = arith.constant 0 : i{width}
       %computed = arith.xori %value, %zero : i{width}
       %mask = arith.constant {(1 << width) - 1} : i{width}
       %other = arith.xori %value, %mask : i{width}
-      %result = arith.cmpi {predicate}, %computed, %other : i{width}
-    """,
-        1,
-        high,
-    )
-    expected = int(predicate in {"ne", "ugt", "uge", "slt", "sle"})
-    _check_paths(program, 1, expected)
-    program.cleanup()
-    assert _observe(program, 1) == expected
+      %empty = arith.constant 0 : i{result_width}
+    """
+    previous = "%empty"
+    for index, predicate in enumerate(predicates):
+        result = "%result" if index == result_width - 1 else f"%bits{index}"
+        body += f"""
+      %comparison{index} = arith.cmpi {predicate}, %computed, %other : i{width}
+      %bit{index} = arith.constant {1 << index} : i{result_width}
+      %selected{index} = arith.select %comparison{index}, %bit{index}, %empty : i{result_width}
+      {result} = arith.ori {previous}, %selected{index} : i{result_width}
+    """
+        previous = result
+    program = _program(width, body, result_width, 1 << (width - 1))
+    high = 1 << (width - 1)
+    expected = 0
+    for index, predicate in enumerate(predicates):
+        lhs = -high if predicate.startswith("s") else high
+        compare = getattr(operator, predicate.removeprefix("s").removeprefix("u"))
+        expected |= int(compare(lhs, high - 1)) << index
+    try:
+        _check_paths(program, result_width, expected)
+        program.cleanup()
+        assert _observe(program, result_width) == expected
+    except AssertionError as error:
+        pytest.fail(f"{error}\nComparison result bits, least significant first: {predicates}")
 
 
 @pytest.mark.parametrize("width", [1, 9, 64])

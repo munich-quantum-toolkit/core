@@ -68,15 +68,20 @@ using namespace mlir::qco;
 
 // Cover small specializations, the recursive/SP22 boundary, and a wide
 // basis-state check. Coherent-state checks cover the HP24 boundaries below.
-static constexpr std::array<size_t, 6> K_DD_CONTROL_COUNTS = {2, 3, 4,
-                                                              8, 9, 33};
+static constexpr std::array<size_t, 6> K_DD_CONTROL_COUNTS = {
+    2, 3, 4, 8, 9, 33,
+};
 static constexpr size_t K_MATRIX_DD_MAX_PAULI = 9;
 // Cover both HP24 dirty-ancilla modes and wide phase ladders.
 static constexpr std::array<size_t, 13> K_COHERENT_PAULI_CONTROL_COUNTS = {
     10, 11, 21, 22, 23, 24, 32, 33, 34, 47, 48, 63, 64,
 };
-static constexpr std::array<size_t, 4> K_COHERENT_MCP_CONTROL_COUNTS = {7, 8, 9,
-                                                                        33};
+static constexpr std::array<size_t, 4> K_COHERENT_MCP_CONTROL_COUNTS = {
+    7,
+    8,
+    9,
+    33,
+};
 static constexpr std::array K_ANCILLA_ANGLES = {
     0.0,
     0.73,

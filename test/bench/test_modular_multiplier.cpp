@@ -403,19 +403,4 @@ TEST(ModularMultiplier, RejectsInvalidJSONParameters) {
       "0 < a < N");
 }
 
-TEST(ModularMultiplier, EvaluatesCountsFromJSON) {
-  const auto benchmark = llvm::cantFail(ModularMultiplier::create({
-      .multiplier = "011",
-      .modulus = "101",
-      .multiplicand = "+++",
-      .control = '+',
-  }));
-  const auto evaluation = llvm::cantFail(evaluateJSON(
-      toManifestJSON(benchmark),
-      R"({"schema_version":1,"counts":{"00000000":1,"10000000":1,"00010000":1,"10010011":1,"00100000":1,"10100001":1,"00110000":1,"10110100":1,"01000000":1,"11000010":1,"01010000":1,"11010000":1,"01100000":1,"11100011":1,"01110000":1,"11110001":1}})"));
-  EXPECT_NE(evaluation.find("\"success_probability\":1"), std::string::npos);
-  EXPECT_NE(evaluation.find("\"total_variation_distance\":0"),
-            std::string::npos);
-}
-
 } // namespace mqt::bench

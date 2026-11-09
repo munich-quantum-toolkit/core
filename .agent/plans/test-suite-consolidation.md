@@ -9,6 +9,10 @@ independent semantic oracles and resource bounds over implementation snapshots.
 Keep distinct phase, output-order, ownership, failure, and numerical-limit
 contracts.
 
+Aggregate independent observations into one small workflow when they share setup
+and conversion work. Each observation still needs a distinct oracle; reducing
+the number of test registrations alone is not the objective.
+
 The development policy and agent guide now set these priorities. Codecov uses an
 overall 90% project target with a one-percentage-point tolerance and an
 informational patch status. Language flags remain available for diagnosis;
@@ -50,6 +54,22 @@ counts. Loop helpers check each format once and keep determinism in one focused
 workflow. Integer helpers retain four format checks before cleanup and one
 semantic execution after it, without repeating every export.
 
+Integer comparisons pack ten predicate results into distinct output bits. This
+keeps all predicates, three widths, and four interchange paths while reducing 30
+programs to three. Python mapping options now feed one routed execution; native
+tests own repeatability and the full version/metadata contracts. Typed phase
+normalization and decomposition share a small full-unitary workflow.
+
+Native benchmark tests omit 20 redundant generation/jeff byte round trips and
+eight repetitions of the common JSON evaluation formatter. Python workflows
+cover generation through execution; GHZ/BV retain both common formatter branches
+and QAOA/Shor retain their distinct formats. Native target tests combine
+calibration, maximum-site-ID, and copy-lifetime checks with attribute round
+trips. One decomposition workflow checks both typed and textual APIs against the
+full unitary. The topology concurrency check uses eight sites and a start
+barrier, reducing 8,192 path checks to 128 while exercising shared lazy
+initialization.
+
 Benchmark distribution thresholds in Python are binding smoke checks. Native
 sampling tests own discrimination against incorrect distributions. The
 teleportation structural test remains because its current sampling input does
@@ -60,66 +80,69 @@ contract.
 ## Validation
 
 Baseline: `2af9b2df72`, Linux ARM64, Clang/LLVM/MLIR 23, native release with
-ThinLTO. Collection and coverage were compared against the original suite using
-the same production code and dependencies.
+ThinLTO. Collection and coverage use the same production source and LLVM
+version. The baseline native coverage run used the packaged SDK; the final run
+uses the compiler-matched SDK described below.
 
 | Measurement                                      |        Original |         Reduced |
 | ------------------------------------------------ | --------------: | --------------: |
-| Native test cases, including grouped GoogleTests |           5,355 |           4,511 |
-| Registered CTest entries                         |           4,391 |           3,763 |
-| Passing Python cases, Python 3.14                |           2,305 |           1,662 |
-| Native covered lines                             | 56,097 / 60,003 | 56,094 / 60,003 |
-| Native line coverage                             |         93.490% |         93.485% |
+| Native test cases, including grouped GoogleTests |           5,355 |           4,497 |
+| Registered CTest entries                         |           4,391 |           3,749 |
+| Passing Python cases, Python 3.14                |           2,305 |           1,625 |
+| Native covered lines                             | 56,097 / 60,003 | 56,117 / 60,003 |
+| Native line coverage                             |         93.490% |         93.524% |
 | Python covered lines                             |   1,069 / 1,110 |   1,069 / 1,110 |
 | Python line coverage                             |         96.306% |         96.306% |
 
 Two alternating timing pairs, including coverage and four pytest workers, took
-63.18/62.85 seconds for the original suite and 15.15/14.94 seconds for the
-reduced suite: about 76% less wall time on average. Both versions used Python
+57.29/63.30 seconds for the original suite and 16.50/16.82 seconds for the
+reduced suite: about 72% less wall time on average. Both versions used Python
 3.14.10, the same installed package and dependencies, and the same source
 fixtures. Builds and lint were stopped during timing; the host was shared, so
 this is a local comparison rather than a hosted-CI prediction. The largest
 removed cost was the pair of 100-qubit symbolic SU2 cases, each taking about 25
 seconds.
 
-The Python covered-line set is unchanged. Native coverage loses three lines in
-Euler's non-unitary/non-finite fallbacks and one optional-empty QDMI site-pair
-return. QIR death-test error-return coverage varies between runs; the unchanged
-range and released-resource rejection tests remain. Two DD worker error-path
-lines appear in the final run, leaving a net loss of three covered lines.
-Coverage is measured separately for native source and Python source; this does
-not claim coverage of every nanobind adapter or equivalence to hosted Codecov.
+The Python covered-line set is unchanged. Native coverage gains 20 covered lines
+overall, with IQM compilation paths completing after the SDK repair. Removed
+cases leave the defensive Euler fallbacks, an optional-empty QDMI site-pair
+return, an isolated CLI threshold predicate, and one nonmatching gate-fusion
+return uncovered. Invalid decomposition thresholds and full-unitary fusion
+workflows remain tested. QIR death-test error-return coverage varies between
+runs; range and released-resource rejection tests remain. Coverage is measured
+separately for native source and Python source; this does not claim coverage of
+every nanobind adapter or equivalence to hosted Codecov.
 
-The original and reduced release suites pass in full. Both Clang debug coverage
-runs above encountered 24 IQM/resonator failures in LLVM JSON (`Unknown kind`).
-These share a local toolchain cause: the portable LLVM SDK was built with GCC,
-and its weak inline JSON callback interprets a Clang-built lambda's captures in
-the wrong order. A standalone JSON writer reproduces the abort without Core;
-debugger inspection confirms the swapped stream and value pointers. Optimized
-Clang builds inline away the conflicting callback.
+The original and reduced release suites pass in full. Clang debug coverage with
+the packaged SDK encountered 24 IQM/resonator failures in LLVM JSON
+(`Unknown kind`). These share a local toolchain cause: the portable LLVM SDK was
+built with GCC, and its weak inline JSON callback interprets a Clang-built
+lambda's captures in the wrong order. A standalone JSON writer reproduces the
+abort without Core; debugger inspection confirms the swapped stream and value
+pointers. Optimized Clang builds inline away the conflicting callback.
 
-Using GCC for the debug coverage build resolves all 24 failures with coverage
-and assertions enabled. The full reduced suite then passes all 3,763 CTest
-entries. No production workaround or test changes are needed. The table retains
-the paired Clang measurements, including their shared coverage limitation; GCC
-instrumentation is not substituted into that comparison.
+The local LLVM/MLIR 23.1.0 SDK is now built with Clang 23, with assertions and
+ABI checks enabled. The canonical SDK path selects this build; the original SDK
+is preserved separately. Both the ordinary Clang coverage preset and the
+Clang/ThinLTO release preset pass all 3,749 CTest entries, including the 24
+previous failures. No production workaround, compiler-switch preset, or test
+suppression is needed.
 
-Python 3.14 regular dependencies pass all 1,662 cases, with two optional
-Catalyst skips. Python 3.11 minimum dependencies pass all 1,662 cases, with
-three skips. C++ lint inspected every changed file in each implementation batch,
-including full-file checks on the four follow-up native files. Independent
-specialist review checked the retained contracts in both batches. Repository
-lint passes.
+Python 3.14 regular dependencies pass all 1,625 cases, with two optional
+Catalyst skips. Python 3.11 minimum dependencies pass all 1,625 cases, with
+three skips. C++ lint passes full-file checks on all 26 changed C++ files,
+including the corrected trailing commas in the decomposition parameter arrays.
+Independent specialist review checked the retained contracts and aggregated
+oracles. Repository lint passes.
 
 Reproduction uses `cmake --preset release-clang-ipo`, the corresponding build
 and CTest presets, `uv run --no-sync pytest -n 4 --cov`, and
 `uvx nox --non-interactive -s minimums-3.11 -- -n 4`. The release preset is the
 local machine override; ordinary contributors use the repository release preset.
-The local `coverage-gcc` configure, build, and CTest presets inherit the
-repository coverage settings and select GCC to match the portable LLVM SDK's
-compiler family. Compare coverage using the same filters and build configuration
-on both revisions. Raw logs and coverage reports are retained outside the source
-tree.
+Debug coverage uses the repository's ordinary `coverage` configure, build, and
+CTest presets with Clang. Raw logs, coverage reports, and the local SDK build
+manifest are retained outside the source tree.
 
-Hosted CI, the full interpreter/dependency/platform matrix, optional Catalyst
-Python integration, external QPUs, and rendered documentation were not checked.
+Hosted clang-tidy diagnostics were inspected. Final-head hosted CI, the full
+interpreter/dependency/platform matrix, optional Catalyst Python integration,
+external QPUs, and rendered documentation were not checked.
