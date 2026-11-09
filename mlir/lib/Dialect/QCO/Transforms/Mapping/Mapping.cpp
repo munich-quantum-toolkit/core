@@ -703,7 +703,9 @@ private:
            ++hardware) {
         const auto program = initialLayout.getProgramIndex(hardware);
         hardwareToProgram[hardware] = program;
-        layoutHash ^= hashEntry(program, static_cast<QubitIndex>(hardware));
+        if (program < programQubits) {
+          layoutHash ^= hashEntry(program, static_cast<QubitIndex>(hardware));
+        }
       }
       swap = {};
       parent = nullptr;
@@ -718,13 +720,14 @@ private:
       const auto [a, b] = candidate.indices;
       const auto pa = hardwareToProgram[a];
       const auto pb = hardwareToProgram[b];
-      layoutHash = nextParent->layoutHash ^ hashEntry(pa, a) ^
-                   hashEntry(pb, b) ^ hashEntry(pa, b) ^ hashEntry(pb, a);
+      layoutHash = nextParent->layoutHash;
       std::swap(hardwareToProgram[a], hardwareToProgram[b]);
       if (pa < programToHardware.size()) {
+        layoutHash ^= hashEntry(pa, a) ^ hashEntry(pa, b);
         programToHardware[pa] = b;
       }
       if (pb < programToHardware.size()) {
+        layoutHash ^= hashEntry(pb, b) ^ hashEntry(pb, a);
         programToHardware[pb] = a;
       }
       cost = nextParent->cost + static_cast<int64_t>(candidate.standalone) +
@@ -844,7 +847,7 @@ private:
           return true;
         }
         return lhs->layoutHash == rhs->layoutHash &&
-               lhs->hardwareToProgram == rhs->hardwareToProgram;
+               lhs->programToHardware == rhs->programToHardware;
       }
     };
 

@@ -342,7 +342,9 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Each search limits retained nodes using `search-memory-limit`, an estimated
     byte budget for the nodes and their qubit layouts (256 MiB by default).
     At least the root node is retained; zero disables node expansion.
-    Candidates are discarded when the same layout already has an equal or
+    Search states are identified by the positions of all program qubits,
+    including idle spectators. Unused-site labels do not distinguish states.
+    Candidates are discarded when those positions already have an equal or
     lower search cost. They skip heuristic evaluation and do not consume
     retained-node capacity.
     The pass stops allocating nodes at the limit, checks the remaining queue,
