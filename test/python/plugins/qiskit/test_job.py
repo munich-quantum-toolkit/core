@@ -745,13 +745,13 @@ def test_native_admission_decline_preserves_fallback(monkeypatch: pytest.MonkeyP
     backend = QDMIBackend.from_device_id("mqt.ddsim.default", custom1="1")
     calls = []
 
-    def submit(device: Device, programs: Sequence[CompiledProgram], shots: int, **_kwargs: object) -> Job | None:
+    def submit(_context: object, programs: Sequence[CompiledProgram], shots: int, **_kwargs: object) -> Job | None:
         calls.append(len(programs))
         if len(programs) > 1 or decline_single:
             return None
-        return submit_program(programs[0], target=device, num_shots=shots)
+        return submit_program(programs[0], target=backend.device, num_shots=shots)
 
-    monkeypatch.setattr("mqt.core.plugins.qiskit.job._try_submit_programs", submit)
+    monkeypatch.setattr("mqt.core.mlir._qdmi.Context.try_submit", submit)
     circuit = QuantumCircuit(1, 1)
     circuit.measure(0, 0)
     if decline_single:
@@ -783,7 +783,7 @@ def test_mixed_artifacts_check_a_fresh_destination(monkeypatch: pytest.MonkeyPat
     def unexpected_submission(*_args: object, **_kwargs: object) -> None:
         pytest.fail("submitted before checking the complete batch")
 
-    monkeypatch.setattr("mqt.core.plugins.qiskit.job._try_submit_programs", unexpected_submission)
+    monkeypatch.setattr("mqt.core.mlir._qdmi.Context.try_submit", unexpected_submission)
     programs = [native, foreign] if native_first else [foreign, native]
     with pytest.raises(ValueError, match="ordered site mapping differs"):
         backend.run(programs, shots=4)

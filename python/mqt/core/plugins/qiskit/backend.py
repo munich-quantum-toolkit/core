@@ -15,6 +15,7 @@ from __future__ import annotations
 
 __lazy_modules__ = {
     "mqt.core.mlir",
+    "mqt.core.mlir._qdmi",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
     "mqt.core.qdmi.builtin_driver",
@@ -56,11 +57,11 @@ from mqt.core.mlir import (
     CompiledProgram,
     CompilerTarget,
     ProgramCapability,
-    TargetEnvironment,
     _native_r_gate,
     compile_program,
     serialize_program,
 )
+from mqt.core.mlir._qdmi import Context
 from mqt.core.plugins.qiskit.exceptions import (
     CircuitValidationError,
     TranslationError,
@@ -134,7 +135,8 @@ class QDMIBackend(BackendV2):
         self._device = device
         self._device_id = device_id
         try:
-            self._environment = TargetEnvironment.from_device(device)
+            self._context = Context(device)
+            self._environment = self._context.environment
         except ValueError as exc:
             raise UnsupportedDeviceError(str(exc)) from exc
         self.last_job: QDMIJob | None = None

@@ -32,10 +32,12 @@ TEST(WorkerProtocol, SocketRoundTripAndDisconnect) {
   llvm::SmallString<128> directory;
   ASSERT_FALSE(
       llvm::sys::fs::createUniqueDirectory("mqt-transport", directory));
-  const llvm::scope_exit cleanup(
-      [&] { std::ignore = llvm::sys::fs::remove_directories(directory); });
   auto socketPath = directory;
   llvm::sys::path::append(socketPath, "socket");
+  const llvm::scope_exit cleanup([&] {
+    std::ignore = llvm::sys::fs::remove(socketPath);
+    std::ignore = llvm::sys::fs::remove(directory);
+  });
   WorkerStream client;
   WorkerStream server;
   {

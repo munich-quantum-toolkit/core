@@ -24,13 +24,14 @@ clients must use those queries to prepare compatible jobs.
 
 ## How MQT Core uses QDMI
 
-| Layer                                        | Responsibility                                                                          |
-| -------------------------------------------- | --------------------------------------------------------------------------------------- |
-| {doc}`Compiler <../mlir/target_compilation>` | Query a target's capabilities and compile a compatible program.                         |
-| {doc}`Driver and application APIs <driver>`  | Load device libraries and provide C++ and Python access to sessions, queries, and jobs. |
-| Device implementation                        | Translate QDMI calls into simulator operations or a provider's API.                     |
-| {doc}`SDK adapters <qdmi_backend>`           | Execute Qiskit and PennyLane programs through QDMI.                                     |
-| {doc}`Slurm playground <slurm>`              | Schedule hybrid workflows using the ordinary QDMI APIs.                                 |
+| Layer                                        | Responsibility                                                                           |
+| -------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| {doc}`Compiler <../mlir/target_compilation>` | Query a target's capabilities and compile a compatible program.                          |
+| Native runtime                               | Retain execution contexts, submit compatible programs, and decode logical results.       |
+| {doc}`Driver and application APIs <driver>`  | Load device libraries and provide C++ and Python access to sessions, queries, and jobs.  |
+| Device implementation                        | Translate QDMI calls into simulator operations or a provider's API.                      |
+| {doc}`SDK adapters <qdmi_backend>`           | Translate Qiskit, PennyLane, and Catalyst inputs and outputs through the shared runtime. |
+| {doc}`Slurm playground <slurm>`              | Schedule hybrid workflows using the ordinary QDMI APIs.                                  |
 
 Compilation and submission remain separate: `compile_program` prepares a
 `CompiledProgram`; `submit_program` submits it to a matching execution device.

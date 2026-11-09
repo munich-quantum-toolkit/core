@@ -25,6 +25,7 @@ import mqt.core.dd
 import mqt.core.plugins.qiskit.backend
 import mqt.core.qdmi
 from mqt.core.mlir import _pennylane as _pennylane
+from mqt.core.mlir import _qdmi as _qdmi
 from mqt.core.mlir import _qiskit as _qiskit
 from mqt.core.qdmi import Device
 
@@ -1994,25 +1995,6 @@ def serialize_program(
         program: A native Qiskit circuit or QC program with static target sites.
         target: The destination device, registered device ID, or TargetEnvironment.
     """
-
-def _prepare_qdmi_programs(
-    device: mqt.core.qdmi.Device, programs: tuple[CompiledProgram, ...], environment: TargetEnvironment
-) -> dict[mqt.core.qdmi.ProgramFormat, TargetEnvironment]:
-    """Validate every format group and retain its destination for submission."""
-
-def _try_submit_programs(
-    device: mqt.core.qdmi.Device,
-    programs: Sequence[CompiledProgram],
-    num_shots: int,
-    *,
-    custom1: str | bool | float | bytes | None = None,
-    custom2: str | bool | float | bytes | None = None,
-    custom3: str | bool | float | bytes | None = None,
-    custom4: str | bool | float | bytes | None = None,
-    custom5: str | bool | float | bytes | None = None,
-    destination: TargetEnvironment | None = None,
-) -> mqt.core.qdmi.Job | None:
-    """Submit compatible compiled programs, returning None only when a provider declines batching."""
 
 def submit_program(
     program: str

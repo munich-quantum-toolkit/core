@@ -13,8 +13,9 @@
 #include "mqt/Compiler/ResultLayout.h"
 #include "qdmi/QDMI.hpp"
 
+#include "Readout.h"
+
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <cstddef>
@@ -22,14 +23,9 @@
 #include <map>
 #include <optional>
 #include <string>
-#include <utility>
 #include <vector>
 
 namespace mqt::runtime {
-
-/// Validated logical MSB-first outcomes and their multiplicities.
-/// Ordered SHOTS remain ordered; aggregate consumers sum projected collisions.
-using Readout = llvm::SmallVector<std::pair<std::string, size_t>>;
 
 /// Load logical results, falling back only on unavailable or empty retrieval.
 [[nodiscard]] Readout readout(const qdmi::Job& job, size_t width, size_t shots,

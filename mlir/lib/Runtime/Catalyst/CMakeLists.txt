@@ -17,7 +17,7 @@ target_include_directories(
   PUBLIC "$<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/vendor/catalyst/0.15.0/include>")
 target_link_libraries(
   MQTCompilerCatalystAdapter
-  PUBLIC MQTPennyLaneRecorder MQTCompilerQDMIAdapter MQTQDMIRuntime
+  PUBLIC MQTPennyLaneRecorder MQTCompilerQDMIAdapter MQTQDMIRuntime MQTQDMIExecution
   PRIVATE MQT::ProjectOptions)
 
 if(MQT_CORE_INSTALL)
