@@ -11,6 +11,7 @@ add_executable(
   ${qco_utils_target}
   test_dd_functionality.cpp
   test_drivers.cpp
+  test_graph.cpp
   test_layout.cpp
   test_sorting.cpp
   test_unitary_matrix.cpp
