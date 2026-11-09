@@ -46,7 +46,31 @@ ancilla
 
 device qubit
   **Preferred term:** device qubit. **Accepted alias:** hardware qubit. A
-  target site on which a program qubit can be placed.
+  physical qubit identified by a compiler target.
+
+target site
+  **Preferred term:** target site. **Accepted alias:** hardware site. A hardware
+  location identified by a compiler target. Target sites can include device
+  qubits and computational resonators.
+
+placeable site
+  **Preferred term:** placeable site. **Accepted aliases:** none. A target site
+  eligible to receive a program qubit under the compiler's
+  [placement policy](mlir/target_compilation.md#placement-and-routing).
+  Eligibility does not establish support for every circuit operation.
+
+computational resonator
+  **Preferred term:** computational resonator. **Accepted alias:** resonator in
+  the context of MOVE compilation. A hardware resonator used to store quantum
+  state temporarily and mediate gates between device qubits. Supported MOVE
+  compilation uses resonators outside the set of placeable sites.
+
+MOVE
+MOVE gate
+  **Preferred term:** MOVE. **Accepted alias:** MOVE gate. An operation used by
+  IQM devices to transfer quantum state between a device qubit and a
+  computational resonator. Its ordered operands identify the qubit and resonator
+  for transfers in either direction.
 
 layout metadata
   **Preferred term:** layout metadata. **Accepted aliases:** none. The mapping

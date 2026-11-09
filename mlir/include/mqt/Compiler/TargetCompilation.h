@@ -29,13 +29,14 @@ class OpPassManager;
 createTargetCompilationEnvironment(ModuleOp moduleOp,
                                    const TargetEnvironment& environment);
 
-/// Register target preparation and finalization for textual pass pipelines.
+/// Register target compilation passes for textual pipelines.
 ///
 /// Preparation uses the attached target environment, records source wire order,
 /// and performs structural cleanup. Finalization synthesizes and verifies
 /// native operations, then restores the execution environment saved by
 /// preparation. Explicitly attaching another environment abandons that
-/// restoration.
+/// restoration. Resonator CZ lowering uses the attached execution environment
+/// after conversion to QC.
 void registerTargetCompilationPasses();
 
 /// Populate the canonical compiler-target pipeline.
