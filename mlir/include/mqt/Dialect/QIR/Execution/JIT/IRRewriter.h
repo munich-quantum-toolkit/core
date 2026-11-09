@@ -48,7 +48,7 @@ namespace qir {
 /// regions and defined helpers; neither profile supports indirect calls.
 llvm::Expected<bool> prepareForStateExtraction(llvm::Function& entryPoint);
 
-/// Return logical qubit IDs in output order for deferred sampling.
+/// Return program qubit IDs in output order for deferred sampling.
 ///
 /// Only an acyclic unconditional Base or Adaptive path with constant gate
 /// arguments and scalar result records is supported. Boolean records, unknown

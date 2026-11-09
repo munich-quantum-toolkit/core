@@ -40,7 +40,10 @@ struct NativeRAlias {
 /// Return the fixed-angle R definition of a recognized native pulse name.
 [[nodiscard]] std::optional<NativeRAlias> nativeRAlias(llvm::StringRef name);
 
-/// Immutable description of an MQT compiler target.
+/// Immutable description of the operations and topology available to
+/// compilation.
+///
+/// This is a snapshot of target properties, not a live device connection.
 ///
 /// Gate-set targets have no device sites or placement constraints.
 /// Hardware sites retain their target-defined nonnegative i64
@@ -339,7 +342,8 @@ public:
     XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
     ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
     ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
-    GPI,  ///< R(π, φ) and R(π/2, φ) with unrestricted φ.
+    GPI,  ///< R(π, φ) and R(π/2, φ) with unrestricted φ; GPi export corrects
+          ///< phase.
   };
 
   /// Native RX, RY, or R(theta, 0) quarter turns for the ZSXX Euler recipe.

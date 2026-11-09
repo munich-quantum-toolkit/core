@@ -206,16 +206,27 @@ gitmoji convention:
 
 ## Prose and terminology
 
-Keep documentation proportional to the change. For small additions, update the
-existing explanation or example first. Include behavior, usage, and limits that
-help the reader. Keep internal representation and validation details in the
-owning reference and link to it instead of repeating them in user guides.
+Write for someone who knows the task but has not read the implementation or
+followed its design. Prioritize technical accuracy, reader understanding, and
+natural flow, in that order. Concision helps when it removes distractions; it
+hurts when it removes the connections that make an explanation understandable.
 
-Keep conversations, prompts, and iteration history out of code comments, pull
-request descriptions, and other maintainer-facing prose. Write for readers who
-have not seen the conversation. Prefer comments that explain current behavior
-and rationale. Instead of "preserve the existing behavior", state the actual
-backwards-compatibility constraint.
+In a guide, start with what the reader can do and why it is useful. Introduce
+concepts before using them, connect steps with their reasons, and put examples
+near the explanation they support. Use paragraphs for reasoning and lists or
+tables for steps and comparisons. Detailed API descriptions should explain how
+to use the interface, including ownership, side effects, and failure behavior
+that the signature does not convey. Keep specialist implementation details in
+the owning reference and link to them when needed.
+
+Integrate additions into the surrounding explanation rather than appending a
+record of each feature or fix. Remove duplicated caveats and contrasts with
+unreleased designs, but preserve limitations that affect a reader's choices.
+Keep prompts, conversations, review instructions, and iteration history out of
+public documentation, docstrings, comments, and PR descriptions. A rationale
+belongs in the text when it explains the current design; the discussion that led
+to it does not. Keep release history and migration advice in their designated
+documents.
 
 Apply [Orwell's six rules for writing][orwell] to documentation, comments,
 diagnostics, tests, commit messages, and review communication:
@@ -227,22 +238,65 @@ diagnostics, tests, commit messages, and review communication:
 5. Use everyday English instead of jargon when precision permits.
 6. Break a rule before making the text unclear or incorrect.
 
-Apply the relevant [ASD-STE100 Simplified Technical English][ste] principles:
-keep sentences short and direct, give each sentence one main idea, use one term
-per concept, and prefer explicit nouns to vague pronouns. These are required
-style rules, not a claim of formal ASD-STE100 compliance. Use established terms
-from quantum computing, LLVM/MLIR, HPC, and computer science. Explain
-differences between communities' terms once; do not invent synonyms for variety.
+Use [ASD-STE100 Simplified Technical English][ste] principles where concise,
+unambiguous statements help readers look up a fact:
+
+| Kind of text                                    | Writing guidance                                                                                    |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Implementation comments                         | Use short, direct statements to explain a reason or constraint the code cannot show.                |
+| API summary or Doxygen brief                    | State the purpose or observable behavior concisely.                                                 |
+| Parameter, return, and error descriptions       | Give precise meanings, units, ranges, defaults, and conditions where needed.                        |
+| Detailed API descriptions                       | Use natural, connected prose; explain concepts and consequences with examples. STE is not required. |
+| Guides, tutorials, and conceptual documentation | Write a coherent explanation for the intended reader. STE is not required.                          |
+
+These are writing guidelines, not a claim of formal ASD-STE100 compliance. Do
+not split a connected explanation into isolated sentences just to make each
+sentence short. Use pronouns when their reference is clear, and retain familiar
+technical terms when a substitute would be less precise.
 
 [orwell]: https://www.orwellfoundation.com/the-orwell-foundation/orwell/essays-and-other-works/politics-and-the-english-language/
 [ste]: https://www.asd-ste100.org/
 
-Use one established term for one concept. The
-{doc}`MQT Core glossary <glossary>` records preferred names, accepted aliases,
-and distinctions that matter to public APIs or compiler design. Update the
-glossary in the same pull request when introducing or changing a public or
-potentially ambiguous term. Do not add entries for ordinary language or private
-implementation details.
+### Terminology and glossary
+
+Prefer established terms from quantum computing, LLVM/MLIR, HPC, and computer
+science. Explain specialist language where readers first need it; a glossary
+link alone does not introduce a concept. Use a consistent term for each concept,
+but do not invent a compound name for an ordinary action or implementation
+detail. Preserve project names such as `jeff` and `jeff-mlir`.
+
+The {doc}`glossary` helps readers interpret recurring terms across guides. It is
+not an inventory of classes or a place to establish new field-wide definitions.
+Before adding an entry, check that readers need it beyond one API description.
+For established terms, cite a primary specification, paper, or upstream manual
+and keep the general definition separate from MQT Core's particular behavior.
+For a necessary MQT-specific concept, label it as such and link to its API or
+guide. Do not present class names as accepted scientific aliases or add
+"accepted aliases: none" boilerplate. Keep API-object definitions, constructor
+requirements, and schema details in their owning references rather than the
+glossary. Use “program qubits” for circuit qubits before hardware mapping,
+distinguishing placement from allocation and from encoded logical qubits.
+Explain each map's domain and direction beside its API. Review technical
+references as well as guides for unnecessary shorthand; precision does not
+require unexplained compound names.
+
+When terminology is uncertain, record the term, affected uses, source evidence,
+and proposed action in an audit for review. Lack of a source is a reason to
+investigate, not proof that a term was invented. Coordinate approved terminology
+changes across guides, API descriptions, and examples without silently renaming
+public symbols.
+
+### Reviewing prose
+
+Read the affected section as a whole after editing it. Check that a newcomer can
+identify the task, understand each introduced concept, and follow the example.
+Verify claims against the implementation and relevant primary sources; avoid
+unsupported assurances. Link to symbols or sections rather than brittle line
+numbers. Remove sentences that only answer an earlier review comment or repeat a
+nearby rule. Check generated API documentation at its source; do not edit
+generated stubs or reference pages. Build the documentation and inspect the
+rendered pages as described under
+[documentation validation](#documentation-validation).
 
 ## Maintenance
 
@@ -372,7 +426,7 @@ false model of const-correctness. Follow MLIR's
 void inspect(Value value, Operation* operation);
 
 for (Value operand : operation->getOperands()) {
-  /// Use operand without implying that the IR graph is immutable.
+  // Use operand without implying that the IR graph is immutable.
 }
 ```
 

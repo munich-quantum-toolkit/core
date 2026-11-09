@@ -17,13 +17,16 @@ include "mlir/IR/OpBase.td"
 
 def WireOpInterface : OpInterface<"WireOpInterface"> {
   let description = [{
-    Describes the quantum wires continued by an operation, independently of
-    whether the operation is unitary. The input and output ranges have matching
+    Describes Core's correspondence between an operation's input and output
+    wires, independently of whether the operation is unitary. The input and
+    output ranges have matching
     types and correspond positionally. A value may be a scalar qubit or a
     one-dimensional qubit tensor or vector. Classical operands and results are
     excluded from these ranges, which need not start at position zero.
 
-    Wire identity is preserved even when quantum states are exchanged by SWAP.
+    This positional convention is separate from the requirement that each
+    quantum SSA value have exactly one use. Wire identity is preserved even
+    when quantum states are exchanged by SWAP.
     Region operations must also verify the correspondence through their bodies;
     this interface describes their external input/output relationship only.
 

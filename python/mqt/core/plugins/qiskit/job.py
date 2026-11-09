@@ -58,7 +58,7 @@ class QDMIJob(JobV1):
 
     Args:
         backend: The backend this job runs on.
-        programs: Compiled payloads and their logical result contracts.
+        programs: Compiled programs and their output-bit mappings.
         shots: Requested shots per circuit.
         memory: Whether to collect individual shots.
         max_retries: Lifetime replacement limit per confirmed failed entry;
@@ -244,7 +244,7 @@ class QDMIJob(JobV1):
             A Qiskit experiment with counts and, if requested, per-shot memory.
 
         Raises:
-            JobError: If execution failed or the result violates the circuit's output contract.
+            JobError: If execution failed or the result cannot be decoded as the circuit's output.
         """
         width = header["memory_slots"]
         try:

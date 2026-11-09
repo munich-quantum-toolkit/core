@@ -8,8 +8,8 @@ infrastructure; see {cite:p}`MQTCompilerCollection2026`.
 ## Start with a result
 
 The {doc}`Shor factoring walkthrough <../getting_started>` compiles and executes
-an order-finding circuit with local DDSIM. It connects a structured benchmark,
-the compiler, and QDMI in one example. No hardware account or MLIR knowledge is
+an order-finding circuit with local DDSIM. It connects a quantum benchmark, the
+compiler, and QDMI in one example. No hardware account or MLIR knowledge is
 required.
 
 Then work through the {doc}`compiler tutorials <../tutorials/index>` to inspect
@@ -25,7 +25,7 @@ change and rerun.
   command-line, and C++ interfaces, custom pipelines, and simulation.
 - **Compile for a device:** the
   {doc}`target-compilation guide <../mlir/target_compilation>` uses device
-  operations, connectivity, and supported payloads to produce a runnable
+  operations, connectivity, and accepted program formats to produce a runnable
   program.
 - **Exchange programs:** use {doc}`OpenQASM <../mlir/OpenQASM>` or
   {doc}`Qiskit <../mlir/qiskit>` at the frontend, or compile to
@@ -36,7 +36,7 @@ Continue with {doc}`QDMI devices and integrations <../qdmi/index>` to discover
 devices, connect an SDK, or configure remote execution. For direct state and
 operator manipulation, use the {doc}`decision-diagram package <../dd_package>`.
 For repeatable workloads and reference results, use
-{doc}`structured benchmarks <../benchmarks>`.
+{doc}`quantum benchmarks <../benchmarks>`.
 
 Compiler internals are documented in the {doc}`MLIR reference <../mlir/index>`
 and the

@@ -64,11 +64,11 @@ def aggregate(
         job: Completed provider job whose results are read.
         num_wires: Logical output width after layout projection.
         shots: Positive expected shot count.
-        measurements: Pairs of logical wire indices and a counts flag. True
+        measurements: Pairs of program wire indices and a counts flag. True
             selects a binary-key count dictionary; false selects a one-dimensional
             NumPy probability array. The first selected wire is most significant.
         program_index: Program within a multi-program job.
-        result_layout: Projection from provider output to logical wires.
+        result_layout: Projection from provider output to program wires.
 
     Returns:
         One marginal per measurement, in the requested order. Counts are preferred;
@@ -83,14 +83,14 @@ def samples(
     program_index: int = 0,
     result_layout: mqt.core.mlir.ResultLayout | None = None,
 ) -> Annotated[NDArray[np.int8], {"shape": (None, None), "order": "C", "device": "cpu"}]:
-    """Return a shot-by-wire NumPy array in logical wire order.
+    """Return a shot-by-wire NumPy array in program wire order.
 
     Args:
         job: Completed provider job whose results are read.
         num_wires: Number of logical output columns after layout projection.
         shots: Positive expected number of rows.
         program_index: Program within a multi-program job.
-        result_layout: Projection from provider output to logical wires.
+        result_layout: Projection from provider output to program wires.
 
     Returns:
         A contiguous int8 array that owns its storage independently of the job.

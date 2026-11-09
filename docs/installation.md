@@ -76,16 +76,17 @@ This prints the installed package version.
 
 ## Build performance
 
-Release wheels use portable CPU settings and the assertion-free LLVM/MLIR 23.1.4
-SDK. Linux wheels target manylinux_2_28 and use Clang 22 with LLD and ThinLTO;
-macOS wheels use Apple Clang and ThinLTO with a macOS 13.3 deployment target.
-Windows wheels use MSVC with IPO, except for DLLs that require automatic symbol
-exports. Wheels include the QDMI driver and device bundles and the `mqt-core`
-executable with `compile`, `bench`, `simulate`, and `run` subcommands. Their
-CMake package exposes the QDMI C interfaces and the `MQT::mqt-core` executable
-target. The Runtime component requires no LLVM SDK; see {doc}`cpp_api`. C++
-development libraries and headers are available from source installations; the
-DD library is static.
+Prebuilt wheels include the compiler, simulator, QDMI driver, and device
+bundles. They also provide the `mqt-core` command with `compile`, `bench`,
+`simulate`, and `run` subcommands. You can use the bundled QDMI C interfaces
+from a CMake application without installing an LLVM SDK; see {doc}`cpp_api`. C++
+development libraries and headers require a source installation.
+
+The wheels use portable CPU settings and an assertion-free LLVM/MLIR 23.1.4 SDK.
+Linux builds target manylinux_2_28 using Clang 22, LLD, and ThinLTO; macOS
+builds use Apple Clang and ThinLTO with a macOS 13.3 deployment target. Windows
+builds use MSVC and interprocedural optimization (IPO), except for DLLs that
+require automatic symbol exports.
 
 ### Command-line tools
 
@@ -155,9 +156,9 @@ Results are printed as counts JSON. `simulate` uses the same execution path with
 DDSIM. `--seed` is specific to DDSIM.
 
 Source execution reconstructs logical readout using the compiler's result
-layout. Serialized payloads return raw device counts: a payload file does not
-retain that mapping. Run the source directly to preserve its logical output
-order and repeated measurements.
+layout. Submitting serialized programs returns raw device counts: the program
+file does not retain that mapping. Run the source directly to preserve its
+logical output order and repeated measurements.
 
 To keep the compiled IQM circuit for inspection or repeated submission:
 
@@ -195,7 +196,7 @@ QDMI device, QIR uses Adaptive when supported and Base otherwise, with the
 encoding selected by the extension. `.json` selects IQM JSON and requires a
 suitable target. Explicit `--emit` or `--payload-spec` settings take precedence.
 Without a recognized extension, untargeted compilation defaults to QC MLIR and
-device compilation selects a supported payload.
+device compilation selects a supported execution format.
 
 `--with=qiskit` installs the optional serializer directly. Installing
 `mqt-core[qiskit]` instead also applies MQT Core's Qiskit dependency

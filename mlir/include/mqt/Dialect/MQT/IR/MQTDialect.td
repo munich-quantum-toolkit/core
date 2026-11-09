@@ -71,7 +71,7 @@ def MQTDialect : Dialect {
     conflict with declared names; otherwise they generate names. Locations
     may be discarded, including by plain IR printing, without changing
     execution, parameter binding, or result labels. Keep names and identities
-    required by those contracts in the explicit attributes above.
+    needed for those behaviors in the explicit attributes above.
 
     `mqt.entry_point` marks the single public, defined `func.func` program entry
     in a module. QC/QCO entries cannot return quantum values. Their classical
@@ -80,9 +80,10 @@ def MQTDialect : Dialect {
     Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
     qubit `memref.alloc`, and `qtensor.alloc`) must appear directly in its
     entry block. Other functions receive quantum resources as arguments;
-    they cannot allocate them. Classical allocations and static qubit references
-    are not subject to this restriction. A program cannot mix static and
-    dynamic qubit allocation modes.
+    they cannot allocate them. Classical allocations and static device-site
+    references are not subject to this restriction. A program cannot mix
+    static device-site references with quantum allocation operations. A fixed
+    register size does not make an allocation a static device-site reference.
     `mqt.unitary` marks a private function that defines a unitary operation.
     Its body admits unitary operations and memory-effect-free, region-free
     classical computation. Statically bounded `scf.for` loops may contain these
@@ -97,8 +98,8 @@ def MQTDialect : Dialect {
     guarantee traps. Unitary operations may retain effects such as a scoped
     global-phase contribution.
     `#mqt.compilation_target` records compiler-target facts as typed IR.
-    `mqt.target_env` records compiler-target facts and the selected payload
-    execution contract.
+    `mqt.target_env` records compiler-target facts, the selected execution format, and the
+    program features that the destination supports.
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
@@ -296,11 +297,11 @@ def PayloadEncoding : I32EnumAttr<"PayloadEncoding", "Payload encoding",
 }
 
 def PayloadFormatAttr : MQTAttr<"PayloadFormat", "payload_format"> {
-  let summary = "Selected payload format and accepted versions";
+  let summary = "Selected execution format and accepted versions";
   let description = [{
-    Identifies a payload by format ID, receiver-version constraint, optional profile ID, and
+    Identifies a program representation by format ID, accepted receiver versions, optional profile ID, and
     encoding. Every field takes part in identity. An empty profile denotes a
-    payload without a named profile.
+    format without a named profile.
     An empty version identifies an unversioned format. Nonempty versions use
     `major[.minor[.patch]]` for a same-major ceiling, or comma-conjoined
     `>=`, `<`, and `<=` bounds. For example, `2.1` accepts versions from 2.0
@@ -320,7 +321,7 @@ def PayloadFormatAttr : MQTAttr<"PayloadFormat", "payload_format"> {
 }
 
 def ProgramConstraintAttr : MQTAttr<"ProgramConstraint", "program_constraint"> {
-  let summary = "One constraint on a payload capability";
+  let summary = "One limit on a supported program feature";
   let description = [{
     Records one extensible constraint ID and its constraint-specific value.
   }];
@@ -330,7 +331,7 @@ def ProgramConstraintAttr : MQTAttr<"ProgramConstraint", "program_constraint"> {
 }
 
 def ProgramCapabilityAttr : MQTAttr<"ProgramCapability", "program_capability"> {
-  let summary = "One payload execution capability";
+  let summary = "One program feature supported for execution";
   let description = [{
     Records one extensible capability ID, its feature-specific value, and all
     constraints on that capability. Unknown IDs remain valid so newer
@@ -343,9 +344,9 @@ def ProgramCapabilityAttr : MQTAttr<"ProgramCapability", "program_capability"> {
 }
 
 def PayloadSpecAttr : MQTAttr<"PayloadSpec", "payload_spec"> {
-  let summary = "Selected payload execution contract";
+  let summary = "Selected execution format and supported program features";
   let description = [{
-    Records the exact payload and its effective capabilities. Producers expand
+    Records the selected execution format and its supported program features. Producers expand
     format baselines before creating this attribute. The capability list
     remains available when optional capability metadata is unknown;
     `optional_capabilities_known` records whether that optional metadata is
@@ -371,12 +372,13 @@ def PayloadSpecAttr : MQTAttr<"PayloadSpec", "payload_spec"> {
 }
 
 def TargetEnvAttr : MQTAttr<"TargetEnv", "target_env"> {
-  let summary = "Selected compilation and payload specification";
+  let summary = "Selected hardware target and execution format";
   let description = [{
-    Combines typed compiler-target facts with the selected payload contract.
+    Combines typed compiler-target facts with the selected execution format and
+    supported program features.
 
     The following environment pairs a one-site target with a producer-defined
-    payload:
+    execution format:
 
     ```mlir
     #mqt.target_env<

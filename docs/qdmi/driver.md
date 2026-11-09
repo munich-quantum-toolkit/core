@@ -8,10 +8,11 @@ mystnb:
 
 # Using QDMI drivers
 
-The source-installed C++ QDMI library (`MQT::CoreQDMI`) provides owning wrappers
-for the standard QDMI Client Interface. Applications can replace the driver
-without rebuilding. The library calls every driver through that interface. Each
-driver handles its own device implementations, configuration, and authorization.
+A QDMI driver connects an application to device implementations. MQT Core's C++
+library (`MQT::CoreQDMI`, available from a source installation) and Python API
+use the standard QDMI Client Interface, so an application can select a different
+driver without rebuilding. The selected driver determines which devices are
+available and how they are configured and authenticated.
 
 The builtin MQT Core QDMI driver (`MQT::CoreQDMIDriver`, exposed in Python as
 `builtin_driver`) loads devices such as [the SC device](sc_device.md) and
@@ -34,10 +35,10 @@ global destructors.
 
 The builtin MQT Core QDMI driver shares device libraries across path aliases
 with the same symbol prefix. Independent sessions keep their own parameters.
-Initializing one device does not block initialization of unrelated devices.
-Standard sessions borrow a fixed device catalog; targeted sessions own their
-device. Devices own their jobs and release them before closing the device
-session.
+Initializing one device does not block initialization of unrelated devices. A
+regular session keeps a fixed catalog of devices, while opening a single
+configured device creates a session for that device. Jobs are released before
+their device session closes.
 
 The builtin driver returns `QDMI_ERROR_OUTOFMEM` when allocating a session or
 job handle fails. Internal registry and configuration allocations are not
@@ -102,12 +103,12 @@ The Qiskit `QDMIBackend.from_device_id` factory and PennyLane's
 overrides for device session parameters. To use another driver with these SDKs,
 pass an already-open `Device` to the backend constructor.
 
-The builtin MQT Core QDMI driver provides optional private functions for
-manifest registration, metadata-only ID enumeration, and targeted session
-allocation. Standard-interface drivers need none of them. The generic `Session`
-and `open_device` APIs use only the standard Client Interface. The driver's C++
-implementation is internal; only the Client Interface and these three C
-extensions are exported from its shared library.
+Manifest registration, listing configured IDs without opening devices, and
+opening a single configured device use MQT Core driver extensions. Use the
+generic `Session` and `open_device` APIs with other drivers; these APIs require
+only the standard QDMI Client Interface. The builtin driver's shared library
+exports that interface and the three C extensions, while keeping its C++
+implementation internal.
 
 ## Multi-program jobs
 
@@ -158,17 +159,18 @@ MQT Core QDMI driver can load external device libraries through
 
 ## Python Bindings
 
-The C++ QDMI library adds owning wrappers for driver sessions, devices, sites,
-operations, and jobs. Each wrapper retains the driver session that owns its raw
-handle. The Python module exposes the same entities through
-{py:mod}`mqt.core.qdmi`.
+The C++ QDMI library provides classes for driver sessions, devices, sites,
+operations, and jobs. Each object keeps its driver session alive for as long as
+the object's handle is needed. The library uses the QDMI Client interface and
+does not depend on Core's builtin driver implementation. The Python module
+exposes the same entities through {py:mod}`mqt.core.qdmi`.
 
 Native device opening, property queries, job calls, and compiler-target
 snapshots release Python's GIL. Other Python threads can run while a device
 waits for a remote response. Python argument and result conversion still holds
 the GIL. Concurrent calls into a shared device or job must satisfy the device
-implementation's thread safety contract; releasing the GIL does not serialize
-device access.
+implementation's thread safety requirements; releasing the GIL does not
+serialize device access.
 
 ### Custom job parameter types
 
@@ -177,14 +179,14 @@ The `custom1` through `custom5` arguments of
 {py:func}`mqt.core.mlir.submit_program` use the device's documented types.
 Strings include a null terminator; `bool`, `int`, and `float` use C++ `bool`,
 `int`, and `double`. Integers outside the C++ `int` range raise `TypeError`. For
-a device-defined binary payload, pass nonempty `bytes`:
+a custom parameter containing device-defined binary data, pass nonempty `bytes`:
 
 ```python
 job = device.submit_job(program, program_format, custom1=b"\x01\x00\xff")
 ```
 
-QDMI copies raw bytes without a terminator; empty payloads raise `ValueError`.
-The device defines their meaning and size. In C++, pass a
+QDMI copies raw bytes without a terminator; empty byte strings raise
+`ValueError`. The device defines their meaning and size. In C++, pass a
 `std::span<const std::byte>` whose buffer stays valid until submission returns.
 The bytes describe a local QDMI ABI value, not a network encoding.
 
@@ -211,11 +213,11 @@ meaning of these values.
 ## Temporary compiler metadata
 
 These versioned properties carry compiler facts until QDMI standardizes them.
-Device payload capabilities are opt-in: a program format alone does not enable
+Device execution capabilities are opt-in: a program format alone does not enable
 control flow or classical assignment. DDSIM advertises its supported
-capabilities; hardware-only SC models have no executable payload contract.
+capabilities; hardware-only SC models do not accept programs for execution.
 
-| Property            | Contract                                             |
+| Property            | Meaning                                              |
 | ------------------- | ---------------------------------------------------- |
 | Device `CUSTOM2`    | `mqt.compiler-target.v1:all-to-all-homogeneous`      |
 | Device `CUSTOM3`    | `mqt.payload-capabilities.v1` JSON                   |

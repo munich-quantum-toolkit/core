@@ -79,9 +79,10 @@ print("Selected format:", compiled.program_format.name)
 print("Payload size:", len(compiled.payload))
 ```
 
-The returned `CompiledProgram` owns the payload and the target contract used to
-produce it. The compiler selects a native format from those supported by the
-device. Reusing this object avoids recompilation for subsequent jobs.
+The returned `CompiledProgram` stores the serialized program and the target
+requirements used to produce it. The compiler selects a native format from those
+supported by the device. Reusing this object avoids recompilation for subsequent
+jobs.
 
 ## Submit, wait, and retrieve counts
 
@@ -162,8 +163,8 @@ which sampling and zero-shot extraction jobs support it.
 ## Reuse the compiled program
 
 The number of shots is a job parameter. Submit the same compiled artifact again
-with a smaller shot count; no recompilation is needed while the target contract
-still matches:
+with a smaller shot count; no recompilation is needed while the target
+requirements still match:
 
 ```{code-cell} ipython3
 small_job = submit_program(compiled, target=device, num_shots=128, custom1=seed)

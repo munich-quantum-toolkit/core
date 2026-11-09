@@ -100,29 +100,32 @@ parsePayloadCapabilities(llvm::StringRef text,
     const qdmi::Device& device,
     std::optional<QDMI_Program_Format> format = std::nullopt);
 
-/// Snapshot a device payload contract without requiring a local serializer.
+/// Snapshot a device's execution formats and features without serializing a
+/// program.
 ///
-/// An omitted format uses the device's highest-preference compiler payload.
-/// Submission preflight can omit calibration, which does not affect
+/// An omitted format uses the device's highest-preference compiler-supported
+/// format. Checks before submission can omit calibration, which does not affect
 /// compatibility.
 [[nodiscard]] llvm::Expected<TargetEnvironment> inspectTargetEnvironment(
     const qdmi::Device& device,
     std::optional<QDMI_Program_Format> format = std::nullopt,
     bool includeCalibration = true);
 
-/// Check hardware compatibility and payload support, ignoring calibration.
+/// Check hardware compatibility and supported program features, ignoring
+/// calibration.
 ///
 /// Ordered site IDs and ordered operation operands retain their meaning.
 /// IQM JSON also requires unchanged site names. The destination must support
-/// every capability allowed by the compiled payload contract.
+/// every feature allowed by the compiled program's format specification.
 [[nodiscard]] llvm::Error
 validateTargetCompatibility(const TargetEnvironment& compiled,
                             const TargetEnvironment& destination);
 
-/// Compiled payload and the target used to check submission compatibility.
+/// Serialized program and target information used to check submission
+/// compatibility.
 class CompiledProgram {
 public:
-  /// Compile and serialize for one selected hardware/payload contract.
+  /// Compile and serialize for the selected target and execution format.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   compile(CompilerInput program, const TargetEnvironment& environment,
           const CompilationOptions& options = {});
@@ -130,8 +133,9 @@ public:
   /// Serialize an already native program without routing or gate synthesis.
   ///
   /// The caller supplies valid native operations and placements.
-  /// Static programs use canonical terminal readout and retain the logical
-  /// output map. Dynamic programs retain their classical outputs.
+  /// Programs with static device-site references measure each read-out site
+  /// once at the end and retain a map back to the program's output bits.
+  /// Programs with allocated qubits retain their classical outputs.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   serialize(QCProgram program, const TargetEnvironment& environment,
             const CompilationOptions& options = {});
@@ -181,7 +185,7 @@ compileProgram(CompilerInput program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format = std::nullopt,
                const CompilationOptions& options = {});
 
-/// Validate the destination contract before creating and submitting a QDMI job.
+/// Check the destination supports the program before creating a QDMI job.
 /// Raw job results require decoding with the compiled result layout, if
 /// present.
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
@@ -193,7 +197,7 @@ compileProgram(CompilerInput program, const qdmi::Device& device,
     const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt);
 
-/// Validate one format group and retain its destination contract.
+/// Check one format group and retain its destination requirements.
 ///
 /// Without a retained destination, snapshot the device without calibration.
 /// No job is created. All programs must be non-null and use the same format.

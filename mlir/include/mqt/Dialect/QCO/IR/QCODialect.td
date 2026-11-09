@@ -17,29 +17,35 @@ def QCODialect : Dialect {
   let summary = "The QCO (value semantics) dialect for quantum computing.";
 
   let description = [{
-        The QCO dialect uses **value semantics** where quantum operations
-        consume input qubits and produce new output values, following the
-        SSA model. Dependencies between quantum operations are explicit in
-        the use-def chains.
+    QCO (Quantum Circuit Optimization) represents each qubit at a particular
+    point in the computation as an SSA value. A gate consumes its input values
+    and produces the values used by subsequent operations. This model, called **value
+    semantics**, makes dependencies explicit, so optimizations can follow the
+    quantum data flow directly.
 
-        The name "QCO" stands for "Quantum Circuit Optimization."
+    ```mlir
+    %q_out = qco.h %q_in
+    %q0_out, %q1_out = qco.swap %q0_in, %q1_in
+    ```
 
-        In a program, dynamic qubit and qubit-tensor allocations must be in
-        the entry block of the `mqt.entry_point` function. Helper functions
-        receive quantum resources as arguments. The MQT entry-point verifier
-        checks this rule across the program.
+    Each quantum SSA value has exactly one use. It represents a qubit's state
+    at that point, but does not contain a simulated statevector. Allocation
+    operations for qubits and qubit tensors must appear in the entry block of the
+    `mqt.entry_point` function. Helper functions receive their qubits as
+    arguments; the entry-point verifier checks this allocation rule.
 
-    Register slots retain their qubit identities, and quantum operands must
-    denote disjoint resources. See the shared
-    [quantum resource contract](index.md#quantum-resource-contract) for helper
-    boundaries, dynamic-index preconditions, and semantic round trips.
+    The exactly-one-use rule does not determine which output continues which
+    input wire. Core's `WireOpInterface` specifies that correspondence
+    positionally: the first quantum result continues the first quantum operand,
+    and so on. A SWAP exchanges their states, not their wire identities.
+    `qco::verifyLinearity` checks use counts as well as correspondence through
+    functions and structured control flow.
 
-        Example:
-        ```mlir
-        %q_out = qco.h %q_in                       // Consumes %q_in, produces %q_out
-        %q0_out, %q1_out = qco.swap %q0_in, %q1_in // Consumes inputs, produces outputs
-        ```
-    }];
+    Register slots retain their qubit identities, and a gate or call must
+    receive distinct quantum resources. See the shared
+    [quantum resource rules](index.md#quantum-resource-rules) for register
+    access, helper functions, and conversion to QC.
+  }];
 
   let cppNamespace = "::mlir::qco";
   let dependentDialects = ["::mlir::arith::ArithDialect"];

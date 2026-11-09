@@ -27,7 +27,7 @@ class Options:
     def __init__(self, *, qubits: int, period_exponent: int, method: Method = Method.STANDARD) -> None: ...
     @property
     def qubits(self) -> int:
-        """The number of transformed qubits."""
+        """The transform width and number of output bits, independent of qubit reuse."""
 
     @property
     def period_exponent(self) -> int:
@@ -38,7 +38,15 @@ class Options:
         """The circuit method."""
 
 class QFT:
-    """A validated QFT benchmark."""
+    """A validated QFT benchmark.
+
+    The semiclassical method uses measurements and classical feedback in place of
+    controlled gates before readout. For this benchmark's input states, it also
+    prepares each input bit as needed and reuses one measured and reset qubit.
+    The standard method uses a full register. Both methods return the same number
+    of bits; qubit reuse is an implementation choice in addition to the
+    semiclassical transform.
+    """
 
     def __init__(self, options: Options) -> None: ...
     @property

@@ -36,7 +36,7 @@ def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
     valid across helper calls. Bounds, disjoint runtime operands, and matching
     dynamic store indices are program preconditions; this pass diagnoses known
     violations without inserting runtime checks. See the shared
-    [quantum resource contract](index.md#quantum-resource-contract).
+    [quantum resource rules](index.md#quantum-resource-rules).
     Static qubit references are hoisted and coalesced when needed. General
     classical folding and common subexpression elimination are not guaranteed
     by this conversion; use the corresponding simplification passes when needed.

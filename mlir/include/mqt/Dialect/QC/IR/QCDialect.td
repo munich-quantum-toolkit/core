@@ -17,28 +17,25 @@ def QCDialect : Dialect {
   let summary = "The QC (reference semantics) dialect for quantum computing.";
 
   let description = [{
-        The QC dialect uses **reference semantics** where quantum operations
-        modify qubits in place. Operation order determines the sequence of
-        transformations on each qubit.
+    QC (Quantum Circuit) represents qubits as stable references. A gate acts
+    on the referenced qubit without producing a new reference, so operation
+    order determines how its state changes. This model, called **reference semantics**, is
+    convenient for translating circuits from and to external formats.
 
-        The name "QC" stands for "Quantum Circuit."
+    ```mlir
+    qc.h %q
+    qc.swap %q0, %q1
+    ```
 
-        In a program, dynamic qubit and qubit-register allocations must be in
-        the entry block of the `mqt.entry_point` function. Helper functions
-        receive quantum resources as arguments. The MQT entry-point verifier
-        checks this rule across the program.
+    Allocation operations for qubits and registers must appear in the entry block of the
+    `mqt.entry_point` function. Helper functions receive their qubits as
+    arguments; the entry-point verifier checks this allocation rule.
 
-    Register slots retain their qubit identities, and quantum operands must
-    denote disjoint resources. See the shared
-    [quantum resource contract](index.md#quantum-resource-contract) for helper
-    boundaries, dynamic-index preconditions, and semantic round trips.
-
-        Example:
-        ```mlir
-        qc.h %q          // Applies Hadamard to qubit %q in place
-        qc.swap %q0, %q1 // Applies SWAP using %q0, %q1 as targets
-        ```
-    }];
+    Each register slot continues to refer to the same qubit. A gate or call
+    must receive distinct qubits, even when its operands include registers or
+    slices. See the shared [quantum resource rules](index.md#quantum-resource-rules)
+    for the rules on register access, helper functions, and conversion to QCO.
+  }];
 
   let cppNamespace = "::mlir::qc";
   let dependentDialects = ["::mlir::arith::ArithDialect"];
