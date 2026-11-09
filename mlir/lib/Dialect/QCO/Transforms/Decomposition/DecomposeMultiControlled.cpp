@@ -16,10 +16,12 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/Pauli.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -44,6 +46,7 @@
 #include "llvm/Support/ErrorHandling.h"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
@@ -1697,6 +1700,56 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
       rewriter.replaceOp(op, synthesizeControlledSwap(
                                  rewriter, op.getLoc(), op.getControlsIn(),
                                  op.getInputTarget(0), op.getInputTarget(1)));
+      return success();
+    }
+
+    if (op.getNumTargets() == 2 &&
+        isa<RXXOp, RYYOp, RZXOp, RZZOp>(inner.getOperation())) {
+      const auto axes = decomposition::getPauliRotations(inner.getOperation())
+                            ->rotations.front()
+                            .axes;
+      const std::array targets{
+          numControls +
+              cast<BlockArgument>(inner.getInputQubit(0)).getArgNumber(),
+          numControls +
+              cast<BlockArgument>(inner.getInputQubit(1)).getArgNumber(),
+      };
+      mqt::hoistSupportingOpsBefore(*op.getBody(), inner.getOperation(), op,
+                                    rewriter);
+      rewriter.setInsertionPoint(op);
+      const auto theta = mqt::foldParameter(inner.getParameters()[0]);
+      SmallVector<Value> wires(op.getInputQubits());
+      GateEmitter emitter(rewriter, op.getLoc(), wires);
+      // Map both Pauli axes to Z, then compute parity on the second target.
+      for (const auto [target, axis] : llvm::zip_equal(targets, axes)) {
+        if (axis == mqt::PauliAxis::Y) {
+          wires[target] = SdgOp::create(rewriter, op.getLoc(), wires[target])
+                              .getOutputQubit(0);
+        }
+        if (axis != mqt::PauliAxis::Z) {
+          emitter.h(target);
+        }
+      }
+      emitter.cx(targets[0], targets[1]);
+      auto rotation = CtrlOp::create(
+          rewriter, op.getLoc(), ValueRange(wires).take_front(numControls),
+          wires[targets[1]], [&](Value target) {
+            return RZOp::create(rewriter, op.getLoc(), target, theta)
+                .getOutputQubit(0);
+          });
+      std::ranges::copy(rotation.getOutputControls(), wires.begin());
+      wires[targets[1]] = rotation.getOutputTarget(0);
+      emitter.cx(targets[0], targets[1]);
+      for (const auto [target, axis] : llvm::zip_equal(targets, axes)) {
+        if (axis != mqt::PauliAxis::Z) {
+          emitter.h(target);
+        }
+        if (axis == mqt::PauliAxis::Y) {
+          wires[target] = SOp::create(rewriter, op.getLoc(), wires[target])
+                              .getOutputQubit(0);
+        }
+      }
+      rewriter.replaceOp(op, wires);
       return success();
     }
 

@@ -684,7 +684,8 @@ def DecomposeMultiControlled
     Decomposes multi-qubit controlled operations that act on at least
     `min-qubits` qubits (default 3: everything wider than a two-qubit gate).
     Supported shapes: `qco.ctrl` with a sole `qco.x`, `qco.y`, `qco.z`,
-    `qco.rx`, `qco.ry`, `qco.rz`, `qco.swap`, or `qco.p` body, and
+    `qco.rx`, `qco.ry`, `qco.rz`, `qco.rxx`, `qco.ryy`, `qco.rzx`, `qco.rzz`,
+    `qco.swap`, or `qco.p` body, and
     `qco.rccx`. Rotation and phase angles may be constants or runtime SSA values,
     including classical expressions inside the control region.
     Controls over composite bodies are distributed across their operations
@@ -706,6 +707,7 @@ def DecomposeMultiControlled
     | X/Z | ≥24 | Huang-Palsberg (HP24) phase ladder with relative-phase partitioned incrementers |
     | Y | ≥3 | X decomposition with `S†` before and `S` after on the target |
     | RX/RY/RZ | ≥3 | Relative-phase control halves with quarter-angle RZ rotations; basis changes give RX/RY |
+    | RXX/RYY/RZX/RZZ | ≥3 | Pauli basis changes and two CX gates around a controlled RZ on the second target |
     | Phase | 3 | Optimized `C^2(P)` |
     | Phase | 4–9 | Relative-phase RZ construction with recursive scalar-phase correction |
     | Phase | ≥10 | da Silva-Park SP22 linear-depth |
