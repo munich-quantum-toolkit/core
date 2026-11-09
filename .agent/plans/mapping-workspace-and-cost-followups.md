@@ -1,8 +1,8 @@
 # Mapping workspace and graph-walk follow-ups
 
-Status: blocked on routing quality; implemented for draft review. Semantic
-checks pass, but the adopted routing-quality gate fails. Graph-walk experiments
-did not justify a production change.
+Status: complete. Recommend merging the program-position key as a practically
+count-neutral optimization with substantial sparse-target speedups. Individual
+seeds can regress. Graph-walk and queue-order experiments are not retained.
 
 ## Scope and decisions
 
@@ -106,11 +106,11 @@ program-position keys.
 | Topology, structured |      46,351 → 46,332 |   37,226 → 37,189 | 19,405 → 19,387 |
 
 Two-qubit gate count is the primary optimization objective; depth and inserted
-SWAPs are secondary diagnostics. The original cohort still fails the count
-criterion: flat native counts increase 0.34%. Dense native Grover at seed 17
-grows from 24,224 to 24,704 operations (1.98%). Wide native weak-measurement
-Grover at seed 99 grows from 961 to 1,065 (10.82%). Correctness and compilation
-speed do not resolve these count regressions.
+SWAPs are secondary diagnostics. The initial three-seed cohort raised a count
+concern: flat native counts increase 0.34%. Dense native Grover at seed 17 grows
+from 24,224 to 24,704 operations (1.98%). Wide native weak-measurement Grover at
+seed 99 grows from 961 to 1,065 (10.82%). Correctness and compilation speed do
+not resolve these count regressions.
 
 ### Regression investigation
 
@@ -163,14 +163,60 @@ lean quality fix has been validated; the production implementation and its
 measured performance gains remain unchanged. Broader quality timings overlapped
 builds and are not performance evidence.
 
+### Seed sensitivity and merge recommendation
+
+A fixed 50 fresh compiler seeds cover all five original count-regressing cases
+plus native Grover on the 1024-site grid as a matching control. Circuit inputs
+remain fixed. Seeds are sampled with `random.Random(2988)` from
+`range(10000, 2**31)` without replacement. Each pair runs sequentially in
+alternating order, with eight trials and two refinement iterations. The first
+ten seeds receive three timing pairs; repeated outputs are byte-identical.
+
+The initial 50-seed native aggregate is +0.311% gate-weighted and -0.214%
+case-balanced. Grover on 144 sites alone is +0.389%, with a 95% bootstrap
+interval from -0.014% to +0.791%. A predeclared additional 100 disjoint seeds
+for that case improve count by 0.175%. Pooled over 150 seeds, its change is
++0.013% (-0.198% to +0.226%): 48 wins, 54 ties, and 48 losses. Compile time is
+unchanged. The confirmation does not support the suspected systematic penalty.
+
+| Native case                         | Seeds | Mean gate-count change | Median paired compile-time change |
+| ----------------------------------- | ----: | ---------------------: | --------------------------------: |
+| Grover, 144 sites                   |   150 |                +0.013% |                              0.0% |
+| Grover, 1024 sites                  |    50 |                +0.054% |                            -54.7% |
+| QFT, 1024 sites                     |    50 |                -1.191% |                            -55.9% |
+| Weak-measurement Grover, 1024 sites |    50 |                -0.282% |                            -34.3% |
+
+The updated native aggregate compares sums of per-case means, using 150 dense
+Grover seeds and 50 per other case: -0.028% gates, with a 95% interval of
+-0.214% to +0.156%. Case-balanced relative change is -0.310%. The bootstrap
+resamples the shared original seed blocks and the independent extra dense blocks
+separately; extra runs do not triple-weight dense Grover. The original six-case
+aggregate stays separate from this updated estimate. These intervals
+characterize the tested fixed circuits and seed distribution, not universal
+equivalence. Topology-only counts are also near-neutral: +0.071% on the 144-site
+Grover case and -0.013% on the 1024-site case.
+
+The three-repeat timing subset confirms sparse native reductions of 53.9%,
+58.5%, and 28.7% for Grover, QFT, and weak-measurement Grover, respectively.
+Shared-host timings include unrelated activity early in the sweep; paired
+process CPU time also supports reduced work. All 1,040 measured compilations
+succeed, all 800 distinct outputs verify with QCO linearity, and all 240 timing
+repeats match their initial output hashes. No production code changes occur.
+
+Recommend merging as-is under a practical near-neutral count tolerance. This
+keeps the speed and memory gains without adding a queue policy that worsens
+broader routing quality. Individual losses remain real: up to 15.44% for QFT,
+9.92% for weak-measurement Grover, and 3.96% for dense Grover in these fresh
+seeds. The earlier 10.82% weak-Grover loss is not erased by averaging.
+
 ### Architectural disposition
 
 The state-key change belongs in the mapping search and introduces no public API
 or persistent traversal state. Hashing and equality use every program qubit,
 including spectators. Full layouts still own physical routing and region
 reconciliation. Independent architectural review found no additional blocker.
-Keep this as a draft until routing quality meets the gate or maintainers
-explicitly accept the measured tradeoff. Item 4 remains a measured no-change
+The seed study supports accepting the measured tradeoff; final human review and
+hosted CI remain separate acceptance steps. Item 4 remains a measured no-change
 result; persistent traversal is not justified by the tested smaller variants.
 
 ### Performance
@@ -201,5 +247,6 @@ to 3.293 seconds in its separate five-pair comparison. Inline pending-map
 storage and callback specialization showed no consistent benefit. Callback
 results use four pairs; a fifth overlapped validation work and is excluded.
 
-Windows and hosted CI are unverified. The PR remains draft because routing
-quality fails the adopted gate, independently of these validation limits.
+Windows and final-head hosted CI are unverified. The merge recommendation is
+based on local correctness evidence, seed-sensitive near-neutral counts, and
+measured performance; it does not imply that hosted checks have passed.
