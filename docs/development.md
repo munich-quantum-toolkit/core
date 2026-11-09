@@ -370,6 +370,47 @@ version and release date before publishing. Version tags drive package metadata;
 do not edit generated version files to stage a release. Release preparation does
 not itself publish a release.
 
+## Testing priorities
+
+Prioritize workflows that users run: import from an SDK or program format,
+compile for a device, submit, and interpret the result. Exercise the real local
+compiler and DDSIM device where possible. Use an independent SDK simulator or a
+known analytical result as the oracle. Provider mocks belong at unavailable
+external boundaries and for failures that a local device cannot reliably
+produce. Keep remote QPU tests opt-in.
+
+Extend an existing workflow before adding a test. A regression is a reason to
+improve an oracle or input, not automatically a new test function or file. Keep
+direct unit tests when they protect a distinct contract that workflows cannot
+observe clearly or cheaply, such as numerical limits, ownership, error recovery,
+or bounded resource use. Do not fabricate impossible internal states merely to
+increase coverage. Investigate whether unreachable branches should exist.
+
+Assign each contract to its owning layer. C++ tests cover native semantics;
+Python tests cover SDK behavior, argument conversion, exceptions, object
+lifetime, and the complete public workflow. An independent Python oracle can
+justify a native semantic check, but duplicating the native case matrix cannot.
+Every Python case runs across multiple interpreters and dependency resolutions.
+
+Check results, phase, logical wire and output order, and required resource
+bounds. Avoid private helper calls, exact IR text, chosen layouts, and rewrite
+sequences unless they are the public contract. For an efficiency requirement,
+prefer an upper bound on work or size to an exact operation count or a
+wall-clock timeout.
+
+Use the smallest circuit, shot count, array, and parameter set that
+distinguishes the behavior. Choose representative cases for different paths
+instead of Cartesian products of unrelated options. Preserve a large input only
+when its size crosses a relevant limit or exposes a complexity defect. Keep
+statistical tolerances well above sampling noise and justify expensive sampling
+budgets.
+
+Coverage is a diagnostic for missing workflows, not a requirement to exercise
+every branch. Aim for roughly 90% overall; inspect meaningful losses rather than
+adding tests to satisfy a patch percentage. When pruning, identify the retained
+oracle and any lost contract, then compare collection, runtime, and coverage on
+the same build. Fewer test names alone do not mean less test work.
+
 ## Python test selection
 
 `pytest` runs package tests by default. Repository-script tests use the
@@ -552,7 +593,8 @@ infrastructure. Adapt the useful principles from the [MLIR Testing Guide]
   large textual snapshot.
 - Test valid and invalid cases when both form part of the contract.
 - Verify input and successful output around pass-pipeline tests.
-- Add a regression test for every behavioral bug fix.
+- Expose behavioral fixes through an existing workflow when possible; add a
+  focused regression only for a contract it cannot cover.
 
 ### Debugging
 
@@ -566,7 +608,8 @@ Start from the [MLIR debugging workflow][mlir-debugging]:
 6. Enable dialect-conversion tracing for a conversion failure.
 7. Save a pass-pipeline crash reproducer for crashes that are not immediately
    local.
-8. Turn the reduced case into the smallest direct regression test.
+8. Use the reduced case to strengthen an existing workflow or, where necessary,
+   add a small direct regression test.
 
 Build the driver with the configured LLVM/MLIR installation:
 

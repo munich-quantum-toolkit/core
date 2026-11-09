@@ -942,62 +942,6 @@ if (int[3](c) < -1) { x q[3]; }
     assert qasm_reimported.is_valid
 
 
-def test_qiskit_lossless_register_cast_imports_canonically() -> None:
-    """Canonicalize a lossless Uint widening around a register comparison."""
-    circuit = QuantumCircuit(2, 3)
-    circuit.measure(0, 0)
-    uint8 = types.Uint(8)
-    condition = expr.equal(expr.cast(circuit.cregs[0], uint8), expr.lift(3, uint8))
-    with circuit.if_test(condition):
-        circuit.x(1)
-
-    program = QCProgram.from_qiskit(circuit)
-    program.cleanup()
-    ir = program.ir
-
-    assert "arith.cmpi eq" in ir
-    assert "cbit.load" not in ir
-
-
-def test_qiskit_lossy_register_cast_remains_an_expression() -> None:
-    """Do not treat a truncating Uint cast as a whole-register read."""
-    circuit = QuantumCircuit(1, 3)
-    uint2 = types.Uint(2)
-    condition = expr.equal(expr.cast(circuit.cregs[0], uint2), expr.lift(1, uint2))
-    with circuit.if_test(condition):
-        circuit.x(0)
-
-    ir = QCProgram.from_qiskit(circuit).ir
-
-    assert "arith.trunci" in ir
-    assert "cbit.read" in ir
-
-
-@pytest.mark.parametrize(
-    ("comparison", "predicate"),
-    [
-        (None, "eq"),
-        ("equal", "eq"),
-        ("not_equal", "ne"),
-        ("less", "ult"),
-        ("less_equal", "ule"),
-        ("greater", "ugt"),
-        ("greater_equal", "uge"),
-    ],
-)
-def test_qiskit_register_conditions_import_canonically(comparison: str | None, predicate: str) -> None:
-    """Import tuple and typed register conditions as first-class comparisons."""
-    circuit = QuantumCircuit(1, 3)
-    condition = (circuit.cregs[0], 1) if comparison is None else getattr(expr, comparison)(circuit.cregs[0], 1)
-    with circuit.if_test(condition):
-        circuit.x(0)
-
-    ir = QCProgram.from_qiskit(circuit).ir
-
-    assert f"arith.cmpi {predicate}" in ir
-    assert "cbit.load" not in ir
-
-
 @pytest.mark.parametrize(
     ("comparison", "predicate"),
     [

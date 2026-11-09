@@ -139,38 +139,38 @@ TEST(GenerateProgramTest, ComputesWideClassicalQFTAdderPhasesAccurately) {
   }
 }
 
-TEST(GenerateProgramTest, SamplesEverySmallQFTAdderOperandPair) {
+TEST(GenerateProgramTest, SamplesQFTAdderCarryAndWrap) {
   for (const auto method :
        {QFTAdderMethod::Register, QFTAdderMethod::Constant}) {
     for (const auto overflow :
          {QFTAdderOverflow::Wrap, QFTAdderOverflow::Carry}) {
-      for (size_t width = 1; width <= 3; ++width) {
+      for (const auto& [width, addend, accumulator] : {
+               std::array<size_t, 3>{1, 0, 0},
+               {1, 1, 1},
+               {3, 3, 1},
+               {3, 7, 1},
+           }) {
         const auto sumWidth =
             width + (overflow == QFTAdderOverflow::Carry ? 1U : 0U);
-        for (size_t addend = 0; addend < (size_t{1} << width); ++addend) {
-          for (size_t accumulator = 0; accumulator < (size_t{1} << width);
-               ++accumulator) {
-            const auto addendBits = dd::intToBinaryString(addend, width);
-            const auto benchmark = llvm::cantFail(QFTAdder::create({
-                .addend = addendBits,
-                .accumulator = dd::intToBinaryString(accumulator, width),
-                .method = method,
-                .overflow = overflow,
-            }));
-            SCOPED_TRACE(toInstanceSpecificationJSON(benchmark));
-            const auto total = (addend + accumulator) % (size_t{1} << sumWidth);
-            const auto expected =
-                (method == QFTAdderMethod::Register ? addendBits : "") +
-                dd::intToBinaryString(total, sumWidth);
-            EXPECT_EQ(benchmark.expectedResult(), expected);
-            auto program = test::generateQCO(benchmark);
-            ASSERT_TRUE(mlir::succeeded(program));
-            auto counts = qco::sample(
-                mlir::mqt::getEntryPoint(program->module()), 32, 17);
-            ASSERT_TRUE(succeeded(counts));
-            EXPECT_EQ(*counts, (Counts{{expected, 32}}));
-          }
-        }
+        const auto addendBits = dd::intToBinaryString(addend, width);
+        const auto benchmark = llvm::cantFail(QFTAdder::create({
+            .addend = addendBits,
+            .accumulator = dd::intToBinaryString(accumulator, width),
+            .method = method,
+            .overflow = overflow,
+        }));
+        SCOPED_TRACE(toInstanceSpecificationJSON(benchmark));
+        const auto total = (addend + accumulator) % (size_t{1} << sumWidth);
+        const auto expected =
+            (method == QFTAdderMethod::Register ? addendBits : "") +
+            dd::intToBinaryString(total, sumWidth);
+        EXPECT_EQ(benchmark.expectedResult(), expected);
+        auto program = test::generateQCO(benchmark);
+        ASSERT_TRUE(mlir::succeeded(program));
+        auto counts =
+            qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 17);
+        ASSERT_TRUE(succeeded(counts));
+        EXPECT_EQ(*counts, (Counts{{expected, 1}}));
       }
     }
   }

@@ -930,9 +930,6 @@ Value inverseDcx(QCOProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled DCX gate.
 Value inverseMultipleControlledDcx(QCOProgramBuilder& b);
 
-/// Creates a circuit with two DCX gates in a row with identical targets.
-Value twoDcx(QCOProgramBuilder& b);
-
 /// Creates a circuit with two DCX gates in a row with swapped targets.
 Value twoDcxSwappedTargets(QCOProgramBuilder& b);
 
@@ -1140,9 +1137,6 @@ Value powXxPlusYYScaledRef(QCOProgramBuilder& b);
 
 /// Creates a circuit with two XXPlusYY gates in a row with opposite phases.
 Value twoXxPlusYYOppositePhase(QCOProgramBuilder& b);
-
-/// Creates a circuit with two XXPlusYY gates in a row with swapped targets.
-Value twoXxPlusYYSwappedTargets(QCOProgramBuilder& b);
 
 // --- XXMinusYYOp ---------------------------------------------------------- //
 

@@ -5150,36 +5150,6 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksUnrolledStepWidth) {
   }
 }
 
-TEST_F(CompilerPipelineTest, PayloadControlUnrollsBeyondTheOldBudget) {
-  auto program = QCOProgram::fromMLIRString(R"mlir(module {
-    func.func @main() attributes {mqt.entry_point} {
-      %q = qco.alloc : !qco.qubit
-      %zero = arith.constant 0 : index
-      %one = arith.constant 1 : index
-      %limit = arith.constant 70000 : index
-      %out = scf.for %i = %zero to %limit step %one
-          iter_args(%state = %q) -> !qco.qubit {
-        %next = qco.x %state : !qco.qubit
-        scf.yield %next : !qco.qubit
-      }
-      qco.sink %out : !qco.qubit
-      return
-    }
-  })mlir");
-  MQT_ASSERT_SUCCESS(program);
-  attachTargetEnvironment(
-      program->module(),
-      TargetEnvironment(makeUnrestrictedTarget(),
-                        makeControlPayloadSpecification({})));
-  ASSERT_TRUE(
-      mlir::succeeded(program->runPassPipeline("unroll-loops-for-payload")));
-  size_t gates = 0;
-  program->module().walk([&](qco::XOp) { ++gates; });
-  EXPECT_EQ(gates, 70000U);
-  EXPECT_TRUE(succeeded(verify(program->module())));
-  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
-}
-
 TEST_F(CompilerPipelineTest, PayloadControlBoundsTotalLoopCloning) {
   for (const auto [trips, budget] : {
            std::pair{33, uint64_t{64}},

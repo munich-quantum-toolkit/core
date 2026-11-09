@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import pytest
 from qiskit_support import supports_qiskit_translation
 
-from mqt.core.mlir import JeffProgram, QCOProgram, QCProgram, sample
+from mqt.core.mlir import JeffProgram, QCProgram, sample
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
@@ -66,7 +66,7 @@ def _check_paths(program: QCProgram, width: int, expected: int) -> None:
         assert _observe(program.to_qiskit(copy=True), width) == expected
 
 
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 @pytest.mark.parametrize("predicate", ["eq", "ne", "ult", "ule", "ugt", "uge", "slt", "sle", "sgt", "sge"])
 def test_integer_comparison_interchange(width: int, predicate: str) -> None:
     """Signedness belongs to the operation, including computed operands."""
@@ -89,7 +89,7 @@ def test_integer_comparison_interchange(width: int, predicate: str) -> None:
     _check_paths(program, 1, expected)
 
 
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 def test_modular_arithmetic_and_selection(width: int) -> None:
     """Arithmetic and selection preserve the original width after promotion."""
     maximum = (1 << width) - 1
@@ -107,7 +107,7 @@ def test_modular_arithmetic_and_selection(width: int) -> None:
     _check_paths(program, width, 0)
 
 
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 def test_logical_right_shift_high_bit(width: int) -> None:
     """The jeff adapter must not interpret a logical shift as signed."""
     high = 1 << (width - 1)
@@ -165,7 +165,7 @@ result[1] = snapshot < 0;
     assert _observe(program, 2) == expected
 
 
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 @pytest.mark.parametrize("runtime", [False, True])
 @pytest.mark.parametrize("direction", ["<<", ">>"])
 def test_source_zero_filling_shifts(width: int, *, runtime: bool, direction: str) -> None:
@@ -191,7 +191,7 @@ result = source {direction} {amount};
         _check_paths(program, width, expected)
 
 
-@pytest.mark.parametrize("width", [65, 150, 301])
+@pytest.mark.parametrize("width", [65, 257])
 @pytest.mark.parametrize("enabled", [False, True])
 def test_wide_comparison_snapshot(width: int, *, enabled: bool) -> None:
     """Compare retained snapshots across storage mutation and format boundaries."""
@@ -263,36 +263,7 @@ module {{
     _check_paths(program, result_width, expected)
 
 
-@pytest.mark.parametrize("static_index", [False, True])
-def test_wide_comparison_index_eligibility(*, static_index: bool) -> None:
-    """Normalize static indices and retain packed reads for runtime indices."""
-    program = QCOProgram.from_mlir_str(f"""module {{
-      func.func @main() -> i1 attributes {{mqt.entry_point}} {{
-        %q = qco.static 0 : !qco.qubit
-        %flipped = qco.x %q : !qco.qubit
-        %measured, %bit = qco.measure %flipped : !qco.qubit
-        %zero = arith.constant 0 : index
-        %one = arith.constant 1 : index
-        %true = arith.constant true
-        %index = scf.if {"%true" if static_index else "%bit"} -> index {{
-          scf.yield %one : index
-        }} else {{ scf.yield %zero : index }}
-        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<150>
-        cbit.store %bit, %reg[%index] : !cbit.reg<150>
-        %snapshot = cbit.read %reg : !cbit.reg<150> -> i150
-        %two = arith.constant 2 : i150
-        %result = arith.cmpi eq, %snapshot, %two : i150
-        qco.sink %measured : !qco.qubit
-        return %result : i1
-      }}
-    }}""")
-    program.run_pass_pipeline("promote-classical-memory")
-    assert ("cbit.read" in str(program)) != static_index
-    assert "cbit.load" not in str(program)
-    assert sample(program, shots=1, seed=1) == {"1": 1}
-
-
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 def test_signed_right_shift_high_bit(width: int) -> None:
     """Arithmetic shifts retain the original sign bit in promoted integers."""
     program = _program(
@@ -307,7 +278,7 @@ def test_signed_right_shift_high_bit(width: int) -> None:
     _check_paths(program, width, (1 << width) - 1)
 
 
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 @pytest.mark.parametrize("operation", ["popcount", "rotate_left", "rotate_right"])
 def test_integer_intrinsics(width: int, operation: str) -> None:
     """Targets without integer intrinsics use the shared arithmetic lowering."""

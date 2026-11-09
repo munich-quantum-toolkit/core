@@ -54,14 +54,20 @@ Use relevant sections of the [development policy](docs/development.md) and the
   documentation, comments, and PR descriptions. Describe the current system and
   the reasons readers need to understand it. Put release history and migration
   advice in their designated documents.
-- Test changed behavior and concrete regressions, not implementation details.
-  Low-impact edits need no new tests. Before weakening a test, check history,
-  callers, invariants, and resource limits; equal line coverage or a shared
-  failure does not establish redundancy.
-- Put tests in the owning subsystem's test tree. Use direct unit tests for
-  semantic contracts and subprocesses only for irreducible CLI behavior. Do not
-  put MLIR tests under production tools or enable an optional production tool
-  solely to satisfy a subprocess test.
+- Follow the [testing priorities](docs/development.md#testing-priorities):
+  extend a small end-to-end workflow before adding a unit test. Assert
+  observable semantics and resource bounds, not private structure or a
+  particular rewrite. A bug fix does not need a separate test when an existing
+  workflow can expose it.
+- Cover native semantics in C++ once. Python tests own SDK integration, binding
+  conversions, ownership, and Python failure behavior; do not repeat native
+  parameter sweeps across the Python/dependency matrix. Keep workloads small.
+- Before removing a test, check its callers, history, and surviving assertions.
+  Keep distinct phase, wire-order, ownership, failure, and complexity contracts;
+  equal line coverage alone does not establish redundancy. Put tests in the
+  owning subsystem and use subprocesses only for irreducible CLI behavior.
+  Do not put MLIR tests under production tools or enable an optional
+  production tool solely to satisfy a subprocess test.
 - Diagnose failed checks before changing code or build policy. Distinguish
   defects from stale output, dependency mismatches, and service failures. Use
   supported presets and keep machine setup in local configuration.

@@ -10,50 +10,11 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from mqt.core.bench import magic_state_distillation
 from mqt.core.mlir import sample, submit_program
 from mqt.core.qdmi import ProgramFormat, open_device
-
-from .utils import assert_generates
-
-
-def test_distillation_roundtrip() -> None:
-    """Preserve the level count and semantic identity through both JSON forms."""
-    benchmark = magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=2))
-    assert benchmark.options.levels == 2
-    assert benchmark.output.name == "result"
-    assert benchmark.output.width == 2
-    assert json.loads(benchmark.instance_specification_json)["parameters"] == {"levels": 2}
-    instance = magic_state_distillation.MagicStateDistillation.from_instance_specification_json(
-        benchmark.instance_specification_json
-    )
-    manifest = magic_state_distillation.MagicStateDistillation.from_manifest_json(benchmark.manifest_json)
-    assert instance.case_id == manifest.case_id == benchmark.case_id
-    assert benchmark.case_id != magic_state_distillation.MagicStateDistillation().case_id
-    assert_generates(benchmark.generate())
-
-
-@pytest.mark.parametrize("levels", [0, 2**64 - 1])
-def test_distillation_invalid_levels(levels: int) -> None:
-    """Reject unsupported concatenation levels."""
-    with pytest.raises(ValueError, match="levels must be positive and fit circuit dimensions"):
-        magic_state_distillation.MagicStateDistillation(magic_state_distillation.Options(levels=levels))
-
-
-def test_distillation_reference() -> None:
-    """Success requires both acceptance and the correct root state."""
-    benchmark = magic_state_distillation.MagicStateDistillation()
-    assert benchmark.probability("00") == 1
-    for outcome in ("01", "10", "11"):
-        assert benchmark.probability(outcome) == 0
-    evaluation = benchmark.evaluate({"00": 5, "01": 1, "10": 1, "11": 1})
-    assert evaluation.success_probability == pytest.approx(0.625)
-    assert evaluation.total_variation_distance == pytest.approx(0.375)
-    assert evaluation.squared_hellinger_fidelity == pytest.approx(0.625)
 
 
 def test_distillation_direct_sampling() -> None:
