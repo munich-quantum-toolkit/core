@@ -38,6 +38,9 @@ void forEachVirtualCZ(
 /// Insert closed MOVE/CZ/MOVE sequences and schedule independent terminal
 /// readout after them. Without a target, leave the module unchanged. Diagnose
 /// invalid target environments. Run after QCO-to-QC conversion.
+/// Resonators must be idle at each virtual CZ; native MOVE sequences must not
+/// leave a resonator occupied across a virtual CZ. The pass does not check this
+/// precondition.
 [[nodiscard]] std::unique_ptr<Pass> createLowerResonatorCZPass();
 
 } // namespace mlir

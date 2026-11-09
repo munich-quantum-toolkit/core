@@ -28,6 +28,8 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
@@ -35,7 +37,6 @@
 
 #include <array>
 #include <cstdint>
-#include <map>
 #include <memory>
 #include <utility>
 
@@ -46,6 +47,7 @@ void forEachVirtualCZ(
     function_ref<void(CompilerTarget::SiteId, CompilerTarget::SiteId,
                       CompilerTarget::SiteId, bool)>
         visit) {
+  const DenseSet<CompilerTarget::SiteId> placeable(sites.begin(), sites.end());
   for (const auto& move : target.operations()) {
     if (move.canonicalName() != "move" ||
         move.arity() != CompilerTarget::OperationCapability::Arity::fixed(2) ||
@@ -55,7 +57,7 @@ void forEachVirtualCZ(
     for (const auto& tuple : move.siteTuples()) {
       const auto a = tuple.sites()[0];
       const auto r = tuple.sites()[1];
-      if (!llvm::is_contained(sites, a) || llvm::is_contained(sites, r)) {
+      if (!placeable.contains(a) || placeable.contains(r)) {
         continue;
       }
       for (const auto& cz : target.operations()) {
@@ -69,7 +71,7 @@ void forEachVirtualCZ(
           const bool first = pair.sites()[0] == r;
           const auto b = pair.sites()[first ? 1 : 0];
           if (pair.sites()[first ? 0 : 1] == r && a != b &&
-              llvm::is_contained(sites, b)) {
+              placeable.contains(b)) {
             visit(a, b, r, first);
           }
         }
@@ -87,7 +89,7 @@ static void insertResonatorMoves(ModuleOp moduleOp,
   }
   using SiteId = CompilerTarget::SiteId;
   const auto placeable = target.placeableSites();
-  std::map<std::pair<SiteId, SiteId>, std::pair<SiteId, bool>> routes;
+  DenseMap<std::pair<SiteId, SiteId>, std::pair<SiteId, bool>> routes;
   forEachVirtualCZ(target, placeable, [&](auto a, auto b, auto r, bool first) {
     routes.try_emplace({a, b}, r, first);
   });
