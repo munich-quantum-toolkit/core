@@ -90,9 +90,9 @@ implementation or a predicted speedup.
 
 The release suite passed all 4,387 tests on the final base. Debug mapping (133
 tests) and QCO utilities (262 tests) passed on the benchmark base, including
-cold/hot native-score assertions. MLIR reference generation passed. Final
-repository and whole-file C++ lint are required before publication. External
-inspection verified all 144 baseline/candidate modules, including QCO linearity.
+cold/hot native-score assertions. MLIR reference generation, repository lint,
+and whole-file C++ lint passed before publication. External inspection verified
+all 144 baseline/candidate modules, including QCO linearity.
 
 The following totals cover 24 cases at seeds 7, 17, and 99. Counts are static;
 SWAPs are the mapping pass's inserted-SWAP statistic. Each cell is baseline →
@@ -105,19 +105,63 @@ program-position keys.
 | Topology, flat       |    114,628 → 114,856 |   69,140 → 69,225 | 57,377 → 57,422 |
 | Topology, structured |      46,351 → 46,332 |   37,226 → 37,189 | 19,405 → 19,387 |
 
-The acceptance gate requires aggregate native two-qubit and SWAP counts not to
-increase, separately for flat and structured programs. It fails: flat native
-counts increase 0.34%, and SWAPs increase in both native cohorts. The dense
-native Grover case at seed 17 grows from 24,224 to 24,704 two-qubit operations
-(1.98%). Wide native weak-measurement Grover at seed 99 grows from 961 to 1,065
-two-qubit operations (10.82%) and from 158 to 206 inserted SWAPs. No merge
-recommendation follows from correctness or speed alone.
+Two-qubit gate count is the primary optimization objective; depth and inserted
+SWAPs are secondary diagnostics. The original cohort still fails the count
+criterion: flat native counts increase 0.34%. Dense native Grover at seed 17
+grows from 24,224 to 24,704 operations (1.98%). Wide native weak-measurement
+Grover at seed 99 grows from 961 to 1,065 (10.82%). Correctness and compilation
+speed do not resolve these count regressions.
 
-An equal-priority tie-break favoring greater accumulated cost improves aggregate
-native counts, but increases topology-only SWAPs by 4.93% for flat and 2.48% for
-structured programs. Wide native QAOA depth doubles from 6 to 12 at all three
-seeds. That prototype is not retained. Do not weaken the gate or introduce a
-workload-specific switch to conceal this tradeoff.
+### Regression investigation
+
+Diagnostic builds reproduce both regressions byte-for-byte. They trace each
+trial's final score and the searches of the former winning trial, starting from
+the same initial layout. Dense Grover first diverges at search 8: both selected
+goals have priority 53.4260139 and cost 42, but different 14-SWAP paths. Weak
+Grover first diverges at search 16: both goals have priority 27.3582497 and cost
+12, but different four-SWAP paths. Removing duplicate states changes the heap's
+unspecified equal-priority order and subsequent refinement trajectory.
+
+Trial ranking correctly chooses the smallest tracked native count in these
+cases. Weak Grover's former winning trial rises from 961 to 1,257; the unchanged
+1,065-gate trial then wins. Dense Grover's former winner rises from 24,224 to
+25,169, so the unchanged 24,704-gate trial wins. No score-selection defect was
+found. Workspace labels can also affect full-layout reconciliation, but the
+traced first divergences already occur inside search. Local surrogate costs do
+not identify the best complete emitted circuit.
+
+The broader cohort adds 164 cases at compiler seeds 41 and 2027: QFT, QAOA, QPE,
+QFT adder, W states, GHZ, repeat-until-success, weak-measurement Grover, and
+noncommuting random circuits. Nominal widths are 16/32, with full/partial
+occupancy on lines, rings, grids, and a synthetic irregular mesh. Weak Grover
+caps the marked string at ten bits. All 140 primary cases use CX/CZ; 24
+additional QFT/adder/random cases use ECR or square-root-iSWAP. Matching CX/CZ
+counts are not independent circuit samples.
+
+Across 328 baseline/PR pairs, two-qubit counts decrease from 260,924 to 260,666
+(0.099%): seven wins, 318 ties, three losses. The worst loss is 0.66%, on a
+square-root-iSWAP random circuit. All 656 outputs verify, including QCO
+linearity. These results limit the observed scope of the regression; they do not
+erase the original cohort's larger losses. Structured counts remain static.
+
+Four queue prototypes were screened on the same 140-case seed-41 cohort:
+
+| Equal-priority ordering         | Native count change | Wins / ties / losses |
+| ------------------------------- | ------------------: | -------------------: |
+| Lower accumulated cost          |              +0.87% |         6 / 120 / 14 |
+| Greater accumulated cost        |              +3.05% |          6 / 92 / 42 |
+| Lexicographic program positions |              +0.22% |         38 / 66 / 36 |
+| Insertion order (FIFO)          |              +2.89% |          6 / 90 / 44 |
+
+None is retained. Greater-cost and FIFO ties regress ring QFT by 30%; canonical
+position ordering regresses a QFT adder by 14.4%. Lower-cost ties also increase
+native structured counts by 4.57% on the original three-seed cohort. The
+previous greater-cost improvement on the original cohort does not generalize.
+Adding tie-policy options, replaying complete routers, or retaining duplicate
+states merely to reproduce heap order is not justified by these measurements. No
+lean quality fix has been validated; the production implementation and its
+measured performance gains remain unchanged. Broader quality timings overlapped
+builds and are not performance evidence.
 
 ### Architectural disposition
 
