@@ -45,15 +45,15 @@ covers output selection, ownership, and custom pipelines.
 
 ### Qiskit and QDMI execution
 
-Upgrade Qiskit to **2.5 or newer within 2.x**. Bundled adapters cover Qiskit 2.5
-and 2.6; later minor versions use the newest compatible adapter optimistically.
-Qiskit's experimental native ABI can change between minors, so pin a tested
-minor for a fixed compatibility baseline. See the
+Upgrade Qiskit to **2.5 or later**. Bundled adapters cover Qiskit 2.5 and 2.6;
+later minor versions use the newest compatible adapter optimistically. Qiskit's
+experimental native ABI can change between minors, so pin a tested minor for a
+fixed compatibility baseline. See the
 [Qiskit guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/qiskit.html#version-compatibility).
 
 Remove calls to `register_program_serializer`, `unregister_program_serializer`,
 and `program_serializer`, and remove provider `mqt.core.qiskit_serializers`
-entry points. Core now selects and serializes supported formats itself. Use
+entry points. MQT Core now selects and serializes supported formats itself. Use
 `backend.compile(circuit)` followed by `backend.run(compiled)` for compilation,
 or pass an already native circuit to `backend.run`. Native serialization follows
 the compiler's Qiskit import limits; lower annotated operations, matrix
@@ -117,8 +117,7 @@ libraries use unversioned filenames.
 
 The QDMI C++ client and benchmark libraries are now static, like the DD library.
 Continue to install from source and request `COMPONENTS Development` for C++
-use. Use an LLVM SDK with the same major and minor version as the one used to
-build Core. The wheel's `Runtime` component needs no SDK.
+use. Use an LLVM/MLIR 23.1.x SDK. The wheel's `Runtime` component needs no SDK.
 
 CMake now downloads a compatible LLVM/MLIR SDK when none is available. Set
 `MQT_CORE_AUTO_INSTALL_MLIR=OFF` and supply `MLIR_DIR` for offline or cross
@@ -155,9 +154,10 @@ helpers from `mqt/Dialect/QCO/Utils/LinearityUtils.h`. Replace
 `legalize-control-flow` with `legalize-qco-control-flow` in custom QCO
 pipelines; the former now names the generic SCF legalization pass.
 
-QC/QCO entry functions without returned data are now void. Remove synthetic
-status results unless they are actual program output, and use `finalize(values)`
-to infer builder result types.
+Program builders no longer add an integer status code when there is no output
+data. Omit that status value from builder calls unless it is data you want the
+program to return. Pass output values to `finalize(values)`; the builder infers
+their types automatically.
 
 ## [4.1.0]
 

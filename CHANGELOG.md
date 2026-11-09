@@ -112,9 +112,9 @@ processing overhead.
   ([#2716], [#2787], [#2800], [#2807], [#2810], [#2815], [#2830], [#2834],
   [#2878], [#2898], [#2917], [#2966], [#2967], [#2976]) ([**@simon1hofmann**],
   [**@burgholzer**], [**@MatthiasReumann**])
-- ♻️ Treat QC/QCO entry results as explicit program data. Entries without
-  outputs are void, and builders infer result types from `finalize(values)`.
-  ([#2777]) ([**@burgholzer**])
+- ♻️ Make program builders return only the requested output data. Programs
+  without output no longer return an integer status code. Builders infer output
+  types from `finalize(values)`. ([#2777]) ([**@burgholzer**])
 - ♻️ Consume typed MLIR inputs during compilation and OpenQASM export, including
   on failure. Pass `copy=True` to retain the source. ([#2815])
   ([**@burgholzer**])
@@ -159,9 +159,9 @@ processing overhead.
 
 #### Runtime and client behavior
 
-- 📦 Require Qiskit 2.5 or newer within 2.x, with bundled adapters for 2.5 and
-  2.6 and optimistic support for later minor versions. ([#2764], [#2868],
-  [#2873]) ([**@burgholzer**])
+- 📦 Require Qiskit 2.5 or later, with bundled adapters for 2.5 and 2.6 and
+  optimistic support for later minor versions. ([#2764], [#2868], [#2873])
+  ([**@burgholzer**])
 - ⚡ Reduce DDSIM result retention, worker shutdown, and QIR JIT overhead.
   ([#2782], [#2860], [#2865], [#2924], [#2970]) ([**@burgholzer**])
 - ⚡ Share DD sampling work across shots, loops, branches, and helper calls,
@@ -230,7 +230,7 @@ processing overhead.
 - 🔥 Remove Python Qiskit serializer registration and provider serializer entry
   points. Use the shared native compiler and serialization APIs. ([#2886])
   ([**@burgholzer**])
-- 🔥 Move the Slurm Playground and deployment examples to MQSC Orchestrator.
+- 🔥 Move the Slurm Playground and deployment examples to [MQSC Orchestrator].
   ([#2991]) ([**@burgholzer**])
 
 ## [4.1.1] - 2026-10-13
@@ -2467,3 +2467,4 @@ for previous changelogs._
 [munich-quantum-toolkit/workflows]: https://github.com/munich-quantum-toolkit/workflows
 [MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
 [MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
+[MQSC Orchestrator]: https://github.com/munich-quantum-software/orchestrator
