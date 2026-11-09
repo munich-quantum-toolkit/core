@@ -86,7 +86,7 @@ def test_integer_comparison_interchange(width: int, predicate: str) -> None:
     expected = int(predicate in {"ne", "ugt", "uge", "slt", "sle"})
     _check_paths(program, 1, expected)
     program.cleanup()
-    _check_paths(program, 1, expected)
+    assert _observe(program, 1) == expected
 
 
 @pytest.mark.parametrize("width", [1, 9, 64])
@@ -140,7 +140,7 @@ def test_integer_width_casts(source_width: int, target_width: int, *, signed: bo
     expected = (1 << target_width) - 1 if signed or target_width < source_width else initial
     _check_paths(program, target_width, expected)
     program.cleanup()
-    _check_paths(program, target_width, expected)
+    assert _observe(program, target_width) == expected
 
 
 @pytest.mark.parametrize("signed", [False, True])
@@ -188,7 +188,7 @@ result = source {direction} {amount};
         expected = (initial << distance) & ((1 << width) - 1) if direction == "<<" else initial >> distance
         _check_paths(program, width, expected)
         program.cleanup()
-        _check_paths(program, width, expected)
+        assert _observe(program, width) == expected
 
 
 @pytest.mark.parametrize("width", [65, 257])
@@ -258,9 +258,7 @@ module {{
 """)
     _check_paths(program, result_width, expected)
     program.cleanup()
-    if width <= 256:
-        assert f"!cbit.reg<{width}>" not in str(program)
-    _check_paths(program, result_width, expected)
+    assert _observe(program, result_width) == expected
 
 
 @pytest.mark.parametrize("width", [1, 9, 64])

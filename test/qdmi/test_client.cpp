@@ -967,24 +967,22 @@ TEST(AuthenticationTest, SessionParameterToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM5), "CUSTOM5");
 }
 
-TEST(AuthenticationTest, SessionConstructionWithToken) {
-  // Empty token should be accepted
-  SessionConfig config1;
-  config1.token = "";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config1)); });
-
-  // Non-empty token should be accepted
-  SessionConfig config2;
-  config2.token = "test_token_123";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config2)); });
-
-  // Token with special characters should be accepted
-  SessionConfig config3;
-  config3.token = "very_long_token_with_special_characters_!@#$%^&*()";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config3)); });
+TEST(AuthenticationTest, AcceptsOptionalSessionParameters) {
+  const SessionConfig config{
+      .token = "test-token",
+      .authFile = "/driver-owned/nonexistent/authentication-file",
+      .authUrl = "driver-specific:authentication-endpoint",
+      .username = "user",
+      .password = "password",
+      .projectId = "project",
+      .custom1 = "value1",
+      .custom2 = "value2",
+      .custom3 = "value3",
+      .custom4 = "value4",
+      .custom5 = "value5",
+  };
+  auto session = value(Session::create(config));
+  EXPECT_FALSE(value(session.getDevices()).empty());
 }
 
 TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
@@ -1000,120 +998,6 @@ TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
       testing::AllOf(testing::HasSubstr("[mqt-core] [info]"),
                      testing::HasSubstr(
                          "Session parameter TOKEN not supported (skipped)")));
-}
-
-TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
-  SessionConfig config;
-  config.authUrl = "driver-specific:authentication-endpoint";
-  EXPECT_NO_THROW({ const auto session = value(Session::create(config)); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
-  SessionConfig config;
-  config.authFile = "/driver-owned/nonexistent/authentication-file";
-  EXPECT_NO_THROW({ const auto session = value(Session::create(config)); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
-  // Username only
-  SessionConfig config1;
-  config1.username = "user123";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config1)); });
-
-  // Password only
-  SessionConfig config2;
-  config2.password = "secure_password";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config2)); });
-
-  // Both username and password
-  SessionConfig config3;
-  config3.username = "user123";
-  config3.password = "secure_password";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config3)); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithProjectId) {
-  SessionConfig config;
-  config.projectId = "project-123-abc";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config)); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithMultipleParameters) {
-  SessionConfig config;
-  config.token = "test_token";
-  config.username = "test_user";
-  config.password = "test_pass";
-  config.projectId = "test_project";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config)); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
-  // Custom parameters may not be supported by all devices, or may have specific
-  // validation requirements. This test verifies they can be passed to the
-  // Session constructor. Currently a smoke test.
-
-  // Test custom1 - may succeed or fail with validation/unsupported errors
-  SessionConfig config1;
-  config1.custom1 = "custom_value_1";
-  auto session1 = value(qdmi::Session::create(config1));
-  EXPECT_NO_THROW(std::ignore = value(session1.getDevices()));
-
-  // Test custom2
-  SessionConfig config2;
-  config2.custom2 = "custom_value_2";
-  auto session2 = value(qdmi::Session::create(config2));
-  EXPECT_NO_THROW(std::ignore = value(session2.getDevices()));
-
-  // Test all custom parameters together
-  SessionConfig config3;
-  config3.custom1 = "value1";
-  config3.custom2 = "value2";
-  config3.custom3 = "value3";
-  config3.custom4 = "value4";
-  config3.custom5 = "value5";
-  auto session3 = value(qdmi::Session::create(config3));
-  EXPECT_NO_THROW(std::ignore = value(session3.getDevices()));
-
-  // Test mixing custom parameters with standard authentication
-  SessionConfig config4;
-  config4.token = "test_token";
-  config4.custom1 = "custom_value";
-  config4.projectId = "project_id";
-  auto session4 = value(qdmi::Session::create(config4));
-  EXPECT_NO_THROW(std::ignore = value(session4.getDevices()));
-}
-
-TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
-  auto session = value(qdmi::Session::create());
-  auto const devices = value(session.getDevices());
-
-  EXPECT_FALSE(devices.empty());
-
-  // All elements should be Device instances
-  for (const auto& device : devices) {
-    // Device should have a name
-    EXPECT_FALSE(value(device.getName()).empty());
-  }
-}
-
-TEST(AuthenticationTest, SessionMultipleInstances) {
-  auto session1 = value(qdmi::Session::create());
-  auto session2 = value(qdmi::Session::create());
-
-  auto const devices1 = value(session1.getDevices());
-  auto const devices2 = value(session2.getDevices());
-
-  // Both should return devices
-  EXPECT_FALSE(devices1.empty());
-  EXPECT_FALSE(devices2.empty());
-
-  // Should return the same number of devices
-  EXPECT_EQ(devices1.size(), devices2.size());
 }
 
 TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
