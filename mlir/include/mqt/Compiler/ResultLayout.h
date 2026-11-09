@@ -46,8 +46,8 @@ struct ResultLayout {
 /// when absent, infer it from the layout or first sample. Require exactly
 /// shots.
 [[nodiscard]] llvm::Expected<std::map<std::string, size_t>>
-decodeCounts(const std::map<std::string, size_t>& counts,
-             std::optional<size_t> width, size_t shots,
+decodeCounts(std::map<std::string, size_t> counts, std::optional<size_t> width,
+             size_t shots,
              const std::optional<ResultLayout>& layout = std::nullopt);
 
 /// Validate and decode samples without changing their order or correlations.

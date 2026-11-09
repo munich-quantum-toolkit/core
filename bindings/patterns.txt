@@ -238,7 +238,8 @@ mqt\.core\.mlir\.CompiledProgram\.payload_specification$:
 
 mqt\.core\.mlir\._pennylane\.Context\.environment$:
     @property
-    def environment(self) -> mqt.core.mlir.TargetEnvironment[mqt.core.mlir.CompiledProgram]: ...
+    def environment(self) -> mqt.core.mlir.TargetEnvironment[mqt.core.mlir.CompiledProgram]:
+        \doc
 
 mqt\.core\.mlir\.compile_program$:
     \import mqt.core.plugins.qiskit.backend

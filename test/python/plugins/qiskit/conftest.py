@@ -10,11 +10,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Unpack, cast
+from collections import Counter
+from numbers import Integral
+from typing import TYPE_CHECKING, Any, Unpack, cast
 
 import pytest
 
-from mqt.core.mlir import CompilerTarget, PayloadSpecification, TargetEnvironment
+from mqt.core.mlir import CompilerTarget, PayloadSpecification, TargetEnvironment, decode_counts, decode_shots
 from mqt.core.mlir import _prepare_qdmi_programs as native_prepare  # ruff:ignore[import-private-name] Native-boundary device doubles.
 from mqt.core.mlir import _try_submit_programs as native_submit  # ruff:ignore[import-private-name] Native-boundary device doubles.
 from mqt.core.plugins.qiskit import job as job_module
@@ -23,7 +25,7 @@ from mqt.core.qdmi import Device, Job, ProgramFormat
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mqt.core.mlir import CompiledProgram
+    from mqt.core.mlir import CompiledProgram, ResultLayout
     from mqt.core.typing import QDMIJobParameters
 
 
@@ -117,3 +119,26 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(job_module, "_prepare_qdmi_programs", prepare)
     monkeypatch.setattr(job_module, "_try_submit_programs", submit_programs)
+    native_readout = job_module.readout
+
+    def readout(
+        job: Job, width: int, shots: int, program_index: int, layout: ResultLayout | None, *, memory: bool
+    ) -> dict[str, Any]:
+        if isinstance(job, Job):
+            return native_readout(job, width, shots, program_index, layout, memory=memory)
+        if not memory and not width:
+            return {"counts": {}}
+        values = job.get_shots(program_index) if memory else job.get_counts(program_index)
+        if not memory and any(not isinstance(count, Integral) or count < 0 for count in values.values()):
+            msg = "Invalid QDMI histogram: counts must be nonnegative integers."
+            raise job_module.ResultDecodingError(msg)
+        try:
+            decoded = (decode_shots if memory else decode_counts)(values, width, shots, layout)
+        except (ValueError, RuntimeError) as exc:
+            raise job_module.ResultDecodingError(str(exc)) from exc
+        if memory:
+            encoded = [hex(int(bits, 2)) if bits else "0x0" for bits in decoded]
+            return {"memory": encoded, "counts": dict(Counter(encoded))}
+        return {"counts": {hex(int(bits, 2)): count for bits, count in decoded.items()}}
+
+    monkeypatch.setattr(job_module, "readout", readout)

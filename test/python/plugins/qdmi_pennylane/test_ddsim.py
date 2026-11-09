@@ -288,44 +288,46 @@ def test_retained_native_job_outlives_adapter() -> None:
     assert handle.get_shots() == ["1"] * 4
 
 
-@pytest.mark.parametrize("shots", [8, [(8, 2), 16]])
-def test_postprocessor_recovers_forward_measurements(
-    monkeypatch: pytest.MonkeyPatch, shots: int | list[tuple[int, int] | int]
-) -> None:
+@pytest.mark.parametrize("aggregate", [False, True])
+def test_postprocessor_recovers_forward_measurements(monkeypatch: pytest.MonkeyPatch, *, aggregate: bool) -> None:
     """Retained PennyLane postprocessing reconstructs broadcasts, shot vectors, and measurements."""
     device = DDSIMDevice(wires=1, max_retries=3)
 
-    @qp.qnode(device, shots=shots, diff_method=None)
-    def circuit(angles: np.ndarray) -> tuple[ExpectationMP, ProbabilityMP, VarianceMP, SampleMP]:
+    @qp.qnode(device, shots=[(8, 2), 16], diff_method=None)
+    def circuit(
+        angles: np.ndarray,
+    ) -> tuple[ExpectationMP, ProbabilityMP, VarianceMP] | tuple[ExpectationMP, ProbabilityMP, VarianceMP, SampleMP]:
         qp.RY(angles, 0)
-        return qp.expval(qp.Z(0)), qp.probs(wires=[0]), qp.var(2 * qp.Z(0)), qp.sample(2 * qp.Z(0))
+        measurements = (qp.expval(qp.Z(0)), qp.probs(wires=[0]), qp.var(2 * qp.Z(0)))
+        return measurements if aggregate else (*measurements, qp.sample(2 * qp.Z(0)))
 
     angles = np.array([0.0, np.pi])
     expected = circuit(angles)
-    for partition in expected if isinstance(shots, list) else (expected,):
+    for partition in expected:
         np.testing.assert_array_equal(partition[2], [0, 0])
-        np.testing.assert_array_equal(partition[3][0], 2)
-        np.testing.assert_array_equal(partition[3][1], -2)
+        if not aggregate:
+            np.testing.assert_array_equal(partition[3][0], 2)
+            np.testing.assert_array_equal(partition[3][1], -2)
     tapes, postprocess = qp.workflow.construct_batch(circuit, level="device")(angles)
-    original = PennyLaneJob._samples  # ruff:ignore[private-member-access] Inject a failure after native submission.
+    original = PennyLaneJob._readout  # ruff:ignore[private-member-access] Inject a failure after native submission.
     reads = []
 
-    def read(batch: PennyLaneJob, index: int, job: Job, program_index: int) -> np.ndarray:
+    def read(batch: PennyLaneJob, index: int, job: Job, program_index: int) -> object:
         reads.append((job, program_index))
         if len(reads) == 2:
             raise KeyboardInterrupt
         return original(batch, index, job, program_index)
 
-    monkeypatch.setattr(PennyLaneJob, "_samples", read)
+    monkeypatch.setattr(PennyLaneJob, "_readout", read)
     with pytest.raises(KeyboardInterrupt):
         device.execute(tapes)
     batch = device.last_job
     assert batch is not None
     submitted = device.submitted_jobs
-    first_samples = batch.entries[0].result
-    assert first_samples is not None
+    first_result = batch.entries[0].result
+    assert first_result is not None
     recovered = postprocess(batch.result())[0]
     np.testing.assert_equal(recovered, expected)
     assert device.submitted_jobs == submitted
-    assert batch.entries[0].result is first_samples
+    assert batch.entries[0].result is first_result
     assert reads.count(reads[0]) == 1

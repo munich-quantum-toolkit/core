@@ -18,6 +18,8 @@ import mqt.core.mlir
 import mqt.core.qdmi
 
 class Context:
+    """Retain a QDMI device, target snapshot, and job parameters."""
+
     def __init__(
         self,
         device: mqt.core.qdmi.Device,
@@ -28,15 +30,76 @@ class Context:
         custom4: str | bool | float | bytes | None = None,
         custom5: str | bool | float | bytes | None = None,
         program_format: mqt.core.qdmi.ProgramFormat | None = None,
-    ) -> None: ...
+    ) -> None:
+        """Create a context for native compilation and submission.
+
+        Args:
+            device: Open QDMI device retained for the context lifetime.
+            custom1: First provider-specific job parameter.
+            custom2: Second provider-specific job parameter.
+            custom3: Third provider-specific job parameter.
+            custom4: Fourth provider-specific job parameter.
+            custom5: Fifth provider-specific job parameter.
+            program_format: Preferred program format, or automatic selection.
+
+        Byte parameters are copied so later submissions do not borrow Python storage.
+        """
+
     @property
-    def id(self) -> int: ...
+    def id(self) -> int:
+        """Identifier used by Catalyst to retrieve this retained context."""
+
     @property
-    def environment(self) -> mqt.core.mlir.TargetEnvironment[mqt.core.mlir.CompiledProgram]: ...
-    def submit(self, program: mqt.core.mlir.CompiledProgram, num_shots: int) -> mqt.core.qdmi.Job: ...
-    def try_submit(
-        self, programs: Sequence[mqt.core.mlir.CompiledProgram], num_shots: int
-    ) -> mqt.core.qdmi.Job | None: ...
+    def environment(self) -> mqt.core.mlir.TargetEnvironment[mqt.core.mlir.CompiledProgram]:
+        """Target environment used to compile programs for this context."""
+
+    def submit(self, program: mqt.core.mlir.CompiledProgram, num_shots: int) -> mqt.core.qdmi.Job:
+        """Submit one compiled program with the retained job parameters.
+
+        Args:
+            program: Program compiled for this context's target environment.
+            num_shots: Positive number of execution shots.
+
+        Returns:
+            The submitted QDMI job, without waiting for completion.
+        """
+
+    def try_submit(self, programs: Sequence[mqt.core.mlir.CompiledProgram], num_shots: int) -> mqt.core.qdmi.Job | None:
+        """Submit compatible programs as one multi-program job when supported.
+
+        Args:
+            programs: Programs compiled for this context's target environment.
+            num_shots: Positive shot count applied to every program.
+
+        Returns:
+            The submitted job, or None when individual submissions are required.
+        """
+
+def aggregate(
+    job: mqt.core.qdmi.Job,
+    num_wires: int,
+    shots: int,
+    measurements: Sequence[tuple[Sequence[int], bool]],
+    program_index: int = 0,
+    result_layout: mqt.core.mlir.ResultLayout | None = None,
+) -> list[object]:
+    """Compute measurement marginals from validated provider readout.
+
+    Args:
+        job: Completed provider job whose results are read.
+        num_wires: Logical output width after layout projection.
+        shots: Positive expected shot count.
+        measurements: Pairs of logical wire indices and a counts flag. True
+            selects a binary-key count dictionary; false selects a one-dimensional
+            NumPy probability array. The first selected wire is most significant.
+        program_index: Program within a multi-program job.
+        result_layout: Projection from provider output to logical wires.
+
+    Returns:
+        One marginal per measurement, in the requested order. Counts are preferred;
+        unavailable or empty histograms fall back to shots. Malformed results fail
+        validation without fallback. Observable eigenvalues are applied by Python.
+    """
 
 def samples(
     job: mqt.core.qdmi.Job,
@@ -44,4 +107,19 @@ def samples(
     shots: int,
     program_index: int = 0,
     result_layout: mqt.core.mlir.ResultLayout | None = None,
-) -> Annotated[NDArray[np.int8], {"shape": (None, None), "order": "C", "device": "cpu"}]: ...
+) -> Annotated[NDArray[np.int8], {"shape": (None, None), "order": "C", "device": "cpu"}]:
+    """Return a shot-by-wire NumPy array in logical wire order.
+
+    Args:
+        job: Completed provider job whose results are read.
+        num_wires: Number of logical output columns after layout projection.
+        shots: Positive expected number of rows.
+        program_index: Program within a multi-program job.
+        result_layout: Projection from provider output to logical wires.
+
+    Returns:
+        A contiguous int8 array that owns its storage independently of the job.
+        Ordered SHOTS are preferred; unavailable or empty shots fall back to
+        histogram expansion, which preserves frequencies but has no shot order.
+        Malformed results fail validation without fallback.
+    """

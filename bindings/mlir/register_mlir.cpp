@@ -2946,10 +2946,10 @@ and error contracts.)pb");
 
   m.def(
       "decode_counts",
-      [](const std::map<std::string, size_t>& counts,
-         std::optional<size_t> width, size_t shots,
-         const std::optional<mlir::ResultLayout>& layout) {
-        return unwrap(mlir::decodeCounts(counts, width, shots, layout));
+      [](std::map<std::string, size_t> counts, std::optional<size_t> width,
+         size_t shots, const std::optional<mlir::ResultLayout>& layout) {
+        return unwrap(
+            mlir::decodeCounts(std::move(counts), width, shots, layout));
       },
       "counts"_a, "width"_a, "shots"_a, "layout"_a = nb::none(),
       "Validate binary counts and reconstruct logical outcomes, ignoring ASCII "
@@ -3195,5 +3195,6 @@ apply ``compiled.result_layout.decode_bits`` when a result layout is present.)pb
       "Run the compiler command once. LLVM options can terminate the process.");
 
   bindings::pennylane::registerBindings(m);
+  bindings::qiskit::registerResultBindings(m);
 }
 } // namespace mqt

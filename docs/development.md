@@ -62,11 +62,12 @@ Order include groups as follows, sorting each group alphabetically:
 
 Use quotes for project and third-party headers. Use angle brackets for system
 and standard-library headers, or when a library requires them. Keep includes
-that depend on macros or declarations at the point where they are needed. For
-example, `<qiskit.h>` needs angle brackets to avoid the local `Qiskit.h` on
-case-insensitive file systems. Keep its extension function table,
-`<qiskit/funcs_py.h>`, in angle brackets so that it sorts after the umbrella
-header.
+relative to configured CMake include roots; parent-directory traversal is
+forbidden. Keep includes that depend on macros or declarations at the point
+where they are needed. For example, `<qiskit.h>` needs angle brackets to avoid
+the local `Qiskit.h` on case-insensitive file systems. Keep its extension
+function table, `<qiskit/funcs_py.h>`, in angle brackets so that it sorts after
+the umbrella header.
 
 The root `.clang-format` enforces this order. MQT's MLIR headers use the `mqt/`
 prefix, for example `"mqt/Dialect/QCO/IR/QCOOps.h"`. Upstream MLIR headers use

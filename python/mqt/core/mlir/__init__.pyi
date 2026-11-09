@@ -25,6 +25,7 @@ import mqt.core.dd
 import mqt.core.plugins.qiskit.backend
 import mqt.core.qdmi
 from mqt.core.mlir import _pennylane as _pennylane
+from mqt.core.mlir import _qiskit as _qiskit
 from mqt.core.qdmi import Device
 
 _CompilerInput: TypeAlias = (
