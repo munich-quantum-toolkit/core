@@ -342,7 +342,6 @@ docstring-code-format = true
 
 [tool.ruff.lint.per-file-ignores]
 "test/python/**" = [ "INP001", "T20", "TID252" ]
-"test/slurm/**" = [ "DOC201", "DOC501", "INP001" ]
 "docs/**" = [ "INP001", "T20" ]
 "noxfile.py" = [ "PLC0415", "T20", "TID251" ]
 "mlir/unittests/**/*.py" = [ "INP001", "T201" ]
@@ -443,9 +442,9 @@ error-on-warning = true
 [tool.pytest]
 addopts = [
   "-ra",
-  "--numprocesses=auto",                                      # Automatically use all available CPU cores for parallel testing
+  "--numprocesses=auto",                             # Automatically use all available CPU cores for parallel testing
   "-m",
-  "not (linkcheck or slurm or qiskit_c_api or catalyst_abi)",
+  "not (linkcheck or qiskit_c_api or catalyst_abi)",
 ]
 filterwarnings = [
   "error",
@@ -456,7 +455,6 @@ filterwarnings = [
 log_level = "INFO"
 markers = [
   "linkcheck: documentation link-checker tests (requires a source checkout)",
-  "slurm: Slurm integration-script tests (requires a source checkout)",
   "qiskit_c_api: Qiskit C API adoption-script tests (requires a source checkout)",
   "catalyst_abi: Catalyst ABI maintenance-script tests (requires a source checkout)",
 ]
