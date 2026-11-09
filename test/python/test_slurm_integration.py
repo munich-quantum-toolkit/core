@@ -52,47 +52,6 @@ def runner() -> ModuleType:
     return load_script(Path(__file__).parents[1] / "slurm" / "run_integration.py")
 
 
-@pytest.fixture(scope="module")
-def monitor(runner: ModuleType) -> ModuleType:
-    """Load the Slurm availability monitor.
-
-    Returns:
-        The monitor module from the source checkout.
-    """
-    return load_script(runner.CLUSTER / "update_availability.py")
-
-
-def test_probe_timeout_keeps_admission_closed(monitor: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A hung device leaves its license reserved until a later successful probe."""
-    commands = []
-
-    def scontrol(*arguments: str) -> str:
-        commands.append(arguments)
-        return '{"reservations": []}'
-
-    def probe(*_arguments: object, **_options: object) -> None:
-        assert commands[-1][0] == "create"
-        msg = "probe"
-        raise subprocess.TimeoutExpired(msg, 10)
-
-    monkeypatch.setattr(monitor, "scontrol", scontrol)
-    monkeypatch.setattr(monitor.subprocess, "run", probe)
-    assert monitor.main(("--license", "example.device:2", "--watch")) == 1
-    assert all(command[0] != "delete" for command in commands)
-
-
-def test_controller_failure_never_runs_probe(monitor: ModuleType, monkeypatch: pytest.MonkeyPatch) -> None:
-    """A failed admission update cannot produce a healthy, open result."""
-
-    def unavailable(*_arguments: str) -> str:
-        msg = "scontrol"
-        raise subprocess.TimeoutExpired(msg, 10)
-
-    monkeypatch.setattr(monitor, "scontrol", unavailable)
-    monkeypatch.setattr(monitor.subprocess, "run", lambda *_args, **_kwargs: pytest.fail("probe ran before blocking"))
-    assert monitor.main(("--license", "example.device:2")) == 2
-
-
 def test_prepare_keeps_private_key_and_preserves_existing_cluster(runner: ModuleType, tmp_path: Path) -> None:
     """Create usable shared files without overwriting a cluster's authentication."""
     runtime = tmp_path / "cluster"

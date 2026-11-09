@@ -15,8 +15,10 @@ mkdir "$runtime"
 head -c 1024 /dev/urandom > "$runtime/munge.key"
 mkdir "$runtime/jobs"
 chmod 1777 "$runtime/jobs"
-cp "$(dirname "$0")/slurm.conf" "$runtime/slurm.conf"
-chmod 644 "$runtime/slurm.conf"
+for config in slurm.conf resources.yaml; do
+    cp "$(dirname "$0")/$config" "$runtime/$config"
+    chmod 644 "$runtime/$config"
+done
 printf '%s\n' '{"schema-version":1,"qdmi":{"devices":[]}}' > "$runtime/qdmi.json"
 chmod 644 "$runtime/qdmi.json"
 touch "$runtime/qdmi.env"

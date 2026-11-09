@@ -1,0 +1,35 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+# Both QANs can access each device; counts limit concurrent allocations.
+- resource: mqt.ddsim.default
+  mode: MODE_1
+  plugin:
+    type: hres/lua
+    config:
+      - name: path
+        value: /etc/slurm/hres_qdmi.lua
+    maintenance_cycle: 30
+    maintenance_timeout: 15
+  layers:
+    - layer_name: quantum
+      nodes: ["qan[1-2]"]
+      count: 2
+- resource: mqt.sc.default
+  mode: MODE_1
+  plugin:
+    type: hres/lua
+    config:
+      - name: path
+        value: /etc/slurm/hres_qdmi.lua
+    maintenance_cycle: 30
+    maintenance_timeout: 15
+  layers:
+    - layer_name: quantum
+      nodes: ["qan[1-2]"]
+      count: 1

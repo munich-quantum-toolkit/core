@@ -8,4 +8,4 @@
 # Licensed under the MIT License
 
 export VIRTUAL_ENV=/opt/venv
-export PATH="$VIRTUAL_ENV/bin:$PATH"
+export PATH="$VIRTUAL_ENV/bin:/opt/slurm/bin:/opt/slurm/sbin:$PATH"
