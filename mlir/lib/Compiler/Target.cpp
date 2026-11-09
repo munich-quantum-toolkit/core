@@ -932,8 +932,7 @@ bool CompilerTarget::Storage::supportsOperation(
     std::optional<ArrayRef<SiteId>> orderedSites, bool variadicOnly,
     function_ref<std::optional<double>(size_t)> parameterAt,
     function_ref<bool(const OperationCapability&)> capabilityFilter) const {
-  const auto canonical = canonicalOperationName(operationName);
-  if (canonical.empty() || (!sites.empty() && arity > sites.size()) ||
+  if (operationName.empty() || (!sites.empty() && arity > sites.size()) ||
       (orderedSites && orderedSites->size() != arity)) {
     return false;
   }
@@ -946,9 +945,12 @@ bool CompilerTarget::Storage::supportsOperation(
     }
   }
   if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
-    return true;
+    return !operationName.trim().empty();
   }
-  const auto found = capabilities.find(canonical);
+  auto found = capabilities.find(operationName);
+  if (found == capabilities.end()) {
+    found = capabilities.find(canonicalOperationName(operationName));
+  }
   if (found == capabilities.end()) {
     return false;
   }
