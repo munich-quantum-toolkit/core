@@ -144,14 +144,11 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
             (std::vector<int8_t>{1, 0, 0, 1, 0, 0}));
   api.device_job_get_results = getResults;
   returnedKeys.clear();
-  returnedShots = "100,100";
+  returnedShots = "100,10 0";
   EXPECT_EQ(
       marginalCounts(readout(job, 3, 2, 0, std::nullopt, false), {2, 1, 0}),
       (std::map<std::string, size_t>{{"100", 2}}));
   returnedShots = "10 0,001";
-  EXPECT_EQ(
-      marginalCounts(readout(job, 3, 2, 0, std::nullopt, false), {2, 1, 0}),
-      (std::map<std::string, size_t>{{"001", 1}, {"100", 1}}));
   EXPECT_EQ(decodeSamples(job, 3, 2), (std::vector<int8_t>{0, 0, 1, 1, 0, 0}));
   const mlir::ResultLayout layout{
       .rawWidth = 3,

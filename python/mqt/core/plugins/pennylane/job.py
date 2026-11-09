@@ -124,11 +124,6 @@ class PennyLaneJob:
             [self._program(index) for index in indices], shots
         )
 
-    def _samples(self, index: int, job: Job, program_index: int) -> np.ndarray:
-        """Return a shot-by-wire sample array in the device's logical wire order."""
-        _, shots, width, _ = self._prepared[index]
-        return samples(job, width, shots, program_index, self._program(index).result_layout)
-
     def _process_samples(self, tape_index: int, values: np.ndarray) -> object:
         measured = tuple(
             cast("SampleMeasurement", measurement).process_samples(values, self._wires[tape_index])
@@ -143,7 +138,9 @@ class PennyLaneJob:
             type(m) in {CountsMP, ProbabilityMP} or (type(m) in {ExpectationMP, VarianceMP} and bool(m.wires))
             for m in tape.measurements
         ):
-            return self._process_samples(tape_index, self._samples(index, job, program_index))
+            return self._process_samples(
+                tape_index, samples(job, width, shots, program_index, self._program(index).result_layout)
+            )
         wires = self._wires[tape_index]
         selected = [measurement.wires or wires for measurement in tape.measurements]
         marginals = aggregate(

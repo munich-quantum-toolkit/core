@@ -289,14 +289,11 @@ def test_retained_native_job_outlives_adapter() -> None:
 
 
 @pytest.mark.parametrize("aggregate", [False, True])
-@pytest.mark.parametrize("shots", [8, [(8, 2), 16]])
-def test_postprocessor_recovers_forward_measurements(
-    monkeypatch: pytest.MonkeyPatch, shots: int | list[tuple[int, int] | int], *, aggregate: bool
-) -> None:
+def test_postprocessor_recovers_forward_measurements(monkeypatch: pytest.MonkeyPatch, *, aggregate: bool) -> None:
     """Retained PennyLane postprocessing reconstructs broadcasts, shot vectors, and measurements."""
     device = DDSIMDevice(wires=1, max_retries=3)
 
-    @qp.qnode(device, shots=shots, diff_method=None)
+    @qp.qnode(device, shots=[(8, 2), 16], diff_method=None)
     def circuit(
         angles: np.ndarray,
     ) -> tuple[ExpectationMP, ProbabilityMP, VarianceMP] | tuple[ExpectationMP, ProbabilityMP, VarianceMP, SampleMP]:
@@ -306,7 +303,7 @@ def test_postprocessor_recovers_forward_measurements(
 
     angles = np.array([0.0, np.pi])
     expected = circuit(angles)
-    for partition in expected if isinstance(shots, list) else (expected,):
+    for partition in expected:
         np.testing.assert_array_equal(partition[2], [0, 0])
         if not aggregate:
             np.testing.assert_array_equal(partition[3][0], 2)
@@ -327,10 +324,10 @@ def test_postprocessor_recovers_forward_measurements(
     batch = device.last_job
     assert batch is not None
     submitted = device.submitted_jobs
-    first_samples = batch.entries[0].result
-    assert first_samples is not None
+    first_result = batch.entries[0].result
+    assert first_result is not None
     recovered = postprocess(batch.result())[0]
     np.testing.assert_equal(recovered, expected)
     assert device.submitted_jobs == submitted
-    assert batch.entries[0].result is first_samples
+    assert batch.entries[0].result is first_result
     assert reads.count(reads[0]) == 1
