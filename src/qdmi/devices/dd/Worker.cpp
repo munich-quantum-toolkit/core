@@ -117,10 +117,12 @@ bool Worker::start() {
                              error.message());
     return false;
   }
-  const llvm::scope_exit cleanup(
-      [&] { std::ignore = llvm::sys::fs::remove_directories(directory); });
   auto socketPath = directory;
   llvm::sys::path::append(socketPath, "socket");
+  const llvm::scope_exit cleanup([&] {
+    std::ignore = llvm::sys::fs::remove(socketPath);
+    std::ignore = llvm::sys::fs::remove(directory);
+  });
   auto listener = llvm::ListeningSocket::createUnix(socketPath);
   if (!listener) {
     qdmi::diagnostics::error("{0}", llvm::toString(listener.takeError()));
