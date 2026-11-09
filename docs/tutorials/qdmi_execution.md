@@ -197,6 +197,7 @@ semantics and distribution rather than requiring identical counts.
 
 Use {doc}`Qiskit <../qdmi/qdmi_backend>` or
 {doc}`PennyLane <../qdmi/pennylane_device>` to access QDMI through an SDK, and
+the
 [MQSC Orchestrator](https://github.com/munich-quantum-software/orchestrator)
 to coordinate hybrid workflows with Slurm. A compiled artifact must still match
 the selected device's capabilities; a stable ID does not make artifacts portable

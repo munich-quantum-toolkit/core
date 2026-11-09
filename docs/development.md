@@ -322,8 +322,8 @@ not itself publish a release.
 `linkcheck` and `qiskit_c_api` markers registered in `pyproject.toml`. In a
 source checkout, use `pytest -m linkcheck` to select one suite or `pytest -m ""`
 to run all suites. The command-line marker expression replaces the default
-selection, including when selecting a test file explicitly. `nox -s tests`
-includes the link-checker and Qiskit C API tests.
+selection, including when selecting a test file explicitly. Nox uses the same
+default selection; pass `nox -s tests -- -m linkcheck` to run a script suite.
 
 ## Documentation validation
 
