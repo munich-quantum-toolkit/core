@@ -32,6 +32,10 @@ inline constexpr llvm::StringLiteral kSourceQubitCountAttr =
 inline constexpr llvm::StringLiteral kSourceQubitIndicesAttr =
     "mqt.source_qubit_indices";
 
+/// Source resource holding each logical output until layout publication.
+inline constexpr llvm::StringLiteral kSourceOutputPermutationAttr =
+    "mqt.source_output_permutation";
+
 /// Layout metadata; see the MQT dialect reference for the schema.
 ///
 /// initial maps program qubits to device positions. routing maps those

@@ -132,6 +132,13 @@ public:
 
 protected:
   void runOnOperation() override {
+    if (getOperation()->hasAttr(mqt::kSourceOutputPermutationAttr)) {
+      getOperation().emitError(
+          "target compilation requires input without a pending source output "
+          "permutation");
+      signalPassFailure();
+      return;
+    }
     if (getOperation()->hasAttr("mqt.layout")) {
       getOperation().emitError("discard existing layout metadata before target "
                                "compilation");
@@ -380,7 +387,11 @@ static void populateDecompositionAndPlacement(OpPassManager& pm,
   // Drop unused slots before placement checks target capacity.
   pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
-  pm.addPass(qco::createElideTerminalSwapsPass());
+  qco::ElidePermutationsOptions permutationOptions;
+  permutationOptions.trackOutputPermutation = true;
+  permutationOptions.terminalOnly =
+      target.connectivityKind() == CompilerTarget::Connectivity::Kind::Explicit;
+  pm.addPass(qco::createElidePermutations(permutationOptions));
   if (target.connectivityKind() ==
       CompilerTarget::Connectivity::Kind::AllToAll) {
     pm.addPass(qco::createPlacementPass());

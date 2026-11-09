@@ -73,6 +73,7 @@ void registerMQTCompilerPasses() {
     registerConvertCBitToMemRef();
     qco::registerCombineControlledGates();
     qco::registerDecomposeMultiControlled();
+    qco::registerElidePermutations();
     qco::registerElideTerminalSwapsPass();
     qco::registerFuseSingleQubitUnitaryRuns();
     qco::registerFuseTwoQubitGates();
