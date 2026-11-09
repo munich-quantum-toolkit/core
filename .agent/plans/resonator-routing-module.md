@@ -9,6 +9,12 @@ Status: complete.
 `ResonatorRouting.cpp` owns virtual CZ route discovery and QC lowering; both
 phases use the same route discovery. The private header adds no installed API.
 
+The pass uses MLIR's C++ pass interface, like staged target preparation and
+finalization. It has no options or statistics. Its factory stays in the compiler
+library; dialect pass registration must not depend on this higher layer. A
+separate compiler TableGen group would add generation infrastructure without
+changing the pass's functionality.
+
 Placement eligibility, deterministic route selection, native CZ handling, MOVE
 operand order, and terminal-readout scheduling retain their behavior. QCO and
 jeff checkpoints retain virtual CZs. Native serialization remains separate from
@@ -16,8 +22,9 @@ compilation.
 
 The target-compilation guide separates placement policy from resonator
 compilation. The glossary defines target sites, placeable sites, computational
-resonators, and MOVE. Pass usage stays in this guide; `Transforms.md` collects
-generated pass documentation.
+resonators, and MOVE. The guide explains the effect of routing on available
+qubit capacity and native output. Pass-level matching and failure behavior stay
+in the private pass header; `Transforms.md` collects generated documentation.
 
 ## Validation
 

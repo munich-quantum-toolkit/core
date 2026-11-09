@@ -224,7 +224,8 @@ connected to every other candidate. Target preparation can narrow this set to a
 connected subset; synthesis and target-conformance checks enforce the required
 gate support. When excluding sites from an explicit topology, preparation keeps
 the largest connected component, including any
-[virtual resonator connections](#resonator-mediated-compilation).
+[virtual resonator connections](#resonator-mediated-compilation). Only the
+retained sites count toward the available qubit capacity.
 
 Mapping runs multiple initial-layout trials. Set `MappingOptions.trials` and
 `CompilationOptions.seed` for reproducible choices. Each trial retains the
@@ -384,8 +385,8 @@ placement because it lacks the required single-qubit gates and readout.
 
 Target preparation combines native MOVE and CZ placements to expose virtual CZ
 connections between placeable sites. For example, `move(a, r)` and `cz(r, b)`
-permit a virtual `cz(a, b)` through an idle resonator `r`. Conversion to QC
-expands that virtual gate into a closed sequence:
+permit a virtual `cz(a, b)` through an idle resonator `r`. The native circuit
+contains the following closed sequence:
 
 ```text
 move(a, r); cz(r, b); move(a, r)
@@ -393,12 +394,9 @@ move(a, r); cz(r, b); move(a, r)
 
 The native CZ operand order follows the target's advertised placement. Each
 sequence returns the transferred state to its device qubit, and terminal readout
-follows the MOVE sequences. The `mqt-lower-resonator-cz` module pass performs
-this expansion using the attached execution target. It rewrites CZs on static
-sites with a matching MOVE route and leaves directly supported CZs unchanged.
-Conversion to QC runs it automatically, including after custom target stages.
-QCO and jeff compiler checkpoints retain virtual CZs. Without a target, the pass
-leaves the module unchanged; an invalid target environment fails the pass.
+follows the MOVE sequences. MQT Core inserts these sequences automatically when
+producing a native circuit, including after custom target stages. QCO and jeff
+compiler checkpoints retain virtual CZs.
 
 Use `compile_program(circuit, target=device)` with `submit_program`,
 `backend.run(backend.compile(qc))` through Qiskit, or the PennyLane device.

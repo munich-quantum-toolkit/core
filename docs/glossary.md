@@ -46,7 +46,7 @@ ancilla
 
 device qubit
   **Preferred term:** device qubit. **Accepted alias:** hardware qubit. A
-  target site on which a program qubit can be placed.
+  physical qubit identified by a compiler target.
 
 target site
   **Preferred term:** target site. **Accepted alias:** hardware site. A hardware
