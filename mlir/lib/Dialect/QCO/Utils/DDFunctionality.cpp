@@ -2623,39 +2623,74 @@ sampleTerminalCounts(func::FuncOp func, const dd::VectorDD& state,
   return std::move(*counts);
 }
 
-static bool canBranchStructured(func::FuncOp func) {
-  bool found = false;
-  bool unsupported = false;
-  SymbolTableCollection symbols;
+static std::optional<DenseSet<Operation*>>
+collectBranchingOps(func::FuncOp func) {
+  DenseSet<Operation*> regions;
+  DenseSet<Operation*> active;
   DenseMap<Operation*, bool> cached;
-  func.getBody().walk([&](Operation* op) {
-    if (isa<MeasureOp, ResetOp>(op)) {
-      found = true;
-      for (Operation* parent = op->getParentOp(); parent != func.getOperation();
-           parent = parent->getParentOp()) {
-        if (!isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp, scf::IfOp,
-                 scf::IndexSwitchOp>(parent)) {
-          unsupported = true;
-          break;
+  SymbolTableCollection symbols;
+  const auto collect = [&](const auto& self,
+                           func::FuncOp current) -> FailureOr<bool> {
+    if (!current || current.isDeclaration() ||
+        !current.getBody().hasOneBlock()) {
+      return failure();
+    }
+    if (const auto it = cached.find(current); it != cached.end()) {
+      return it->second;
+    }
+    if (!active.insert(current).second) {
+      return failure();
+    }
+    const auto guard = llvm::scope_exit([&] { active.erase(current); });
+    bool found = false;
+    const auto result = current.getBody().walk([&](Operation* op) {
+      bool branches = isa<MeasureOp, ResetOp>(op);
+      if (auto call = dyn_cast<func::CallOp>(op)) {
+        auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
+            call, call.getCalleeAttr());
+        auto nested = self(self, callee);
+        if (failed(nested)) {
+          return WalkResult::interrupt();
+        }
+        branches = *nested;
+        if (branches) {
+          regions.insert(op);
         }
       }
-    } else if (auto call = dyn_cast<func::CallOp>(op)) {
-      auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
-          call, call.getCalleeAttr());
-      DenseSet<Operation*> active;
-      unsupported |= !callee || callee.isDeclaration() ||
-                     mayMeasureOrReset(callee, active, cached, symbols);
+      if (branches) {
+        found = true;
+        for (Operation* parent = op->getParentOp();
+             parent != current.getOperation(); parent = parent->getParentOp()) {
+          if (!isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp, scf::IfOp,
+                   scf::IndexSwitchOp>(parent)) {
+            return WalkResult::interrupt();
+          }
+          regions.insert(parent);
+        }
+      }
+      return WalkResult::advance();
+    });
+    if (result.wasInterrupted()) {
+      return failure();
     }
-  });
-  return found && !unsupported;
+    cached.try_emplace(current, found);
+    return found;
+  };
+  auto found = collect(collect, func);
+  if (failed(found) || !*found) {
+    return std::nullopt;
+  }
+  return regions;
 }
 
 static FailureOr<std::map<std::string, size_t>>
 sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
                std::mt19937_64& rng, const PreparedState& prepared,
-               const SamplingPlan& plan, std::vector<std::string>* shotResults,
+               const SamplingPlan& plan,
+               const DenseSet<Operation*>& branchingOps,
+               std::vector<std::string>* shotResults,
                const DDExecutionOptions& options, bool collectCounts) {
-  struct RegionFrame {
+  struct Frame {
     Operation* op;
     std::optional<LoopRange> range;
   };
@@ -2666,7 +2701,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
     ClassicalEnv classical;
     size_t remainingWhileIterations;
     size_t count;
-    SmallVector<RegionFrame, 2> frames;
+    SmallVector<Frame, 2> frames;
   };
   std::map<std::string, size_t> counts;
   auto initial = dd::makeZeroState(prepared.qubits.numQubits, dd);
@@ -2682,16 +2717,6 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
       .count = shots,
   };
   Block& entry = func.getBody().front();
-  DenseSet<Operation*> branchRegions;
-  func.getBody().walk([&](Operation* op) {
-    if (!isa<MeasureOp, ResetOp>(op)) {
-      return;
-    }
-    for (Operation* parent = op->getParentOp(); parent != func.getOperation();
-         parent = parent->getParentOp()) {
-      branchRegions.insert(parent);
-    }
-  });
   GateCache gateCache(dd);
   std::function<LogicalResult(Block::iterator, Group)> visit =
       [&](Block::iterator current, Group group) -> LogicalResult {
@@ -2780,8 +2805,21 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         continue;
       }
       Operation& op = *current;
+      if (auto call = dyn_cast<func::CallOp>(op);
+          call && branchingOps.contains(&op)) {
+        auto callee = walk.symbols.lookupNearestSymbolFrom<func::FuncOp>(
+            call, call.getCalleeAttr());
+        if (failed(bindValuePairs(call.getArgOperands(), callee.getArguments(),
+                                  walk, call))) {
+          return failure();
+        }
+        group.frames.push_back({.op = call, .range = std::nullopt});
+        current = callee.getBody().front().begin();
+        continue;
+      }
+
       if (auto forOp = dyn_cast<scf::ForOp>(op);
-          forOp && branchRegions.contains(&op)) {
+          forOp && branchingOps.contains(&op)) {
         auto range = resolveLoop(forOp, group.classical);
         if (failed(range)) {
           return failure();
@@ -2810,7 +2848,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         continue;
       }
       if (auto whileOp = dyn_cast<scf::WhileOp>(op);
-          whileOp && branchRegions.contains(&op)) {
+          whileOp && branchingOps.contains(&op)) {
         if (failed(bindValuePairs(whileOp.getInits(),
                                   whileOp.getBeforeArguments(), walk,
                                   whileOp))) {
@@ -2824,7 +2862,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         continue;
       }
       if (isa<IfOp, IndexSwitchOp, scf::IfOp, scf::IndexSwitchOp>(op) &&
-          branchRegions.contains(&op)) {
+          branchingOps.contains(&op)) {
         auto selected = selectBranch(&op, walk);
         if (failed(selected)) {
           return failure();
@@ -3136,11 +3174,11 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
       return result;
     }
   }
-  if (canBranchStructured(func)) {
+  if (auto regions = collectBranchingOps(func)) {
     // shortcut: Shared structured-branch evaluation corrupts concurrent
     // shot groups; isolate its IR before enabling multiple workers.
-    return sampleBranches(func, *dd, shots, rng, *prepared, *plan, shotResults,
-                          options, collectCounts);
+    return sampleBranches(func, *dd, shots, rng, *prepared, *plan, *regions,
+                          shotResults, options, collectCounts);
   }
   if (workers == 0) {
     // Keep small jobs serial and bound repeated prefix work per package.
