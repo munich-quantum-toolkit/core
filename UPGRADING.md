@@ -4,6 +4,161 @@ This document describes breaking changes and how to upgrade. For a complete list
 of changes including minor and patch releases, please refer to the
 [changelog](CHANGELOG.md).
 
+## [4.2.0]
+
+### Compilation and program ownership
+
+Replace `compile_program(..., inplace=False)` with `copy=True`. Compilation now
+consumes typed MLIR inputs by default, including when compilation fails. Source
+text, paths, Qiskit circuits, and `OpenQASMProgram` objects remain reusable.
+`QCProgram.to_openqasm3()` also consumes its source; pass `copy=True` to retain
+it.
+
+Use `output` to select the returned representation. Without it, compilation
+preserves the input format family, returns a Qiskit circuit for a Qiskit target,
+and returns a `CompiledProgram` for a QDMI device or backend. Request
+`output=OutputFormat.QC` explicitly where code relied on the old untargeted
+default. Replace `compile_program(..., program_format=...)` with a
+`TargetEnvironment.from_device(device, program_format=...)` target. Direct
+`submit_program` calls still accept `program_format`.
+
+`cleanup()` and direct serialization no longer perform quantum optimization. Use
+`compile_program` for the default optimization and export preparation, or
+request explicit quantum passes in a custom pipeline. For example, compile
+before Base QIR export when loops need unrolling:
+
+```python
+from mqt.core.mlir import OutputFormat, QCProgram, compile_program
+
+program = QCProgram.from_openqasm_str("OPENQASM 3.0; qubit q; h q;")
+qir = compile_program(program, output=OutputFormat.QIR_BASE, copy=True)
+assert program.is_valid
+```
+
+Mapping now defaults to at least eight layout trials and two refinement rounds.
+Set `options.mapping` explicitly when a fixed search budget matters. Native
+synthesis can omit very small runtime entanglers within a per-decomposition
+average gate fidelity floor of `1 - 1e-12`. Repeated approximations can
+accumulate; this is not a whole-program error budget. The
+[target compilation guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/target_compilation.html)
+covers output selection, ownership, and custom pipelines.
+
+### Qiskit and QDMI execution
+
+Upgrade Qiskit to **2.5 or newer within 2.x**. Bundled adapters cover Qiskit 2.5
+and 2.6; later minor versions use the newest compatible adapter optimistically.
+Qiskit's experimental native ABI can change between minors, so pin a tested
+minor for a fixed compatibility baseline. See the
+[Qiskit guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/qiskit.html#version-compatibility).
+
+Remove calls to `register_program_serializer`, `unregister_program_serializer`,
+and `program_serializer`, and remove provider `mqt.core.qiskit_serializers`
+entry points. Core now selects and serializes supported formats itself. Use
+`backend.compile(circuit)` followed by `backend.run(compiled)` for compilation,
+or pass an already native circuit to `backend.run`. Native serialization follows
+the compiler's Qiskit import limits; lower annotated operations, matrix
+unitaries, and permutations first. Replace catches of `UnsupportedFormatError`
+with `TranslationError`.
+
+For direct QDMI submission, retain the `CompiledProgram` when compilation
+changes measurement order. Decode raw job results with `decode_counts` or
+`decode_shots` and its `result_layout`; Qiskit and PennyLane apply this mapping
+automatically. Source submission that needs a nonidentity result layout now
+requires explicit compilation. The
+[QDMI backend guide](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html)
+and
+[direct submission example](https://mqt.readthedocs.io/projects/core/en/latest/mlir/target_compilation.html#terminal-readout-and-results)
+cover these workflows.
+
+### PennyLane devices
+
+PennyLane tapes now use the native compiler and QDMI execution path shared with
+Catalyst. Ordinary QNodes still need only `mqt-core[pennylane]`; install
+`mqt-core[pennylane,catalyst]` to use `qjit`. Keep the device alive while using
+compiled functions. Replace catches of `PennyLaneUnsupportedFormatError` and
+`PennyLaneUnsupportedOperationError` with `PennyLaneTranslationError`. The
+[PennyLane guide](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/pennylane_device.html)
+covers supported gates, measurements, and device lifetimes.
+
+### QDMI results and DDSIM sampling
+
+`Job.get_dense_statevector()` and `Job.get_dense_probabilities()` now return
+writable NumPy arrays instead of lists. The arrays own their storage and remain
+valid after the job is destroyed. Use `.tolist()` when a caller needs a list.
+
+DDSIM assigns program index `i` the seed `seed + i` modulo 2⁶⁴. Reordering or
+splitting a batch changes its random streams unless the seeds are adjusted.
+Seeded adaptive sampling now depends on the requested worker setting, rather
+than the number of worker slots granted during execution. Keep that setting
+fixed to reproduce samples; use `custom3=1` for serial sampling. Sampling
+optimizations can change exact seeded outcomes from 4.1. The
+[DDSIM guide](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/ddsim_device.html)
+describes the session and worker controls.
+
+### Command-line tools and Slurm
+
+Replace `mqt-cc` with `mqt-core compile` and `mqt-core-bench` with
+`mqt-core bench`. Use `mqt-core simulate` for local DDSIM execution and
+`mqt-core run --qdmi-device=...` for a QDMI device. The same commands are
+available through `uvx mqt-core` and `python -m mqt.core`. See the
+[command-line guide](https://mqt.readthedocs.io/projects/core/en/latest/installation.html#command-line-tools).
+
+The Slurm Playground has moved to
+[MQSC Orchestrator](https://github.com/munich-quantum-software/orchestrator).
+Use its deployment guide from a separate checkout instead of `examples/slurm` in
+MQT Core.
+
+### C++ libraries and source builds
+
+The shared-library ABI version (`SOVERSION`) changes from `4.1` to `4.2`.
+Rebuild downstream C++ libraries against MQT Core 4.2.0. Update any explicit
+library filenames or wheel repair exclusions that contain the old suffix. Wheel
+libraries use unversioned filenames.
+
+The QDMI C++ client and benchmark libraries are now static, like the DD library.
+Continue to install from source and request `COMPONENTS Development` for C++
+use. Use an LLVM SDK with the same major and minor version as the one used to
+build Core. The wheel's `Runtime` component needs no SDK.
+
+CMake now downloads a compatible LLVM/MLIR SDK when none is available. Set
+`MQT_CORE_AUTO_INSTALL_MLIR=OFF` and supply `MLIR_DIR` for offline or cross
+builds. See the
+[installation guide](https://mqt.readthedocs.io/projects/core/en/latest/installation.html#setting-up-mlir)
+for supported hosts and download controls.
+
+### C++ interfaces
+
+Fallible DD, QDMI, compiler, benchmark, and QIR runtime APIs now return
+`llvm::Expected<T>` or `llvm::Error`. Replace exception handlers with checked
+results and consume or propagate every error. Use fallible factories such as
+`dd::Package::create(...)` and `qdmi::Session::create(...)` instead of direct
+construction. Operations using a caller-owned MLIR context retain
+`LogicalResult` or `FailureOr<T>`. The
+[C++ guide](https://mqt.readthedocs.io/projects/core/en/latest/cpp_api.html#handle-native-errors)
+provides a checked construction example.
+
+Replace `std::ostream` sinks with `llvm::raw_ostream`, and pass bytes to
+`Package::deserialize` or filenames to `Package::deserializeFile`. Replace
+`dd::export2Dot` with `dd::exportToDot`. DD packages and unique tables can only
+grow; use `Package::reset()` for a full reset, which invalidates existing DDs.
+The partial-reset helpers are removed.
+
+Use LLVM JSON values in native benchmark, statistics, and configuration APIs.
+Replace `evaluationToJSON(caseId, shots, result)` with
+`evaluateJSON(manifest, counts)`; evaluation results now contain `shots`. Rename
+`WeakMeasurementGrover` and its options, header, and JSON helpers to
+`GroverWeakMeasurement`. Python benchmark names remain unchanged.
+
+Include OpenQASM translation headers from `mqt/Target/OpenQASM/`, replacing
+`TranslateQCToOpenQASM3.h` with `TranslateQCToOpenQASM.h`. Include QCO linearity
+helpers from `mqt/Dialect/QCO/Utils/LinearityUtils.h`. Replace
+`legalize-control-flow` with `legalize-qco-control-flow` in custom QCO
+pipelines; the former now names the generic SCF legalization pass.
+
+QC/QCO entry functions without returned data are now void. Remove synthetic
+status results unless they are actual program output, and use `finalize(values)`
+to infer builder result types.
+
 ## [4.1.0]
 
 ### Compilation options and device targets
@@ -1405,6 +1560,8 @@ be conveniently installed from PyPI using the
 It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
+
+[4.2.0]: https://github.com/munich-quantum-toolkit/core/compare/v4.1.1...v4.2.0
 
 [4.1.0]: https://github.com/munich-quantum-toolkit/core/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...v4.0.0
