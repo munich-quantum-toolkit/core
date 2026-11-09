@@ -117,13 +117,12 @@ public:
   double Var(ObsIdType observable) override;
 
 private:
-  using Readout = runtime::Readout;
   using ObservableWires = llvm::SmallVector<size_t>;
   [[nodiscard]] llvm::SmallVector<size_t>
   wireIndices(llvm::ArrayRef<QubitIdType> wires) const;
   [[nodiscard]] const ObservableWires& getObservable(ObsIdType id) const;
   ObsIdType addObservable(ObservableWires value);
-  const Readout& read(bool samples = false);
+  const runtime::Readout& read(bool samples = false);
 
   std::shared_ptr<Context> context_;
   pennylane::CircuitRecorder recorder_;
@@ -132,7 +131,7 @@ private:
   ObsIdType nextObservable_ = 0;
   size_t shots_ = 0;
   std::optional<mlir::CompiledProgram> compiled_;
-  std::optional<Readout> result_;
+  std::optional<runtime::Readout> result_;
   std::optional<qdmi::Job> job_;
   bool sampleReadout_ = false;
 };

@@ -189,11 +189,12 @@ ObsIdType QDMIDevice::addObservable(ObservableWires value) {
   return nextObservable_++;
 }
 
-const QDMIDevice::Readout& QDMIDevice::read(bool samples) {
+const runtime::Readout& QDMIDevice::read(bool samples) {
   validateShots(shots_);
   require(context_ != nullptr, "No QDMI execution context is configured.");
   if (!result_ && !recorder_.hasTouchedWires()) {
-    result_ = Readout{{std::string(recorder_.wires().size(), '0'), shots_}};
+    result_ =
+        runtime::Readout{{std::string(recorder_.wires().size(), '0'), shots_}};
     sampleReadout_ = true;
   }
   if (!result_ || (samples && !sampleReadout_)) {

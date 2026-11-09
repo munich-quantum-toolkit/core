@@ -121,7 +121,7 @@ serialization timings.
 - All 61 compiler-adapter and Catalyst native tests passed, covering projection,
   duplicates, malformed readout, fallback, and reuse of one job for counts and
   samples.
-- All 1,784 Python plugin, QDMI, compiler, translation, and target tests passed,
+- All 1,782 Python plugin, QDMI, compiler, translation, and target tests passed,
   covering measurement semantics, shot partitions, recovery, and nested-only
   physical sites.
 - The existing aggregate regression includes complex expectation eigenvalues; an

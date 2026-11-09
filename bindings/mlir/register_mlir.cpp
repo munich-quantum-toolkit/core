@@ -117,8 +117,6 @@ using bindings::PythonCustomJobParameter;
 using bindings::toCustomJobParameter;
 using bindings::unwrap;
 
-namespace {} // namespace
-
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
                                 nb::c_contig, nb::device::cpu>;
 using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,

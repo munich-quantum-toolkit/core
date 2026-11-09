@@ -106,7 +106,7 @@ Readout readout(const qdmi::Job& job, size_t width, size_t shots,
   return result;
 }
 
-size_t basisIndex(const std::string& bits, llvm::ArrayRef<size_t> wires) {
+size_t basisIndex(llvm::StringRef bits, llvm::ArrayRef<size_t> wires) {
   size_t index = 0;
   for (const auto wire : wires) {
     index =

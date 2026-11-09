@@ -11,9 +11,9 @@
 #include "PennyLane.h"
 
 #include "mqt/Compiler/ResultLayout.h"
+#include "qdmi/Parameters.hpp"
 #include "qdmi/QDMI.hpp"
 
-#include "../../../qdmi/Parameters.hpp"
 #include "Array.hpp"
 #include "CircuitRecorder.h"
 #include "QDMIDevice.h"
@@ -27,6 +27,8 @@
 #include "nanobind/stl/string.h"
 #include "nanobind/stl/variant.h"
 #include "nanobind/stl/vector.h"
+
+#include "llvm/ADT/SmallVector.h"
 
 #include <complex>
 #include <cstddef>
@@ -45,7 +47,6 @@ namespace mqt::bindings::pennylane {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-using mqt::bindings::PythonCustomJobParameter;
 using Samples =
     nb::ndarray<nb::numpy, int8_t, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
 
@@ -119,7 +120,7 @@ mlir::QCProgram importCircuit(const nb::object& tape, const nb::object& wires) {
       if (inverse || !controls.empty()) {
         throw nb::value_error("BasisState cannot be controlled or inverted");
       }
-      std::vector<int8_t> bits;
+      llvm::SmallVector<int8_t> bits;
       for (const auto bit :
            nb::borrow<nb::iterable>(operation.attr("parameters")[0])) {
         const auto value = PyFloat_AsDouble(bit.ptr());
@@ -165,7 +166,9 @@ mlir::QCProgram importCircuit(const nb::object& tape, const nb::object& wires) {
 void registerBindings(nb::module_& m) {
   auto pennylane = m.def_submodule(
       "_pennylane", "Runtime support for the PennyLane QDMI device.");
-  nb::class_<catalyst::Context>(pennylane, "Context")
+  nb::class_<catalyst::Context>(
+      pennylane, "Context",
+      "Retain a QDMI device, target snapshot, and job parameters.")
       .def(nb::new_([](qdmi::Device device,
                        const std::optional<PythonCustomJobParameter>& custom1,
                        const std::optional<PythonCustomJobParameter>& custom2,
@@ -185,11 +188,37 @@ void registerBindings(nb::module_& m) {
            "device"_a, nb::kw_only(), "custom1"_a = nb::none(),
            "custom2"_a = nb::none(), "custom3"_a = nb::none(),
            "custom4"_a = nb::none(), "custom5"_a = nb::none(),
-           "program_format"_a = nb::none())
-      .def_prop_ro("id", &catalyst::Context::id)
-      .def_prop_ro("environment", &catalyst::Context::environment)
+           "program_format"_a = nb::none(),
+           R"doc(Create a context for native compilation and submission.
+
+Args:
+    device: Open QDMI device retained for the context lifetime.
+    custom1: First provider-specific job parameter.
+    custom2: Second provider-specific job parameter.
+    custom3: Third provider-specific job parameter.
+    custom4: Fourth provider-specific job parameter.
+    custom5: Fifth provider-specific job parameter.
+    program_format: Preferred program format, or automatic selection.
+
+Byte parameters are copied so later submissions do not borrow Python storage.
+)doc")
+      .def_prop_ro(
+          "id", &catalyst::Context::id,
+          "Identifier used by Catalyst to retrieve this retained context.")
+      .def_prop_ro(
+          "environment", &catalyst::Context::environment,
+          "Target environment used to compile programs for this context.")
       .def("submit", &catalyst::Context::submit, "program"_a, "num_shots"_a,
-           nb::call_guard<nb::gil_scoped_release>())
+           nb::call_guard<nb::gil_scoped_release>(),
+           R"doc(Submit one compiled program with the retained job parameters.
+
+Args:
+    program: Program compiled for this context's target environment.
+    num_shots: Positive number of execution shots.
+
+Returns:
+    The submitted QDMI job, without waiting for completion.
+)doc")
       .def(
           "try_submit",
           [](const catalyst::Context& context,
@@ -198,7 +227,16 @@ void registerBindings(nb::module_& m) {
             const nb::gil_scoped_release release;
             return context.trySubmit(programs, shots);
           },
-          "programs"_a, "num_shots"_a);
+          "programs"_a, "num_shots"_a,
+          R"doc(Submit compatible programs as one multi-program job when supported.
+
+Args:
+    programs: Programs compiled for this context's target environment.
+    num_shots: Positive shot count applied to every program.
+
+Returns:
+    The submitted job, or None when individual submissions are required.
+)doc");
 
   pennylane.def(
       "aggregate",
@@ -211,7 +249,7 @@ void registerBindings(nb::module_& m) {
           const nb::gil_scoped_release release;
           const auto result =
               runtime::readout(job, width, shots, programIndex, layout, false);
-          std::vector<Marginal> marginals;
+          llvm::SmallVector<Marginal> marginals;
           marginals.reserve(measurements.size());
           for (const auto& [wires, counts] : measurements) {
             if (counts) {
@@ -239,7 +277,24 @@ void registerBindings(nb::module_& m) {
         return result;
       },
       "job"_a, "num_wires"_a, "shots"_a, "measurements"_a,
-      "program_index"_a = 0, "result_layout"_a = nb::none());
+      "program_index"_a = 0, "result_layout"_a = nb::none(),
+      R"doc(Compute measurement marginals from validated provider readout.
+
+Args:
+    job: Completed provider job whose results are read.
+    num_wires: Logical output width after layout projection.
+    shots: Positive expected shot count.
+    measurements: Pairs of logical wire indices and a counts flag. True
+        selects a binary-key count dictionary; false selects a one-dimensional
+        NumPy probability array. The first selected wire is most significant.
+    program_index: Program within a multi-program job.
+    result_layout: Projection from provider output to logical wires.
+
+Returns:
+    One marginal per measurement, in the requested order. Counts are preferred;
+    unavailable or empty histograms fall back to shots. Malformed results fail
+    validation without fallback. Observable eigenvalues are applied by Python.
+)doc");
 
   pennylane.def(
       "samples",
@@ -258,7 +313,22 @@ void registerBindings(nb::module_& m) {
         return Samples(samples->data(), {shots, numWires}, owner);
       },
       "job"_a, "num_wires"_a, "shots"_a, "program_index"_a = 0,
-      "result_layout"_a = nb::none());
+      "result_layout"_a = nb::none(),
+      R"doc(Return a shot-by-wire NumPy array in logical wire order.
+
+Args:
+    job: Completed provider job whose results are read.
+    num_wires: Number of logical output columns after layout projection.
+    shots: Positive expected number of rows.
+    program_index: Program within a multi-program job.
+    result_layout: Projection from provider output to logical wires.
+
+Returns:
+    A contiguous int8 array that owns its storage independently of the job.
+    Ordered SHOTS are preferred; unavailable or empty shots fall back to
+    histogram expansion, which preserves frequencies but has no shot order.
+    Malformed results fail validation without fallback.
+)doc");
 }
 } // namespace mqt::bindings::pennylane
 

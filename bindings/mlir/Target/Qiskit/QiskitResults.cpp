@@ -18,6 +18,7 @@
 #include "nanobind/stl/optional.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
@@ -26,7 +27,6 @@
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace mqt::bindings::qiskit {
 namespace {
@@ -36,9 +36,8 @@ struct ResultDecodingError : std::runtime_error {
 };
 
 struct Results {
-  std::vector<std::string> keys;
-  std::vector<size_t> counts;
-  std::vector<size_t> memory;
+  llvm::SmallVector<std::pair<std::string, size_t>> counts;
+  llvm::SmallVector<size_t> memory;
 };
 
 } // namespace
@@ -83,23 +82,20 @@ static Results readout(const qdmi::Job& job, size_t width, size_t shots,
     result.memory.reserve(values.size());
     for (const auto& bits : values) {
       const auto [entry, inserted] =
-          indices.try_emplace(bits, result.keys.size());
+          indices.try_emplace(bits, result.counts.size());
       const auto index = entry->second;
       if (inserted) {
-        result.keys.push_back(hexadecimal(bits));
-        result.counts.push_back(0);
+        result.counts.emplace_back(hexadecimal(bits), 0);
       }
-      ++result.counts[index];
+      ++result.counts[index].second;
       result.memory.push_back(index);
     }
   } else if (width != 0) {
     const auto counts = decoded(mlir::decodeCounts(
         unwrap(job.getCounts(programIndex)), width, shots, layout));
-    result.keys.reserve(counts.size());
     result.counts.reserve(counts.size());
     for (const auto& [bits, count] : counts) {
-      result.keys.push_back(hexadecimal(bits));
-      result.counts.push_back(count);
+      result.counts.emplace_back(hexadecimal(bits), count);
     }
   }
   return result;
@@ -110,6 +106,8 @@ void registerResultBindings(nb::module_& m) {
   auto qiskit = m.def_submodule("_qiskit", "Native QDMI readout for Qiskit.");
   const nb::exception<ResultDecodingError> error(qiskit, "ResultDecodingError",
                                                  PyExc_ValueError);
+  error.attr("__doc__") =
+      "The provider result violates its declared shot count or output layout.";
   qiskit.def(
       "readout",
       [](const qdmi::Job& job, size_t width, size_t shots, size_t programIndex,
@@ -118,12 +116,12 @@ void registerResultBindings(nb::module_& m) {
           const nb::gil_scoped_release release;
           return readout(job, width, shots, programIndex, layout, memory);
         }();
-        std::vector<nb::str> keys;
-        keys.reserve(values.keys.size());
+        llvm::SmallVector<nb::str> keys;
+        keys.reserve(values.counts.size());
         nb::typed<nb::dict, nb::str, size_t> counts;
-        for (size_t i = 0; i < values.keys.size(); ++i) {
-          keys.emplace_back(values.keys[i].data(), values.keys[i].size());
-          counts[keys.back()] = nb::int_(values.counts[i]);
+        for (const auto& [bits, count] : values.counts) {
+          keys.emplace_back(bits.data(), bits.size());
+          counts[keys.back()] = nb::int_(count);
         }
         nb::typed<nb::dict, nb::str, nb::object> result;
         result["counts"] = counts;
@@ -137,7 +135,27 @@ void registerResultBindings(nb::module_& m) {
         return result;
       },
       "job"_a, "width"_a, "shots"_a, "program_index"_a, "layout"_a,
-      nb::kw_only(), "memory"_a);
+      nb::kw_only(), "memory"_a,
+      R"doc(Return Qiskit hexadecimal counts and optional ordered memory.
+
+Args:
+    job: Completed provider job whose results are read.
+    width: Number of logical classical output bits.
+    shots: Expected number of shots.
+    program_index: Program within a multi-program job.
+    layout: Projection from provider output to logical classical bits.
+    memory: Read ordered SHOTS and derive counts from those same samples.
+        When false, read the provider histogram instead.
+
+Returns:
+    A dictionary with ``counts`` and, when requested, ``memory``. Keys use
+    lowercase hexadecimal strings without a machine-word width limit.
+
+Raises:
+    ResultDecodingError: Results violate the declared shot count or layout.
+    RuntimeError: Provider result retrieval fails. Ordered memory requires
+        SHOTS support and never falls back to a histogram.
+)doc");
 }
 
 } // namespace mqt::bindings::qiskit

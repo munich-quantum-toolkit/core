@@ -15,6 +15,7 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -44,7 +45,7 @@ decodeSamples(const qdmi::Job& job, size_t width, size_t shots,
 
 /// Index a validated outcome in the requested wire order, most significant
 /// first.
-[[nodiscard]] size_t basisIndex(const std::string& bits,
+[[nodiscard]] size_t basisIndex(llvm::StringRef bits,
                                 llvm::ArrayRef<size_t> wires);
 
 /// Accumulate probabilities in the requested wire order.
