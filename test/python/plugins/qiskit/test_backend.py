@@ -59,6 +59,19 @@ def ddsim_backend() -> QDMIBackend:
     return QDMIBackend.from_device_id("mqt.ddsim.default")
 
 
+@pytest.mark.parametrize("memory", [False, True])
+def test_native_readout_preserves_wide_classical_outputs(*, memory: bool) -> None:
+    """Native hex conversion retains projected bits above the machine word size."""
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default", custom1="1")
+    circuit = QuantumCircuit(1, 81)
+    circuit.x(0)
+    circuit.measure(0, 80)
+    result = backend.run(circuit, shots=8, memory=memory).result()
+    assert result.data()["counts"] == {hex(1 << 80): 8}
+    if memory:
+        assert result.data()["memory"] == [hex(1 << 80)] * 8
+
+
 def test_backend_from_device_id_forwards_session_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
     """Open one stable device ID with explicit per-session overrides."""
     observed: tuple[str, dict[str, object]] | None = None

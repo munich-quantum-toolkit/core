@@ -17,6 +17,7 @@
 #include "qdmi/QDMI.hpp"
 
 #include "CircuitRecorder.h"
+#include "QDMIReadout.h"
 #include "QuantumDevice.hpp"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -26,7 +27,6 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <map>
 #include <memory>
 #include <optional>
 #include <random>
@@ -117,7 +117,7 @@ public:
   double Var(ObsIdType observable) override;
 
 private:
-  using Readout = llvm::SmallVector<std::pair<std::string, size_t>>;
+  using Readout = runtime::Readout;
   using ObservableWires = llvm::SmallVector<size_t>;
   [[nodiscard]] llvm::SmallVector<size_t>
   wireIndices(llvm::ArrayRef<QubitIdType> wires) const;
@@ -136,18 +136,6 @@ private:
   std::optional<qdmi::Job> job_;
   bool sampleReadout_ = false;
 };
-
-/// Decode all logical wires into a row-major shot-by-wire array.
-[[nodiscard]] std::vector<int8_t>
-decodeSamples(const qdmi::Job& job, size_t width, size_t shots,
-              size_t programIndex = 0,
-              const std::optional<mlir::ResultLayout>& layout = std::nullopt);
-
-/// Read logical MSB-first outcomes, preferring histograms.
-[[nodiscard]] std::map<std::string, size_t>
-decodeCounts(const qdmi::Job& job, size_t width, size_t shots,
-             size_t programIndex = 0,
-             const std::optional<mlir::ResultLayout>& layout = std::nullopt);
 
 /// Resolve a retained configuration for Catalyst's device factory.
 [[nodiscard]] Catalyst::Runtime::QuantumDevice*

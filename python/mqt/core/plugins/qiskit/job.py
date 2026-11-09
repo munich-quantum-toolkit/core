@@ -14,33 +14,25 @@ Provides a Qiskit JobV1-compatible wrapper for QDMI job execution and results.
 from __future__ import annotations
 
 __lazy_modules__ = {
-    "collections",
     "datetime",
     "mqt.core.mlir",
+    "mqt.core.mlir._qiskit",
     "mqt.core.plugins.qdmi_batch",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.qdmi",
-    "numbers",
     "qiskit.result",
     "qiskit.result.models",
 }
 
 import datetime as dt
-from collections import Counter
-from numbers import Integral
 from typing import TYPE_CHECKING, Any
 
 from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
-from mqt.core.mlir import (
-    _get_decoded_shots,
-    _prepare_qdmi_programs,
-    _ResultDecodingError,
-    _try_submit_programs,
-    decode_counts,
-)
+from mqt.core.mlir import _prepare_qdmi_programs, _try_submit_programs
+from mqt.core.mlir._qiskit import ResultDecodingError, readout
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 from mqt.core.plugins.qiskit.exceptions import JobExecutionError, JobSubmissionError
 from mqt.core.qdmi import Job as QDMIJobHandle
@@ -258,30 +250,14 @@ class QDMIJob(JobV1):
             JobError: If execution failed or the result violates the circuit's output contract.
         """
         width = header["memory_slots"]
-        if self._memory:
-            try:
-                shots = _get_decoded_shots(job, width, self._shots, program_index, layout)
-            except _ResultDecodingError as exc:
-                raise JobError(str(exc)) from exc
-            except Exception as exc:
+        try:
+            data = readout(job, width, self._shots, program_index, layout, memory=self._memory)
+        except ResultDecodingError as exc:
+            raise JobError(str(exc)) from exc
+        except Exception as exc:
+            if self._memory:
                 exc.add_note("memory=True and BackendSamplerV2 require valid QDMI SHOTS results.")
-                raise
-            encoded = {bits: hex(int(bits, 2)) if bits else "0x0" for bits in set(shots)}
-            memory = [encoded[bits] for bits in shots]
-            data = {"memory": memory, "counts": dict(Counter(memory))}
-        elif not width:
-            data = {"counts": {}}
-        else:
-            counts = job.get_counts(program_index)
-            if any(not isinstance(count, Integral) or count < 0 for count in counts.values()):
-                msg = "Invalid QDMI histogram: counts must be nonnegative integers."
-                raise JobError(msg)
-            try:
-                counts = decode_counts(counts, width, self._shots, layout)
-            except (ValueError, RuntimeError) as exc:
-                raise JobError(str(exc)) from exc
-            encoded = {hex(int(bits, 2)): count for bits, count in counts.items()}
-            data = {"counts": dict(encoded)}
+            raise
         return ExperimentResult.from_dict({
             "success": True,
             "shots": self._shots,

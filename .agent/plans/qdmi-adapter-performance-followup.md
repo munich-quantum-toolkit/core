@@ -1,168 +1,144 @@
-# QDMI result efficiency and adapter follow-up
+# QDMI native readout and ISA import efficiency
 
-Status: implemented locally on `58a6541655c74eeaeeac64df94d9cd7d13c74af9`. The
-scope is adapter items 5, 7, and 6.
+Scope: adapter items 5, 7, and 6 in PR #2987. Preserve provider interfaces,
+result validation, ordered samples, seeded streams, and batch recovery. No new
+public configuration or adaptive readout policy is needed.
 
-## Outcome and ownership
+## Ownership
 
-### Aggregate-first PennyLane readout (item 5)
+The compiler produces `ResultLayout`, which maps provider bits to logical
+outputs. Shared decoders validate binary data, widths, layouts, and shot totals.
+Frontend-specific measurement and output formatting belong at runtime.
 
-`PennyLaneJob` selects counts for standard expectation, variance, probability,
-and count measurements when every measurement on the preprocessed tape supports
-that path. Mixed sample/aggregate tapes and custom measurement subclasses keep
-sample processing. Empty-wire constant observables and locally completed tapes
-also retain sample arrays.
+### PennyLane and Catalyst
 
-The native helper reuses Catalyst's counts-first readout and the shared result
-validators. Retrieval failure or an empty result permits SHOTS fallback;
-malformed decoded results fail without fallback. The helper retains the decoded
-map directly and aggregates SHOTS fallback entries only when needed. The shared
-decoder consumes owned map nodes, validates and projects their keys, and merges
-collisions through hinted insertion. Arbitrary projection order and repeated
-outcomes remain supported. The binding extracts nodes and reverses their keys in
-place into PennyLane wire order while building the final Python dictionary.
+`mlir/lib/Runtime/QDMIReadout` owns the concrete weighted readout shared by
+PennyLane and Catalyst. It prefers histograms for aggregates and SHOTS for
+ordered samples. Retrieval failure or an empty response permits fallback;
+malformed decoded results fail without fallback. The QDMI client retains its
+last-raw-duplicate-wins parser contract. Logical projection merges counts.
 
-Provider results for supported aggregate tapes are retained as count
-dictionaries in `entries` and `collect()`. Other entries retain shot-by-wire
-arrays. Ordinary QNode return shapes, shot partitions, attempts, cancellation,
-recovery, and tracking remain unchanged. Unqualified counts/probabilities use
-the effective tape wires; custom sample processors are not replaced by inherited
-counts processors. No new readout policy option or density heuristic is added.
+The PennyLane binding retrieves once for each tape/shot partition and computes
+requested wire marginals natively. It returns probability arrays for
+probability, expectation, and variance measurements, and binary dictionaries for
+count measurements. Integer frequencies are accumulated before normalization.
+PennyLane retains eigenvalue processing, scalar coefficients, all-outcomes
+handling, and return shapes. Expectation eigenvalue types are preserved;
+variance follows PennyLane's float64 conversion. Exact measurement-class
+dispatch keeps custom processors and mixed sample tapes on the ordered sample
+path.
 
-Concentrated distributions benefit substantially. The retained counts
-representation scales with distinct outcomes, while the sample representation
-scales with shots and wires. Dense probability outputs and wide-observable
-processing can still allocate exponentially sized arrays. The measured uniform
-single-observable case also benefits after removing redundant map allocations;
-this does not guarantee gains for every distribution or measurement.
+`Batch` caches completed per-tape measurement results. `entries` and `collect()`
+retain a scalar, array, counts dictionary, or measurement tuple for each
+preprocessed tape and shot partition. `result()` assembles those cached values;
+it does not repeat measurement processing. Locally completed tapes use the same
+sample measurement conversion before their results are retained. QNode transform
+postprocessing remains outside the batch, as before.
 
-### Qiskit memory conversion (item 7)
+Catalyst shares the readout loader and logical bit indexing. Its small output
+loops retain support for strided `DataView` buffers without a temporary dense
+array or an indirect callback for every outcome. Its retained job still supports
+aggregate-to-ordered-sample reuse without another execution.
 
-A private MLIR/QDMI binding retrieves and decodes native shots without building
-an intermediate Python list. Native work releases the GIL. Shared `decodeShots`
-is unchanged, including shot ordering, correlations, validation, and layout
-projection. A private decoding exception distinguishes malformed output from
-provider retrieval errors so the Qiskit collector retains its error boundary and
-retrieval note. Python hex encoding, counting, and sampler post-processing
-remain unchanged. No sampler subclass or encoding cache is introduced.
+### Qiskit results
 
-### Full-width Qiskit ISA circuits (item 6)
+The private `_qiskit.readout` binding retrieves, validates, and formats final
+hexadecimal counts and optional memory. It supports arbitrary classical widths,
+including projected outputs above 64 bits. Native encoding retains first-shot
+order and shares one Python hexadecimal string per distinct memory outcome. A
+private exception distinguishes decoding failures from provider retrieval
+errors. Qiskit's result models, register metadata, and sampler interface stay
+unchanged.
 
-The native Qiskit importer creates static qubits only for referenced physical
-sites. It collects ordinary instruction operands and control-flow qubit maps in
-the entry block, preserving dominance for nested-only sites and physical indices
-without renumbering. Collection stops once all sites are referenced, so small
-dense circuits avoid a full extra instruction scan. Quantum/classical register
-validation and result layouts remain intact.
+Memory always requires SHOTS; it does not inherit PennyLane/Catalyst histogram
+fallback. Counts-only results use native histogram decoding and avoid a
+Python/native dictionary roundtrip. Zero-width counts-only results remain empty
+without querying provider results.
 
-Existing exporters already eliminate unused static qubits; target-aware QPY
-export derives its addressable width from the target. No public import option or
-width metadata was added. The backend and DDSIM guides use scoped sessions and
-explain that explicit Qiskit layouts can expand circuits to target width. The
-65,535-site default and explicit `custom1` behavior are unchanged.
+### Full-width ISA circuits
 
-## Evidence
+The Qiskit importer collects physical references during its existing root
+validation traversal. Ordinary root qargs and root control-flow operand maps
+cover nested users; nested local and gate-formal indices are not collected as
+physical sites. Only referenced static qubits are created, in the entry block,
+without renumbering. There is no separate operand-discovery pass, import option,
+or added width metadata. Existing exporters and target-aware QPY behavior remain
+unchanged.
 
-The baseline is the current main revision named above. Python 3.14.10, PennyLane
-0.45.1, Qiskit 2.6.2, Clang 23.1.6, LLVM/MLIR 23.1.0, Release, ThinLTO, and mold
-were used on ARM64. Five alternating pairs ran on CPUs 16–19 of a shared host.
-These are workload diagnostics, not isolated or portable throughput claims.
-Harnesses and raw data remain outside the repository.
+## Measurements
 
-PennyLane used 20-qubit GHZ and uniform-superposition circuits, one million
-shots, seed 42, and a single Z expectation. The comparison selects the unchanged
-sample path or the new counts path on the same native build. Timings cover
-`job.result()` after submission, including any remaining execution wait. RSS is
-a retained parent `/proc` snapshot after collection, not worker memory or peak
-RSS. Kernel high-water readings were unsuitable for this comparison because some
-processes inherited a larger pre-exec high-water mark.
+Main baseline: `58a6541655c74eeaeeac64df94d9cd7d13c74af9`. A second comparison
+uses the initially published PR head `8b28f8ce480ffeff9ab91e68a2a8074fcbc5cd2a`.
+Each baseline uses its saved native extension and matching Python job code.
 
-| Workload            |   Samples | Previous counts | Final counts | Samples parent RSS | Final counts parent RSS |
-| ------------------- | --------: | --------------: | -----------: | -----------------: | ----------------------: |
-| GHZ expectation     |  91.22 ms |         5.55 ms |      5.20 ms |          227.5 MiB |               175.7 MiB |
-| Uniform expectation | 662.60 ms |       817.08 ms |    629.20 ms |          385.4 MiB |               369.4 MiB |
+Measurements use Python 3.14.10, PennyLane 0.45.1, Qiskit 2.6.2, Clang 23.1.6,
+LLVM/MLIR 23.1.0, Release, ThinLTO, and mold on ARM64. Five alternating pairs
+run on CPUs 16–19 of a shared host. These are workload diagnostics, not isolated
+or portable throughput claims. Harnesses and raw measurements remain outside the
+repository in `/tmp/qdmi-native-redesign/`.
 
-These five alternating three-way comparisons include a saved native build of the
-previous counts implementation. Uniform readout is approximately 5% faster than
-samples and retains 4% less parent memory in this workload. GHZ retains its
-large gain. The ownership changes remove the measured uniform regression without
-a runtime threshold, alternate readout policy, or narrowed result
-representation. Counts dictionaries have identical full fingerprints across the
-previous and final builds; sample and count expectations agree within `1e-15`.
-Raw data and harnesses are in `/tmp/qdmi-uniform-followup/paired-final.jsonl`
-and its directory.
+Readout workloads use 20 qubits, one million shots, and DDSIM seed 42. Timing
+starts after the native job completes and covers `job.result()`, including
+retrieval, decoding, frontend processing, and result assembly. It excludes
+compilation and provider execution. Qiskit timings include hexadecimal memory
+and count construction, but exclude sampler post-processing.
 
-Qiskit memory comparisons alternate the original `get_shots` plus `decode_shots`
-calls and the new native helper on the same completed job. All one-million-shot
-output sequences match exactly. Retrieval-plus-decoding medians were 144.74 to
-69.95 ms for GHZ and 398.74 to 300.44 ms for uniform outcomes. Hex
-encoding/counting remained approximately 45 and 594 ms, respectively, in these
-runs. These numbers exclude Qiskit's sampler post-processing and do not
-establish a complete sampler speedup.
+| Completed-job result processing          |      Main | Native readout |
+| ---------------------------------------- | --------: | -------------: |
+| PennyLane GHZ, one Z expectation         |  86.52 ms |        0.18 ms |
+| PennyLane uniform, one Z expectation     | 332.07 ms |      106.31 ms |
+| PennyLane GHZ, twenty Z expectations     | 103.30 ms |        0.39 ms |
+| PennyLane uniform, twenty Z expectations | 345.59 ms |      155.07 ms |
+| Qiskit GHZ memory and counts             | 215.03 ms |       75.77 ms |
+| Qiskit uniform memory and counts         | 928.28 ms |      506.80 ms |
 
-The actual full-width DDSIM backend kept a Bell circuit at two qubits with the
-default preset layout and expanded it to 65,535 with `initial_layout=[0, 1]`. A
-`custom1="2"` backend stayed at two qubits in both cases. Five alternating
-native-extension comparisons used the saved baseline extension and candidate
-with the same Python adapter code:
+Uniform retained parent RSS after result collection fell from 378.7 to 328.0 MiB
+for PennyLane and 390.8 to 352.9 MiB for Qiskit. These are `/proc` snapshots,
+not peak RSS or worker memory. All paired ordered-memory fingerprints match;
+PennyLane expectation results agree within `1e-15`.
 
-| Serialization workload         | Baseline | Candidate |
-| ------------------------------ | -------: | --------: |
-| 65,535-qubit ISA Bell circuit  | 54.66 ms |  15.52 ms |
-| Two-qubit, 10,000-gate circuit | 72.43 ms |  71.39 ms |
+Against the initially published PR, uniform PennyLane readout fell from 305.74
+to 106.86 ms for one observable and 2446.32 to 157.96 ms for twenty. Qiskit
+uniform memory/count construction fell from 853.36 to 509.65 ms. These separate
+paired runs confirm that moving reduction and final formatting across the Python
+boundary removes work beyond the earlier container optimizations.
 
-Payload hashes matched across all pairs. The importer improvement does not
-remove full-width target construction or Qiskit's own transpilation costs.
+Five paired serialization measurements against main:
 
-## Completed foundation and exclusions
+| Serialization workload         |     Main | Referenced-site import |
+| ------------------------------ | -------: | ---------------------: |
+| 65,535-qubit ISA Bell circuit  | 55.11 ms |               15.77 ms |
+| Two-qubit, 10,000-gate circuit | 72.71 ms |               72.69 ms |
 
-Lazy DDSIM retained-state reconstruction, shared-deadline shutdown, and hinted
-sparse-result insertion already landed in #2970. They are inherited benefits,
-not gains from this follow-up. Shared readout validation and Catalyst's
-counts-first policy also predate this change. The
-[completed DDSIM investigation][device-plan] retains their historical evidence;
-the [original adapter proposal][adapter-plan] records the initial hypotheses.
+Payload hashes match. Folding reference collection into validation leaves the
+published PR's timing approximately unchanged while removing an extra traversal.
+Target construction and Qiskit's own transpilation costs remain outside these
+serialization timings.
 
-Keep eager catalog opening and child initialization, idle-worker reuse, seeded
-logical shot streams, lazy state availability/error behavior, dense result
-bounds, sequential submission, and preflight before submission. Add no
-registry/cache framework, skip-state option, protocol change, or worker policy.
-Compiler parallelism, fixed compile overhead, validation-ownership changes,
-import-once sampling, and submission payload-copy work remain out of scope.
+## Validation and limits
 
-## Validation
+- Release build and matching editable package; generated Python stubs.
+- All 61 compiler-adapter and Catalyst native tests passed, covering projection,
+  duplicates, malformed readout, fallback, and reuse of one job for counts and
+  samples.
+- All 1,784 Python plugin, QDMI, compiler, translation, and target tests passed,
+  covering measurement semantics, shot partitions, recovery, and nested-only
+  physical sites.
+- The existing aggregate regression includes complex expectation eigenvalues; an
+  injected float64 conversion makes it fail.
+- One added public-backend regression checks counts and memory with an 81-bit
+  classical output; an injected 64-bit truncation makes both cases fail.
+- Independent native result checks matched Python hexadecimal conversion for 34
+  sparse-output cases through 129 bits.
+- Generated stubs, whole-file C++ lint, and repository lint passed.
 
-- Release build and matching editable Python package.
-- The uniform-readout follow-up passed 431 focused Python tests (two optional
-  Catalyst tests skipped) and the 61 compiler-adapter/Catalyst tests. It adds no
-  tests; existing cases cover projected collisions, unordered outcomes, repeated
-  SHOTS fallback, malformed results, and count/sample wire semantics.
-- 1,782 Python plugin, QDMI, MLIR, Qiskit translation, and target tests passed;
-  two optional Catalyst tests skipped.
-- All 4,386 native tests passed before the final ordered-map refinement; the 61
-  affected compiler-adapter/Catalyst tests were rerun afterward and passed.
-- Generated stubs, repository lint, and whole-file C++ lint passed. C++ lint
-  selected all changed native files from the staged working changes, with
-  changed-line filtering disabled.
-- Existing native readout coverage was extended for histogram preference, layout
-  order, SHOTS fallback, and malformed histograms. Existing recovery coverage
-  now exercises aggregate and mixed measurements. Three focused Python tests
-  cover aggregate wire/partition semantics, custom measurement dispatch, and
-  nested-only physical sites in wide circuits.
-- Selecting the old sample path makes the aggregate regression fail. The saved
-  baseline creates 65,535 static operations for the two-site nested circuit; the
-  new regression requires only its two referenced sites. An intermediate missing
-  control-flow-map implementation crashed on the nested-only case; the corrected
-  implementation passes that regression and existing native
-  preflight/control-flow tests.
-- An external native-memory probe verified exact layout projection and distinct
-  retrieval versus decoding errors. Paired memory probes verified full ordered
-  sample equality. Specialist review found no remaining correctness blockers.
+Windows, hardware providers, free-threaded Python, and rendered documentation
+previews are outside this local validation. Two optional Catalyst Python tests
+require an unavailable dependency. Dense probabilities and eigenvalue arrays
+still scale exponentially with the requested measurement width.
 
-Windows, hardware providers, free-threaded Python, hosted CI, and rendered
-documentation previews were not checked during local validation. No remote
-provider jobs were run. Performance outside the measured workloads remains
-uncharacterized.
-
-[adapter-plan]: https://github.com/munich-quantum-toolkit/core/blob/875c12f5a21bc2661cdbe915e6a848416ea6898a/.agent/plans/qdmi-adapter-performance-followup.md
-[device-plan]: https://github.com/munich-quantum-toolkit/core/blob/727fc5ed941279046318ef3a3438208c951e28ab/.agent/plans/qdmi-performance-investigation.md
+Lazy DDSIM state reconstruction, shared-deadline shutdown, and hinted client
+histogram insertion already landed in #2970. They are inherited benefits. Keep
+eager catalog opening and idle-worker reuse. Compiler parallelism, import-once
+sampling, provider protocols, and public QDMI container changes remain outside
+this work.

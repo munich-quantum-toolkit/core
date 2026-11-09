@@ -16,6 +16,7 @@ __lazy_modules__ = {
     "mqt.core.plugins.qdmi_batch",
     "mqt.core.qdmi",
     "numpy",
+    "pennylane",
     "pennylane.measurements",
 }
 
@@ -24,9 +25,10 @@ from time import monotonic
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
+from pennylane import math
 from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, VarianceMP
 
-from mqt.core.mlir._pennylane import counts, samples
+from mqt.core.mlir._pennylane import aggregate, samples
 from mqt.core.plugins.pennylane.exceptions import PennyLaneExecutionError
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry, JobAttempt
 from mqt.core.qdmi import Job
@@ -73,14 +75,17 @@ class PennyLaneJob:
             for tape_index, ((program, copies), wires) in enumerate(zip(prepared, self._wires, strict=True))
             for shots in copies
         )
-        self._batch: Batch[np.ndarray | dict[str, int]] = Batch(
+        self._batch: Batch[object] = Batch(
             [
                 BatchEntry(
                     index,
                     copy,
                     attempts=(
                         JobAttempt(
-                            status=Job.Status.DONE, result=np.zeros((shots, len(self._wires[index])), dtype=np.int8)
+                            status=Job.Status.DONE,
+                            result=self._process_samples(
+                                index, np.zeros((shots, len(self._wires[index])), dtype=np.int8)
+                            ),
                         ),
                     )
                     if program is None
@@ -100,8 +105,8 @@ class PennyLaneJob:
         )
 
     @property
-    def entries(self) -> tuple[BatchEntry[np.ndarray | dict[str, int]], ...]:
-        """Ordered attempts with count dictionaries or shot-by-wire sample arrays."""
+    def entries(self) -> tuple[BatchEntry[object], ...]:
+        """Ordered attempts with completed per-tape measurement results."""
         return self._batch.entries
 
     def _program(self, index: int) -> CompiledProgram:
@@ -124,15 +129,52 @@ class PennyLaneJob:
         _, shots, width, _ = self._prepared[index]
         return samples(job, width, shots, program_index, self._program(index).result_layout)
 
-    def _readout(self, index: int, job: Job, program_index: int) -> np.ndarray | dict[str, int]:
-        tape = self._tapes[self._prepared[index][3]]
-        if all(
+    def _process_samples(self, tape_index: int, values: np.ndarray) -> object:
+        measured = tuple(
+            cast("SampleMeasurement", measurement).process_samples(values, self._wires[tape_index])
+            for measurement in self._tapes[tape_index].measurements
+        )
+        return measured[0] if len(measured) == 1 else measured
+
+    def _readout(self, index: int, job: Job, program_index: int) -> object:
+        _, shots, width, tape_index = self._prepared[index]
+        tape = self._tapes[tape_index]
+        if not all(
             type(m) in {CountsMP, ProbabilityMP} or (type(m) in {ExpectationMP, VarianceMP} and bool(m.wires))
             for m in tape.measurements
         ):
-            _, shots, width, _ = self._prepared[index]
-            return counts(job, width, shots, program_index, self._program(index).result_layout)
-        return self._samples(index, job, program_index)
+            return self._process_samples(tape_index, self._samples(index, job, program_index))
+        wires = self._wires[tape_index]
+        selected = [measurement.wires or wires for measurement in tape.measurements]
+        marginals = aggregate(
+            job,
+            width,
+            shots,
+            [
+                ([wires.index(wire) for wire in selection], type(measurement) is CountsMP)
+                for measurement, selection in zip(tape.measurements, selected, strict=True)
+            ],
+            program_index,
+            self._program(index).result_layout,
+        )
+        measured = []
+        for measurement, selection, value in zip(tape.measurements, selected, marginals, strict=True):
+            if type(measurement) is CountsMP:
+                processor = (
+                    measurement
+                    if measurement.wires
+                    else CountsMP(wires=selection, all_outcomes=measurement.all_outcomes)
+                )
+                measured.append(processor.process_counts(cast("dict[str, int]", value), selection))
+            elif type(measurement) is ProbabilityMP:
+                measured.append(value)
+            else:
+                eigvals = measurement.eigvals()
+                if type(measurement) is VarianceMP:
+                    eigvals = math.asarray(eigvals, dtype="float64")
+                mean = math.dot(value, eigvals)
+                measured.append(mean if type(measurement) is ExpectationMP else math.dot(value, eigvals**2) - mean**2)
+        return measured[0] if len(measured) == 1 else tuple(measured)
 
     def _record_submission(self, indices: Sequence[int]) -> None:
         self._device._submitted_jobs += 1  # ruff:ignore[private-member-access] Update the device's read-only total.
@@ -158,7 +200,7 @@ class PennyLaneJob:
         with self._record_time():
             self._batch.submit(indices)
 
-    def collect(self) -> tuple[BatchEntry[np.ndarray | dict[str, int]], ...]:
+    def collect(self) -> tuple[BatchEntry[object], ...]:
         """Read existing jobs without replacement executions or aggregate errors.
 
         Returns:
@@ -182,20 +224,7 @@ class PennyLaneJob:
             tape_results: list[list[object]] = [[] for _ in self._tapes]
             for entry in self.entries:
                 assert entry.result is not None
-                measurements = self._tapes[entry.input_index].measurements
-                wires = self._wires[entry.input_index]
-                measured = []
-                for measurement in measurements:
-                    if isinstance(entry.result, dict):
-                        processor = measurement
-                        if isinstance(measurement, CountsMP) and not measurement.wires:
-                            processor = CountsMP(wires=wires, all_outcomes=measurement.all_outcomes)
-                        elif isinstance(measurement, ProbabilityMP) and not measurement.wires:
-                            processor = ProbabilityMP(wires=wires)
-                        measured.append(cast("SampleMeasurement", processor).process_counts(entry.result, wires))
-                    else:
-                        measured.append(cast("SampleMeasurement", measurement).process_samples(entry.result, wires))
-                tape_results[entry.input_index].append(measured[0] if len(measured) == 1 else tuple(measured))
+                tape_results[entry.input_index].append(entry.result)
             results = tuple(
                 tuple(samples) if tape.shots.has_partitioned_shots else samples[0]
                 for tape, samples in zip(self._tapes, tape_results, strict=True)

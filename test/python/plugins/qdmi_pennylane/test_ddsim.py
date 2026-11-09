@@ -315,7 +315,7 @@ def test_postprocessor_recovers_forward_measurements(
     original = PennyLaneJob._readout  # ruff:ignore[private-member-access] Inject a failure after native submission.
     reads = []
 
-    def read(batch: PennyLaneJob, index: int, job: Job, program_index: int) -> np.ndarray | dict[str, int]:
+    def read(batch: PennyLaneJob, index: int, job: Job, program_index: int) -> object:
         reads.append((job, program_index))
         if len(reads) == 2:
             raise KeyboardInterrupt

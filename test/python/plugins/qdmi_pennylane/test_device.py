@@ -292,6 +292,7 @@ def test_aggregate_readout_preserves_wires_and_shot_partitions() -> None:
             qp.counts(wires=["right", "left"], all_outcomes=True),
             qp.expval(2 * qp.Z("right")),
             qp.var(2 * qp.Z("left")),
+            qp.measurements.ExpectationMP(wires=qp.wires.Wires(["right"]), eigvals=np.array([1j, -1j])),
         ],
         shots=[2, 3],
     )
@@ -299,7 +300,7 @@ def test_aggregate_readout_preserves_wires_and_shot_partitions() -> None:
     actual = batch.result()
     (expected,) = qp.execute((tape,), qp.device("default.qubit", wires=wires), diff_method=None)
     np.testing.assert_equal(actual, expected)
-    assert [entry.result for entry in batch.entries] == [{"001": 2}, {"001": 3}]
+    np.testing.assert_equal([entry.result for entry in batch.entries], actual)
     retained = batch.entries[0].result
     np.testing.assert_equal(batch.result(), actual)
     assert batch.collect()[0].result is retained

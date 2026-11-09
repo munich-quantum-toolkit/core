@@ -14,6 +14,7 @@
 
 #include "Driver.hpp"
 #include "QDMIDevice.h"
+#include "QDMIReadout.h"
 
 #include "gtest/gtest.h"
 #include "qdmi/device.h"
@@ -42,10 +43,12 @@ namespace {
 
 using mqt::catalyst::Context;
 using mqt::catalyst::createDevice;
-using mqt::catalyst::decodeCounts;
-using mqt::catalyst::decodeSamples;
 using mqt::catalyst::JobParameters;
 using mqt::catalyst::QDMIDevice;
+using mqt::runtime::decodeSamples;
+using mqt::runtime::marginalCounts;
+using mqt::runtime::marginalProbabilities;
+using mqt::runtime::readout;
 
 thread_local std::vector<std::pair<QDMI_Device_Job, QDMI_Job_Result>> queries;
 thread_local std::optional<std::string> returnedShots;
@@ -142,11 +145,13 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   api.device_job_get_results = getResults;
   returnedKeys.clear();
   returnedShots = "100,100";
-  EXPECT_EQ(decodeCounts(job, 3, 2),
-            (std::map<std::string, size_t>{{"100", 2}}));
+  EXPECT_EQ(
+      marginalCounts(readout(job, 3, 2, 0, std::nullopt, false), {2, 1, 0}),
+      (std::map<std::string, size_t>{{"100", 2}}));
   returnedShots = "10 0,001";
-  EXPECT_EQ(decodeCounts(job, 3, 2),
-            (std::map<std::string, size_t>{{"001", 1}, {"100", 1}}));
+  EXPECT_EQ(
+      marginalCounts(readout(job, 3, 2, 0, std::nullopt, false), {2, 1, 0}),
+      (std::map<std::string, size_t>{{"001", 1}, {"100", 1}}));
   EXPECT_EQ(decodeSamples(job, 3, 2), (std::vector<int8_t>{0, 0, 1, 1, 0, 0}));
   const mlir::ResultLayout layout{
       .rawWidth = 3,
@@ -164,8 +169,11 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   returnedKeys = "10 0,001";
   returnedCounts = {2, 3};
   queries.clear();
-  EXPECT_EQ(decodeCounts(job, 4, 5, 0, layout),
+  EXPECT_EQ(marginalCounts(readout(job, 4, 5, 0, layout, false), {3, 2, 1, 0}),
             (std::map<std::string, size_t>{{"0100", 3}, {"1001", 2}}));
+  EXPECT_EQ(
+      marginalProbabilities(readout(job, 4, 5, 0, layout, false), {0, 2}, 5),
+      (std::vector<double>{0.0, 0.6, 0.4, 0.0}));
   EXPECT_TRUE(std::ranges::none_of(queries, [](const auto& query) {
     return query.second == QDMI_JOB_RESULT_SHOTS;
   }));
@@ -180,7 +188,7 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   returnedKeys = "10x,001";
   EXPECT_THROW(decodeSamples(job, 3, 5), std::runtime_error);
   returnedShots = "100,001,001,100,001";
-  EXPECT_THROW(decodeCounts(job, 3, 5), std::runtime_error);
+  EXPECT_THROW(readout(job, 3, 5, 0, std::nullopt, false), std::runtime_error);
 }
 
 TEST(CatalystQDMI, AggregateReadoutKeepsCountsAndSamplesFromOneJob) {

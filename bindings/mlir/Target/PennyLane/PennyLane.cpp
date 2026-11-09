@@ -14,18 +14,20 @@
 #include "qdmi/QDMI.hpp"
 
 #include "../../../qdmi/Parameters.hpp"
+#include "Array.hpp"
 #include "CircuitRecorder.h"
 #include "QDMIDevice.h"
+#include "QDMIReadout.h"
 
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
 #include "nanobind/stl/optional.h"
+#include "nanobind/stl/pair.h"
 #include "nanobind/stl/shared_ptr.h"
 #include "nanobind/stl/string.h"
 #include "nanobind/stl/variant.h"
 #include "nanobind/stl/vector.h"
 
-#include <algorithm>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -199,25 +201,45 @@ void registerBindings(nb::module_& m) {
           "programs"_a, "num_shots"_a);
 
   pennylane.def(
-      "counts",
-      [](const qdmi::Job& job, size_t width, size_t shots, size_t programIndex,
-         const std::optional<mlir::ResultLayout>& layout) {
+      "aggregate",
+      [](const qdmi::Job& job, size_t width, size_t shots,
+         const std::vector<std::pair<std::vector<size_t>, bool>>& measurements,
+         size_t programIndex, const std::optional<mlir::ResultLayout>& layout) {
+        using Marginal =
+            std::variant<std::vector<double>, std::map<std::string, size_t>>;
         auto values = [&] {
           const nb::gil_scoped_release release;
-          return catalyst::decodeCounts(job, width, shots, programIndex,
-                                        layout);
+          const auto result =
+              runtime::readout(job, width, shots, programIndex, layout, false);
+          std::vector<Marginal> marginals;
+          marginals.reserve(measurements.size());
+          for (const auto& [wires, counts] : measurements) {
+            if (counts) {
+              marginals.emplace_back(runtime::marginalCounts(result, wires));
+            } else {
+              marginals.emplace_back(
+                  runtime::marginalProbabilities(result, wires, shots));
+            }
+          }
+          return marginals;
         }();
-        nb::typed<nb::dict, nb::str, size_t> result;
-        while (!values.empty()) {
-          auto entry = values.extract(values.begin());
-          auto& bits = entry.key();
-          std::ranges::reverse(bits);
-          result[nb::str(bits.data(), bits.size())] = nb::int_(entry.mapped());
+        nb::typed<nb::list, nb::object> result;
+        for (auto& value : values) {
+          if (auto* probabilities = std::get_if<std::vector<double>>(&value)) {
+            result.append(ownedArray(std::move(*probabilities)));
+          } else {
+            nb::typed<nb::dict, nb::str, size_t> counts;
+            for (const auto& [bits, count] :
+                 std::get<std::map<std::string, size_t>>(value)) {
+              counts[nb::str(bits.data(), bits.size())] = nb::int_(count);
+            }
+            result.append(counts);
+          }
         }
         return result;
       },
-      "job"_a, "num_wires"_a, "shots"_a, "program_index"_a = 0,
-      "result_layout"_a = nb::none());
+      "job"_a, "num_wires"_a, "shots"_a, "measurements"_a,
+      "program_index"_a = 0, "result_layout"_a = nb::none());
 
   pennylane.def(
       "samples",
@@ -226,7 +248,7 @@ void registerBindings(nb::module_& m) {
         std::unique_ptr<std::vector<int8_t>> data;
         {
           const nb::gil_scoped_release release;
-          data = std::make_unique<std::vector<int8_t>>(catalyst::decodeSamples(
+          data = std::make_unique<std::vector<int8_t>>(runtime::decodeSamples(
               job, numWires, shots, programIndex, layout));
         }
         const nb::capsule owner(data.get(), [](void* pointer) noexcept {

@@ -353,13 +353,15 @@ counts = postprocess(job.result())[0]
 ```
 
 `collect()` reads accepted work without starting new executions; its entries
-retain attempts, results, and errors. Provider results for supported
-aggregate-only tapes are retained as count dictionaries whose bitstrings follow
-the tape's logical wire order. Other entries hold shot-by-wire arrays. Aggregate
-readout prefers provider histograms and falls back to shots when histograms are
-unavailable. If needed, use `job.submit()` for untouched inputs or
-`job.resubmit([i])` to replace a failed or cancelled attempt, then retrieve the
-result again. Successful results are reused. See
+retain attempts, results, and errors. Each successful entry caches the completed
+measurement result for one preprocessed tape and shot partition. A tape with
+multiple measurements retains their tuple; a single measurement retains its
+scalar, array, or counts dictionary. Aggregate readout computes wire marginals
+natively from provider histograms, falling back to shots when histograms are
+unavailable. Mixed sample tapes and custom measurements use ordered samples. If
+needed, use `job.submit()` for untouched inputs or `job.resubmit([i])` to
+replace a failed or cancelled attempt, then retrieve the result again.
+Successful results are reused. See
 {py:class}`~mqt.core.plugins.pennylane.job.PennyLaneJob` for uncertain
 submissions and explicit cancellation.
 

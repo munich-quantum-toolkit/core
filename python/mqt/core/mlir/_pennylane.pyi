@@ -38,13 +38,14 @@ class Context:
         self, programs: Sequence[mqt.core.mlir.CompiledProgram], num_shots: int
     ) -> mqt.core.qdmi.Job | None: ...
 
-def counts(
+def aggregate(
     job: mqt.core.qdmi.Job,
     num_wires: int,
     shots: int,
+    measurements: Sequence[tuple[Sequence[int], bool]],
     program_index: int = 0,
     result_layout: mqt.core.mlir.ResultLayout | None = None,
-) -> dict[str, int]: ...
+) -> list[object]: ...
 def samples(
     job: mqt.core.qdmi.Job,
     num_wires: int,
