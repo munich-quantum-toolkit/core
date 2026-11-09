@@ -47,8 +47,8 @@ namespace qc {
 /// move-only. The borrowed MLIR context must outlive the builder and its IR.
 ///
 /// @par Qubit addressing:
-/// A program must use either static qubits (`staticQubit`) or dynamic
-/// allocation
+/// A program must use either static device-site references (`staticQubit`) or
+/// dynamic allocation
 /// (`allocQubit` / `allocQubitRegister`), never both. The builder terminates
 /// with a usage error if the modes are mixed.
 /// Dynamic allocation is only allowed directly in the entry block of the

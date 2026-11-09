@@ -326,11 +326,12 @@ full operation counts.)pb")
             requireValid(program);
             return program.numGates();
           },
-          R"pb(Return the static gate count of the entry-point IR.
+          R"pb(Return Core's static gate count of the entry-point IR.
 
 Unitary operations, measurements, and resets each count once. Barriers are
-excluded. Modifiers and calls count atomically. Gates in every control-flow
-region count once, regardless of runtime paths or loop iterations.)pb")
+excluded. Each modifier or call counts once without expanding its body. Gates
+in every control-flow region count once, regardless of runtime paths or loop
+iterations.)pb")
       .def(
           "num_single_qubit_gates",
           [](const T& program) {
@@ -1357,13 +1358,13 @@ void registerMLIR(nb::module_& m) {
       .value("QPY", OutputFormat::QPY, "A QPY 17 binary circuit.");
 
   nb::enum_<mlir::PayloadEncoding>(m, "PayloadEncoding",
-                                   "Payload representation encoding.")
+                                   "Text or binary program encoding.")
       .value("TEXT", mlir::PayloadEncoding::Text)
       .value("BINARY", mlir::PayloadEncoding::Binary);
 
   nb::class_<mlir::PayloadFormat>(
       m, "PayloadFormat",
-      "Selected payload format and receiver-version constraint.")
+      "Selected program format and accepted receiver versions.")
       .def(nb::init<std::string, std::string, std::string,
                     mlir::PayloadEncoding>(),
            "format_id"_a, "version"_a, "profile"_a = "",
@@ -1374,8 +1375,8 @@ void registerMLIR(nb::module_& m) {
       .def_rw("encoding", &mlir::PayloadFormat::encoding);
 
   auto programConstraint =
-      nb::class_<mlir::ProgramConstraint>(m, "ProgramConstraint",
-                                          "One payload capability constraint.")
+      nb::class_<mlir::ProgramConstraint>(
+          m, "ProgramConstraint", "One limit on a supported program feature.")
           .def(nb::init<std::string, uint64_t>(), "constraint_id"_a, "value"_a)
           .def_rw("constraint_id", &mlir::ProgramConstraint::id)
           .def_rw("value", &mlir::ProgramConstraint::value);
@@ -1387,8 +1388,9 @@ void registerMLIR(nb::module_& m) {
       mlir::ProgramConstraint::MAX_CASE_COUNT.str();
 
   auto programCapability =
-      nb::class_<mlir::ProgramCapability>(m, "ProgramCapability",
-                                          "One payload execution capability.")
+      nb::class_<mlir::ProgramCapability>(
+          m, "ProgramCapability",
+          "One program feature supported for execution.")
           .def(nb::init<std::string, uint64_t,
                         std::vector<mlir::ProgramConstraint>>(),
                "capability_id"_a, "value"_a = 0,
@@ -1410,7 +1412,12 @@ void registerMLIR(nb::module_& m) {
   nb::class_<mlir::PayloadSpecification>(
       m, "PayloadSpecification", nb::is_generic(),
       nb::sig("class PayloadSpecification(typing.Generic[_TargetResultT_co])"),
-      "Selected payload execution contract.")
+      R"pb(The format and program features selected for execution.
+
+A device may accept several formats with different restrictions. This object
+records one selection: its format, version, encoding, and allowed features,
+such as branches or loops. Pair it with a :class:`CompilerTarget` in a
+:class:`TargetEnvironment` to compile for that combination.)pb")
       .def(
           "__init__",
           [](mlir::PayloadSpecification& self, mlir::PayloadFormat format,
@@ -1430,19 +1437,19 @@ void registerMLIR(nb::module_& m) {
             return unwrap(mlir::payloadSpecificationForProgramFormat(format));
           },
           "program_format"_a,
-          "The standard contract for a QDMI program format.")
+          "The compiler-supported baseline features for a QDMI program format.")
       .def_prop_ro(
           "format",
           [](const mlir::PayloadSpecification& environment) {
             return environment.format();
           },
-          "The selected payload format and receiver-version constraint.")
+          "The selected program format and accepted receiver versions.")
       .def_prop_ro(
           "capabilities",
           [](const mlir::PayloadSpecification& environment) {
             return toPythonList(environment.capabilities());
           },
-          "The effective payload capabilities.")
+          "The program features allowed by this specification.")
       .def_prop_ro("optional_capabilities_known",
                    &mlir::PayloadSpecification::optionalCapabilitiesKnown,
                    "Whether optional capability metadata is complete.");
@@ -1450,8 +1457,11 @@ void registerMLIR(nb::module_& m) {
   auto compilerTarget = nb::class_<mlir::CompilerTarget>(
       m, "CompilerTarget", R"pb(Immutable MQT compiler target.
 
-Every target has either all-to-all or explicitly enumerated connectivity and
-either unrestricted or explicitly enumerated native-operation support.)pb");
+A target describes the hardware facts used during compilation without opening
+a device connection. Connectivity can be all-to-all or an explicit list of
+connections. Native operations can be unrestricted or listed individually with
+their supported sites and parameters. Use a :class:`TargetEnvironment` to combine
+these hardware facts with the format and program features accepted for execution.)pb");
 
   auto durationUnit = nb::class_<mlir::CompilerTarget::DurationUnit>(
       compilerTarget, "DurationUnit", "Unit for raw target timing metadata.");
@@ -2031,7 +2041,12 @@ Args:
   nb::class_<mlir::TargetEnvironment>(
       m, "TargetEnvironment", nb::is_generic(),
       nb::sig("class TargetEnvironment(typing.Generic[_TargetResultT_co])"),
-      "A compiler target and its selected payload specification.")
+      R"pb(A compiler target paired with an execution format and its restrictions.
+
+The target describes available gates and connectivity. The payload specification
+describes how the program will be represented and which classical operations and
+control flow it may use. Keep the environment to compile several programs for
+the same combination, or create one from a device with :meth:`from_device`.)pb")
       .def(nb::init<mlir::CompilerTarget, mlir::PayloadSpecification>(),
            "target"_a, "payload_specification"_a)
       .def_static(
@@ -2053,7 +2068,7 @@ Args:
         cannot represent. By default, warn and omit unsupported gates.
 
 Returns:
-    The compiler target and the Qiskit payload it supports.)pb")
+    The compiler target and supported Qiskit program features.)pb")
       .def_static(
           "from_device",
           [](const nb::handle device,
@@ -2067,12 +2082,13 @@ Returns:
           nb::sig("def from_device(device: mqt.core.qdmi.Device | str, *, "
                   "program_format: mqt.core.qdmi.ProgramFormat | None = None) "
                   "-> TargetEnvironment[CompiledProgram]"),
-          "Snapshot a QDMI device and select its executable payload.")
+          "Snapshot a QDMI device and select its execution format.")
       .def_prop_ro("target", &mlir::TargetEnvironment::target,
                    "The compiler target.")
-      .def_prop_ro("payload_specification",
-                   &mlir::TargetEnvironment::payloadSpecification,
-                   "The selected payload specification.");
+      .def_prop_ro(
+          "payload_specification",
+          &mlir::TargetEnvironment::payloadSpecification,
+          "The selected execution format and supported program features.");
 
   auto program = nb::class_<mlir::Program>(
       m, "Program", R"pb(Base class for a typed MLIR compiler program.
@@ -2161,9 +2177,9 @@ Includes declarations in helper functions and excludes nested modules.)pb")
 
 Includes branches and region-control operations in helper functions, but
 excludes nested modules.)pb")
-      .def_ro(
-          "num_gates", &mlir::QuantumProgramInfo::numGates,
-          "Static entry-point gate count.\n\nSee :meth:`QCProgram.num_gates`.")
+      .def_ro("num_gates", &mlir::QuantumProgramInfo::numGates,
+              "Core's static entry-point gate count.\n\nSee "
+              ":meth:`QCProgram.num_gates`.")
       .def_ro("num_single_qubit_gates",
               &mlir::QuantumProgramInfo::numSingleQubitGates,
               "Static single-qubit gate count.\n\n"
@@ -2472,8 +2488,9 @@ RuntimeError with MLIR diagnostics.)pb")
           "options"_a = mlir::CompilationOptions{},
           R"pb(Synthesize native operations without routing.
 
-Dynamic qubits require all-to-all connectivity and receive layout metadata when possible. Static qubits keep
-their device site IDs and must fit the target topology. Do not rely on the program contents if synthesis fails.
+For device targets, allocated program qubits require all-to-all connectivity
+and receive layout metadata when possible. Static device-site references keep
+their IDs and must fit the target topology. Do not rely on the program contents if synthesis fails.
 Failures raise RuntimeError with the emitted MLIR diagnostics.)pb")
       .def(
           "to_qiskit",
@@ -2815,12 +2832,14 @@ Raises:
 
   qcoProgram.def(
       "expectation_values", &expectationValuesQCO, "observables"_a,
-      R"pb(Evaluate Pauli observables on one uncollapsed zero-state preparation.
+      R"pb(Evaluate Pauli observables on the state prepared by this program.
 
-The program is preserved. The DD package and state stay inside this call;
-neither the state nor the observables are converted to dense arrays.
-Terminal measurements are deferred under the same conditions as
-``mqt.core.mlir.simulate``. Resets and measurement-dependent evolution are rejected.
+The calculation starts with all qubits in zero and evaluates every observable on
+the resulting state before measurement. It uses decision diagrams, so it does not
+need dense state or observable arrays. The program remains available after the
+call. Terminal measurements are deferred under the same conditions as
+:func:`mqt.core.mlir.simulate`; resets and measurement-dependent evolution are
+unsupported.
 
 Args:
     observables: Sequence of mappings from Pauli strings to finite real
@@ -2877,13 +2896,14 @@ Raises:
                 "JeffProgram | OpenQASMProgram | QIRProgram | bytes) -> "
                 "typing.Annotated[numpy.typing.NDArray[numpy.complex128], "
                 "{'shape': (None,)}]"),
-        R"pb(Simulate a closed compiler input from the all-zero state.
+        R"pb(Simulate a program with all inputs bound from the all-zero state.
 
-The DD package is managed internally. Terminal measurements returned directly
-or stored in returned classical registers do not collapse the state.
-Mid-circuit measurement feedback and resets are unsupported; use
-:py:meth:`QCOProgram.simulate` with an explicit DD package for those workflows
-or for a custom initial state.
+The program must have no unbound inputs. This function returns the statevector
+before final measurements. Those measurements must be returned directly or
+stored in returned classical registers. MQT Core manages the decision diagram internally.
+
+For a custom initial state, resets, or mid-circuit measurement feedback, use
+:meth:`QCOProgram.simulate` with an explicit DD package.
 
 Args:
     program: Compiler input, compiled QIR, or QIR text/bitcode.
@@ -2896,7 +2916,7 @@ Returns:
 
 Raises:
     MemoryError: When the dense statevector does not fit in memory.
-    ValueError: When the program is not closed, is unsupported for statevector
+    ValueError: When the program has unbound inputs, is unsupported for statevector
         simulation, or the statevector dimensions exceed addressable memory.
     RuntimeError: When QIR execution fails.)pb");
 
@@ -2909,12 +2929,12 @@ Raises:
                 "0) -> dict[str, int]"),
         R"pb(Sample a supported compiler input or QIR program.
 
-An existing QCO program is used without copying. See
-{py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
-contracts. QIR text and bitcode run through the bundled DDSIM worker using
-the profile and version declared in the module metadata.
-QIR seeds use 0 for randomness or a positive signed 32-bit integer. Profile
-declarations do not validate arbitrary LLVM; executable QIR must be trusted.)pb");
+An existing QCO program is used without copying. See :meth:`QCOProgram.sample`
+for shot counts, seeds, result ordering, and errors. QIR text and bitcode run in
+the bundled DDSIM worker, which reads the profile and version from the module
+metadata. For QIR, use seed 0 for randomness or a positive signed 32-bit integer
+for reproducible sampling. Execute only trusted QIR: its profile declaration
+does not validate arbitrary LLVM code.)pb");
 
   m.def(
       "expectation_values", PythonInputAdapter<&expectationValues>{inputTypes},
@@ -2927,15 +2947,22 @@ declarations do not validate arbitrary LLVM; executable QIR must be trusted.)pb"
       R"pb(Evaluate Pauli observables after translating or converting an input to QCO.
 
 An existing QCO program is used without copying. See
-{py:meth}`QCOProgram.expectation_values` for observable, state preparation,
-and error contracts.)pb");
+:meth:`QCOProgram.expectation_values` for supported observables, state
+preparation, and errors.)pb");
 
   nb::class_<mlir::ResultLayout>(
-      m, "ResultLayout", "Reconstruct logical bits from receiver samples.")
+      m, "ResultLayout",
+      R"pb(Reconstruct program output bits from device samples.
+
+This map describes classical output order, not qubit placement. Entry i in
+:attr:`bits` gives the raw sample bit used for program output bit i, or None
+when that output is always zero. Both indices count from the least significant
+bit; displayed bitstrings put the most significant bit first.)pb")
       .def_ro("raw_width", &mlir::ResultLayout::rawWidth,
               "The number of bits in each raw receiver sample.")
       .def_ro("bits", &mlir::ResultLayout::bits,
-              "Raw indices or None for zero in LSB-first order.")
+              "Program output bit to raw sample bit, or None for zero, in "
+              "LSB-first order.")
       .def(
           "decode_bits",
           [](const mlir::ResultLayout& self, const std::string& raw) {
@@ -2967,7 +2994,12 @@ and error contracts.)pb");
 
   nb::class_<mlir::CompiledProgram>(
       m, "CompiledProgram", nb::dynamic_attr(),
-      "A compiled program ready for QDMI submission.")
+      R"pb(A serialized program ready for QDMI submission.
+
+The object retains the target and format specification used for compilation.
+Submission checks that the destination supports them before creating a job.
+Its result layout reconstructs the program's classical output order from
+device samples.)pb")
       .def_prop_ro("result_width", &mlir::CompiledProgram::resultWidth,
                    "Logical bit width, or None for non-bit outputs.")
       .def(
@@ -2980,7 +3012,7 @@ and error contracts.)pb");
             }
           },
           "environment"_a,
-          "Preflight every program before submitting any format group in a "
+          "Check every program before submitting any format group in a "
           "batch.")
       .def_prop_ro(
           "result_layout", &mlir::CompiledProgram::resultLayout,
@@ -3009,7 +3041,7 @@ and error contracts.)pb");
           [](const mlir::CompiledProgram& self) {
             return self.environment().payloadSpecification();
           },
-          "The payload format and capabilities used for compilation.");
+          "The execution format and supported features used for compilation.");
 
   m.def(
       "compile_program", PythonInputAdapter<&compilePythonProgram>{inputTypes},
@@ -3019,12 +3051,14 @@ and error contracts.)pb");
       "ignore_input_layout"_a = false, "include_output_layout"_a = true,
       R"pb(Compile a program or a homogeneous sequence for a gate set or hardware target.
 
-A sequence returns a list in input order, including for empty and singleton
-inputs. Elements must share one supported input kind; subclasses are accepted.
-Strings and paths are single inputs. Generators and binary buffers are unsupported.
+Pass one program to compile it, or a list or tuple of programs of the same
+input kind to compile a batch. A batch returns a list in input order, even when
+empty or containing only one program. Subclasses of supported input types are
+accepted. Strings and paths each represent one program; generators and binary
+buffers are unsupported.
 
 An explicit ``output`` selects each result's representation. Without it, a
-Qiskit target or Qiskit payload environment selects QuantumCircuit. A QDMI
+Qiskit target or environment using the Qiskit format selects QuantumCircuit. A QDMI
 backend, device or other device target environment selects :class:`CompiledProgram`
 for :func:`submit_program`. Otherwise, each input retains its format family:
 OpenQASM source returns :class:`OpenQASMProgram`,
@@ -3034,15 +3068,17 @@ QCO inputs return optimized QCO.
 A target created by ``CompilerTarget.for_gate_set`` synthesizes gates without device placement.
 It preserves program-qubit order and idle qubits, including terminal permutations,
 and retains the input format family by default. Inputs must have fixed-width
-entry-block allocations and no static qubits or layout metadata. Site-specific
+entry-block allocations and no static device-site references or layout metadata. Site-specific
 capabilities are rejected; ``NativeOperations.from_qiskit`` imports gates
 without physical placement.
 
-Typed MLIR inputs are consumed; set ``copy=True`` to preserve them. Source text,
-paths, Qiskit circuits and OpenQASM programs remain reusable. Sequence input
-kinds are checked before compilation. Compilation stops at the first failure
-and returns no results; processed inputs, including the failing input, may be
-consumed, while later inputs remain usable.
+Compilation takes ownership of typed MLIR inputs, making the original objects
+unusable. Set ``copy=True`` to compile copies when you need the originals again.
+Source text, paths, Qiskit circuits, and OpenQASM programs remain reusable.
+
+For a batch, input kinds are checked before compilation starts. If compilation
+fails, no results are returned. Inputs processed up to and including the failing
+program may already have been consumed; later inputs remain usable.
 
 Args:
     program: Source text, a file path, a Qiskit circuit, a typed compiler program,
@@ -3062,11 +3098,12 @@ Args:
         measurement destinations are preserved either way. False requires
         Qiskit or explicit QPY output.
 
-Device defaults prefer QPY, OpenQASM 3, Adaptive QIR (binary, text), IQM JSON, then Base QIR
-(binary, text). Use a ``TargetEnvironment`` to select an exact execution format.
-An explicit output
-need not be a device's execution format. Jeff output does not retain hardware
-placement.)pb");
+For a device, format selection prefers QPY when supported Qiskit is installed,
+then OpenQASM 3, Adaptive QIR (binary, then text), IQM JSON, Base QIR (binary,
+then text), and OpenQASM 2. Use a :class:`TargetEnvironment` to select an exact
+execution format. An explicit ``output`` can instead request a representation
+for inspection or exchange; it need not be executable on the device. Jeff output
+does not retain hardware placement.)pb");
 
   m.def(
       "serialize_program", &serializeProgram, "program"_a, nb::kw_only(),
@@ -3076,9 +3113,11 @@ placement.)pb");
               "mqt.core.qdmi.Device | str) -> CompiledProgram"),
       R"pb(Serialize an already native circuit without compiling or routing it.
 
-The caller supplies validated native operations and placements. Static programs
-use canonical terminal readout and retain their logical result layout. Dynamic
-programs retain their classical outputs. Inputs remain reusable.
+Use this for a circuit that already uses the device's native gates and physical
+sites. The caller must validate those gates and placements. For programs with
+fixed physical sites, serialization arranges final measurements in site order and
+records how to restore the requested output order. Dynamically allocated programs
+retain their classical outputs. The input remains available after serialization.
 
 Args:
     program: A native Qiskit circuit or QC program with static target sites.
@@ -3096,9 +3135,13 @@ Args:
 
 ``target`` accepts a registered device ID or an open device. For source input,
 ``program_format`` selects the exact QDMI execution format, including text or
-binary QIR; omitting it selects a supported native format. A compiled program
-retains its payload and must match the destination contract. Job results are raw;
-apply ``compiled.result_layout.decode_bits`` when a result layout is present.)pb");
+binary QIR; omitting it selects a supported native format.
+
+A compiled program reuses its serialized data after checking compatibility with
+the destination. Job results use the device's measurement order. When
+``compiled.result_layout`` is present, use its decoding methods to restore the
+program's output order. Source input that needs this mapping is rejected;
+compile it explicitly and keep the resulting :class:`CompiledProgram`.)pb");
 
   m.def(
       "_run_compiler",

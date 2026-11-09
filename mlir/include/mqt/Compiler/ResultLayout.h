@@ -26,9 +26,10 @@ namespace mlir {
 
 /// Reconstruct logical output bits from a compiled program's binary samples.
 ///
-/// Both indices and entries use least-significant-bit-first order. An index
-/// selects a raw output bit; an empty entry supplies zero. The number of
-/// entries is the logical output width.
+/// This maps program output bits to raw sample bits, independently of qubit
+/// placement. bits[i] gives the raw bit for program output bit i; an empty
+/// entry supplies zero. Both indices count from the least significant bit.
+/// The number of entries is the program output width.
 struct ResultLayout {
   size_t rawWidth = 0;
   std::vector<std::optional<size_t>> bits;

@@ -8,7 +8,7 @@ mystnb:
 
 # Compile for hardware constraints
 
-A logical program names qubits and gates. Hardware offers physical sites,
+An input program names qubits and gates. Hardware offers physical sites,
 connections, and a native gate set. What changes when the program's interactions
 do not fit those connections?
 
@@ -43,7 +43,7 @@ controlled-X flips the third qubit when the first is 1. Starting from
 $|000\rangle$, the result is $(|000\rangle + |011\rangle)/\sqrt{2}$ in basis
 order $|q_2q_1q_0\rangle$.
 
-The three gates connect **every pair of logical qubits**. No assignment of three
+The three gates connect **every pair of program qubits**. No assignment of three
 qubits to a three-site line can make all three pairs adjacent.
 
 ```{code-cell} ipython3
@@ -146,7 +146,7 @@ of connectivity while keeping the native gate set fixed.
 
 ## Compile, then inspect the native circuits
 
-**Placement** assigns logical qubits to physical sites. **Routing** moves
+**Placement** assigns program qubits to physical sites. **Routing** moves
 quantum states when an interaction requires different neighbors.
 **Native synthesis** expresses operations using the target's supported gates.
 Routing can therefore increase the number of native gates even when
@@ -187,8 +187,9 @@ assert circuits["Line"].count_ops()["cx"] > circuits["All-to-all"].count_ops()["
 
 This experiment illustrates routing cost, not an optimality guarantee. The
 compiler uses heuristics; exact layouts and decompositions can change between
-versions or machines. Mapping uses one initial-layout trial per available CPU by
-default. The [target guide](../mlir/target_compilation.md#define-a-target)
+versions or machines. By default, mapping uses at least eight initial-layout
+trials, increasing the count to the number of available logical CPUs when that
+is larger. The [target guide](../mlir/target_compilation.md#define-a-target)
 describes explicit pass options for reproducible mapping experiments.
 
 Verify that the compiler used native gates and that every emitted CX on the line
@@ -210,7 +211,7 @@ print("Native gates and CX connectivity checks passed.")
 
 The explicit topology check matters: an operation capability with no placement
 list does not itself encode the coupling graph. The target compiler checks both
-contracts.
+requirements.
 
 ## Preserve logical output bits after routing
 
@@ -255,9 +256,8 @@ finite-shot histograms.
 
 ## Experiment: remove the routing constraint
 
-Replace the line with explicit triangle connectivity. Unlike `all_to_all()`,
-this exercises the explicit-topology mapping path, but every site pair is now
-connected. Predict whether the extra routing work remains:
+Replace the line with a triangle, connecting every pair of sites. Predict
+whether any extra routing gates will be needed:
 
 ```{code-cell} ipython3
 triangle = CompilerTarget(
@@ -285,10 +285,8 @@ native gate set impose separate requirements.
 
 ## Experiment: provide too few sites
 
-A compiler cannot place three simultaneously live qubits on two sites in this
-program. The following cell deliberately tries it, catches the exception, and
-shows the **expected diagnostic**. This is the only intended failure in the
-tutorial; the later cells still run.
+This program needs three qubits at once, so a two-site target is too small. The
+following example catches the compilation error and prints its diagnostic:
 
 ```{code-cell} ipython3
 too_small = CompilerTarget(
@@ -319,7 +317,7 @@ them through Python and C++.
 QDMI can connect to a local simulator, a QPU, or a cloud service. The device
 reports which program formats it accepts; QDMI does not require every device to
 use the same format. `compile_program` uses those capabilities to prepare a
-payload, and `submit_program` creates a job for it. The
+program, and `submit_program` creates a job for it. The
 {doc}`QDMI overview <../qdmi/index>` explains the layers and links to Amazon
 Braket and IQM integration case studies.
 
@@ -336,10 +334,10 @@ print(f"Selected program format: {compiled.program_format.name}")
 print(f"Payload type: {type(compiled.payload).__name__}")
 ```
 
-Here DDSIM selects Adaptive QIR. The `CompiledProgram` owns the serialized
-payload, the compiler target snapshot, and the selected payload specification.
-This also allows structured programs such as the previous notebook's feedback
-example to be compiled for DDSIM.
+The printed format shows which representation the compiler selected for DDSIM.
+The `CompiledProgram` holds the serialized program together with the device
+properties and format restrictions used to compile it. DDSIM also supports
+structured programs such as the previous notebook's feedback example.
 
 Submission is a separate operation that explicitly names the destination:
 
@@ -356,25 +354,25 @@ plot_distribution(device_counts, title="DDSIM logical outputs")
 `job.wait()` waits for completion and reports execution failure. `custom1`
 selects DDSIM's random seed; custom job parameters are device-specific.
 
-A `CompiledProgram` is tied to the target and payload contract used during
-compilation. Submission checks that the destination matches that contract. Do
-not compile a hardware-model artifact and assume that substituting DDSIM as its
-destination will work. Here we simulated the models' OpenQASM for comparison,
-then compiled the logical source for DDSIM before submitting it. A compiled
-DDSIM program can be submitted again without recompilation while its contract
-continues to match.
+A `CompiledProgram` is tied to the target and execution-format requirements used
+during compilation. Submission checks that the destination meets those
+requirements. Do not compile a hardware-model artifact and assume that
+substituting DDSIM as its destination will work. Here we simulated the models'
+OpenQASM for comparison, then compiled the logical source for DDSIM before
+submitting it. A compiled DDSIM program can be submitted again without
+recompilation while the device continues to meet its requirements.
 
 ## Continue to execution and exchange
 
-Continue with {doc}`qir_execution` to inspect the executable payload, then
+Continue with {doc}`qir_execution` to inspect the executable program, then
 {doc}`qdmi_execution` to explore the device and job API. The
 {doc}`jeff_exchange` tutorial shows how to hand programs to another compiler
 before choosing an execution format.
 
 For further reference:
 
-- Use {doc}`../mlir/target_compilation` for device discovery, payload selection,
-  target capabilities, and control-flow restrictions.
+- Use {doc}`../mlir/target_compilation` for device discovery, execution-format
+  selection, target capabilities, and control-flow restrictions.
 - Read {doc}`../mlir/mqt_compiler_collection` for compiler checkpoints, pass
   pipelines, serialization, and the Python, CLI, and C++ interfaces.
 - Explore {doc}`../mlir/qiskit`, {doc}`../mlir/OpenQASM`, and

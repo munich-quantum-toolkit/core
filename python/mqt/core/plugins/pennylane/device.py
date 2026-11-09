@@ -273,7 +273,7 @@ class QDMIDevice(Device):
         return pipeline
 
     def _tape_wires(self, tape: QuantumScript) -> Wires:
-        """Select the logical wires needed by this tape.
+        """Select the program wires needed by this tape.
 
         Returns:
             All device wires for an unqualified measurement, otherwise tape wires.

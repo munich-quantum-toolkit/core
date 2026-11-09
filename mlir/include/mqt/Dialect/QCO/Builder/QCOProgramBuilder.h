@@ -48,8 +48,8 @@ namespace qco {
 /// IR.
 ///
 /// @par Qubit addressing:
-/// A program must use either static qubits (`staticQubit`) or dynamic
-/// allocation
+/// A program must use either static device-site references (`staticQubit`) or
+/// dynamic allocation
 /// (`allocQubit`, `allocQubitRegister`, or `qtensorAlloc`), never both. The
 /// builder terminates with a usage error if the modes are mixed.
 /// Dynamic allocation is only allowed directly in the entry block of the

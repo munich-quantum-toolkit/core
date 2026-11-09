@@ -33,25 +33,27 @@ Use relevant sections of the [development policy](docs/development.md) and the
 - Existing code is evidence, not authority over current policy. Follow
   repository policy, enforcing configuration, and explicitly adopted upstream
   guidance in that order.
-- Apply Orwell's six writing rules and the relevant ASD-STE100 principles in
-  every category of prose: choose short familiar words, remove needless words,
-  use active voice, keep each sentence direct, and prefer clarity over rigid
-  application of a style rule. Do not claim formal ASD-STE100 compliance.
-- Use established technical terms, one term per concept, and the spelling in
-  `docs/glossary.md`. Preserve project names such as `jeff` and `jeff-mlir`.
-  Update the glossary when introducing or changing public or ambiguous terms.
-- Document contracts, reasons, ownership, numerical limits, and useful examples.
-  Keep small additions brief; extend existing explanations and link to the
-  owning reference for details. Follow the
-  [prose policy](docs/development.md#prose-and-terminology). Remove repetition
-  of code, boilerplate parameters, change narration, and unsupported assurances.
-  Use symbol references instead of brittle line pointers.
-- Do not leak conversations, prompts, or iteration history into code comments,
-  pull request descriptions, or other maintainer-facing prose. Write for readers
-  who have not seen the conversation.
-- Prefer comments that explain current behavior and rationale. Avoid past-facing
-  wording such as "preserve the existing behavior"; explain the actual
-  backwards-compatibility constraint instead.
+- Write for readers who know neither the implementation nor its design history.
+  Apply Orwell's six writing rules throughout. Prioritize technical accuracy,
+  reader understanding, and natural flow over brevity or rigid style rules.
+- Use ASD-STE100 principles for implementation comments, API summaries, and
+  parameter, return, and error descriptions. Do not require STE in guides or
+  detailed API explanations, or claim formal compliance. Follow the
+  [prose policy](docs/development.md#prose-and-terminology).
+- Explain the task and concepts before implementation details. Integrate
+  additions into the existing explanation. Preserve useful examples,
+  limitations, ownership, and failure behavior; link to the owning reference for
+  specialist detail.
+- Use established quantum-computing and software terms, explaining unfamiliar
+  terms where readers first need them. Identify MQT-specific names as such.
+  Consult `docs/glossary.md`, but check definitions against primary sources
+  before adding or changing terms. Keep API-object and schema definitions in
+  their owning references. Use “program qubits” for unmapped circuit qubits;
+  distinguish placement, allocation, and fault-tolerant encoding.
+- Keep prompts, conversations, review instructions, and iteration history out of
+  documentation, comments, and PR descriptions. Describe the current system and
+  the reasons readers need to understand it. Put release history and migration
+  advice in their designated documents.
 - Test changed behavior and concrete regressions, not implementation details.
   Low-impact edits need no new tests. Before weakening a test, check history,
   callers, invariants, and resource limits; equal line coverage or a shared

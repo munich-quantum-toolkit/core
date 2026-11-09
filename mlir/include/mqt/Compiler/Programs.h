@@ -343,12 +343,12 @@ public:
   [[nodiscard]] FailureOr<IQMJSONProgram>
   intoIQMJSON(const CompilerTarget& target) &&;
 
-  /// Return the static gate count of the entry-point IR.
+  /// Return Core's static gate count of the entry-point IR.
   ///
   /// Unitary operations, measurements, and resets each count once. Barriers
-  /// are excluded. Modifiers and calls count atomically. Gates in every
-  /// control-flow region count once, regardless of runtime paths or loop
-  /// iterations.
+  /// are excluded. Each modifier or call counts once without expanding its
+  /// body. Gates in every control-flow region count once, regardless of runtime
+  /// paths or loop iterations.
   [[nodiscard]] size_t numGates() const;
 
   /// Count gates acting on exactly one qubit.
@@ -488,9 +488,10 @@ public:
 
   /// Synthesize native operations without routing.
   ///
-  /// Dynamic qubits require all-to-all connectivity and receive layout metadata
-  /// when possible. Static qubits keep their device site IDs and must fit the
-  /// target topology. Do not rely on the program contents if synthesis fails.
+  /// For device targets, allocated program qubits require all-to-all
+  /// connectivity and receive layout metadata when possible. Static references
+  /// keep their device site IDs and must fit the target topology. Do not rely
+  /// on the program contents if synthesis fails.
   [[nodiscard]] LogicalResult
   synthesizeForTarget(const TargetEnvironment& environment,
                       const CompilationOptions& options = {});
@@ -503,7 +504,7 @@ public:
   /// Consume this program and convert it to `jeff` MLIR.
   [[nodiscard]] FailureOr<JeffProgram> intoJeff() &&;
 
-  /// Return the static entry-point gate count.
+  /// Return Core's static entry-point gate count.
   ///
   /// Uses the rules of QCProgram::numGates().
   [[nodiscard]] size_t numGates() const;
@@ -628,7 +629,7 @@ using CompilerProgram =
     std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram,
                  QIRProgram, IQMJSONProgram>;
 
-/// Run the coordinated default compiler pipeline.
+/// Run the default compiler pipeline.
 ///
 /// The supplied program is consumed. Call `copy()` before this function
 /// when the source program must remain available for another pipeline branch.
@@ -646,7 +647,7 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    const TargetEnvironment& environment,
                    const CompilationOptions& options = {});
 
-/// Run the coordinated default compiler pipeline for a target.
+/// Run the default compiler pipeline for a target.
 ///
 /// The supplied program is consumed. Call `copy()` before this function
 /// when the source program must remain available for another pipeline branch.

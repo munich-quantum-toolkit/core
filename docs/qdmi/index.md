@@ -27,7 +27,7 @@ clients must use those queries to prepare compatible jobs.
 | Layer                                        | Responsibility                                                                           |
 | -------------------------------------------- | ---------------------------------------------------------------------------------------- |
 | {doc}`Compiler <../mlir/target_compilation>` | Query a target's capabilities and compile a compatible program.                          |
-| Native runtime                               | Retain execution contexts, submit compatible programs, and decode logical results.       |
+| Native runtime                               | Keep device sessions open, submit compiled programs, and restore result order.           |
 | {doc}`Driver and application APIs <driver>`  | Load device libraries and provide C++ and Python access to sessions, queries, and jobs.  |
 | Device implementation                        | Translate QDMI calls into simulator operations or a provider's API.                      |
 | {doc}`SDK adapters <qdmi_backend>`           | Translate Qiskit, PennyLane, and Catalyst inputs and outputs through the shared runtime. |

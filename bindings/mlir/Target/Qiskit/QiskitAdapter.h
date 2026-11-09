@@ -2809,7 +2809,8 @@ private:
     return result;
   }
 
-  /// Export preflight checks the expanded node/depth budgets before conversion.
+  /// Before export, check node-count and depth limits after expanding
+  /// definitions.
   ///
   /// Retain shared children so cached identities remain valid across gates.
   [[nodiscard]] nb::object

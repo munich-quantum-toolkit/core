@@ -96,13 +96,15 @@ def __dir__() -> list[str]:
 class QDMIBackend(BackendV2):
     """A Qiskit BackendV2 adapter for QDMI devices.
 
-    This backend provides program submission to QDMI devices.
-    It automatically introspects device capabilities and constructs a
-    :class:`~qiskit.transpiler.Target` object with supported operations.
+    The backend queries the device's supported gates and qubit placements to
+    construct a :class:`~qiskit.transpiler.Target`. Compile a circuit for that
+    target with Qiskit's transpiler, or use :meth:`compile`, before calling
+    :meth:`run`. Running a circuit validates and submits it without further
+    synthesis or routing.
 
-    Use :meth:`from_device_id` to open one client-visible device. Use
-    :class:`~mqt.core.plugins.qiskit.provider.QDMIProvider` to enumerate
-    client-visible devices.
+    Use :meth:`from_device_id` to open a configured device, or
+    :class:`~mqt.core.plugins.qiskit.provider.QDMIProvider` to discover devices
+    available through the driver.
 
     Args:
         device: QDMI device wrapper.
@@ -445,7 +447,7 @@ class QDMIBackend(BackendV2):
         """Check operations and native placements against the snapshot target.
 
         Args:
-            circuit: Native or logical circuit to check.
+            circuit: Native or unmapped circuit to check.
             native: Also check physical sites and parameter values.
 
         Raises:
@@ -512,7 +514,7 @@ class QDMIBackend(BackendV2):
         *,
         options: CompilationOptions | None = None,
     ) -> CompiledProgram | list[CompiledProgram]:
-        """Compile circuits for this backend's native payload and result layout.
+        """Compile circuits to the backend's native gates and execution format.
 
         Returns:
             One compiled program, or an ordered list for a sequence.
@@ -538,7 +540,7 @@ class QDMIBackend(BackendV2):
         """Submit native circuits without running compilation or routing.
 
         Use ``backend.run(backend.compile(circuit))`` when compilation is needed.
-        Compiled payloads are submitted unchanged. Serialization
+        Compiled programs are submitted unchanged. Serialization
         can normalize terminal measurements and retain their output mapping;
         it does not change the compiled quantum operations or placement.
 
@@ -559,7 +561,7 @@ class QDMIBackend(BackendV2):
                 parameter_values length mismatch).
             UnsupportedOperationError: If a circuit contains unsupported operations.
             JobSubmissionError: If job submission to the device fails.
-            TranslationError: If native payload serialization fails.
+            TranslationError: If serialization of the native program fails.
 
         Examples:
             Run a single circuit with parameter values:

@@ -38,12 +38,20 @@ void registerQFT(const nb::module_& m) {
            "qubits"_a, "period_exponent"_a,
            "method"_a = bench::QFTMethod::Standard)
       .def_ro("qubits", &bench::QFTOptions::qubits,
-              "The number of transformed qubits.")
+              "The transform width and number of output bits, independent of "
+              "qubit reuse.")
       .def_ro("period_exponent", &bench::QFTOptions::periodExponent,
               R"pb(The exponent :math:`k` of the input period :math:`2^k`.)pb")
       .def_ro("method", &bench::QFTOptions::method, "The circuit method.");
 
-  auto qft = nb::class_<bench::QFT>(m, "QFT", "A validated QFT benchmark.");
+  auto qft = nb::class_<bench::QFT>(m, "QFT", R"pb(A validated QFT benchmark.
+
+The semiclassical method uses measurements and classical feedback in place of
+controlled gates before readout. For this benchmark's input states, it also
+prepares each input bit as needed and reuses one measured and reset qubit.
+The standard method uses a full register. Both methods return the same number
+of bits; qubit reuse is an implementation choice in addition to the
+semiclassical transform.)pb");
   qft.def("__init__", benchmarkInit(&bench::QFT::create), "options"_a)
       .def_prop_ro("options", &bench::QFT::options,
                    nb::rv_policy::reference_internal,

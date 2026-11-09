@@ -42,9 +42,10 @@ circuit before transpiling. An explicit Qiskit layout can expand a circuit to
 the target width, which defaults to 65,535 sites for an unscoped DDSIM session.
 See {doc}`ddsim_device` for session configuration.
 
-`run` validates, serializes, and submits; it does not synthesize or route. Bind
-parameters before compilation when their values affect native legality. Use a
-provider's specialized backend when its service requires one.
+`run` expects gates and qubit placements that the device can execute. It checks
+the circuit and submits it, so compile first with Qiskit's `transpile` or
+`backend.compile`. Bind parameters before compilation when the device restricts
+their values. Some services require a provider-specific backend.
 
 ## Provider and Device Discovery
 
@@ -76,7 +77,7 @@ snapshot's timing unit and scale factor.
 
 MQT Core resolves device aliases. Fixed parameter variants retain separate
 Target names, and unrecognized native operations become opaque Qiskit gates.
-Control flow and classical assignment follow the selected payload's
+Control flow and classical assignment follow the selected execution format's
 capabilities. All-to-all devices do not materialize a coupling map.
 
 Devices with computational resonators expose single-qubit gates and measurement
@@ -110,9 +111,9 @@ and primitives.
 
 `job.status()` returns Qiskit's job status. `job.result()` waits and returns
 counts, optional shot memory, and the original circuit/register metadata. The
-adapter checks widths, binary digits, and shot totals. It never fabricates
-samples from a histogram; when memory is requested, counts come from those same
-shots.
+adapter checks widths, binary digits, and shot totals. When shot memory is
+requested, the device must return individual samples; the adapter derives counts
+from those same samples.
 
 Results use Qiskit's classical-bit order (`clbits[0]` on the right), preserving
 leading zeros and correlations across registers. Classical registers must
@@ -206,13 +207,13 @@ returns an ordered list of programs. The lower-level
 
 `run()` also accepts native `QuantumCircuit` inputs. It validates their gates,
 parameters and placements, then uses {py:func}`~mqt.core.mlir.serialize_program`
-without synthesis or routing. Compiled programs retain their exact payload and
-result layout. Programs from another environment are checked for compatibility
-before any job in the batch is submitted.
+without synthesis or routing. Compiled programs retain their exact serialized
+program and result layout. Programs from another environment are checked for
+compatibility before any job in the batch is submitted.
 
-Payloads, result layouts and copied circuit headers survive retries without
-reserialization. Persist all three for cross-process recovery; a remote job ID
-alone cannot recover frontend outputs.
+Serialized programs, result layouts, and copied circuit headers survive retries
+without reserialization. Persist all three for cross-process recovery; a remote
+job ID alone cannot recover frontend outputs.
 
 ### Device-specific execution options
 

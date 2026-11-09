@@ -48,8 +48,11 @@ struct ShorEvaluation {
 
 /// A validated semiclassical Shor order-finding benchmark.
 ///
-/// Evaluation uses exact continued fractions and verifies factors by division.
-/// It does not compute an ideal phase distribution or the order classically.
+/// The circuit uses a semiclassical inverse QFT and reuses one query qubit
+/// across its phase measurements. Modular-arithmetic registers remain
+/// allocated. Evaluation uses exact continued fractions and verifies factors by
+/// division. It does not compute an ideal phase distribution or the order
+/// classically.
 class MQT_CORE_BENCH_EXPORT Shor final {
 public:
   [[nodiscard]] static llvm::Expected<Shor> create(ShorOptions options);

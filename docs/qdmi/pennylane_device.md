@@ -38,8 +38,8 @@ uv pip install "mqt-core[pennylane,catalyst]"
 Catalyst is optional for ordinary QNodes. The extra installs a stable Catalyst
 release from 0.15 and below 1.0 on supported Python versions and platforms. MQT
 Core tests the 0.15.0 device interface and warns once when loading a newer minor
-version; an ABI change can crash the process. The upstream canary checks for
-header drift. See the
+version. Because Catalyst uses a native device interface, an incompatible ABI
+can crash the process. See the
 [Catalyst installation guide](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/installation.html)
 for platform requirements.
 
@@ -57,7 +57,7 @@ device = qp.device("mqt.ddsim.default", wires=2, job_parameters={"custom1": 7})
 DDSIM scopes the session to the number of declared wires. An explicit
 `session_parameters={"custom1": "12"}` sets the session width instead. With
 `wires=None`, the default session exposes all 65,535 sites. See
-[session width](ddsim_device.md#session-width) for the parameter contract.
+[session width](ddsim_device.md#session-width) for the parameter requirements.
 
 ## Run a QNode
 
@@ -122,10 +122,11 @@ of physical placement. If the provider returns only counts, samples are
 reconstructed without temporal shot order. Terminal measurements of a compiled
 circuit share one provider readout.
 
-Ordinary QNodes compile only the tape's wires, unless a measurement requests all
-device wires. Both paths omit readout of untouched wires and supply their known
-zero values locally; entirely untouched tapes need no provider job. Both paths
-retain the compiler's result layout before selecting PennyLane wires. See
+An ordinary QNode compiles the wires used by its tape, unless a measurement
+requests all device wires. Wires that no operation touches have a known zero
+value, so MQT Core supplies those values without device readout. A tape
+containing only untouched wires needs no provider job. The compiler's result
+mapping keeps the returned values in PennyLane wire order. See
 [terminal readout](../mlir/target_compilation.md#terminal-readout-and-results).
 
 Hardware parameter constraints come from the provider's QDMI operation metadata.
@@ -230,8 +231,8 @@ another process. Compiled calls are synchronous and do not use the Python
 tracker. Catalyst's `async_qnodes=True` schedules separate QNodes without
 combining them into one QDMI job. Concurrent calls require a provider that
 supports them on the shared session; see the
-[QDMI thread-safety contract](driver.md#python-bindings). QDMI waits and result
-retrieval release the Python GIL.
+[QDMI thread-safety requirements](driver.md#python-bindings). QDMI waits and
+result retrieval release the Python GIL.
 
 ## Supported gate-level scope
 
@@ -257,8 +258,8 @@ do not require a native method in `supported_mcm_methods`.
 
 Catalyst's measurement callback requires an immediate result for host control
 flow, whereas this backend submits a complete program to QDMI. MQT Core's
-support for measurement and feedback within a compiled program does not provide
-that callback contract. Catalyst mid-circuit measurements and
+support for measurement and feedback within a compiled program does not
+implement those callbacks. Catalyst mid-circuit measurements and
 `mcm_method="deferred"` are therefore unsupported.
 
 With Catalyst, `BasisState` accepts runtime bit arrays and reordered wire

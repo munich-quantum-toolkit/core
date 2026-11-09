@@ -9,7 +9,7 @@ mystnb:
 # Execute programs with QIR
 
 The hardware tutorial produced a device-compatible program. What is inside that
-payload, and how does it express measurement feedback? Here you will follow a
+program, and how does it express measurement feedback? Here you will follow a
 program into QIR, compare the Base and Adaptive profiles, and connect QIR output
 records to ordinary measurement counts.
 
@@ -193,7 +193,7 @@ conditional-loop bit pattern as `i2 -2`. The dynamic resource flags and `arrays`
 describe this program's qubit and result storage. These flags describe the
 compiled program's requirements, not a request to enable a feature on hardware.
 
-Try compiling the loop for a Base-only payload. The target compiler rejects the
+Try compiling the loop for the Base Profile. The target compiler rejects the
 unsupported control flow:
 
 ```{code-cell} ipython3
@@ -232,5 +232,6 @@ Leave capture disabled for ordinary sampling. The
 {doc}`QIR guide <../qir/index>` covers both output schemas, resource lifetimes,
 and state-extraction restrictions.
 
-Continue with {doc}`qdmi_execution` to explore device discovery, payload
-selection, repeated jobs, and the different kinds of results behind this API.
+Continue with {doc}`qdmi_execution` to explore device discovery,
+execution-format selection, repeated jobs, and the different kinds of results
+behind this API.

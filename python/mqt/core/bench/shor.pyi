@@ -42,7 +42,11 @@ class Evaluation:
         """A sorted factor pair, or ``None``."""
 
 class Shor:
-    """A validated semiclassical Shor benchmark."""
+    """A validated Shor order-finding benchmark.
+
+    The circuit uses a semiclassical inverse QFT and reuses one query qubit across
+    its phase measurements. Modular-arithmetic registers remain allocated.
+    """
 
     def __init__(self, options: Options) -> None: ...
     @property

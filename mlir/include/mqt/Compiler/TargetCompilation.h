@@ -61,10 +61,10 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 
 /// Populate target-native block synthesis without routing.
 ///
-/// Device targets require all-to-all connectivity for dynamic qubits; static
-/// qubits keep their site IDs and may use an explicit topology. Inlines calls,
-/// decomposes
-/// non-native controlled gates, places qubits for device targets, resynthesizes
+/// Device targets require all-to-all connectivity for allocated program qubits.
+/// Static device-site references keep their IDs and may use an explicit
+/// topology. Inlines calls and decomposes non-native controlled gates, places
+/// qubits for device targets, resynthesizes
 /// constant two-qubit runs in the native basis, and verifies target
 /// conformance. Input must use structured QCO/SCF control flow. The supplied
 /// environment is authoritative and must remain unchanged during pipeline

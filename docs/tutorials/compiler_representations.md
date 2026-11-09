@@ -120,9 +120,9 @@ second operation. `qco.ctrl` transfers both the control and target values, even
 though a controlled-X does not flip its control. The final `qco.sink` operations
 consume the values at the end of their lifetimes.
 
-This rule lets a rewrite follow the quantum data flow directly. It is not a
-claim that neighboring lines always act on the same qubit: follow their operands
-and results.
+To follow a qubit through the program, trace the operands and results of its
+operations. This is also how a rewrite finds the quantum data dependencies;
+neighboring lines may act on independent qubits.
 
 ## Run one optimization and check its meaning
 

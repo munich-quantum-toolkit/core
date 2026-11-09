@@ -93,6 +93,10 @@ def FuseSingleQubitUnitaryRuns
     length are left unchanged.
 
     The emitted basis is controlled via the `basis` option (e.g. `zyz`, `zsxx`).
+    The `gpi` option uses equatorial rotations `R(π, φ)` and `R(π/2, φ)`
+    with unrestricted axis angle `φ` in radians. Native GPi/GPi2 export
+    accounts for the GPi global-phase difference; see
+    [native single-qubit gates](target_compilation.md#native-single-qubit-gates).
     A `gphase` correction is inserted when needed so the rewritten sequence
     matches the composed matrix exactly (not only up to global phase).
 
@@ -284,8 +288,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     remain terminal. Placement preserves the logical classification while
     inserting SWAPs and threading physical workspace through regions.
 
-    First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
-    mapping, which is referred to as the initial layout. The layout covers the
+    First, the pass assigns each allocated program qubit to a device site.
+    This initial assignment is called the initial layout. The layout covers the
     complete target. The pass materializes all target sites as routing workspace
     and carries them through structured control flow. Cleanup after mapping
     removes unused sites. The pass traverses the circuit
@@ -293,7 +297,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     are executable on the target architecture, a process known as routing.
 
     Each routing block has one wire slot per physical site. Its layout is the
-    sole mapping from logical qubits to those sites. Candidate evaluation keeps
+    sole mapping from program qubits to those sites. Candidate evaluation keeps
     empty cursors for idle sites; final placement materializes their qubits.
     Virtual SWAPs exchange the cursors at their two sites, matching the SSA
     successors of emitted SWAPs. Both traversal directions stop at region
@@ -696,7 +700,7 @@ def DecomposeMultiControlled
     exponent and operations on disjoint wires.
 
     With `use-target=true`, retain target-native operations on all-to-all
-    targets or already placed programs. Dynamic qubits on an explicit topology
+    targets or already placed programs. Allocated program qubits on an explicit topology
     still use target-independent decomposition before routing. The default
     ignores attached target metadata.
 

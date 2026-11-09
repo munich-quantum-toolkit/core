@@ -61,10 +61,14 @@ class BatchEntry(Generic[_Result]):
 class Batch(Generic[_Result]):
     """Shared recovery engine for the QDMI adapters.
 
-    Adapters prepare every input before constructing a batch and own result
-    conversion; decoded results must not be None. Use adapter job handles to
-    submit or recover work. Operations on one batch are synchronous; concurrent
-    calls on the same batch are unsupported.
+    A batch retains submission attempts and completed results so that an adapter
+    can recover after a failure without repeating successful work. The adapter
+    prepares all inputs before constructing the batch and converts device results
+    to its own result type. A decoded result must not be None, which marks an
+    unavailable result.
+
+    Submit and recover work through the adapter's job handle. Operations on one
+    batch are synchronous, and concurrent calls on the same batch are unsupported.
     """
 
     def __init__(
