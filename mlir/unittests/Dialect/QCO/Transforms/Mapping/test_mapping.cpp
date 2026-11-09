@@ -4035,7 +4035,8 @@ TEST_F(MappingPassFixture, PreserveBasisStatesAfterNativeScoredCompilation) {
             SCOPED_TRACE(entangler);
             const auto target = withNativeBasis(topology, entangler);
             SCOPED_TRACE(target.numSites());
-            for (const size_t bytes : {size_t{0}, size_t{1024}}) {
+            for (const size_t bytes :
+                 {size_t{0}, size_t{1024}, size_t{1024} * 1024}) {
               SCOPED_TRACE(bytes);
               OwningOpRef<ModuleOp> moduleOp = input->clone();
               ASSERT_TRUE(succeeded(
