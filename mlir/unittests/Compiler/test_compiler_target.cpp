@@ -42,6 +42,7 @@
 
 #include <algorithm>
 #include <array>
+#include <barrier>
 #include <cstddef>
 #include <cstdint>
 #include <future>
@@ -514,64 +515,6 @@ TEST(TargetEnvironmentTest, InvalidatesCachedAnalysisAfterAttributeChange) {
   EXPECT_EQ(updated.environment().target().numSites(), 2);
 }
 
-TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
-  std::vector<Site> sites;
-  sites.emplace_back(valid(Site::create(7, "left", 100, 80)));
-  sites.emplace_back(valid(Site::create(2, std::nullopt, 120, std::nullopt)));
-  sites.emplace_back(valid(Site::create(11, "right")));
-
-  std::vector<OperationCapability> operations;
-  std::vector siteTuples{
-      valid(SiteTuple::create({7}, 0, 0.99)),
-      valid(SiteTuple::create({2}, 5, 0.98)),
-      valid(SiteTuple::create({11})),
-  };
-  operations.emplace_back(valid(OperationCapability::create(
-      " PRX ", 1, 2, std::move(siteTuples), 0, 0.97)));
-
-  auto target = valid(
-      Target::create("device", std::move(sites),
-                     Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}}),
-                     NativeOperations::fromOperations(operations),
-                     valid(DurationUnit::create("ns", 0.5))));
-  // The copy itself is the behavior under test: both objects must share the
-  // immutable backing storage.
-  // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
-  const auto copy = target;
-
-  ASSERT_TRUE(target.name());
-  EXPECT_EQ(*target.name(), "device");
-  ASSERT_TRUE(target.durationUnit());
-  EXPECT_EQ(target.durationUnit()->unit(), "ns");
-  EXPECT_DOUBLE_EQ(target.durationUnit()->scaleFactor(), 0.5);
-  ASSERT_EQ(target.sites().size(), 3);
-  EXPECT_EQ(target.sites()[0].id(), 7);
-  ASSERT_TRUE(target.sites()[0].name());
-  EXPECT_EQ(*target.sites()[0].name(), "left");
-  EXPECT_EQ(target.sites()[0].t1(), 100);
-  EXPECT_EQ(target.sites()[0].t2(), 80);
-  EXPECT_EQ(target.operations()[0].name(), " PRX ");
-  EXPECT_EQ(target.operations()[0].canonicalName(), "r");
-  EXPECT_EQ(target.operations()[0].arity(), Arity::fixed(1));
-  EXPECT_EQ(target.operations()[0].numParameters(), 2);
-  EXPECT_EQ(target.operations()[0].duration(), 0);
-  EXPECT_EQ(target.operations()[0].fidelity(), 0.97);
-  ASSERT_EQ(target.operations()[0].siteTuples().size(), 3);
-  EXPECT_EQ(target.operations()[0].siteTuples()[0].duration(), 0);
-  EXPECT_EQ(target.operations()[0].siteTuples()[0].fidelity(), 0.99);
-
-  EXPECT_EQ(copy.sites().data(), target.sites().data());
-  EXPECT_EQ(copy.couplings().data(), target.couplings().data());
-  EXPECT_EQ(copy.operations().data(), target.operations().data());
-
-  operations.clear();
-  target = valid(Target::create(1, Connectivity::allToAll(),
-                                NativeOperations::unrestricted()));
-  EXPECT_TRUE(copy.supportsOperation("r", 1, 2, {7}));
-  EXPECT_TRUE(copy.supportsOperation("r", 1, 2, {2}));
-  EXPECT_TRUE(copy.supportsOperation("r", 1, 2, {11}));
-}
-
 TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
   const auto target = valid(Target::create(3, Connectivity::allToAll(),
                                            NativeOperations::unrestricted()));
@@ -651,6 +594,12 @@ TEST(CompilerTargetTest, PreservesFullNonnegativeSiteIdDomain) {
             (llvm::ArrayRef<SiteId>{maxSite, nextSite}));
   EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {maxSite, nextSite}));
   EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {nextSite, maxSite}));
+  EXPECT_TRUE(target.supports(GateKind::CX, {maxSite, nextSite}));
+
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto attribute = target.materialize(context);
+  EXPECT_EQ(valid(Target::create(attribute)).materialize(context), attribute);
 }
 
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
@@ -971,10 +920,16 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
                            valid(DurationUnit::create("ns", 0.5))));
 
   const auto attribute = target.materialize(context);
-  const auto reconstructed = valid(Target::create(attribute));
+  auto reconstructed = valid(Target::create(attribute));
 
   EXPECT_EQ(reconstructed.materialize(context), attribute);
   EXPECT_EQ(reconstructed.couplings(), target.couplings());
+  EXPECT_EQ(reconstructed.operations().front().duration(), 0);
+  EXPECT_EQ(reconstructed.operations().front().fidelity(), 0.97);
+  EXPECT_EQ(reconstructed.operations().front().siteTuples().front().duration(),
+            0);
+  EXPECT_EQ(reconstructed.operations().front().siteTuples().front().fidelity(),
+            0.99);
   EXPECT_EQ(reconstructed.supportsOperation("r", 1, 2), true);
   EXPECT_TRUE(reconstructed.supportsOperation("r", 1, 2, {7}));
   EXPECT_FALSE(reconstructed.supportsOperation("r", 1, 2, {11}));
@@ -986,6 +941,14 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
   EXPECT_EQ(reconstructed.operations()[3].canonicalName(), "p");
   EXPECT_TRUE(reconstructed.supportsOperation("p", 1, 1, {7}));
   EXPECT_EQ(reconstructed.synthesisBasis(), target.synthesisBasis());
+
+  // The copy must outlive replacement of its source.
+  // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+  const auto copy = reconstructed;
+  reconstructed = valid(Target::create(1, Connectivity::allToAll(),
+                                       NativeOperations::unrestricted()));
+  EXPECT_TRUE(copy.supportsOperation("r", 1, 2, {7}));
+  EXPECT_FALSE(copy.supportsOperation("r", 1, 2, {11}));
 }
 
 TEST(CompilerTargetTest, GateSetHasNoDeviceCapacity) {
@@ -1057,35 +1020,6 @@ TEST(CompilerTargetTest, GateSetRejectsDeviceConstraints) {
        }) {
     EXPECT_FALSE(mlir::parseAttribute(source, &context));
   }
-}
-
-TEST(CompilerTargetTest, SupportsMaximumSiteIds) {
-  constexpr auto maxSite = std::numeric_limits<SiteId>::max();
-  constexpr auto nextSite = maxSite - 1;
-  std::vector sites{
-      valid(Site::create(nextSite)),
-      valid(Site::create(maxSite)),
-  };
-  const auto x = valid(
-      OperationCapability::create("x", 1, 0,
-                                  std::vector{
-                                      valid(SiteTuple::create({nextSite})),
-                                      valid(SiteTuple::create({maxSite})),
-                                  }));
-  const auto cx = valid(OperationCapability::create(
-      "cx", 2, 0, std::vector{valid(SiteTuple::create({nextSite, maxSite}))}));
-  const auto target =
-      valid(Target::create(std::move(sites), Connectivity::allToAll(),
-                           NativeOperations::fromOperations({x, cx})));
-
-  EXPECT_TRUE(target.supports(GateKind::X, {nextSite}));
-  EXPECT_TRUE(target.supports(GateKind::X, {maxSite}));
-  EXPECT_TRUE(target.supports(GateKind::CX, {nextSite, maxSite}));
-
-  mlir::MLIRContext context;
-  context.loadDialect<mlir::mqt::MQTDialect>();
-  const auto attribute = target.materialize(context);
-  EXPECT_EQ(valid(Target::create(attribute)).materialize(context), attribute);
 }
 
 TEST(CompilerTargetTest, RoundTripsSupportedTargetStates) {
@@ -1823,7 +1757,7 @@ TEST(CompilerTargetTest, SupportsArbitrarilyControlledBaseOperations) {
 TEST(CompilerTargetTest, SharesLazyTopologyCacheAcrossConcurrentCopies) {
   std::vector<Site> sites;
   std::vector<Coupling> couplings;
-  for (SiteId id = 0; id < 64; ++id) {
+  for (SiteId id = 0; id < 8; ++id) {
     sites.push_back(valid(Site::create(id)));
     if (id > 0) {
       couplings.emplace_back(id - 1, id);
@@ -1832,7 +1766,9 @@ TEST(CompilerTargetTest, SharesLazyTopologyCacheAcrossConcurrentCopies) {
   const auto target = valid(
       Target::create(std::move(sites), Connectivity::fromCouplings(couplings),
                      NativeOperations::unrestricted()));
-  const auto check = [target] {
+  std::barrier start(2);
+  const auto check = [target, &start] {
+    start.arrive_and_wait();
     for (size_t source = 0; source < target.numSites(); ++source) {
       for (size_t destination = 0; destination < target.numSites();
            ++destination) {

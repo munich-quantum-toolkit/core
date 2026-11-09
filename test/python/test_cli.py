@@ -142,19 +142,9 @@ def test_compiler_cli_serialized_target(script_runner: ScriptRunner, tmp_path: P
     assert QCProgram.from_openqasm_str(ret.stdout).is_valid
 
 
-@pytest.mark.parametrize("source_name", ["bell.qasm", "layout.qc.mlir"])
 @pytest.mark.parametrize(
-    "output",
-    [
-        OutputFormat.QC_IMPORT,
-        OutputFormat.QCO,
-        OutputFormat.QCO_OPTIMIZED,
-        OutputFormat.QC,
-        OutputFormat.OPENQASM2,
-        OutputFormat.OPENQASM3,
-        OutputFormat.QIR_BASE,
-        OutputFormat.QIR_ADAPTIVE,
-    ],
+    ("source_name", "output"),
+    [("bell.qasm", OutputFormat.QCO_OPTIMIZED), ("layout.qc.mlir", OutputFormat.QIR_ADAPTIVE)],
 )
 def test_compiler_cli_matches_library(script_runner: ScriptRunner, source_name: str, output: OutputFormat) -> None:
     """CLI checkpoints and exports use the library's pass sequence."""

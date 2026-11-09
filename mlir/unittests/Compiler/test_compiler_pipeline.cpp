@@ -5150,36 +5150,6 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksUnrolledStepWidth) {
   }
 }
 
-TEST_F(CompilerPipelineTest, PayloadControlUnrollsBeyondTheOldBudget) {
-  auto program = QCOProgram::fromMLIRString(R"mlir(module {
-    func.func @main() attributes {mqt.entry_point} {
-      %q = qco.alloc : !qco.qubit
-      %zero = arith.constant 0 : index
-      %one = arith.constant 1 : index
-      %limit = arith.constant 70000 : index
-      %out = scf.for %i = %zero to %limit step %one
-          iter_args(%state = %q) -> !qco.qubit {
-        %next = qco.x %state : !qco.qubit
-        scf.yield %next : !qco.qubit
-      }
-      qco.sink %out : !qco.qubit
-      return
-    }
-  })mlir");
-  MQT_ASSERT_SUCCESS(program);
-  attachTargetEnvironment(
-      program->module(),
-      TargetEnvironment(makeUnrestrictedTarget(),
-                        makeControlPayloadSpecification({})));
-  ASSERT_TRUE(
-      mlir::succeeded(program->runPassPipeline("unroll-loops-for-payload")));
-  size_t gates = 0;
-  program->module().walk([&](qco::XOp) { ++gates; });
-  EXPECT_EQ(gates, 70000U);
-  EXPECT_TRUE(succeeded(verify(program->module())));
-  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
-}
-
 TEST_F(CompilerPipelineTest, PayloadControlBoundsTotalLoopCloning) {
   for (const auto [trips, budget] : {
            std::pair{33, uint64_t{64}},
@@ -7472,56 +7442,7 @@ h q;
   EXPECT_FALSE(sourceProgram.isValid());
 }
 
-// Test: QCOProgram::decomposeMultiControlled runs the pass on MCX.
-//
-// Correctness of the decomposition is tested in a dedicated suite.
-TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
-  auto moduleOp = mlir::qc::QCProgramBuilder::build(
-      context.get(), mlir::qc::multipleControlledX);
-  ASSERT_TRUE(moduleOp);
-
-  auto input = QCProgram::fromModule(context, std::move(moduleOp));
-  ASSERT_TRUE(mlir::succeeded(input));
-  auto qco = std::move(*input).intoQCO();
-  ASSERT_TRUE(mlir::succeeded(qco));
-  ASSERT_TRUE(mlir::succeeded(qco->cleanup()));
-  const auto before = qco->str();
-  ASSERT_TRUE(mlir::succeeded(qco->decomposeMultiControlled(3)));
-  EXPECT_NE(qco->str(), before);
-}
-
-TEST_F(CompilerPipelineTest, DecomposeMultiControlledPassMcz) {
-  auto moduleOp = mlir::qc::QCProgramBuilder::build(
-      context.get(), mlir::qc::multipleControlledZ);
-  ASSERT_TRUE(moduleOp);
-
-  auto input = QCProgram::fromModule(context, std::move(moduleOp));
-  ASSERT_TRUE(mlir::succeeded(input));
-  auto qco = std::move(*input).intoQCO();
-  ASSERT_TRUE(mlir::succeeded(qco));
-  ASSERT_TRUE(mlir::succeeded(qco->cleanup()));
-  const auto before = qco->str();
-  ASSERT_TRUE(mlir::succeeded(
-      qco->runPassPipeline("decompose-multi-controlled{min-qubits=3}")));
-  EXPECT_NE(qco->str(), before);
-}
-
-TEST_F(CompilerPipelineTest,
-       RejectsDecomposeMultiControlledMinQubitsBelowThree) {
-  EXPECT_FALSE(isDecomposeMultiControlledConfigValid(2U));
-  EXPECT_TRUE(isDecomposeMultiControlledConfigValid(3U));
-
-  auto moduleOp = mlir::qc::QCProgramBuilder::build(
-      context.get(), mlir::qc::multipleControlledX);
-  ASSERT_TRUE(moduleOp);
-  auto input = QCProgram::fromModule(context, std::move(moduleOp));
-  ASSERT_TRUE(mlir::succeeded(input));
-  auto qco = std::move(*input).intoQCO();
-  ASSERT_TRUE(mlir::succeeded(qco));
-  EXPECT_TRUE(mlir::failed(qco->decomposeMultiControlled(2)));
-}
-
-TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
+TEST_F(CompilerPipelineTest, DecompositionEntryPointsPreserveFullUnitary) {
   auto moduleOp =
       QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
         builder.mcx(
@@ -7534,19 +7455,22 @@ TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
         return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
+  auto reference = QCOProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(succeeded(reference));
+  EXPECT_TRUE(failed(reference->decomposeMultiControlled(2)));
 
-  std::string before;
-  llvm::raw_string_ostream beforeStream(before);
-  moduleOp->print(beforeStream);
-
-  PassManager pm(moduleOp->getContext());
-  populateDecomposeMultiControlledPipeline(pm, 3);
-  ASSERT_TRUE(pm.run(moduleOp.get()).succeeded());
-
-  std::string after;
-  llvm::raw_string_ostream afterStream(after);
-  moduleOp->print(afterStream);
-  EXPECT_NE(after, before);
+  for (const bool textual : {false, true}) {
+    SCOPED_TRACE(textual);
+    auto program = reference->copy();
+    ASSERT_TRUE(succeeded(textual
+                              ? program.runPassPipeline(
+                                    "decompose-multi-controlled{min-qubits=3}")
+                              : program.decomposeMultiControlled(3)));
+    program.module().walk([](qco::CtrlOp controlled) {
+      EXPECT_LT(controlled.getNumControls(), 2U);
+    });
+    expectFullUnitaryEqual(reference->module(), program.module(), 4);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(

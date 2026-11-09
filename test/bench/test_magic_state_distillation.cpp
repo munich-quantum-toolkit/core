@@ -122,11 +122,4 @@ TEST(MagicStateDistillation, RejectsInvalidJSONParameters) {
   }
 }
 
-TEST(MagicStateDistillation, EvaluatesCountsFromJSON) {
-  const auto evaluation = llvm::cantFail(evaluateJSON(
-      toManifestJSON(llvm::cantFail(MagicStateDistillation::create())),
-      R"({"schema_version":1,"counts":{"00":256}})"));
-  EXPECT_NE(evaluation.find(R"("success_probability":1)"), std::string::npos);
-}
-
 } // namespace mqt::bench

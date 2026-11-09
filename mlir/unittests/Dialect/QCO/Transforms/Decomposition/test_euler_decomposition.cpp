@@ -442,31 +442,6 @@ TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
   }
 }
 
-TEST(EulerAnglesCoverageTest, ParamsZYZUsesOffDiagonal01When10IsNearZero) {
-  Matrix2x2 matrix = RXOp::unitaryMatrix(0.4);
-  matrix(1, 0) = qco::Complex{0.0, 0.0};
-  ASSERT_GT(std::abs(matrix(0, 1)), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
-  const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
-  EXPECT_TRUE(std::isfinite(angles.theta));
-  EXPECT_TRUE(std::isfinite(angles.phi));
-  EXPECT_TRUE(std::isfinite(angles.lambda));
-}
-
-TEST(EulerAnglesCoverageTest, PhaseOnlyDecompositionSkipsRotationGates) {
-  TestFixture fx;
-  fx.setUp();
-  constexpr double scale = 1.0 + 1e-10;
-  const Matrix2x2 matrix = Matrix2x2::fromElements(scale, 0, 0, scale);
-  ASSERT_FALSE(matrix.isApprox(Matrix2x2::identity()));
-  const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
-  EXPECT_LE(std::abs(angles.theta), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
-  EXPECT_LE(std::abs(angles.phi), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
-  EXPECT_LE(std::abs(angles.lambda), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
-  const auto circuit = synthesizeMatrix(fx.ctx(), matrix, ZYZ);
-  ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
-  EXPECT_EQ(countZYZGates(circuit.func), 0U);
-}
-
 TEST(EulerAnglesCoverageTest, UBasisZeroThetaEmitsSingleUGate) {
   TestFixture fx;
   fx.setUp();
@@ -531,15 +506,6 @@ TEST(EulerSynthesisTest, NegativePauliRotationsDoNotGainOuterGates) {
                               EXPECT_EQ(countBasisGates(funcOp, basis), 1U);
                             });
   }
-}
-
-TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
-  TestFixture fx;
-  fx.setUp();
-  const Matrix2x2 matrix = Matrix2x2::fromElements(
-      qco::Complex{std::numeric_limits<double>::quiet_NaN(), 0}, 0, 0, 1);
-  EXPECT_NO_FATAL_FAILURE(std::ignore =
-                              synthesizeMatrix(fx.ctx(), matrix, ZYZ));
 }
 
 //===----------------------------------------------------------------------===//

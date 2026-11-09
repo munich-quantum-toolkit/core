@@ -84,6 +84,7 @@ struct QCToQCOTestCase {
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
   bool expectsCompleteTensorState = false;
+  bool checkReverse = false;
 };
 
 class QCToQCOTest : public testing::TestWithParam<QCToQCOTestCase> {
@@ -1716,14 +1717,14 @@ TEST_F(QCToQCORegressionTest, RejectsRegisterAliasingExposedByNormalization) {
   }
 }
 
-TEST_P(QCToQCOTest, ProgramConversion) {
+TEST_P(QCToQCOTest, ProgramConversions) {
   SCOPED_TRACE(llvm::formatv(
                    "QCToQCO: {0}, original={1}, reference={2}", GetParam().name,
                    ::mqt::test::displayName(GetParam().programBuilder.name),
                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
                    .str());
-  const auto& [_, programBuilder, referenceBuilder,
-               expectsCompleteTensorState] = GetParam();
+  const auto& [_, programBuilder, referenceBuilder, expectsCompleteTensorState,
+               checkReverse] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;
 
@@ -1736,6 +1737,7 @@ TEST_P(QCToQCOTest, ProgramConversion) {
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
+  auto original = OwningOpRef<ModuleOp>(program->clone());
 
   EXPECT_TRUE(succeeded(runQCToQCOConversion(program.get())));
   printer.record(program.get(), "Converted QCO IR" + name);
@@ -1764,6 +1766,17 @@ TEST_P(QCToQCOTest, ProgramConversion) {
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
+
+  if (checkReverse) {
+    ASSERT_TRUE(succeeded(runQCOToQCConversion(reference.get())));
+    ASSERT_TRUE(
+        succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
+    ASSERT_TRUE(succeeded(runQCCleanupPipeline(reference.get())));
+    ASSERT_TRUE(succeeded(verify(*reference)));
+    printer.record(reference.get(), "Converted Reference QC IR" + name);
+    EXPECT_TRUE(
+        areModulesEquivalentWithPermutations(reference.get(), original.get()));
+  }
 }
 
 static SmallVector<QCToQCOTestCase> commonConversionCases() {
@@ -1775,6 +1788,7 @@ static SmallVector<QCToQCOTestCase> commonConversionCases() {
         .programBuilder = qcBuilder,
         .referenceBuilder = qcoBuilder,
         .expectsCompleteTensorState = completeTensorState,
+        .checkReverse = true,
     });
   }
   return cases;

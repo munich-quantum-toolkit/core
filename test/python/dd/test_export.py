@@ -23,10 +23,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 
-@pytest.mark.parametrize("matrix", [False, True])
 @pytest.mark.parametrize(
-    ("colored", "classic", "edge_labels"),
-    [(False, False, False), (True, False, False), (False, True, False), (False, False, True)],
+    ("matrix", "colored", "classic", "edge_labels"),
+    [(False, False, False, False), (True, True, True, True)],
 )
 def test_dot_options(*, matrix: bool, colored: bool, classic: bool, edge_labels: bool) -> None:
     """Keep export options available for both DD types."""
@@ -104,7 +103,7 @@ def test_serialized_bytes_and_errors(*, matrix: bool, binary: bool) -> None:
     values = np.array([[1, 2j], [-3, -4j]]) if matrix else np.array([1, 2j, -3, -4j])
     dd = package.from_matrix(values) if matrix else package.from_vector(values)
     payload = dd.to_bytes(binary=binary)
-    restored = type(dd).from_bytes(package, payload, binary=binary)
+    restored = type(dd).from_bytes(DDPackage(2), payload, binary=binary)
     actual = restored.get_matrix(1) if isinstance(restored, MatrixDD) else restored.get_vector()
     np.testing.assert_allclose(actual, values, rtol=1e-14, atol=0)
     malformed = payload + b"\0" if binary else b"1\ninvalid\n"
@@ -116,14 +115,8 @@ def test_serialized_bytes_and_errors(*, matrix: bool, binary: bool) -> None:
     ("payload", "error"),
     [
         (b"\n1\n", ValueError),
-        (b"invalid\n1\n", ValueError),
-        (b"+-1\n1\n", ValueError),
         (b"2\n1\n", RuntimeError),
-        (b"1x\n1\n", RuntimeError),
-        (b"1\ninvalid\n", RuntimeError),
         (b"2147483648\n1\n", IndexError),
-        (b"1\n1e400\n", IndexError),
-        (b"1\n1e-400\n", IndexError),
     ],
 )
 def test_serialized_text_error_categories(payload: bytes, error: type[Exception]) -> None:

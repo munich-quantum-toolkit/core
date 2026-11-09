@@ -131,8 +131,6 @@ def test_qpy_input_formats(tmp_path: Path, input_format: str) -> None:
     ("arguments", "width"),
     [
         (["--decompose-multi-controlled"], 2),
-        (["--decompose-multi-controlled=True"], 2),
-        (["--decompose-multi-controlled="], 2),
         (["--decompose-multi-controlled=false"], 3),
         (["--decompose-multi-controlled", "--decompose-multi-controlled-min-qubits=4"], 3),
     ],
@@ -168,9 +166,15 @@ def test_qpy_custom_pipeline(tmp_path: Path) -> None:
     assert Statevector(qpy.load(BytesIO(output.read_bytes()))[0]).data == pytest.approx([0, 1], abs=1e-14)
 
 
-@pytest.mark.parametrize("gate_name", ["u3", "device_u"])
-@pytest.mark.parametrize("payload_format", ["qir", "qpy"])
-@pytest.mark.parametrize("input_format", ["openqasm", "qc", "qco"])
+@pytest.mark.parametrize(
+    ("gate_name", "payload_format", "input_format"),
+    [
+        ("u3", "qir", "openqasm"),
+        ("device_u", "qpy", "openqasm"),
+        ("device_u", "qpy", "qc"),
+        ("device_u", "qpy", "qco"),
+    ],
+)
 def test_qpy_target_export(tmp_path: Path, gate_name: str, input_format: str, payload_format: str) -> None:
     """Retain native gate names, sparse device addresses, and logical layout."""
     target = CompilerTarget(

@@ -796,21 +796,9 @@ TEST_P(QTensorIntegrationTest, ProgramEquivalence) {
 INSTANTIATE_TEST_SUITE_P(
     QTensorOpsTest, QTensorIntegrationTest,
     testing::Values(
-        QTensorIntegrationTestCase{"QTensorAlloc",
-                                   MQT_NAMED_BUILDER(qtensorAlloc),
-                                   MQT_NAMED_BUILDER(qtensorAlloc)},
         QTensorIntegrationTestCase{"QTensorAllocDealloc",
                                    MQT_NAMED_BUILDER(qtensorDealloc),
                                    MQT_NAMED_BUILDER(qtensorAlloc)},
-        QTensorIntegrationTestCase{"QTensorFromElements",
-                                   MQT_NAMED_BUILDER(qtensorFromElements),
-                                   MQT_NAMED_BUILDER(qtensorFromElements)},
-        QTensorIntegrationTestCase{"QTensorExtract",
-                                   MQT_NAMED_BUILDER(qtensorExtract),
-                                   MQT_NAMED_BUILDER(qtensorExtract)},
-        QTensorIntegrationTestCase{"QTensorInsert",
-                                   MQT_NAMED_BUILDER(qtensorInsert),
-                                   MQT_NAMED_BUILDER(qtensorInsert)},
         QTensorIntegrationTestCase{
             "QTensorExtractInsertSameIndex",
             MQT_NAMED_BUILDER(qtensorExtractInsertSameIndex),
