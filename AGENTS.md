@@ -65,9 +65,9 @@ Use relevant sections of the [development policy](docs/development.md) and the
 - Before removing a test, check its callers, history, and surviving assertions.
   Keep distinct phase, wire-order, ownership, failure, and complexity contracts;
   equal line coverage alone does not establish redundancy. Put tests in the
-  owning subsystem and use subprocesses only for irreducible CLI behavior.
-  Do not put MLIR tests under production tools or enable an optional
-  production tool solely to satisfy a subprocess test.
+  owning subsystem and use subprocesses only for irreducible CLI behavior. Do
+  not put MLIR tests under production tools or enable an optional production
+  tool solely to satisfy a subprocess test.
 - Diagnose failed checks before changing code or build policy. Distinguish
   defects from stale output, dependency mismatches, and service failures. Use
   supported presets and keep machine setup in local configuration.

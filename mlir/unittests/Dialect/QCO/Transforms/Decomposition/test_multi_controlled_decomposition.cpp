@@ -397,21 +397,26 @@ static void expectStatesNear(dd::Package& package, const dd::VectorDD& actual,
   package.decRef(difference);
 }
 
-/// Compare every output amplitude for the inputs with zero high-order ancillas.
+/// Compare complete output states for inputs with zero high-order ancillas.
 ///
-/// Includes ancilla leakage and exact phase; stops at the first mismatch.
-static void expectOperatorColumnsNear(const dd::MatrixDD& actual,
+/// Includes ancilla leakage and exact phase without expanding dense matrices.
+static void expectOperatorColumnsNear(dd::Package& package,
+                                      const dd::MatrixDD& actual,
                                       const dd::MatrixDD& expected,
                                       size_t width, size_t inputWidth) {
   for (size_t column = 0; column < (size_t{1} << inputWidth); ++column) {
-    for (size_t row = 0; row < (size_t{1} << width); ++row) {
-      const auto error = std::abs(
-          llvm::cantFail(dd::getValueByIndex(actual, width, row, column)) -
-          llvm::cantFail(dd::getValueByIndex(expected, width, row, column)));
-      if (!(error <= 1e-10)) {
-        FAIL() << "row=" << row << " column=" << column << " error=" << error;
-      }
+    SCOPED_TRACE(testing::Message() << "column=" << column);
+    std::vector<bool> bits(width);
+    for (size_t bit = 0; bit < inputWidth; ++bit) {
+      bits[bit] = ((column >> bit) & 1U) != 0;
     }
+    const auto input = llvm::cantFail(dd::makeBasisState(width, bits, package));
+    package.incRef(input);
+    const auto actualColumn = package.applyOperation(actual, input);
+    const auto expectedColumn = package.applyOperation(expected, input);
+    expectStatesNear(package, actualColumn, expectedColumn);
+    package.decRef(actualColumn);
+    package.decRef(expectedColumn);
   }
 }
 
@@ -627,7 +632,7 @@ TEST_P(AncillaFamilyTest, FullAncillaLadderPreservesOperator) {
     auto expected = ancillaFamilyReference(*package, family, k);
     if (clean) {
       package->incRef(expected);
-      expectOperatorColumnsNear(*actual, expected, width, k + 1);
+      expectOperatorColumnsNear(*package, *actual, expected, width, k + 1);
       package->decRef(expected);
     } else {
       EXPECT_EQ(*actual, expected);
@@ -860,7 +865,7 @@ TEST_P(AncillaAngleTest, RuntimeAnglesAndAncillaRestoration) {
           axis ? rotationMatrix(*axis, -theta) : phaseMatrix(-theta), 2);
       package->incRef(expected);
       if (mixed) {
-        expectOperatorColumnsNear(*actual, expected, 9, 7);
+        expectOperatorColumnsNear(*package, *actual, expected, 9, 7);
       } else {
         EXPECT_EQ(*actual, expected);
       }
@@ -913,7 +918,7 @@ TEST_P(AncillaAngleTest, DirtyConstantAnglesAndMixedSelection) {
       package->incRef(expected);
       if (mixed) {
         // Only the last wire is known zero. All dirty/data states remain free.
-        expectOperatorColumnsNear(*actual, expected, 11, 10);
+        expectOperatorColumnsNear(*package, *actual, expected, 11, 10);
       } else {
         EXPECT_EQ(*actual, expected);
       }
@@ -951,7 +956,7 @@ TEST_P(AncillaAngleTest, CleanAncillaWithBorrowedResidualControls) {
     auto expected = makeControlledGateDD(
         *package, k, axis ? rotationMatrix(*axis, 0.73) : phaseMatrix(0.73), k);
     package->incRef(expected);
-    expectOperatorColumnsNear(*actual, expected, k + 2, k + 1);
+    expectOperatorColumnsNear(*package, *actual, expected, k + 2, k + 1);
     package->decRef(expected);
     package->decRef(*actual);
   }
@@ -1195,7 +1200,7 @@ TEST_F(MultiControlledDecompositionTest, AncillaDiscoveryRestartsForEachBlock) {
     }
     auto actual = buildFunctionality(function, *package);
     ASSERT_TRUE(succeeded(actual));
-    expectOperatorColumnsNear(*actual, *expected, 7, 7);
+    expectOperatorColumnsNear(*package, *actual, *expected, 7, 7);
     package->decRef(*actual);
   }
   package->decRef(*expected);
@@ -1222,7 +1227,7 @@ TEST_F(MultiControlledDecompositionTest, BorrowsMultipleAncillasFromOneTensor) {
   auto expected =
       makeControlledGateDD(*package, 4, pauliMatrix(ControlledPauli::X), 4);
   package->incRef(expected);
-  expectOperatorColumnsNear(*actual, expected, 7, 5);
+  expectOperatorColumnsNear(*package, *actual, expected, 7, 5);
   package->decRef(expected);
   package->decRef(*actual);
 }

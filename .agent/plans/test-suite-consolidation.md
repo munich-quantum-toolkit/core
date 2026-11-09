@@ -77,25 +77,49 @@ not distinguish a missing X correction. No production branches were removed:
 unreachable-path cleanup requires a separate proof of the supported input
 contract.
 
+The Shor in-place multiplier workflow compiles eight representative odd-modulus
+cases instead of all 71 coprime pairs below 16. Its sole production caller,
+Shor, rejects even moduli. Identity, inverse, prime/composite, and two-, three-,
+and four-bit cases retain every valid basis column, both control values, complex
+superposition, and clean-workspace checks. The general modular multiplier still
+covers even moduli. The focused release test falls from 5.55 to 0.45 seconds,
+with peak RSS falling from about 92 to 68 MiB.
+
+Ancilla workflows compare complete output columns as DD states instead of
+visiting every dense matrix entry. Every valid input column remains checked;
+subtracting states before computing the norm retains phase sensitivity and
+leakage detection. Eight focused release cases fall from 0.70 to 0.14 seconds;
+the coverage build falls from 16.06 to 1.39 seconds. Temporary mutation probes
+confirmed that global phase, leaked ancillas, and wrong selected columns fail.
+
+The 100-parameter Qiskit test bulk-binds its independent reference expression.
+It retains all symbols, parameter identity, nonlinear rotation, global phase,
+and ordinary binding of the exported circuit. The focused regular-dependency
+test falls from 4.55 to 0.25 seconds; wrong-axis and wrong-phase probes fail.
+These changes reduce work without changing test counts. Focused timings are
+local shared-host measurements, not CI predictions.
+
 ## Validation
 
-Baseline: `2af9b2df72`, Linux ARM64, Clang/LLVM/MLIR 23, native release with
-ThinLTO. Collection and coverage use the same production source and LLVM
-version. The baseline native coverage run used the packaged SDK; the final run
-uses the compiler-matched SDK described below.
+Test baseline: `2af9b2df72`; the PR is rebased onto `97cefb6cfb`, which changes
+documentation and comments without changing either test tree. Validation uses
+Linux ARM64, Clang/LLVM/MLIR 23, and native release with ThinLTO. Paired Python
+measurements use the same installed package and dependencies. The baseline
+native coverage run used the packaged SDK; the final run uses the
+compiler-matched SDK described below.
 
 | Measurement                                      |        Original |         Reduced |
 | ------------------------------------------------ | --------------: | --------------: |
 | Native test cases, including grouped GoogleTests |           5,355 |           4,497 |
 | Registered CTest entries                         |           4,391 |           3,749 |
 | Passing Python cases, Python 3.14                |           2,305 |           1,625 |
-| Native covered lines                             | 56,097 / 60,003 | 56,117 / 60,003 |
-| Native line coverage                             |         93.490% |         93.524% |
+| Native covered lines                             | 56,097 / 60,003 | 56,114 / 60,003 |
+| Native line coverage                             |         93.490% |         93.519% |
 | Python covered lines                             |   1,069 / 1,110 |   1,069 / 1,110 |
 | Python line coverage                             |         96.306% |         96.306% |
 
 Two alternating timing pairs, including coverage and four pytest workers, took
-57.29/63.30 seconds for the original suite and 16.50/16.82 seconds for the
+61.30/57.67 seconds for the original suite and 16.82/16.39 seconds for the
 reduced suite: about 72% less wall time on average. Both versions used Python
 3.14.10, the same installed package and dependencies, and the same source
 fixtures. Builds and lint were stopped during timing; the host was shared, so
@@ -103,15 +127,17 @@ this is a local comparison rather than a hosted-CI prediction. The largest
 removed cost was the pair of 100-qubit symbolic SU2 cases, each taking about 25
 seconds.
 
-The Python covered-line set is unchanged. Native coverage gains 20 covered lines
+The Python covered-line set is unchanged. Native coverage gains 17 covered lines
 overall, with IQM compilation paths completing after the SDK repair. Removed
 cases leave the defensive Euler fallbacks, an optional-empty QDMI site-pair
 return, an isolated CLI threshold predicate, and one nonmatching gate-fusion
 return uncovered. Invalid decomposition thresholds and full-unitary fusion
 workflows remain tested. QIR death-test error-return coverage varies between
-runs; range and released-resource rejection tests remain. Coverage is measured
-separately for native source and Python source; this does not claim coverage of
-every nanobind adapter or equivalence to hosted Codecov.
+runs; range and released-resource rejection tests remain. Two DD worker
+invalid-count lines also vary between full runs; this pass does not change their
+tests. Coverage is measured separately for native source and Python source; this
+does not claim coverage of every nanobind adapter or equivalence to hosted
+Codecov.
 
 The original and reduced release suites pass in full. Clang debug coverage with
 the packaged SDK encountered 24 IQM/resonator failures in LLVM JSON
@@ -130,7 +156,9 @@ suppression is needed.
 
 Python 3.14 regular dependencies pass all 1,625 cases, with two optional
 Catalyst skips. Python 3.11 minimum dependencies pass all 1,625 cases, with
-three skips. C++ lint passes full-file checks on all 26 changed C++ files,
+three skips. Python extension builds use Clang/ThinLTO locally; GCC 13
+encountered an LTO internal compiler error before the minimum-dependency tests
+could run. C++ lint passes full-file checks on all 27 changed C++ files,
 including the corrected trailing commas in the decomposition parameter arrays.
 Independent specialist review checked the retained contracts and aggregated
 oracles. Repository lint passes.

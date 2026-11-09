@@ -2048,9 +2048,10 @@ def test_long_parameter_sum_round_trips() -> None:
     result = QCProgram.from_qiskit(circuit).to_qiskit()
     assert result.parameters == circuit.parameters
     values = dict(zip(angles, np.linspace(-3, 3, len(angles)), strict=True))
-    assert np.allclose(
-        Operator(result.assign_parameters(values)).data, Operator(circuit.assign_parameters(values)).data
-    )
+    # Bind the reference in bulk instead of repeatedly substituting 100 symbols.
+    reference = QuantumCircuit(1, global_phase=(total / 3).bind_all(values))
+    reference.rz(total.cos().bind_all(values), 0)
+    assert np.allclose(Operator(result.assign_parameters(values)).data, Operator(reference).data)
 
 
 def test_excessively_nested_parameter_expression_fails_closed_without_mutation() -> None:
