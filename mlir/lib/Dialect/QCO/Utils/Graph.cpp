@@ -46,11 +46,7 @@ std::optional<SmallVector<size_t>> Graph::findCycle() const {
   };
 
   SmallVector<Frame> stack;
-  llvm::DenseMap<size_t, size_t> parents;
   llvm::DenseMap<size_t, State> states;
-
-  // Preparation step: Mark all nodes as unseen.
-  llvm::for_each(adj_.keys(), [&](size_t id) { states[id] = State::Unseen; });
 
   for (const auto initId : adj_.keys()) {
     // Only start from unseen nodes.
@@ -87,14 +83,15 @@ std::optional<SmallVector<size_t>> Graph::findCycle() const {
       ++top.neighbourIdx;
 
       if (states[nbrId] == State::Unseen) {
-        parents[nbrId] = top.id;
         stack.emplace_back(nbrId, 0);
       } else if (states[nbrId] == State::Seen) {
         SmallVector<size_t> path;
-        for (auto curr = top.id; curr != nbrId; curr = parents[curr]) {
-          path.emplace_back(curr);
+        for (const auto& frame : llvm::reverse(stack)) {
+          path.emplace_back(frame.id);
+          if (frame.id == nbrId) {
+            break;
+          }
         }
-        path.emplace_back(nbrId);
         std::ranges::reverse(path);
         return path;
       }
