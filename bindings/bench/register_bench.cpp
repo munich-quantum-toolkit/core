@@ -34,6 +34,7 @@ void registerQPE(const nb::module_& m);
 void registerRepeatUntilSuccess(const nb::module_& m);
 void registerShor(nb::module_& m);
 void registerTeleportation(const nb::module_& m);
+void registerVQEAnsatz(const nb::module_& m);
 void registerWState(const nb::module_& m);
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
@@ -121,6 +122,10 @@ void registerBench(nb::module_& m) {
   const nb::module_ teleportation = m.def_submodule(
       "teleportation", "Quantum teleportation benchmark instance.");
   registerTeleportation(teleportation);
+
+  const nb::module_ vqeAnsatz = m.def_submodule(
+      "vqe_ansatz", "VQE ansatz benchmark instances and options.");
+  registerVQEAnsatz(vqeAnsatz);
 
   registerWState(
       m.def_submodule("w_state", "W-state benchmark instances and options."));
