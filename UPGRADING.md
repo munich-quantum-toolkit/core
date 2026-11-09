@@ -24,8 +24,8 @@ default. Replace `compile_program(..., program_format=...)` with a
 
 `cleanup()` and direct serialization no longer perform quantum optimization. Use
 `compile_program` for the default optimization and export preparation, or
-request explicit quantum passes in a custom pipeline. For example, compile
-before Base QIR export when loops need unrolling:
+request explicit quantum passes in a custom pipeline. For example, compile to
+Base QIR while preserving the source program:
 
 ```python
 from mqt.core.mlir import OutputFormat, QCProgram, compile_program
@@ -52,13 +52,13 @@ fixed compatibility baseline. See the
 [Qiskit guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/qiskit.html#version-compatibility).
 
 Remove calls to `register_program_serializer`, `unregister_program_serializer`,
-and `program_serializer`, and remove provider `mqt.core.qiskit_serializers`
-entry points. MQT Core now selects and serializes supported formats itself. Use
-`backend.compile(circuit)` followed by `backend.run(compiled)` for compilation,
-or pass an already native circuit to `backend.run`. Native serialization follows
-the compiler's Qiskit import limits; lower annotated operations, matrix
-unitaries, and permutations first. Replace catches of `UnsupportedFormatError`
-with `TranslationError`.
+and `program_serializer`, imports of `ProgramSerializer`, and provider
+`mqt.core.qiskit.program_serializers` entry points. MQT Core now selects and
+serializes supported formats itself. Use `backend.compile(circuit)` followed by
+`backend.run(compiled)` for compilation, or pass an already native circuit to
+`backend.run`. Native serialization follows the compiler's Qiskit import limits;
+lower annotated operations, matrix unitaries, and permutations first. Replace
+catches of `UnsupportedFormatError` with `TranslationError`.
 
 For direct QDMI submission, retain the `CompiledProgram` when compilation
 changes measurement order. Decode raw job results with `decode_counts` or
@@ -103,12 +103,19 @@ Replace `mqt-cc` with `mqt-core compile` and `mqt-core-bench` with
 available through `uvx mqt-core` and `python -m mqt.core`. See the
 [command-line guide](https://mqt.readthedocs.io/projects/core/en/latest/installation.html#command-line-tools).
 
+Replace `mqt-core-cli` with `mqt-core`. The directory flags now use hyphens:
+`mqt-core-cli --include_dir` becomes `mqt-core --include-dir`, and
+`mqt-core-cli --cmake_dir` becomes `mqt-core --cmake-dir`.
+
 The Slurm Playground has moved to
 [MQSC Orchestrator](https://github.com/munich-quantum-software/orchestrator).
 Use its deployment guide from a separate checkout instead of `examples/slurm` in
 MQT Core.
 
 ### C++ libraries and source builds
+
+Upgrade uv to **0.13.4 or later** when working from a development checkout. This
+is a project tooling requirement, not a wheel runtime dependency.
 
 The shared-library ABI version (`SOVERSION`) changes from `4.1` to `4.2`.
 Rebuild downstream C++ libraries against MQT Core 4.2.0. Update any explicit
