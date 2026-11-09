@@ -4,7 +4,7 @@ The
 [Quantum Device Management Interface (QDMI)](https://munich-quantum-software-stack.github.io/QDMI/)
 provides a standardized interface for describing and interacting with quantum
 devices. MQT Core supplies a driver, C++ and Python APIs, device
-implementations, and SDK and HPC integrations.
+implementations, and SDK integrations.
 
 ## What QDMI standardizes
 
@@ -31,7 +31,6 @@ clients must use those queries to prepare compatible jobs.
 | {doc}`Driver and application APIs <driver>`  | Load device libraries and provide C++ and Python access to sessions, queries, and jobs.  |
 | Device implementation                        | Translate QDMI calls into simulator operations or a provider's API.                      |
 | {doc}`SDK adapters <qdmi_backend>`           | Translate Qiskit, PennyLane, and Catalyst inputs and outputs through the shared runtime. |
-| {doc}`Slurm playground <slurm>`              | Schedule hybrid workflows using the ordinary QDMI APIs.                                  |
 
 Compilation and submission remain separate: `compile_program` prepares a
 `CompiledProgram`; `submit_program` submits it to a matching execution device.
@@ -56,7 +55,8 @@ states.
 - **Use an SDK:** connect through {doc}`Qiskit <qdmi_backend>` or
   {doc}`PennyLane <pennylane_device>`.
 - **Run on a cluster:** use the
-  {doc}`Slurm guide and workflow playground <slurm>`.
+  [MQSC Orchestrator](https://github.com/munich-quantum-software/orchestrator)
+  for Slurm deployment and hybrid workflows.
 - **Implement a device:** follow the
   [QDMI device interface](https://munich-quantum-software-stack.github.io/QDMI/)
   and use MQT Core's bundled devices as implementation examples.
@@ -92,7 +92,7 @@ QDMI driver <driver>
 QDMI device configuration <configuration>
 DDSIM QDMI Device <ddsim_device>
 SC QDMI Device <sc_device>
-Slurm workflows and playground <slurm>
+Slurm integration with MQSC Orchestrator <slurm>
 QDMI-Qiskit Backend <qdmi_backend>
 PennyLane interface for QDMI devices <pennylane_device>
 ```

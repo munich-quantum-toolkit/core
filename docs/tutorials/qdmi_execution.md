@@ -197,9 +197,10 @@ semantics and distribution rather than requiring identical counts.
 
 Use {doc}`Qiskit <../qdmi/qdmi_backend>` or
 {doc}`PennyLane <../qdmi/pennylane_device>` to access QDMI through an SDK, and
-{doc}`Slurm <../qdmi/slurm>` to connect jobs to an HPC allocation. A compiled
-artifact must still match the selected device's capabilities; a stable ID does
-not make artifacts portable to an unrelated target.
+[MQSC Orchestrator](https://github.com/munich-quantum-software/orchestrator)
+to coordinate hybrid workflows with Slurm. A compiled artifact must still match
+the selected device's capabilities; a stable ID does not make artifacts portable
+to an unrelated target.
 
 Continue with {doc}`jeff_exchange` to exchange a structured program before
 choosing its final execution format or device.

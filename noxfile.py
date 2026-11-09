@@ -185,7 +185,7 @@ def _run_tests(
 @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
-    _run_tests(session, pytest_run_args=["-m", "not slurm"])
+    _run_tests(session, pytest_run_args=["-m", ""])
 
 
 @nox.session(name="catalyst", python="3.14", reuse_venv=True)
@@ -288,7 +288,7 @@ def qiskit(session: nox.Session) -> None:
         "--no-sync",
         "pytest",
         "-m",
-        "not (linkcheck or slurm)",
+        "not linkcheck",
         *session.posargs,
         "--cov-config=pyproject.toml",
         env=env,
