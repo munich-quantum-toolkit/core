@@ -16,8 +16,9 @@ from numpy.typing import NDArray
 
 import mqt.core.mlir
 import mqt.core.qdmi
+from mqt.core.mlir._qdmi import Context as _ExecutionContext
 
-class Context:
+class Context(_ExecutionContext):
     """Retain a QDMI device, target snapshot, and job parameters."""
 
     def __init__(
@@ -48,32 +49,6 @@ class Context:
     @property
     def id(self) -> int:
         """Identifier used by Catalyst to retrieve this retained context."""
-
-    @property
-    def environment(self) -> mqt.core.mlir.TargetEnvironment[mqt.core.mlir.CompiledProgram]:
-        """Target environment used to compile programs for this context."""
-
-    def submit(self, program: mqt.core.mlir.CompiledProgram, num_shots: int) -> mqt.core.qdmi.Job:
-        """Submit one compiled program with the retained job parameters.
-
-        Args:
-            program: Program compiled for this context's target environment.
-            num_shots: Positive number of execution shots.
-
-        Returns:
-            The submitted QDMI job, without waiting for completion.
-        """
-
-    def try_submit(self, programs: Sequence[mqt.core.mlir.CompiledProgram], num_shots: int) -> mqt.core.qdmi.Job | None:
-        """Submit compatible programs as one multi-program job when supported.
-
-        Args:
-            programs: Programs compiled for this context's target environment.
-            num_shots: Positive shot count applied to every program.
-
-        Returns:
-            The submitted job, or None when individual submissions are required.
-        """
 
 def aggregate(
     job: mqt.core.qdmi.Job,

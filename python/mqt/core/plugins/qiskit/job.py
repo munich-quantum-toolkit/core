@@ -15,7 +15,6 @@ from __future__ import annotations
 
 __lazy_modules__ = {
     "datetime",
-    "mqt.core.mlir",
     "mqt.core.mlir._qiskit",
     "mqt.core.plugins.qdmi_batch",
     "mqt.core.plugins.qiskit.exceptions",
@@ -31,7 +30,6 @@ from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
-from mqt.core.mlir import _prepare_qdmi_programs, _try_submit_programs
 from mqt.core.mlir._qiskit import ResultDecodingError, readout
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 from mqt.core.plugins.qiskit.exceptions import JobExecutionError, JobSubmissionError
@@ -90,7 +88,7 @@ class QDMIJob(JobV1):
         super().__init__(backend=backend, job_id="")
         self._backend: QDMIBackend = backend
         self._programs = tuple(programs)
-        environment = backend._environment  # ruff:ignore[private-member-access] Shared immutable backend snapshot.
+        self._context = backend._context  # ruff:ignore[private-member-access] Shared native execution context.
         for program in self._programs:
             if getattr(program, "_qiskit_header", {}) is None:
                 msg = "Classical registers must partition circuit.clbits in register order for Qiskit results."
@@ -120,7 +118,7 @@ class QDMIJob(JobV1):
             if layout is not None and len(layout.bits) != header["memory_slots"]:
                 msg = "Serialized result layout does not match the circuit's classical width."
                 raise JobError(msg)
-        self._destinations = _prepare_qdmi_programs(backend.device, self._programs, environment)
+        self._destinations = self._context.prepare(self._programs)
         self._batch: Batch[ExperimentResult] = Batch(
             [BatchEntry(i) for i in range(len(programs))],
             submit=self._submit_entry,
@@ -148,8 +146,7 @@ class QDMIJob(JobV1):
 
     def _submit_programs(self, indices: Sequence[int]) -> QDMIJobHandle | None:
         programs = [self._programs[index] for index in indices]
-        return _try_submit_programs(
-            self._backend.device,
+        return self._context.try_submit(
             programs,
             self._shots,
             destination=self._destinations[programs[0].program_format],

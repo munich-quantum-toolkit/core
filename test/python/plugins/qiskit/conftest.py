@@ -17,8 +17,7 @@ from typing import TYPE_CHECKING, Any, Unpack, cast
 import pytest
 
 from mqt.core.mlir import CompilerTarget, PayloadSpecification, TargetEnvironment, decode_counts, decode_shots
-from mqt.core.mlir import _prepare_qdmi_programs as native_prepare  # ruff:ignore[import-private-name] Native-boundary device doubles.
-from mqt.core.mlir import _try_submit_programs as native_submit  # ruff:ignore[import-private-name] Native-boundary device doubles.
+from mqt.core.plugins.qiskit import backend as backend_module
 from mqt.core.plugins.qiskit import job as job_module
 from mqt.core.qdmi import Device, Job, ProgramFormat
 
@@ -34,6 +33,7 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     """Snapshot Python device doubles; genuine devices use the native adapter."""
     native_snapshot = CompilerTarget.from_device
     native_environment = TargetEnvironment.from_device
+    native_context = backend_module.Context
 
     def snapshot(device: Device) -> CompilerTarget:
         if isinstance(device, Device):
@@ -85,8 +85,6 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     def prepare(
         device: Device, programs: tuple[CompiledProgram, ...], retained: TargetEnvironment
     ) -> dict[ProgramFormat, TargetEnvironment]:
-        if isinstance(device, Device):
-            return native_prepare(device, programs, retained)
         destinations = {}
         for program in programs:
             if getattr(program, "_environment", None) is not retained and program.program_format not in destinations:
@@ -106,8 +104,9 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
         destination: TargetEnvironment | None = None,
         **parameters: Unpack[QDMIJobParameters],
     ) -> Job | None:
-        if isinstance(device, Device):
-            return native_submit(device, programs, num_shots, destination=destination, **parameters)
+        if destination is not None:
+            for program in programs:
+                program._validate_environment(destination)  # ruff:ignore[private-member-access] Match native submission preflight for device doubles.
         if len(programs) == 1:
             return device.submit_job(programs[0].payload, programs[0].program_format, num_shots, **parameters)
         return device.try_submit_job(
@@ -117,8 +116,29 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
             **parameters,
         )
 
-    monkeypatch.setattr(job_module, "_prepare_qdmi_programs", prepare)
-    monkeypatch.setattr(job_module, "_try_submit_programs", submit_programs)
+    class FakeContext:
+        def __init__(self, device: Device) -> None:
+            self.device = device
+            self.environment = TargetEnvironment.from_device(device)
+
+        def prepare(self, programs: tuple[CompiledProgram, ...]) -> dict[ProgramFormat, TargetEnvironment]:
+            return prepare(self.device, programs, self.environment)
+
+        def try_submit(
+            self,
+            programs: Sequence[CompiledProgram],
+            num_shots: int,
+            *,
+            destination: TargetEnvironment | None = None,
+            **parameters: Unpack[QDMIJobParameters],
+        ) -> Job | None:
+            return submit_programs(self.device, programs, num_shots, destination=destination, **parameters)
+
+    monkeypatch.setattr(
+        backend_module,
+        "Context",
+        lambda device: native_context(device) if isinstance(device, Device) else FakeContext(device),
+    )
     native_readout = job_module.readout
 
     def readout(

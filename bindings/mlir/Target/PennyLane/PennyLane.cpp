@@ -28,6 +28,8 @@
 #include "nanobind/stl/variant.h"
 #include "nanobind/stl/vector.h"
 
+#include "mlir/QDMIRuntime.h"
+
 #include "llvm/ADT/SmallVector.h"
 
 #include <complex>
@@ -36,9 +38,7 @@
 #include <map>
 #include <memory>
 #include <optional>
-#include <span>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -49,26 +49,6 @@ using namespace nb::literals;
 
 using Samples =
     nb::ndarray<nb::numpy, int8_t, nb::ndim<2>, nb::c_contig, nb::device::cpu>;
-
-// Contexts outlive Python calls, so byte parameters need owned storage.
-static std::optional<catalyst::JobParameter>
-ownJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
-  if (!parameter) {
-    return std::nullopt;
-  }
-  return std::visit(
-      [](const auto& value) -> catalyst::JobParameter {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
-                                     nb::bytes>) {
-          const auto bytes =
-              std::as_bytes(std::span(value.c_str(), value.size()));
-          return std::vector<std::byte>(bytes.begin(), bytes.end());
-        } else {
-          return value;
-        }
-      },
-      *parameter);
-}
 
 mlir::QCProgram importCircuit(const nb::object& tape, const nb::object& wires) {
   const auto labels = wires.is_none() ? tape.attr("wires") : wires;
@@ -166,24 +146,24 @@ mlir::QCProgram importCircuit(const nb::object& tape, const nb::object& wires) {
 void registerBindings(nb::module_& m) {
   auto pennylane = m.def_submodule(
       "_pennylane", "Runtime support for the PennyLane QDMI device.");
-  nb::class_<catalyst::Context>(
-      pennylane, "Context",
+  nb::class_<catalyst::Context, runtime::Context>(
+      pennylane, "Context", nb::sig("class Context(_ExecutionContext)"),
       "Retain a QDMI device, target snapshot, and job parameters.")
-      .def(nb::new_([](qdmi::Device device,
+      .def(nb::new_([](const qdmi::Device& device,
                        const std::optional<PythonCustomJobParameter>& custom1,
                        const std::optional<PythonCustomJobParameter>& custom2,
                        const std::optional<PythonCustomJobParameter>& custom3,
                        const std::optional<PythonCustomJobParameter>& custom4,
                        const std::optional<PythonCustomJobParameter>& custom5,
                        std::optional<QDMI_Program_Format> programFormat) {
-             catalyst::JobParameters parameters{
+             runtime::JobParameters parameters{
                  ownJobParameter(custom1), ownJobParameter(custom2),
                  ownJobParameter(custom3), ownJobParameter(custom4),
                  ownJobParameter(custom5),
              };
              const nb::gil_scoped_release release;
-             return catalyst::Context::create(
-                 std::move(device), std::move(parameters), programFormat);
+             return catalyst::Context::create(device, std::move(parameters),
+                                              programFormat);
            }),
            "device"_a, nb::kw_only(), "custom1"_a = nb::none(),
            "custom2"_a = nb::none(), "custom3"_a = nb::none(),
@@ -204,39 +184,7 @@ Byte parameters are copied so later submissions do not borrow Python storage.
 )doc")
       .def_prop_ro(
           "id", &catalyst::Context::id,
-          "Identifier used by Catalyst to retrieve this retained context.")
-      .def_prop_ro(
-          "environment", &catalyst::Context::environment,
-          "Target environment used to compile programs for this context.")
-      .def("submit", &catalyst::Context::submit, "program"_a, "num_shots"_a,
-           nb::call_guard<nb::gil_scoped_release>(),
-           R"doc(Submit one compiled program with the retained job parameters.
-
-Args:
-    program: Program compiled for this context's target environment.
-    num_shots: Positive number of execution shots.
-
-Returns:
-    The submitted QDMI job, without waiting for completion.
-)doc")
-      .def(
-          "try_submit",
-          [](const catalyst::Context& context,
-             const std::vector<const mlir::CompiledProgram*>& programs,
-             int64_t shots) {
-            const nb::gil_scoped_release release;
-            return context.trySubmit(programs, shots);
-          },
-          "programs"_a, "num_shots"_a,
-          R"doc(Submit compatible programs as one multi-program job when supported.
-
-Args:
-    programs: Programs compiled for this context's target environment.
-    num_shots: Positive shot count applied to every program.
-
-Returns:
-    The submitted job, or None when individual submissions are required.
-)doc");
+          "Identifier used by Catalyst to retrieve this retained context.");
 
   pennylane.def(
       "aggregate",

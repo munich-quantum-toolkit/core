@@ -65,32 +65,26 @@ Readout readout(const qdmi::Job& job, size_t width, size_t shots,
       if (values->empty()) {
         return result;
       }
-      *values =
-          unwrap(mlir::decodeShots(std::move(*values), width, shots, layout));
-      result.reserve(values->size());
-      for (auto& bits : *values) {
-        result.emplace_back(std::move(bits), 1);
-      }
-    } else {
-      auto counts = job.getCounts(programIndex);
-      if (!counts) {
-        return counts.takeError();
-      }
-      if (counts->empty()) {
-        return result;
-      }
-      *counts =
-          unwrap(mlir::decodeCounts(std::move(*counts), width, shots, layout));
-      result.reserve(counts->size());
-      while (!counts->empty()) {
-        auto entry = counts->extract(counts->begin());
-        result.emplace_back(std::move(entry.key()), entry.mapped());
-      }
+      return unwrap(decodeOrderedShots(*values, width, shots, layout));
+    }
+    auto counts = job.getCounts(programIndex);
+    if (!counts) {
+      return counts.takeError();
+    }
+    if (counts->empty()) {
+      return result;
+    }
+    *counts =
+        unwrap(mlir::decodeCounts(std::move(*counts), width, shots, layout));
+    result.outcomes.reserve(counts->size());
+    while (!counts->empty()) {
+      auto entry = counts->extract(counts->begin());
+      result.outcomes.emplace_back(std::move(entry.key()), entry.mapped());
     }
     return result;
   };
   auto loaded = load(samples);
-  if (!loaded || loaded->empty()) {
+  if (!loaded || loaded->outcomes.empty()) {
     const auto firstError = loaded ? "" : llvm::toString(loaded.takeError());
     loaded = load(!samples);
     if (!loaded) {
@@ -102,7 +96,8 @@ Readout readout(const qdmi::Job& job, size_t width, size_t shots,
     }
   }
   auto result = std::move(*loaded);
-  require(!result.empty(), "QDMI returned no samples for a nonempty job.");
+  require(!result.outcomes.empty(),
+          "QDMI returned no samples for a nonempty job.");
   return result;
 }
 
@@ -122,21 +117,30 @@ decodeSamples(const qdmi::Job& job, size_t width, size_t shots,
   const auto result = readout(job, width, shots, programIndex, layout, true);
   std::vector<int8_t> values(product(shots, width));
   auto output = values.begin();
-  for (const auto& [bits, count] : result) {
-    for (size_t i = 0; i < count; ++i) {
-      output = std::ranges::transform(
-                   bits.rbegin(), bits.rend(), output,
-                   [](char bit) { return static_cast<int8_t>(bit - '0'); })
-                   .out;
+  const auto append = [&](const std::string& bits) {
+    output = std::ranges::transform(
+                 bits.rbegin(), bits.rend(), output,
+                 [](char bit) { return static_cast<int8_t>(bit - '0'); })
+                 .out;
+  };
+  if (!result.order.empty()) {
+    for (const auto index : result.order) {
+      append(result.outcomes[index].first);
+    }
+  } else {
+    for (const auto& [bits, count] : result.outcomes) {
+      for (size_t i = 0; i < count; ++i) {
+        append(bits);
+      }
     }
   }
   return values;
 }
 
 static void validateWires(const Readout& result, llvm::ArrayRef<size_t> wires) {
-  require(!result.empty(), "Cannot project empty readout.");
+  require(!result.outcomes.empty(), "Cannot project empty readout.");
   for (const auto wire : wires) {
-    require(wire < result.front().first.size(),
+    require(wire < result.outcomes.front().first.size(),
             "Invalid logical readout wire.");
   }
 }
@@ -147,7 +151,7 @@ std::vector<double> marginalProbabilities(const Readout& result,
   validateShots(shots);
   validateWires(result, wires);
   std::vector<size_t> frequencies(dimension(wires.size()), 0);
-  for (const auto& [bits, count] : result) {
+  for (const auto& [bits, count] : result.outcomes) {
     frequencies[basisIndex(bits, wires)] += count;
   }
   std::vector<double> probabilities;
@@ -163,7 +167,7 @@ std::map<std::string, size_t> marginalCounts(const Readout& result,
                                              llvm::ArrayRef<size_t> wires) {
   validateWires(result, wires);
   std::map<std::string, size_t> counts;
-  for (const auto& [bits, count] : result) {
+  for (const auto& [bits, count] : result.outcomes) {
     std::string key;
     key.reserve(wires.size());
     for (const auto wire : wires) {

@@ -236,7 +236,10 @@ mqt\.core\.mlir\.CompiledProgram\.payload_specification$:
     def payload_specification(self) -> PayloadSpecification[CompiledProgram]:
         \doc
 
-mqt\.core\.mlir\._pennylane\.Context\.environment$:
+mqt\.core\.mlir\._pennylane\.__prefix__$:
+    \from mqt.core.mlir._qdmi import Context as _ExecutionContext
+
+mqt\.core\.mlir\._qdmi\.Context\.environment$:
     @property
     def environment(self) -> mqt.core.mlir.TargetEnvironment[mqt.core.mlir.CompiledProgram]:
         \doc

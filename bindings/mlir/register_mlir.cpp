@@ -44,6 +44,7 @@
 
 #include "Array.hpp"
 #include "NativeCommands.h"
+#include "QDMIRuntime.h"
 #include "Result.hpp"
 #include "Target/PennyLane/PennyLane.h"
 #include "Target/Qiskit/Qiskit.h"
@@ -70,7 +71,6 @@
 #include "mlir/IR/MLIRContext.h"
 
 #include "llvm/ADT/ArrayRef.h"
-#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LLVMContext.h"
@@ -3085,74 +3085,6 @@ Args:
     target: The destination device, registered device ID, or TargetEnvironment.
 )pb");
 
-  m.def(
-      "_prepare_qdmi_programs",
-      [](const qdmi::Device& device, const nb::tuple& programs,
-         const nb::handle retainedEnvironment) {
-        struct Group {
-          llvm::SmallVector<const mlir::CompiledProgram*> programs;
-          bool retained = true;
-        };
-        const auto& environment =
-            nb::cast<const mlir::TargetEnvironment&>(retainedEnvironment);
-        llvm::SmallMapVector<QDMI_Program_Format, Group, 4> groups;
-        for (const auto program : programs) {
-          const auto& compiled =
-              nb::cast<const mlir::CompiledProgram&>(program);
-          auto& group = groups[compiled.programFormat()];
-          group.programs.push_back(&compiled);
-          group.retained &= nb::getattr(program, "_environment", nb::none())
-                                .is(retainedEnvironment);
-        }
-        nb::dict destinations;
-        for (const auto& [format, group] : groups) {
-          auto destination = [&] {
-            const nb::gil_scoped_release release;
-            return unwrap(mlir::prepareProgramSubmission(
-                device, group.programs,
-                group.retained ? &environment : nullptr));
-          }();
-          destinations[nb::cast(format)] = nb::cast(std::move(destination));
-        }
-        return destinations;
-      },
-      "device"_a, "programs"_a, "environment"_a,
-      nb::sig("def _prepare_qdmi_programs(device: mqt.core.qdmi.Device, "
-              "programs: tuple[CompiledProgram, ...], environment: "
-              "TargetEnvironment) -> dict[mqt.core.qdmi.ProgramFormat, "
-              "TargetEnvironment]"),
-      "Validate every format group and retain its destination for submission.");
-
-  m.def(
-      "_try_submit_programs",
-      [](const qdmi::Device& device,
-         const std::vector<const mlir::CompiledProgram*>& programs,
-         int64_t numShots,
-         const std::optional<PythonCustomJobParameter>& custom1,
-         const std::optional<PythonCustomJobParameter>& custom2,
-         const std::optional<PythonCustomJobParameter>& custom3,
-         const std::optional<PythonCustomJobParameter>& custom4,
-         const std::optional<PythonCustomJobParameter>& custom5,
-         const mlir::TargetEnvironment* destination) {
-        const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
-        };
-        const nb::gil_scoped_release release;
-        return unwrap(mlir::trySubmitPrograms(
-            device, programs, numShots, params[0], params[1], params[2],
-            params[3], params[4], destination));
-      },
-      "device"_a, "programs"_a, "num_shots"_a, nb::kw_only(),
-      "custom1"_a.noconvert() = nb::none(),
-      "custom2"_a.noconvert() = nb::none(),
-      "custom3"_a.noconvert() = nb::none(),
-      "custom4"_a.noconvert() = nb::none(),
-      "custom5"_a.noconvert() = nb::none(), "destination"_a = nb::none(),
-      "Submit compatible compiled programs, returning None only when a "
-      "provider declines batching.");
-
   m.def("submit_program", PythonInputAdapter<&submitProgram>{inputTypes},
         "program"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024,
         "program_format"_a = nb::none(), "custom1"_a.noconvert() = nb::none(),
@@ -3194,6 +3126,7 @@ apply ``compiled.result_layout.decode_bits`` when a result layout is present.)pb
       "arguments"_a, nb::call_guard<nb::gil_scoped_release>(),
       "Run the compiler command once. LLVM options can terminate the process.");
 
+  bindings::registerQDMIRuntime(m);
   bindings::pennylane::registerBindings(m);
   bindings::qiskit::registerResultBindings(m);
 }

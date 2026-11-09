@@ -12,12 +12,12 @@
 #include "qdmi/QDMI.hpp"
 
 #include "Qiskit.h"
+#include "Readout.h"
 #include "Result.hpp"
 
 #include "nanobind/nanobind.h"
 #include "nanobind/stl/optional.h"
 
-#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
@@ -76,19 +76,11 @@ static Results readout(const qdmi::Job& job, size_t width, size_t shots,
                        bool memory) {
   Results result;
   if (memory) {
-    const auto values = decoded(mlir::decodeShots(
+    auto logical = decoded(runtime::decodeOrderedShots(
         unwrap(job.getShots(programIndex)), width, shots, layout));
-    llvm::DenseMap<llvm::StringRef, size_t> indices;
-    result.memory.reserve(values.size());
-    for (const auto& bits : values) {
-      const auto [entry, inserted] =
-          indices.try_emplace(bits, result.counts.size());
-      const auto index = entry->second;
-      if (inserted) {
-        result.counts.emplace_back(hexadecimal(bits), 0);
-      }
-      ++result.counts[index].second;
-      result.memory.push_back(index);
+    result = {std::move(logical.outcomes), std::move(logical.order)};
+    for (auto& [bits, count] : result.counts) {
+      bits = hexadecimal(bits);
     }
   } else if (width != 0) {
     const auto counts = decoded(mlir::decodeCounts(

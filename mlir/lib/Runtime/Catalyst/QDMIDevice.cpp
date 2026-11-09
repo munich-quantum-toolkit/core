@@ -13,7 +13,6 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/ResultLayout.h"
-#include "qdmi/common/Common.hpp"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
@@ -23,17 +22,14 @@
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <span>
 #include <stdexcept>
 #include <string>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -84,27 +80,6 @@ static Registry& registry() {
   return *instance;
 }
 
-using Parameters = std::array<std::optional<qdmi::CustomJobParameter>, 5>;
-
-static Parameters borrowParameters(const JobParameters& parameters) {
-  Parameters result;
-  for (size_t i = 0; i < parameters.size(); ++i) {
-    if (parameters[i]) {
-      result[i] = std::visit(
-          [](const auto& value) -> qdmi::CustomJobParameter {
-            if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
-                                         std::vector<std::byte>>) {
-              return std::span<const std::byte>(value);
-            } else {
-              return value;
-            }
-          },
-          *parameters[i]);
-    }
-  }
-  return result;
-}
-
 static uint64_t parseContext(const char* kwargs) {
   require(kwargs != nullptr, "Missing QDMI context arguments.");
   auto text = llvm::StringRef(kwargs).ltrim();
@@ -123,18 +98,19 @@ static uint64_t parseContext(const char* kwargs) {
   return id;
 }
 
-Context::Context(qdmi::Device device, JobParameters parameters,
+Context::Context(const qdmi::Device& device, runtime::JobParameters parameters,
                  std::optional<QDMI_Program_Format> programFormat)
-    : device_(std::move(device)), parameters_(std::move(parameters)),
-      environment_(
-          unwrap(mlir::targetEnvironmentFromDevice(device_, programFormat))),
-      qubits_(unwrap(device_.getQubitsNum())) {}
+    : runtime::Context(
+          device,
+          unwrap(mlir::targetEnvironmentFromDevice(device, programFormat)),
+          std::move(parameters)),
+      qubits_(unwrap(device.getQubitsNum())) {}
 
 std::shared_ptr<Context>
-Context::create(qdmi::Device device, JobParameters parameters,
+Context::create(const qdmi::Device& device, runtime::JobParameters parameters,
                 std::optional<QDMI_Program_Format> programFormat) {
   auto context = std::shared_ptr<Context>(
-      new Context(std::move(device), std::move(parameters), programFormat));
+      new Context(device, std::move(parameters), programFormat));
   auto& entries = registry();
   const std::scoped_lock lock(entries.mutex);
   require(entries.next < UINT64_MAX - 1, "QDMI context ID space exhausted.");
@@ -151,23 +127,6 @@ Context::~Context() {
 
 uint64_t Context::id() const noexcept { return id_; }
 size_t Context::qubits() const noexcept { return qubits_; }
-
-std::optional<qdmi::Job>
-Context::trySubmit(llvm::ArrayRef<const mlir::CompiledProgram*> programs,
-                   int64_t shots) const {
-  const auto parameters = borrowParameters(parameters_);
-  return unwrap(mlir::trySubmitPrograms(
-      device_, programs, shots, parameters[0], parameters[1], parameters[2],
-      parameters[3], parameters[4], &environment_));
-}
-
-qdmi::Job Context::submit(const mlir::CompiledProgram& program,
-                          int64_t shots) const {
-  auto job = trySubmit({&program}, shots);
-  require(job.has_value(),
-          "Device declined the compiled program before submission.");
-  return std::move(*job);
-}
 
 llvm::SmallVector<size_t>
 QDMIDevice::wireIndices(llvm::ArrayRef<QubitIdType> wires) const {
@@ -193,17 +152,20 @@ const runtime::Readout& QDMIDevice::read(bool samples) {
   validateShots(shots_);
   require(context_ != nullptr, "No QDMI execution context is configured.");
   if (!result_ && !recorder_.hasTouchedWires()) {
-    result_ =
-        runtime::Readout{{std::string(recorder_.wires().size(), '0'), shots_}};
+    result_ = runtime::Readout{
+        {{std::string(recorder_.wires().size(), '0'), shots_}},
+        {},
+    };
     sampleReadout_ = true;
   }
   if (!result_ || (samples && !sampleReadout_)) {
     if (!compiled_) {
       compiled_ = unwrap(mlir::CompiledProgram::compile(
-          recorder_.takeProgram(), context_->environment_));
+          recorder_.takeProgram(), context_->environment()));
     }
     if (!job_) {
-      auto job = context_->submit(*compiled_, static_cast<int64_t>(shots_));
+      auto job =
+          unwrap(context_->submit(*compiled_, static_cast<int64_t>(shots_)));
       require(unwrap(job.wait()) && unwrap(job.check()) == QDMI_JOB_STATUS_DONE,
               "QDMI job did not complete successfully.");
       job_ = std::move(job);
@@ -328,10 +290,19 @@ void QDMIDevice::PartialSample(DataView<double, 2>& samples,
           "Unexpected Catalyst sample buffer size.");
   const auto& result = read(true);
   auto output = samples.begin();
-  for (const auto& [bits, count] : result) {
-    for (size_t shot = 0; shot < count; ++shot) {
-      for (const auto wire : indices) {
-        *output++ = static_cast<double>(bits[bits.size() - wire - 1] - '0');
+  const auto append = [&](const std::string& bits) {
+    for (const auto wire : indices) {
+      *output++ = static_cast<double>(bits[bits.size() - wire - 1] - '0');
+    }
+  };
+  if (!result.order.empty()) {
+    for (const auto index : result.order) {
+      append(result.outcomes[index].first);
+    }
+  } else {
+    for (const auto& [bits, count] : result.outcomes) {
+      for (size_t shot = 0; shot < count; ++shot) {
+        append(bits);
       }
     }
   }
@@ -357,7 +328,7 @@ void QDMIDevice::PartialCounts(DataView<double, 1>& eigenvalues,
     eigenvalues(i) = static_cast<double>(i);
     counts(i) = 0;
   }
-  for (const auto& [bits, count] : result) {
+  for (const auto& [bits, count] : result.outcomes) {
     counts(runtime::basisIndex(bits, indices)) += static_cast<int64_t>(count);
   }
 }
@@ -375,7 +346,7 @@ void QDMIDevice::PartialProbs(DataView<double, 1>& probabilities,
   for (auto& probability : probabilities) {
     probability = 0.0;
   }
-  for (const auto& [bits, count] : result) {
+  for (const auto& [bits, count] : result.outcomes) {
     probabilities(runtime::basisIndex(bits, indices)) +=
         static_cast<double>(count) / static_cast<double>(shots_);
   }
@@ -385,7 +356,7 @@ double QDMIDevice::Expval(ObsIdType observable) {
   const auto& parity = getObservable(observable);
   const auto& result = read();
   size_t negative = 0;
-  for (const auto& [bits, count] : result) {
+  for (const auto& [bits, count] : result.outcomes) {
     bool odd = false;
     for (const auto wire : parity) {
       odd = odd != (bits[bits.size() - wire - 1] == '1');

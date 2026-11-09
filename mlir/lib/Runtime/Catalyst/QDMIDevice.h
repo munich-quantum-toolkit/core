@@ -17,13 +17,13 @@
 #include "qdmi/QDMI.hpp"
 
 #include "CircuitRecorder.h"
+#include "QDMIContext.h"
 #include "QDMIReadout.h"
 #include "QuantumDevice.hpp"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
-#include <array>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -31,45 +31,26 @@
 #include <optional>
 #include <random>
 #include <string>
-#include <utility>
-#include <variant>
 #include <vector>
 
 namespace mqt::catalyst {
 
-using JobParameter =
-    std::variant<std::string, bool, int, double, std::vector<std::byte>>;
-using JobParameters = std::array<std::optional<JobParameter>, 5>;
-
-/// Own one provider session and its retained submission configuration.
-class Context {
+/// Retain an execution context under an ID used by Catalyst's device factory.
+class Context : public runtime::Context {
 public:
   static std::shared_ptr<Context>
-  create(qdmi::Device device, JobParameters parameters = {},
+  create(const qdmi::Device& device, runtime::JobParameters parameters = {},
          std::optional<QDMI_Program_Format> programFormat = std::nullopt);
-  Context(const Context&) = delete;
-  Context& operator=(const Context&) = delete;
   ~Context();
   [[nodiscard]] uint64_t id() const noexcept;
   [[nodiscard]] size_t qubits() const noexcept;
-  [[nodiscard]] std::optional<qdmi::Job>
-  trySubmit(llvm::ArrayRef<const mlir::CompiledProgram*> programs,
-            int64_t shots) const;
-  [[nodiscard]] qdmi::Job submit(const mlir::CompiledProgram& program,
-                                 int64_t shots) const;
-  [[nodiscard]] const mlir::TargetEnvironment& environment() const noexcept {
-    return environment_;
-  }
 
 private:
-  explicit Context(qdmi::Device device, JobParameters parameters,
+  explicit Context(const qdmi::Device& device,
+                   runtime::JobParameters parameters,
                    std::optional<QDMI_Program_Format> programFormat);
-  qdmi::Device device_;
-  JobParameters parameters_;
-  mlir::TargetEnvironment environment_;
   size_t qubits_;
   uint64_t id_ = 0;
-  friend class QDMIDevice;
 };
 
 /// Record one terminal-measurement circuit through Catalyst's device API.

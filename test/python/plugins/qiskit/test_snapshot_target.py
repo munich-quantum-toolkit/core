@@ -38,7 +38,9 @@ def backend_for_snapshot(monkeypatch: pytest.MonkeyPatch, target: CompilerTarget
         A backend using the supplied target and OpenQASM payload contract.
     """
     environment = TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QASM3))
-    monkeypatch.setattr(TargetEnvironment, "from_device", lambda _device: environment)
+    monkeypatch.setattr(
+        "mqt.core.plugins.qiskit.backend.Context", lambda _device: SimpleNamespace(environment=environment)
+    )
     device = SimpleNamespace(name=lambda: "snapshot", version=lambda: "1.0", operations=list)
     return QDMIBackend(device)  # ty: ignore[invalid-argument-type] Only identity and snapshot lookup are used.
 
@@ -159,7 +161,9 @@ def test_snapshot_control_flow_uses_payload_capabilities(monkeypatch: pytest.Mon
             optional_capabilities_known=True,
         ),
     )
-    monkeypatch.setattr(TargetEnvironment, "from_device", lambda _device: environment)
+    monkeypatch.setattr(
+        "mqt.core.plugins.qiskit.backend.Context", lambda _device: SimpleNamespace(environment=environment)
+    )
     device = SimpleNamespace(name=lambda: "snapshot", version=lambda: "1.0")
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Prepared snapshot fixture.
     assert ("if_else" in backend.target.operation_names) is declared

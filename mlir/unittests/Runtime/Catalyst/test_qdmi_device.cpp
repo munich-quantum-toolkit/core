@@ -43,9 +43,9 @@ namespace {
 
 using mqt::catalyst::Context;
 using mqt::catalyst::createDevice;
-using mqt::catalyst::JobParameters;
 using mqt::catalyst::QDMIDevice;
 using mqt::runtime::decodeSamples;
+using mqt::runtime::JobParameters;
 using mqt::runtime::marginalCounts;
 using mqt::runtime::marginalProbabilities;
 using mqt::runtime::readout;
