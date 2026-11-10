@@ -7,7 +7,7 @@ permissions: {}
 
 jobs:
   docs:
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@b42258dee22ee531b6de45cd40f8129b2353595f # workflows PR #522
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@d57d0543d16a0ac025f1f62cdbb822ca31ea2c2f # workflows PR #522
     with:
       apt-packages: doxygen
       setup-mlir: true
