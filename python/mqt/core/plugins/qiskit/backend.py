@@ -86,7 +86,7 @@ if TYPE_CHECKING:
 
     ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
 
-__all__ = ["QDMIBackend"]
+__all__ = ["DDSIMBackend", "QDMIBackend"]
 
 
 def __dir__() -> list[str]:
@@ -676,3 +676,45 @@ class QDMIBackend(BackendV2):
         self.last_job = job
         job.submit()
         return job
+
+
+class DDSIMBackend(QDMIBackend):
+    """Sample circuits with explicit measurements on the MQT Core DD simulator.
+
+    Use ``sampler()`` for Sampler V2 and ``estimator()`` for sampled
+    Estimator V2. ``seed_simulator`` accepts ``None`` or a positive signed
+    32-bit integer. ``max_workers=0`` selects automatic concurrency; use 1
+    for serial sampling.
+
+    Args:
+        num_qubits: Maximum circuit width, from 1 to 65,535. None selects
+            the full simulator capacity. Set this to the required width
+            to limit target construction and transpiler circuit expansion.
+    """
+
+    def __init__(self, num_qubits: int | None = None) -> None:
+        """Create a sampling backend with its own QDMI session."""
+        super().__init__(
+            open_device("mqt.ddsim.default", custom1=None if num_qubits is None else str(num_qubits)),
+            device_id="mqt.ddsim.default",
+        )
+
+    @classmethod
+    def _default_options(cls) -> Options:
+        options = super()._default_options()
+        options.update_options(seed_simulator=None, max_workers=0)
+        return options
+
+    @staticmethod
+    def _job_parameters(options: Mapping[str, object]) -> QDMIJobParameters:
+        seed = options["seed_simulator"]
+        if seed is not None:
+            if isinstance(seed, bool) or not isinstance(seed, Integral) or seed not in range(1, 2**31):
+                msg = "seed_simulator must be None or an integer from 1 to 2147483647"
+                raise ValueError(msg)
+            seed = int(seed)
+        workers = options["max_workers"]
+        if isinstance(workers, bool) or not isinstance(workers, Integral) or int(workers) not in range(2**31):
+            msg = "max_workers must be an integer from 0 to 2147483647 (0 selects automatic concurrency)"
+            raise ValueError(msg)
+        return {"custom1": seed, "custom3": int(workers)}

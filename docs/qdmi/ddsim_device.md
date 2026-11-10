@@ -66,10 +66,9 @@ submission. The default remains the full simulator capacity. The PennyLane
 given.
 
 For Qiskit primitives, open a suitably sized backend before transpilation, for
-example `QDMIBackend.from_device_id("mqt.ddsim.default", custom1="12")`. An
-explicit layout can allocate idle qubits up to the target width. Scoping the
-session limits both target construction and this circuit expansion; it does not
-change physical site IDs.
+example `DDSIMBackend(num_qubits=12)`. An explicit layout can allocate idle
+qubits up to the target width. Scoping the session limits both target
+construction and this circuit expansion; it does not change physical site IDs.
 
 The width is fixed for the session and independent of other sessions. The C ABI
 expects a NUL-terminated string, with its terminator included in the buffer
