@@ -1,7 +1,8 @@
 # Documentation builds and artifact publication
 
-Status: implementation, local checks, and the first hosted build passed. Final
-measurements and activation status are tracked in PR #2922.
+Status: executable documentation and live PR artifact publication passed.
+Automatic publication and the required-check migration await merge to main.
+Evidence and rollout status are tracked in PR #2922.
 
 ## Goal and scope
 
@@ -33,7 +34,7 @@ link and asset checks in the existing `nox -s docs` entry point.
 - [x] Implement and test the builder and trusted artifact publisher.
 - [x] Measure cold and cached builds and verify generated output.
 - [x] Review the final change and submit a signed PR.
-- [ ] Verify hosted publication after RtD activation and token provisioning.
+- [x] Verify hosted publication after RtD activation and token provisioning.
 
 ## Measurement baseline
 
@@ -66,7 +67,19 @@ links and assets passed. The pinned RtD client produced a valid 17.58 MiB upload
 archive containing the site and offline ZIP.
 
 On November 10, the project owner confirmed direct upload is enabled for all MQT
-projects. The current official guide still requires an administrator token. No
-`READTHEDOCS_TOKEN` is available locally or among the repository and accessible
-organization secrets. The PR has been rebased onto current main. Live
-publication still requires the token and the documented activation steps.
+projects. After rebasing onto main, run 42769682355 passed all 18 notebooks in
+510 seconds (425.28 seconds for docs, 81/150 compiler-cache hits). The owner
+provided a private token file; the repository secret and enable flag are set.
+The same pinned CLI uploaded that Actions artifact as PR preview 2922 in eight
+seconds. RtD build 35776729 finished successfully with the exact commit SHA, and
+GitHub received a successful RtD status. The local validation helper checked the
+current PR/run identity before upload; the automatic workflow itself still
+requires merge to the default branch.
+
+Chrome confirmed the rendered site and its documentation assets. The published
+ZIP matches the Actions artifact byte-for-byte. The RtD flyout currently links
+PR downloads to the production hostname (404); the same path on the preview
+hostname works. This is a hosting-side link issue, not a missing artifact. The
+existing `latest` and `stable` targets are unchanged. Keep the existing
+required-check ruleset until the workflow is on main and automatic branch
+publication has been verified.
