@@ -71,7 +71,7 @@ processing overhead.
   ([**@burgholzer**])
 - ✨ Emit the minimum required QIR version and use static result IDs for
   eligible Adaptive QIR scalar and fixed-array outputs. ([#2877], [#2893],
-  [#2901]) ([**@burgholzer**])
+  [#2901]) ([**@burgholzer**], [**@simon1hofmann**])
 - ✨ Recover supported counted while loops for payloads that require counted
   iteration or full unrolling. ([#2913]) ([**@simon1hofmann**])
 
@@ -112,9 +112,10 @@ processing overhead.
   ([#2716], [#2787], [#2800], [#2807], [#2810], [#2815], [#2830], [#2834],
   [#2878], [#2898], [#2917], [#2966], [#2967], [#2976]) ([**@simon1hofmann**],
   [**@burgholzer**], [**@MatthiasReumann**])
-- ♻️ Make program builders return only the requested output data. Programs
-  without output no longer return an integer status code. Builders infer output
-  types from `finalize(values)`. ([#2777]) ([**@burgholzer**])
+- ♻️ Make `QCProgramBuilder` and `QCOProgramBuilder` return only the requested
+  output data. Programs without output no longer return an integer status code.
+  These builders infer output types from `finalize(values)`; `QIRProgramBuilder`
+  keeps its integer status return by default. ([#2777]) ([**@burgholzer**])
 - ♻️ Consume typed MLIR inputs during compilation and OpenQASM export, including
   on failure. Pass `copy=True` to retain the source. ([#2815])
   ([**@burgholzer**])

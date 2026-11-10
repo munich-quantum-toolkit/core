@@ -14,6 +14,10 @@ text, paths, Qiskit circuits, and `OpenQASMProgram` objects remain reusable.
 `QCProgram.to_openqasm3()` also consumes its source; pass `copy=True` to retain
 it.
 
+Replace `qir.llvm_ir` with `qir.to_llvm_ir(copy=True)` to retain its previous
+non-consuming behavior. `QIRProgram.to_bitcode()` and `write_bitcode()` now also
+consume their source, including on failure; pass `copy=True` to preserve it.
+
 Use `output` to select the returned representation. Without it, compilation
 preserves the input format family, returns a Qiskit circuit for a Qiskit target,
 and returns a `CompiledProgram` for a QDMI device or backend. Request
@@ -21,6 +25,12 @@ and returns a `CompiledProgram` for a QDMI device or backend. Request
 default. Replace `compile_program(..., program_format=...)` with a
 `TargetEnvironment.from_device(device, program_format=...)` target. Direct
 `submit_program` calls still accept `program_format`.
+
+Custom OpenQASM payload specifications now reject `MULTIWAY_BRANCHING` when
+their version constraint only accepts OpenQASM 3.0. Use
+`PayloadSpecification.from_program_format(ProgramFormat.QASM3)` for the standard
+OpenQASM 3 receiver range, which permits 3.1. If the receiver supports only 3.0,
+keep that version constraint and omit `MULTIWAY_BRANCHING`.
 
 `cleanup()` and direct serialization no longer perform quantum optimization. Use
 `compile_program` for the default optimization and export preparation, or
@@ -161,10 +171,11 @@ helpers from `mqt/Dialect/QCO/Utils/LinearityUtils.h`. Replace
 `legalize-control-flow` with `legalize-qco-control-flow` in custom QCO
 pipelines; the former now names the generic SCF legalization pass.
 
-Program builders no longer add an integer status code when there is no output
-data. Omit that status value from builder calls unless it is data you want the
-program to return. Pass output values to `finalize(values)`; the builder infers
-their types automatically.
+`QCProgramBuilder` and `QCOProgramBuilder` no longer add an integer status code
+when there is no output data. Omit that status value from their builder calls
+unless it is data you want the program to return. Pass output values to
+`finalize(values)`; these builders infer their types automatically.
+`QIRProgramBuilder` keeps its integer status return by default.
 
 ## [4.1.0]
 
