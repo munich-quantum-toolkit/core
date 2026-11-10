@@ -1,102 +1,16 @@
 name: Documentation
 on:
   push:
-    branches: [main]
     tags: ["v*"]
-  pull_request:
-    types: [opened, reopened, synchronize, ready_for_review]
-  merge_group:
-  workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
 
 permissions: {}
 
 jobs:
-  changes:
-    name: 🔍 Change
-    runs-on: ubuntu-slim
-    permissions:
-      pull-requests: read
-    outputs:
-      docs: ${{ steps.changes.outputs.result }}
-    steps:
-      - uses: actions/github-script@ed597411d8f924073f98dfc5c65a23a2325f34cd # v8
-        id: changes
-        with:
-          script: |
-            if (context.eventName !== 'pull_request') return true;
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              ...context.repo, pull_number: context.payload.pull_request.number, per_page: 100,
-            });
-            // The API returns at most 3,000 files; an incomplete list must trigger a build.
-            if (files.length >= 3000) return true;
-            const ignoredDirectories = ['test/', 'mlir/unittests/', '.agent/', 'paper/', '.github/ISSUE_TEMPLATE/'];
-            const ignoredFiles = ['AGENTS.md', '.github/pull_request_template.md'];
-            const affectsDocs = path => path && !ignoredFiles.includes(path)
-              && !ignoredDirectories.some(directory => path.startsWith(directory));
-            return files.some(file => affectsDocs(file.filename) || affectsDocs(file.previous_filename));
-
-  build:
-    name: 📚 Build
-    needs: changes
-    if: needs.changes.outputs.docs == 'true'
-    runs-on: ubuntu-26.04
-    timeout-minutes: 25
+  docs:
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@b42258dee22ee531b6de45cd40f8129b2353595f # workflows PR #522
+    with:
+      apt-packages: doxygen
+      setup-mlir: true
+      llvm-version: 23.1.4
     permissions:
       contents: read
-    env:
-      CMAKE_BUILD_PARALLEL_LEVEL: "4"
-      CMAKE_C_COMPILER_LAUNCHER: sccache
-      CMAKE_CXX_COMPILER_LAUNCHER: sccache
-      SCCACHE_GHA_ENABLED: "true"
-      SCCACHE_IDLE_TIMEOUT: "0"
-      SCCACHE_SKIP_CACHE_CHECK: "true"
-      SCCACHE_GHA_RW_MODE: ${{ github.ref == 'refs/heads/main' && 'READ_WRITE' || 'READ_ONLY' }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
-          filter: blob:none
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          python-version: "3.14"
-          save-cache: ${{ github.ref == 'refs/heads/main' }}
-          prune-cache: true
-      - name: Install Doxygen
-        run: sudo apt-get update && sudo apt-get install --yes doxygen
-      - uses: munich-quantum-software/setup-mlir@8d3eae73d0f0196fd30c787d91ebd2018cb6c709 # v1.5.0
-        with:
-          llvm-version: 23.1.4
-          assertions: false
-      - uses: rui314/setup-mold@339e96b4ff1f3bd865856ba4cbbe8818a7acb038 # v1
-      # PR caches cannot be restored by main; only main writes shared compiler entries.
-      - uses: mozilla-actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # zizmor: ignore[cache-poisoning]
-      - name: Build and validate documentation
-        run: uvx nox --non-interactive -s docs
-      - name: Record the preview number
-        env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: printf '%s' "$PR_NUMBER" > docs/_build/pr
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: docs-${{ github.event.pull_request.head.sha || github.sha }}
-          path: |
-            docs/_build/html
-            docs/_build/pr
-          if-no-files-found: error
-
-  check:
-    name: Build and validate documentation
-    if: always()
-    needs: [changes, build]
-    runs-on: ubuntu-slim
-    steps:
-      - uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
-        with:
-          allowed-skips: ${{ needs.changes.outputs.docs == 'false' && 'build' || '' }}
-          jobs: ${{ toJSON(needs) }}

@@ -450,11 +450,13 @@ Ordinary code fences document configuration or interfaces without executing
 them. Give figures descriptive alternative text and preserve full contracts in
 linked references when they would interrupt a tutorial.
 
-The **Documentation** GitHub Actions workflow runs this session and caches
-compilation with the same sccache configuration as the other CI builds. PRs that
-change only tests, agent files, paper sources, or issue/PR templates skip the
-build. The exclusion list lives in `.github/workflows/docs.yml`; all other paths
-trigger validation. Main, release tags, and merge groups always build.
+The docs job in **CI** runs this session through the shared MQT workflows and
+caches compilation with the same sccache configuration as the other CI builds.
+PRs that change only tests, agent files, paper sources, or issue/PR templates
+skip the build. The shared change detector owns the exclusion list; all other
+paths trigger validation. The existing **🚦 Check** includes the docs job. Main
+and merge groups always build; the **Documentation** workflow builds release
+tags.
 
 The **Publish documentation** workflow uploads the validated HTML and an offline
 ZIP to [Read the Docs][rtd-direct-upload]. It checks the artifact's run and
