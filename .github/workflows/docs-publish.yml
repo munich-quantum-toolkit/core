@@ -9,7 +9,8 @@ permissions: {}
 
 jobs:
   publish:
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs-publish.yml@d57d0543d16a0ac025f1f62cdbb822ca31ea2c2f # workflows PR #522
+    # Temporary PR #522 pin; replace with a released commit before merging.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs-publish.yml@d57d0543d16a0ac025f1f62cdbb822ca31ea2c2f # zizmor: ignore[stale-action-refs]
     with:
       project-slug: mqt-core
       build-workflows: |
@@ -18,6 +19,6 @@ jobs:
     secrets:
       READTHEDOCS_TOKEN: ${{ secrets.READTHEDOCS_TOKEN }}
     permissions:
-      actions: read
+      actions: read # Download the triggering run's docs artifact
       contents: read
-      pull-requests: read
+      pull-requests: read # Verify the current preview source

@@ -17,7 +17,8 @@ permissions: {}
 jobs:
   change-detection:
     name: 🔍 Change
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@d57d0543d16a0ac025f1f62cdbb822ca31ea2c2f # workflows PR #522
+    # Temporary PR #522 pin; replace with a released commit before merging.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@d57d0543d16a0ac025f1f62cdbb822ca31ea2c2f # zizmor: ignore[stale-action-refs]
     with:
       enable-docs: true
       additional-python-files: "mlir/**"
@@ -36,7 +37,8 @@ jobs:
     name: 📚 Docs
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-docs)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@d57d0543d16a0ac025f1f62cdbb822ca31ea2c2f # workflows PR #522
+    # Temporary PR #522 pin; replace with a released commit before merging.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@d57d0543d16a0ac025f1f62cdbb822ca31ea2c2f # zizmor: ignore[stale-action-refs]
     with:
       apt-packages: doxygen
       setup-mlir: true
@@ -135,7 +137,7 @@ jobs:
       llvm-version: 23.1.4
     permissions:
       contents: read
-      id-token: write
+      id-token: write # Authenticate coverage uploads with Codecov
 
   cpp-linter:
     name: 🇨 Lint
@@ -184,7 +186,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@d6345b25f19cb7223ac883e5333ae9d63ae9238b # v2.5.9
     permissions:
       contents: read
-      id-token: write
+      id-token: write # Authenticate coverage uploads with Codecov
 
   python-linter:
     name: 🐍 Lint
