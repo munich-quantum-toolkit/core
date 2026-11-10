@@ -450,46 +450,17 @@ Ordinary code fences document configuration or interfaces without executing
 them. Give figures descriptive alternative text and preserve full contracts in
 linked references when they would interrupt a tutorial.
 
-The **Documentation** GitHub Actions workflow builds each PR's head commit and
-each main-branch or release-tag commit. It runs the same docs session and saves
-the checked HTML, an offline ZIP, and a source manifest as one artifact. The
-session reports dependency installation, package building, and rendering times.
-Compiler caching does not skip notebook execution or documentation checks.
+The **Documentation** GitHub Actions workflow runs this session and caches
+compilation with the same sccache configuration as the other CI builds. PRs that
+change only tests, agent files, paper sources, or issue/PR templates skip the
+build. The exclusion list lives in `.github/workflows/docs.yml`; all other paths
+trigger validation. Main, release tags, and merge groups always build.
 
-The **Publish documentation** workflow runs from the trusted default branch. It
-downloads only the triggering run's artifact, verifies its commit, and checks
-that the PR or Git ref still points to that commit. It uploads static files
-through the pinned [Read the Docs upload client][rtd-direct-upload]; it does not
-run artifact code. Fork PRs use the same isolated build path. Closed PRs,
-superseded commits, merge-group builds, and manual validation runs are not
-published.
-
-### Activate artifact publication
-
-Publication requires the following one-time project setup:
-
-1. Keep the existing repository-backed project mode so its tracked `latest`
-   version and existing version settings remain available. Direct upload is
-   enabled for `mqt-core`.
-2. Add an administrator's RtD API token as the GitHub Actions secret
-   `READTHEDOCS_TOKEN`, then set the repository variable
-   `READTHEDOCS_UPLOAD_ENABLED` to `true`. The token is used only by the trusted
-   publisher. Do not expose it to the documentation build.
-3. After the workflows are on main, verify one branch upload, one tag upload,
-   and a PR preview, including the `latest` and `stable` URLs and offline ZIP.
-   The publisher runs only after a successful build.
-4. Replace the required `docs/readthedocs.org:mqt-core` status in the main
-   ruleset with the GitHub Actions check **Build and validate documentation**.
-   Keep the other required checks. This removes the RtD queue from the merge
-   gate while retaining executable documentation validation.
-
-Before activation, GitHub Actions still builds and retains artifacts; the
-existing `.readthedocs.yaml` continues to serve source builds. RtD stops source
-builds for a version after its first direct upload. Old versions retain their
-own source-build configuration. To roll back a migrated version, disable the
-publisher variable and clear **Uploaded** in that version's RtD settings; RtD
-then rebuilds it from source. Reinstating the RtD required status also restores
-the old merge gate.
+The **Publish documentation** workflow uploads the validated HTML and an offline
+ZIP to [Read the Docs][rtd-direct-upload]. It checks the artifact's run and
+current source commit before publishing. Fork PRs build without upload
+credentials; only the trusted publisher uses `READTHEDOCS_TOKEN`. Closed PRs,
+superseded commits, and builds without an artifact are not published.
 
 [rtd-direct-upload]: https://docs.readthedocs.com/platform/stable/guides/build/direct-upload.html
 

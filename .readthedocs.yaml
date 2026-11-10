@@ -1,35 +1,10 @@
 version: 2
 
-formats:
-  - htmlzip
-
-sphinx:
-  configuration: docs/conf.py
-
 build:
   os: ubuntu-26.04
   tools:
     python: "3.14"
-  apt_packages:
-    - cmake
-    - doxygen
   jobs:
     post_checkout:
-      # Skip docs build if the commit message contains "skip ci"
-      - (git --no-pager log --pretty="tformat:%s -- %b" -1 | grep -viq "skip ci") || exit 183
-      # Unshallow the git clone and fetch tags to get proper version information
-      - git fetch --unshallow --tags
-    pre_build:
-      # Set up uv
-      - asdf plugin add uv
-      - asdf install uv latest
-      - asdf global uv latest
-    build:
-      html:
-        - uvx nox --non-interactive -s docs
-        - mkdir -p $READTHEDOCS_OUTPUT/html && cp -R docs/_build/html/. $READTHEDOCS_OUTPUT/html
-      htmlzip:
-        - |
-          mkdir -p $READTHEDOCS_OUTPUT/htmlzip
-          archive=$(realpath $READTHEDOCS_OUTPUT/htmlzip/html.zip)
-          (cd docs/_build/html && zip -r $archive .)
+      # GitHub Actions builds and uploads the documentation.
+      - exit 183
