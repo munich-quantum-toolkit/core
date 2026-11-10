@@ -31,7 +31,7 @@ link and asset checks in the existing `nox -s docs` entry point.
 ## Work remaining
 
 - [x] Implement and test the builder and trusted artifact publisher.
-- [ ] Measure cold and cached builds and verify generated output.
+- [x] Measure cold and cached builds and verify generated output.
 - [x] Review the final change and submit a signed PR.
 - [ ] Verify hosted publication after RtD activation and token provisioning.
 
@@ -56,11 +56,17 @@ The first hosted build (run 41695361664) passed all 18 notebooks with no
 compiler cache hits: 418.25 seconds for docs (312.13 package, 103.86
 rendering/checks), 597 seconds for the job. Checkout alone took 112 seconds. A
 blob-filtered clone preserves the release tag and commit distance while omitting
-historical file contents; the local clone used 15.18 MiB of Git packs. The next
-hosted run will measure this checkout and the restored compiler cache.
+historical file contents; the local clone used 15.18 MiB of Git packs. Run
+41698109059 then passed in 237 seconds (161.08 seconds for docs), with all 18
+notebooks executed and 145/145 compiler-cache hits. Checkout took 24 seconds.
 
 External linkcheck reported two missing anchors on existing QIR 2.1 URLs amid
 GitHub rate limits. Both exact headings exist in the upstream source. Local HTML
 links and assets passed. The pinned RtD client produced a valid 17.58 MiB upload
-archive containing the site and offline ZIP. Live publication still requires RtD
-support enablement, the token, and the documented activation steps.
+archive containing the site and offline ZIP.
+
+On November 10, the project owner confirmed direct upload is enabled for all MQT
+projects. The current official guide still requires an administrator token. No
+`READTHEDOCS_TOKEN` is available locally or among the repository and accessible
+organization secrets. The PR has been rebased onto current main. Live
+publication still requires the token and the documented activation steps.

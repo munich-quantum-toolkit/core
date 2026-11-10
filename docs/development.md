@@ -468,9 +468,9 @@ published.
 
 Publication requires the following one-time project setup:
 
-1. Ask Read the Docs support to enable direct upload for `mqt-core`. Keep the
-   existing repository-backed project mode so its tracked `latest` version and
-   existing version settings remain available.
+1. Keep the existing repository-backed project mode so its tracked `latest`
+   version and existing version settings remain available. Direct upload is
+   enabled for `mqt-core`.
 2. Add an administrator's RtD API token as the GitHub Actions secret
    `READTHEDOCS_TOKEN`, then set the repository variable
    `READTHEDOCS_UPLOAD_ENABLED` to `true`. The token is used only by the trusted
@@ -491,7 +491,7 @@ publisher variable and clear **Uploaded** in that version's RtD settings; RtD
 then rebuilds it from source. Reinstating the RtD required status also restores
 the old merge gate.
 
-[rtd-direct-upload]: https://docs.readthedocs.com/platform/latest/guides/build/direct-upload.html
+[rtd-direct-upload]: https://docs.readthedocs.com/platform/stable/guides/build/direct-upload.html
 
 ## MLIR
 
