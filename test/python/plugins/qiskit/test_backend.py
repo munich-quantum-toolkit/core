@@ -37,6 +37,7 @@ from mqt.core.mlir import (
 )
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
+    DDSIMBackend,
     QDMIBackend,
     TranslationError,
     UnsupportedOperationError,
@@ -759,3 +760,39 @@ def test_resonator_compilation_uses_native_device_snapshot(monkeypatch: pytest.M
     assert result.get_counts() == {"10": 3}
     instructions = json.loads(submitted[0])["instructions"]
     assert sum(instruction["name"] == "move" for instruction in instructions) == 2
+
+
+@pytest.mark.parametrize("seed", [0, 2**31])
+def test_invalid_sampling_seeds(seed: object) -> None:
+    """Reject seeds outside the device integer range."""
+    with pytest.raises(ValueError, match="seed"):
+        DDSIMBackend(num_qubits=1).run(QuantumCircuit(1), seed_simulator=seed)
+
+
+def test_serial_seed_reproducibility_and_statistics() -> None:
+    """Reproduce serial samples and check their binomial distribution."""
+    circuit = QuantumCircuit(1, 1)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    backend = DDSIMBackend(num_qubits=1)
+    assert backend.num_qubits == 1
+    circuit = transpile(circuit, backend, initial_layout=[0], optimization_level=0)
+    assert circuit.num_qubits == 1
+    first = backend.run(circuit, shots=4096, seed_simulator=73, max_workers=1, memory=True).result()
+    second = backend.run(circuit, shots=4096, seed_simulator=73, max_workers=1, memory=True).result()
+    assert first.get_memory() == second.get_memory()
+    # Six binomial standard deviations; either tail has probability below 2e-9.
+    assert abs(first.get_counts()["1"] - 2048) < 6 * np.sqrt(4096 / 4)
+
+
+def test_invalid_worker_limit() -> None:
+    """Reject negative worker limits before submission."""
+    with pytest.raises(ValueError, match="max_workers"):
+        DDSIMBackend(num_qubits=1).run(QuantumCircuit(1), max_workers=-1)
+
+
+@pytest.mark.parametrize("num_qubits", [0, 65536])
+def test_ddsim_invalid_width(num_qubits: int) -> None:
+    """Reject widths outside the device range at construction."""
+    with pytest.raises(ValueError, match="Invalid argument"):
+        DDSIMBackend(num_qubits=num_qubits)

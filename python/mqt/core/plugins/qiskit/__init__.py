@@ -37,7 +37,7 @@ __all__ = [
 ]
 
 if TYPE_CHECKING or HAS_QISKIT:
-    from mqt.core.plugins.qiskit.backend import QDMIBackend
+    from mqt.core.plugins.qiskit.backend import DDSIMBackend, QDMIBackend
     from mqt.core.plugins.qiskit.estimator import DDEstimator
     from mqt.core.plugins.qiskit.exceptions import (
         CircuitValidationError,
@@ -53,6 +53,7 @@ if TYPE_CHECKING or HAS_QISKIT:
     __all__ += [
         "CircuitValidationError",
         "DDEstimator",
+        "DDSIMBackend",
         "JobExecutionError",
         "JobSubmissionError",
         "QDMIBackend",

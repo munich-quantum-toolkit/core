@@ -24,23 +24,28 @@ uv pip install "mqt-core[qiskit]"
 
 ```{code-cell} ipython3
 from qiskit import QuantumCircuit
-from mqt.core.plugins.qiskit import QDMIBackend
+from mqt.core.plugins.qiskit import DDSIMBackend
 
-backend = QDMIBackend.from_device_id("mqt.ddsim.default", custom1="2")
+backend = DDSIMBackend(num_qubits=2)
 qc = QuantumCircuit(2)
 qc.h(0)
 qc.cx(0, 1)
 qc.measure_all()
 native = backend.compile(qc)
-job = backend.run(native, shots=1024, memory=True)
+job = backend.run(native, shots=1024, memory=True, seed_simulator=71, max_workers=1)
 result = job.result()
 print(f"Bell counts: {result.get_counts()}")
 ```
 
-For DDSIM, `custom1` bounds the session width. Choose enough sites for the
-circuit before transpiling. An explicit Qiskit layout can expand a circuit to
-the target width, which defaults to 65,535 sites for an unscoped DDSIM session.
-See {doc}`ddsim_device` for session configuration.
+`DDSIMBackend` opens the built-in DD simulator. `seed_simulator` accepts `None`
+for randomness or a positive signed 32-bit integer. `max_workers=0` selects
+automatic concurrency; `1` runs serially. Fixed seeds reproduce samples with the
+same program, build, execution path, shot count, and worker configuration. Use
+`backend.sampler()` and `backend.estimator()` for Qiskit V2 primitives.
+
+Choose `num_qubits` to cover the circuit width. It limits target construction
+and the idle qubits added by Qiskit for an explicit layout. Omitting it selects
+all 65,535 sites. See {doc}`ddsim_device` for session configuration.
 
 `run` expects gates and qubit placements that the device can execute. It checks
 the circuit and submits it, so compile first with Qiskit's `transpile` or
