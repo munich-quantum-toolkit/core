@@ -45,7 +45,7 @@ repos:
 
   ## Check for security issues in GitHub Actions workflows
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.31.1
+    rev: v1.32.0
     hooks:
       - id: zizmor
         priority: 0
@@ -60,7 +60,7 @@ repos:
 
   ## Check pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2026.10.30
+    rev: 2026.11.06
     hooks:
       - id: validate-pyproject
         priority: 0
@@ -112,7 +112,7 @@ repos:
 
   ## Check for typos
   - repo: https://github.com/adhtruong/mirrors-typos
-    rev: v1.51.1
+    rev: v1.52.0
     hooks:
       - id: typos
         exclude: ^vendor/
@@ -120,7 +120,7 @@ repos:
 
   ## Check license headers
   - repo: https://github.com/emzeat/mz-lictools
-    rev: v2.9.0
+    rev: v2.10.0
     hooks:
       - id: license-tools
         exclude: ^vendor/
@@ -206,7 +206,7 @@ repos:
 
   ## Keep deferred Python imports in sync with their uses
   - repo: https://github.com/henryiii/flake8-lazy
-    rev: v0.10.1
+    rev: v0.11.0
     hooks:
       - id: flake8-lazy
         files: ^python/
