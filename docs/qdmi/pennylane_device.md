@@ -148,6 +148,47 @@ Catalyst compiles the host control flow ahead of time. MQT Core records and
 compiles the quantum program at execution time using the current parameter
 values. Include this device compilation cost when measuring repeated calls.
 
+### Compiler options and compiled programs
+
+To control compilation, pass {py:class}`~mqt.core.mlir.CompilationOptions` as
+`compile_options` when you create the device. The options apply to every program
+that the device compiles, in ordinary and Catalyst-compiled QNodes. For example,
+a seed makes compiler randomness reproducible, and `enable_timing` writes an
+MLIR pass timing report to standard error. The compiler seed is separate from
+the DDSIM sampling `seed`:
+
+```python
+from mqt.core.mlir import CompilationOptions
+
+device = qp.device(
+    "mqt.ddsim.default",
+    wires=2,
+    compile_options=CompilationOptions(seed=11, enable_timing=True),
+)
+```
+
+Ordinary QNodes compile each preprocessed tape with
+{py:meth}`~mqt.core.plugins.pennylane.device.QDMIDevice.prepare_program`. It
+returns a {py:class}`~mqt.core.mlir.CompiledProgram`, or `None` when MQT Core
+knows the results without a device job. The device compiles all tapes of a batch
+in order before it submits a job. To record the payload, program format, and
+result layout of each program, override the method in a subclass:
+
+```python
+from mqt.core.plugins.pennylane import QDMIDevice
+
+
+class RecordingDevice(QDMIDevice):
+    def prepare_program(self, tape):
+        program = super().prepare_program(tape)
+        if program is not None:
+            record(program.program_format, program.payload, program.result_layout)
+        return program
+```
+
+Catalyst-compiled QNodes compile their programs in native code and do not call
+this method.
+
 To inspect or transform a circuit without opening a device session, import a
 preprocessed tape with {py:meth}`~mqt.core.mlir.QCProgram.from_pennylane`:
 

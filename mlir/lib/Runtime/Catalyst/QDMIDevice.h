@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mqt/Compiler/CompilationOptions.h"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/ResultLayout.h"
@@ -40,16 +41,20 @@ class Context : public runtime::Context {
 public:
   static std::shared_ptr<Context>
   create(const qdmi::Device& device, runtime::JobParameters parameters = {},
-         std::optional<QDMI_Program_Format> programFormat = std::nullopt);
+         std::optional<QDMI_Program_Format> programFormat = std::nullopt,
+         mlir::CompilationOptions options = {});
   ~Context();
   [[nodiscard]] uint64_t id() const noexcept;
   [[nodiscard]] size_t qubits() const noexcept;
+  [[nodiscard]] const mlir::CompilationOptions& options() const noexcept;
 
 private:
   explicit Context(const qdmi::Device& device,
                    runtime::JobParameters parameters,
-                   std::optional<QDMI_Program_Format> programFormat);
+                   std::optional<QDMI_Program_Format> programFormat,
+                   mlir::CompilationOptions options);
   size_t qubits_;
+  mlir::CompilationOptions options_;
   uint64_t id_ = 0;
 };
 

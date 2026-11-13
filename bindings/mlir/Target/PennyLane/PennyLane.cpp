@@ -10,6 +10,7 @@
 
 #include "PennyLane.h"
 
+#include "mqt/Compiler/CompilationOptions.h"
 #include "mqt/Compiler/ResultLayout.h"
 #include "qdmi/Parameters.hpp"
 #include "qdmi/QDMI.hpp"
@@ -155,20 +156,22 @@ void registerBindings(nb::module_& m) {
                        const std::optional<PythonCustomJobParameter>& custom3,
                        const std::optional<PythonCustomJobParameter>& custom4,
                        const std::optional<PythonCustomJobParameter>& custom5,
-                       std::optional<QDMI_Program_Format> programFormat) {
+                       std::optional<QDMI_Program_Format> programFormat,
+                       std::optional<mlir::CompilationOptions> options) {
              runtime::JobParameters parameters{
                  ownJobParameter(custom1), ownJobParameter(custom2),
                  ownJobParameter(custom3), ownJobParameter(custom4),
                  ownJobParameter(custom5),
              };
              const nb::gil_scoped_release release;
-             return catalyst::Context::create(device, std::move(parameters),
-                                              programFormat);
+             return catalyst::Context::create(
+                 device, std::move(parameters), programFormat,
+                 options.value_or(mlir::CompilationOptions{}));
            }),
            "device"_a, nb::kw_only(), "custom1"_a = nb::none(),
            "custom2"_a = nb::none(), "custom3"_a = nb::none(),
            "custom4"_a = nb::none(), "custom5"_a = nb::none(),
-           "program_format"_a = nb::none(),
+           "program_format"_a = nb::none(), "options"_a = nb::none(),
            R"doc(Create a context for native compilation and submission.
 
 Args:
@@ -179,6 +182,7 @@ Args:
     custom4: Fourth provider-specific job parameter.
     custom5: Fifth provider-specific job parameter.
     program_format: Preferred program format, or automatic selection.
+    options: Compiler controls for each recorded program, or the defaults.
 
 Byte parameters are copied so later submissions do not borrow Python storage.
 )doc")
