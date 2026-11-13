@@ -554,7 +554,10 @@ NativeCostAnalysis::entanglerOrientation(const CompilerTarget& target,
   }
   if (sites &&
       target.supports(entangler, std::array{(*sites)[1], (*sites)[0]})) {
-    return true;
+    // Symmetric recipes retain program order; legalization orders native gates.
+    return entangler.gate == CompilerTarget::GateKind::CX ||
+           entangler.gate == CompilerTarget::GateKind::ECR ||
+           entangler.gate == CompilerTarget::GateKind::RZX;
   }
   return std::nullopt;
 }
@@ -1620,6 +1623,39 @@ protected:
     if (result.wasInterrupted()) {
       signalPassFailure();
       return;
+    }
+    if (llvm::any_of(target.operations(), [](const auto& operation) {
+          return llvm::any_of(operation.siteTuples(), [](const auto& tuple) {
+            return tuple.sites().size() == 2;
+          });
+        })) {
+      // Synthesis can introduce branches with new placed block arguments.
+      sites = collectStaticSites(moduleOp, indexed);
+      if (failed(sites)) {
+        signalPassFailure();
+        return;
+      }
+      const auto oriented = moduleOp.walk([&](UnitaryOpInterface gate) {
+        if (!gate.isTwoQubit() ||
+            !isWalkableUnitaryShell(gate.getOperation())) {
+          return WalkResult::advance();
+        }
+        const auto placement = getOperationSites(gate, *sites);
+        const auto reverse = NativeCostAnalysis::nativeOrientation(
+            gate, target, knownSites(placement));
+        if (!reverse) {
+          gate.emitError("generated operation has no supported native locus");
+          return WalkResult::interrupt();
+        }
+        if (*reverse) {
+          reorderTwoQubitOperation(rewriter, gate);
+        }
+        return WalkResult::advance();
+      });
+      if (oriented.wasInterrupted()) {
+        signalPassFailure();
+        return;
+      }
     }
     if (targetBasis && !equatorial) {
       RewritePatternSet patterns(&getContext());
