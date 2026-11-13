@@ -435,8 +435,7 @@ class DDSIMDevice(QDMIDevice):
             job_parameters=job_parameters,
             max_retries=max_retries,
         )
-        self._seed = None if seed is None else int(seed)
-        self._seeded_programs = 0
+        self._next_seed = None if seed is None else int(seed)
         self._job_parameters: QDMIJobParameters = job_parameters.copy() if job_parameters else {}
 
     def _reserve_job_parameters(self, count: int) -> tuple[QDMIJobParameters, ...] | None:
@@ -448,11 +447,11 @@ class DDSIMDevice(QDMIDevice):
         Raises:
             PennyLaneValidationError: If the batch needs a seed above the DDSIM limit.
         """
-        if self._seed is None:
+        if self._next_seed is None:
             return None
-        first = self._seed + self._seeded_programs
+        first = self._next_seed
         if first + count - 1 > _MAX_DDSIM_SEED:
             msg = f"The batch needs DDSIM seeds up to {first + count - 1}, but the limit is {_MAX_DDSIM_SEED}."
             raise ValidationError(msg)
-        self._seeded_programs += count
+        self._next_seed += count
         return tuple({**self._job_parameters, "custom1": first + offset} for offset in range(count))

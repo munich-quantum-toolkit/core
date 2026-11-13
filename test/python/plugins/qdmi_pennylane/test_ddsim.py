@@ -27,12 +27,11 @@ from mqt.core.plugins.pennylane import (
     PennyLaneValidationError,
     QDMIDevice,
 )
-from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi import Job, ProgramFormat
 
 if TYPE_CHECKING:
     from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, SampleMP, VarianceMP
 
-    from mqt.core.qdmi import Job
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters
 
 GRAPH_EDGES = ((0, 1), (0, 2), (1, 2), (2, 3))
@@ -81,6 +80,38 @@ def test_seed_validation(seed: object, job_parameters: QDMIJobParameters) -> Non
         DDSIMDevice(wires=1, seed=seed, job_parameters=job_parameters)  # ty: ignore[invalid-argument-type]
 
 
+@pytest.mark.parametrize("max_retries", [0, 1])
+def test_seeded_shot_copies_retain_streams_on_retry(monkeypatch: pytest.MonkeyPatch, max_retries: int) -> None:
+    """Retry nonconsecutive copies without changing their samples or later streams."""
+    tape = qp.tape.QuantumScript([qp.Hadamard(0)], [qp.sample(wires=0)], shots=[(64, 3)])
+    reference = DDSIMDevice(wires=1, seed=17)
+    expected = reference.execute(tape)
+    device = DDSIMDevice(wires=1, seed=17, max_retries=max_retries)
+    batch = device.submit(tape)
+    failed = batch.entries[0].attempts[0].handle
+    assert failed is not None
+    assert failed.wait()
+    original_check = Job.check
+    original_status = Job.get_program_status
+
+    def check(job: Job) -> Job.Status:
+        return Job.Status.FAILED if job is failed else original_check(job)
+
+    def status(job: Job, program_index: int = 0) -> Job.Status | None:
+        if job is failed and program_index in {0, 2}:
+            return Job.Status.FAILED
+        return original_status(job, program_index)
+
+    monkeypatch.setattr(Job, "check", check)
+    monkeypatch.setattr(Job, "get_program_status", status)
+    if not max_retries:
+        batch.collect()
+        batch.resubmit([2, 0])
+    np.testing.assert_array_equal(batch.result(), expected)
+    assert [len(entry.attempts) for entry in batch.entries] == [2, 1, 2]
+    np.testing.assert_array_equal(device.execute(tape), reference.execute(tape))
+
+
 def test_seed_range_exhaustion_prevents_submission() -> None:
     """Reject a batch whose program seeds exceed the DDSIM seed range."""
     device = DDSIMDevice(wires=1, seed=2**31 - 1)
@@ -88,6 +119,7 @@ def test_seed_range_exhaustion_prevents_submission() -> None:
     with pytest.raises(PennyLaneValidationError, match="limit"):
         device.execute([tape, tape])
     assert device.submitted_jobs == 0
+    np.testing.assert_array_equal(device.execute(tape), [[0]])
 
 
 def test_multi_controlled_gate_uses_no_spare_device_wires() -> None:

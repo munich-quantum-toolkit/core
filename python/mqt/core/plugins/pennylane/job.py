@@ -128,7 +128,7 @@ class PennyLaneJob:
         parameters: QDMIJobParameters = {}
         if self._parameters is not None:
             # A seeded job gives its program i the seed of entry indices[0] + i.
-            if list(indices) != list(range(indices[0], indices[0] + len(indices))):
+            if any(index != indices[0] + offset for offset, index in enumerate(indices)):
                 return None
             parameters = self._parameters[indices[0]]
         return self._device._context.try_submit(  # ruff:ignore[private-member-access] Retained session and target snapshot.

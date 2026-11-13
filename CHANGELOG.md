@@ -8,15 +8,6 @@ The format is based on a mixture of [Keep a Changelog] and [Common Changelog].
 This project adheres to [Semantic Versioning], with the exception that minor
 releases may include breaking changes.
 
-## [Unreleased]
-
-### Added
-
-- ✨ Seed PennyLane `DDSIMDevice` sampling with `seed=<int>`. Program `i` of the
-  device uses seed `seed + i` across all submissions, so splitting a workload
-  into batches no longer repeats or changes its samples. ([#3003])
-  ([**@burgholzer**])
-
 ## [4.2.0] - 2026-11-10
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#420)._
@@ -1551,7 +1542,6 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v4.2.0...HEAD
 [4.2.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.2.0
 [4.1.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.1.1
 [4.1.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.1.0
@@ -1582,7 +1572,6 @@ for previous changelogs._
 
 <!-- PR links -->
 
-[#3003]: https://github.com/munich-quantum-toolkit/core/pull/3003
 [#2993]: https://github.com/munich-quantum-toolkit/core/pull/2993
 [#2991]: https://github.com/munich-quantum-toolkit/core/pull/2991
 [#2990]: https://github.com/munich-quantum-toolkit/core/pull/2990

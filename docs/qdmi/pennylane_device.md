@@ -59,10 +59,11 @@ The device gives every program its own random stream. Program `i` uses seed
 instance. Each shot-vector copy of a preprocessed tape counts as one program.
 Thus, one execution of five programs gives the same samples as several smaller
 executions of the same programs in the same order, and repeated executions do
-not repeat samples. Seeds range from 1 to 2,147,483,647. A batch whose program
-seeds would exceed this limit fails before submission. The `seed` argument
-replaces DDSIM's job parameter `custom1`, which applies one fixed seed to every
-submission; do not combine them. Catalyst-compiled QNodes do not use `seed`.
+not restart the same random stream. Seeds range from 1 to 2,147,483,647. A batch
+whose program seeds would exceed this limit fails before submission. The `seed`
+argument replaces DDSIM's job parameter `custom1`, which applies one fixed seed
+to every submission; do not combine them. Catalyst-compiled QNodes do not use
+`seed`.
 
 DDSIM scopes the session to the number of declared wires. An explicit
 `session_parameters={"custom1": "12"}` sets the session width instead. With
