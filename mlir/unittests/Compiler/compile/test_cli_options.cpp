@@ -318,3 +318,114 @@ TEST(CompilerCLI, EmitsTargetedIQMJSONAndPreservesOutputOnFailure) {
   ASSERT_TRUE(preserved);
   EXPECT_EQ((*preserved)->getBuffer(), (*output)->getBuffer());
 }
+
+TEST(CompilerCLI, TargetPauliTwirlingIsOptInAndSeeded) {
+  llvm::SmallString<128> outputPath;
+  ASSERT_FALSE(
+      llvm::sys::fs::createTemporaryFile("mqt-twirling", "mlir", outputPath));
+  const llvm::FileRemover cleanup(outputPath);
+  const llvm::StringRef target =
+      "--target=#mqt.compilation_target<sites = [<id = 0>, <id = 1>], "
+      "connectivity = all_to_all, couplings = [], native_operations = "
+      "unrestricted, operations = []>";
+  const llvm::StringRef payload =
+      "--payload-spec=#mqt.payload_spec<format = <id = \"openqasm\", "
+      "version = \"3.1.0\", profile = \"\", encoding = text>, capabilities = "
+      "[], optional_capabilities_known = false>";
+  for (const llvm::StringRef seed :
+       {"--seed=0", "--seed=42", "--seed=18446744073709551615"}) {
+    SCOPED_TRACE(seed.str());
+    llvm::SmallVector<std::string> outputs;
+    for (const llvm::StringRef flag : {
+             "",
+             "--pauli-twirling=false",
+             "--pauli-twirling",
+             "--pauli-twirling=true",
+         }) {
+      SCOPED_TRACE(flag.str());
+      llvm::SmallVector<llvm::StringRef> args{
+          MQT_CORE_CLI, "compile", MQT_CORE_CLI_INPUT,
+          target,       payload,   "--emit=qco-optimized",
+          seed,
+      };
+      if (!flag.empty()) {
+        args.push_back(flag);
+      }
+      ASSERT_EQ(llvm::sys::ExecuteAndWait(
+                    MQT_CORE_CLI, args, std::nullopt,
+                    {std::nullopt, outputPath.str(), std::nullopt}, 10),
+                0);
+      auto output = llvm::MemoryBuffer::getFile(outputPath);
+      ASSERT_TRUE(output);
+      outputs.push_back((*output)->getBuffer().str());
+      EXPECT_TRUE((*output)->getBuffer().contains("mqt.target_env"));
+      EXPECT_TRUE((*output)->getBuffer().contains("mqt.layout"));
+      EXPECT_FALSE((*output)->getBuffer().contains("mqt.compilation_seed"));
+    }
+    EXPECT_EQ(outputs[0], outputs[1]);
+    EXPECT_EQ(outputs[2], outputs[3]);
+    EXPECT_NE(outputs[0], outputs[2]);
+  }
+}
+
+TEST(CompilerCLI, RejectsPauliTwirlingOutsideTargetCompilation) {
+  const llvm::StringRef target =
+      "--target=#mqt.compilation_target<sites = [<id = 0>, <id = 1>], "
+      "connectivity = all_to_all, couplings = [], native_operations = "
+      "unrestricted, operations = []>";
+  const llvm::StringRef payload =
+      "--payload-spec=#mqt.payload_spec<format = <id = \"openqasm\", "
+      "version = \"3.1.0\", profile = \"\", encoding = text>, capabilities = "
+      "[], optional_capabilities_known = false>";
+  struct InvalidOptions {
+    llvm::SmallVector<llvm::StringRef> arguments;
+    llvm::StringRef diagnostic;
+  };
+  for (const auto& test : {
+           InvalidOptions{{}, "--pauli-twirling requires target compilation"},
+           InvalidOptions{
+               {"--run-pipeline", "--pass-pipeline=builtin.module(cse)"},
+               "--pauli-twirling requires target compilation",
+           },
+           InvalidOptions{
+               {"--run-reproducer"},
+               "--pauli-twirling requires target compilation",
+           },
+           InvalidOptions{
+               {"--qdmi-list-devices"},
+               "--pauli-twirling requires target compilation",
+           },
+           InvalidOptions{
+               {target, payload, "--emit=qc-import"},
+               "Only --emit=qco-optimized or qpy",
+           },
+           InvalidOptions{
+               {target, payload, "--emit=qco"},
+               "Only --emit=qco-optimized or qpy",
+           },
+           InvalidOptions{
+               {target, payload, "--pass-pipeline=builtin.module(cse)"},
+               "Target compilation cannot be combined with --pass-pipeline",
+           },
+       }) {
+    llvm::SmallString<128> stderrPath;
+    ASSERT_FALSE(
+        llvm::sys::fs::createTemporaryFile("mqt-twirling", "err", stderrPath));
+    const llvm::FileRemover cleanup(stderrPath);
+    llvm::SmallVector<llvm::StringRef> args{
+        MQT_CORE_CLI,
+        "compile",
+        MQT_CORE_CLI_INPUT,
+        "--pauli-twirling",
+    };
+    args.append(test.arguments);
+    ASSERT_EQ(llvm::sys::ExecuteAndWait(
+                  MQT_CORE_CLI, args, std::nullopt,
+                  {std::nullopt, std::nullopt, stderrPath.str()}, 10),
+              1);
+    auto diagnostics = llvm::MemoryBuffer::getFile(stderrPath);
+    ASSERT_TRUE(diagnostics);
+    EXPECT_TRUE((*diagnostics)->getBuffer().contains(test.diagnostic))
+        << (*diagnostics)->getBuffer().str();
+  }
+}

@@ -2149,14 +2149,21 @@ Zero disables node expansion. Container overhead, caches, and IR are extra.)pb")
                                        R"pb(Shared compiler controls.
 
 An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds.)pb")
-      .def(
-          nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions>(),
-          nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
-          "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{})
+      .def(nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions,
+                    bool>(),
+           nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
+           "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
+           "enable_pauli_twirling"_a = false)
       .def_rw("seed", &mlir::CompilationOptions::seed)
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
-      .def_rw("mapping", &mlir::CompilationOptions::mapping);
+      .def_rw("mapping", &mlir::CompilationOptions::mapping)
+      .def_rw("enable_pauli_twirling",
+              &mlir::CompilationOptions::enablePauliTwirling,
+              R"pb(Enable Pauli twirling after target-native synthesis.
+
+Requires a target environment and an output that runs target compilation.
+Single-qubit corrections are lowered to the target basis before conformance verification.)pb");
 
   nb::class_<mlir::QuantumProgramInfo>(
       m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.

@@ -42,6 +42,10 @@ struct CompilationOptions {
   bool enableTiming = false;
   bool enableStatistics = false;
   MappingOptions mapping;
+  /// Enable Pauli twirling during target compilation.
+  ///
+  /// Requires a target environment and an output that runs target compilation.
+  bool enablePauliTwirling = false;
 };
 
 } // namespace mlir

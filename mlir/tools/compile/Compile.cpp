@@ -358,6 +358,11 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
       "target", llvm::cl::desc("Explicit #mqt.compilation_target attribute"),
       llvm::cl::value_desc("attribute"), llvm::cl::init(""));
 
+  llvm::cl::opt<bool> enablePauliTwirling(
+      "pauli-twirling",
+      llvm::cl::desc("Twirl native two-qubit gates during target compilation"),
+      llvm::cl::init(false));
+
   llvm::cl::opt<uint64_t> compilationSeedOption(
       "seed", llvm::cl::desc("Override all compiler random seeds"));
   llvm::cl::opt<size_t> mappingTrials(
@@ -406,6 +411,14 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
                         llvm::sys::path::extension(outputFilename) == ".qpy");
   const bool hasExplicitTarget = explicitTarget.getNumOccurrences() != 0;
   const bool hasTarget = !qdmiDevice.empty() || hasExplicitTarget;
+  if (enablePauliTwirling &&
+      (!hasTarget || runIsolatedPipeline || runReproducer || qdmiListDevices)) {
+    llvm::errs()
+        << "--pauli-twirling requires target compilation with "
+           "--qdmi-device or --target; isolated pipelines, reproducers "
+           "and device listing are not supported.\n";
+    return 1;
+  }
   if ((mappingTrials.getNumOccurrences() != 0 ||
        mappingIterations.getNumOccurrences() != 0 ||
        mappingLookahead.getNumOccurrences() != 0 ||
@@ -431,6 +444,7 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
               .lookahead = mappingLookahead,
               .searchMemoryLimit = mappingSearchMemoryLimit,
           },
+      .enablePauliTwirling = enablePauliTwirling,
   };
 
   const bool isolated = runIsolatedPipeline || runReproducer;

@@ -524,7 +524,8 @@ static void populateDecompositionAndPlacement(OpPassManager& pm,
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
-                                       const MappingOptions& mapping) {
+                                       const MappingOptions& mapping,
+                                       bool enablePauliTwirling) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
                                                             mapping));
   const auto& target = environment.target();
@@ -564,12 +565,13 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   case CompilerTarget::Connectivity::Kind::AllToAll:
     break;
   }
-  qco::populateTargetNativeSynthesisPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm, enablePauliTwirling);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
-                                     const MappingOptions& mapping) {
+                                     const MappingOptions& mapping,
+                                     bool enablePauliTwirling) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true,
                                                             mapping));
   const auto& target = environment.target();
@@ -586,7 +588,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
     pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   pm.addPass(mqt::createUnrollModifiers());
-  qco::populateTargetNativeSynthesisPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm, enablePauliTwirling);
 }
 
 } // namespace mlir

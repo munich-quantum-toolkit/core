@@ -55,9 +55,12 @@ void registerTargetCompilationPasses();
 /// The environment must remain unchanged during pipeline execution.
 /// Use runWithCompilationOptions to apply compilation-wide seed and
 /// instrumentation settings when running this pipeline.
+/// Enable Pauli twirling to insert native single-qubit corrections around the
+/// final eligible entanglers before target-conformance verification.
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment,
-                                       const MappingOptions& mapping = {});
+                                       const MappingOptions& mapping = {},
+                                       bool enablePauliTwirling = false);
 
 /// Populate target-native block synthesis without routing.
 ///
@@ -73,8 +76,10 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 /// seed and instrumentation settings when running this pipeline. Gate-set
 /// targets preserve allocated program qubits and terminal permutations without
 /// placement.
+/// The Pauli-twirling option uses the same post-synthesis stage as compilation.
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
-                                     const MappingOptions& mapping = {});
+                                     const MappingOptions& mapping = {},
+                                     bool enablePauliTwirling = false);
 
 } // namespace mlir

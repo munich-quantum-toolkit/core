@@ -258,3 +258,51 @@ TEST(IQMJSONPipelineTest,
       instructions[1].getAsObject()->getObject("args")->getNumber("angle"),
       0.75);
 }
+
+TEST(IQMJSONPipelineTest, TargetTwirlingSurvivesPayloadCleanup) {
+  constexpr auto source = R"qasm(OPENQASM 3.0;
+    qubit[2] q;
+    bit[2] result;
+    r(1.25, -0.75) q[1];
+    cz q[1], q[0];
+    result[1] = measure q[1];
+    result[0] = measure q[0];
+  )qasm";
+  const auto environment = makeIQMEnvironment();
+  const CompilationOptions options{
+      .seed = 42,
+      .mapping = {.trials = 1},
+      .enablePauliTwirling = true,
+  };
+  auto input = QCProgram::fromOpenQASMString(source);
+  ASSERT_TRUE(static_cast<bool>(input)) << llvm::toString(input.takeError());
+  auto selected = input->copy().intoQCO();
+  ASSERT_TRUE(succeeded(selected));
+  ASSERT_TRUE(succeeded(selected->compileForTarget(environment, options)));
+  auto selectedQC = std::move(*selected).intoQC();
+  ASSERT_TRUE(succeeded(selectedQC));
+  auto direct = std::move(*selectedQC).intoIQMJSON(environment.target());
+  ASSERT_TRUE(succeeded(direct));
+  auto actual = runDefaultPipeline(std::move(*input), ProgramFormat::IQMJSON,
+                                   environment, options);
+  ASSERT_TRUE(static_cast<bool>(actual)) << llvm::toString(actual.takeError());
+  const auto reference = llvm::cantFail(llvm::json::parse(direct->source()));
+  const auto exported = llvm::cantFail(
+      llvm::json::parse(std::get<IQMJSONProgram>(*actual).source()));
+  EXPECT_EQ(exported, reference);
+  const auto& instructions = *exported.getAsObject()->getArray("instructions");
+  size_t entanglers = 0;
+  size_t before = 0;
+  size_t after = 0;
+  for (const auto& instruction : instructions) {
+    const auto name = instruction.getAsObject()->getString("name");
+    if (name == "cz") {
+      ++entanglers;
+    } else if (name == "prx") {
+      ++(entanglers == 0 ? before : after);
+    }
+  }
+  EXPECT_EQ(entanglers, 1U);
+  EXPECT_GT(before, 0U);
+  EXPECT_GT(after, 0U);
+}

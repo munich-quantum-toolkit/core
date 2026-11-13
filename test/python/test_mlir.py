@@ -2549,3 +2549,100 @@ def test_source_submission_requires_explicit_result_layout() -> None:
     job = submit_program(compiled, target="mqt.ddsim.default", num_shots=4)
     assert job.wait()
     assert {compiled.result_layout.decode_bits(bits): count for bits, count in job.get_counts().items()} == {"10": 4}
+
+
+@pytest.mark.parametrize("entry", ["source", "qc", "qco", "compile_for_target", "synthesize_for_target"])
+@pytest.mark.parametrize("seed", [None, 0, 7])
+def test_target_twirling_python_option_propagation(entry: str, seed: int | None) -> None:
+    """Match target twirling with explicitly seeded correction lowering."""
+    source = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; h q[0]; cx q[1], q[0];'
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cx", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    environment = _test_target_environment(target)
+    enabled = CompilationOptions(seed=seed, enable_pauli_twirling=True)
+    disabled = CompilationOptions(seed=seed)
+    if entry in {"compile_for_target", "synthesize_for_target"}:
+        actual = QCProgram.from_openqasm_str(source).to_qco()
+        expected = actual.copy()
+        getattr(actual, entry)(environment, options=enabled)
+        getattr(expected, entry)(environment, options=disabled)
+    else:
+        original: str | QCProgram | QCOProgram
+        if entry == "source":
+            original = source
+        elif entry == "qc":
+            original = QCProgram.from_openqasm_str(source)
+        else:
+            original = QCProgram.from_openqasm_str(source).to_qco()
+        actual = compile_program(
+            original, target=environment, output=OutputFormat.QCO_OPTIMIZED, copy=True, options=enabled
+        )
+        expected = compile_program(
+            original, target=environment, output=OutputFormat.QCO_OPTIMIZED, copy=True, options=disabled
+        )
+    assert isinstance(actual, QCOProgram)
+    assert isinstance(expected, QCOProgram)
+    assert actual.ir != expected.ir
+    expected.run_pass_pipeline(
+        f"pauli-twirl-2q-gates{{seed={42 if seed is None else seed}}},"
+        "target-native-single-qubit-lowering,verify-target-conformance",
+        preserve_layout=True,
+    )
+    assert actual.ir == expected.ir
+    assert "mqt.compilation_seed" not in actual.ir
+    assert enabled.seed == seed
+    assert enabled.enable_pauli_twirling
+
+
+def test_target_twirling_option_defaults_and_mutation() -> None:
+    """Keep target twirling opt-in through construction and property access."""
+    options = CompilationOptions()
+    assert not options.enable_pauli_twirling
+    assert options.seed is None
+    assert not options.enable_timing
+    assert not options.enable_statistics
+    options.enable_pauli_twirling = True
+    assert options.enable_pauli_twirling
+    configured = CompilationOptions(seed=0, enable_pauli_twirling=True)
+    assert configured.seed == 0
+    assert configured.enable_pauli_twirling
+    configured.enable_pauli_twirling = False
+    assert not configured.enable_pauli_twirling
+
+
+@pytest.mark.parametrize("output", [OutputFormat.QC, OutputFormat.QCO, OutputFormat.QCO_OPTIMIZED])
+def test_target_twirling_rejects_missing_python_target(output: OutputFormat) -> None:
+    """Report enabled target twirling instead of silently skipping it."""
+    with pytest.raises(RuntimeError, match="Target Pauli twirling requires a target environment"):
+        compile_program(QASM_STRING, output=output, options=CompilationOptions(enable_pauli_twirling=True))
+    compile_program(QASM_STRING, output=output, options=CompilationOptions(enable_pauli_twirling=False))
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_target_twirling_compiled_payload_preserves_native_output(*, enabled: bool) -> None:
+    """Keep the selected native realization through artifact serialization."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cx", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    environment = TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.1.0")))
+    options = CompilationOptions(seed=7, enable_pauli_twirling=enabled)
+    compiled = compile_program(QASM_STRING, target=environment, options=options)
+    explicit = compile_program(QASM_STRING, target=environment, output=OutputFormat.OPENQASM3, options=options)
+    native = compile_program(QASM_STRING, target=environment, output=OutputFormat.QC, options=options)
+    serialized = serialize_program(native, target=environment)
+    assert isinstance(compiled, CompiledProgram)
+    assert compiled.payload == explicit.source == serialized.payload

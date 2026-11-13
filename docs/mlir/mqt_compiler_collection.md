@@ -378,8 +378,85 @@ produce distinct realizations.
 
 This is a raw-QCO transformation. It does not place twirling relative to target
 mapping or synthesis and does not guarantee that the result uses a target's
-native gate set. Target-aware twirling is not currently available through the
-target compilation pipeline.
+native gate set.
+
+For target compilation, set
+{py:attr}`~mqt.core.mlir.CompilationOptions.enable_pauli_twirling`:
+
+```{code-cell} ipython3
+from mqt.core.mlir import CompilationOptions, CompilerTarget
+
+local_target = CompilerTarget(
+    2,
+    connectivity=CompilerTarget.Connectivity.all_to_all(),
+    native_operations=CompilerTarget.NativeOperations([
+        CompilerTarget.OperationCapability("u", 1, 3),
+        CompilerTarget.OperationCapability("cx", 2, 0),
+        CompilerTarget.OperationCapability("measure", 1, 0),
+        CompilerTarget.OperationCapability("gphase", 0, 1),
+    ]),
+)
+native_twirled = compile_program(
+    bell_qasm,
+    target=local_target,
+    output=OutputFormat.QCO_OPTIMIZED,
+    options=CompilationOptions(enable_pauli_twirling=True, seed=7),
+)
+assert native_twirled.is_valid
+print(native_twirled.ir)
+```
+
+The option defaults to false. It twirls the final native CX, CZ, ECR and iSWAP
+operations after routing and synthesis, including eligible gates introduced by
+those stages. Corrections are lowered to the target's single-qubit basis without
+moving them through an entangler, then target conformance is checked. Identities
+may disappear; the output need not contain literal X/Y/Z gates. A target that
+cannot represent a correction causes compilation to fail. Noneligible gates are
+unchanged by twirling. Global phase follows the target and output format's
+established policy.
+
+The same option applies to `compile_for_target` and `synthesize_for_target`,
+including gate-set targets. It requires a target and an output that runs target
+compilation; raw `QC_IMPORT` and `QCO` outputs reject it. The CLI also rejects
+it for isolated pipelines and reproducer replay. Typed in-place methods can
+leave partially transformed IR on failure; work on a copy when the input must be
+retained.
+
+One compilation produces one realization, using the shared compilation seed;
+without an override, twirling uses `42`. Different seeds can select the same
+realization. Fix mapping trials as well as the seed for repeatable routing in a
+fixed build. This option does not randomize each execution shot or generate an
+ensemble, and submission of an already compiled payload does not twirl it again.
+
+The command-line equivalent is `mqt-core compile --pauli-twirling --seed 7` with
+a target. This local example uses an unrestricted target and needs no device
+credentials:
+
+```{code-cell} ipython3
+import subprocess
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+target_attribute = (
+    "#mqt.compilation_target<sites = [<id = 0>, <id = 1>], "
+    "connectivity = all_to_all, couplings = [], "
+    "native_operations = unrestricted, operations = []>"
+)
+payload_attribute = (
+    '#mqt.payload_spec<format = <id = "openqasm", version = "3.1.0", '
+    'profile = "", encoding = text>, capabilities = [], '
+    "optional_capabilities_known = false>"
+)
+with TemporaryDirectory() as directory:
+    source_path = Path(directory) / "bell.qasm"
+    source_path.write_text(bell_qasm)
+    result = subprocess.run(
+        ["mqt-core", "compile", str(source_path), f"--target={target_attribute}",
+         f"--payload-spec={payload_attribute}", "--pauli-twirling", "--seed", "7"],
+        check=True, capture_output=True, text=True,
+    )
+    print(result.stdout)
+```
 
 Qubit reuse reduces the number of physical qubits needed by scheduling
 independent parts of a circuit in sequence. Two independent measured qubits can

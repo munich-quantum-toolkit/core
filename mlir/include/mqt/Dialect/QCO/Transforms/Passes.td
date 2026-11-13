@@ -492,6 +492,28 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
                         "Seed for numerical synthesis retries.">];
 }
 
+def TargetNativeSingleQubitLowering
+    : Pass<"target-native-single-qubit-lowering", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::math::MathDialect"];
+  let summary = "Lower single-qubit corrections to the native target basis";
+  let description = [{
+    Lowers non-native single-qubit unitary shells individually using the actual
+    target basis, preserving two-qubit operations and correction placement.
+    Modifier interiors are not rewritten independently.
+    Requires a valid typed `mqt.target_env`. A non-native single-qubit operation
+    requires a usable synthesis basis; already-native operations do not.
+    Uses direct equatorial R emission for R targets. It does not fuse quantum
+    runs or propagate Z frames. Failures may leave earlier corrections lowered.
+    Retains original and generated global phases when supported. Otherwise,
+    drops only unobservable entry-point phases, preserving modifier interiors
+    and phases in reusable functions. Unsupported identities are removed by
+    direct wire replacement. Final target conformance is a separate stage.
+    Target compilation runs this stage after opt-in Pauli twirling.
+  }];
+}
+
 def VerifyTargetConformance
     : Pass<"verify-target-conformance", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];

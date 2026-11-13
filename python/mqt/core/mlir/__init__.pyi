@@ -812,6 +812,7 @@ class CompilationOptions:
         enable_timing: bool = False,
         enable_statistics: bool = False,
         mapping: MappingOptions = ...,
+        enable_pauli_twirling: bool = False,
     ) -> None: ...
     @property
     def seed(self) -> int | None: ...
@@ -829,6 +830,16 @@ class CompilationOptions:
     def mapping(self) -> MappingOptions: ...
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
+    @property
+    def enable_pauli_twirling(self) -> bool:
+        """Enable Pauli twirling after target-native synthesis.
+
+        Requires a target environment and an output that runs target compilation.
+        Single-qubit corrections are lowered to the target basis before conformance verification.
+        """
+
+    @enable_pauli_twirling.setter
+    def enable_pauli_twirling(self, arg: bool, /) -> None: ...
 
 class QuantumProgramInfo:
     """Quantum resources and static IR statistics.
