@@ -80,6 +80,7 @@ void registerMQTCompilerPasses() {
     qco::registerLegalizeControlFlow();
     qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
+    qco::registerResynthesizeCNOTPhase();
     qco::registerPauliTwirl2QGates();
     qco::registerMappingPass();
     qco::registerPlacementPass();
