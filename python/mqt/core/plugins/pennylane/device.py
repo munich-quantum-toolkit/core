@@ -29,11 +29,9 @@ __lazy_modules__ = {
 
 import operator
 import warnings
-from contextlib import contextmanager
 from importlib.metadata import version
 from numbers import Integral
 from pathlib import Path
-from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 import pennylane as qp
@@ -53,7 +51,7 @@ from mqt.core.plugins.pennylane.job import PennyLaneJob
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator, Hashable, Mapping, Sequence
+    from collections.abc import Callable, Hashable, Mapping, Sequence
 
     from pennylane.measurements import Shots
     from pennylane.tape import QuantumScript, QuantumScriptOrBatch
@@ -312,30 +310,6 @@ class QDMIDevice(Device):
                 raise TranslationError(str(exc)) from exc
         return prepared
 
-    def _batch_submitter(self, count: int) -> Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None]:
-        """Capture submission state for a batch and its later retries.
-
-        Returns:
-            Callable that submits selected programs, returning None if the provider declines the group.
-        """
-        del count
-        context = self._context
-        return lambda _indices, programs, shots: context.try_submit(programs, shots)
-
-    def _record_submission(self, executions: int, shots: int) -> None:
-        self._submitted_jobs += 1
-        if self.tracker.active:
-            self.tracker.update(executions=executions, shots=shots)
-            self.tracker.record()
-
-    @contextmanager
-    def _record_time(self) -> Generator[None, None, None]:
-        started = monotonic()
-        try:
-            yield
-        finally:
-            self._execution_time += monotonic() - started
-
     @staticmethod
     def _shot_copies(shots: Shots) -> tuple[int, ...]:
         """Return one shot count for each shot-vector copy.
@@ -347,6 +321,16 @@ class QDMIDevice(Device):
             msg = "QDMI devices require a finite number of shots."
             raise ValidationError(msg)
         return tuple(shot_copy.shots for shot_copy in shots.shot_vector for _ in range(shot_copy.copies))
+
+    def _batch_submitter(self, count: int) -> Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None]:
+        """Capture submission state for a batch and its later retries.
+
+        Returns:
+            Callable that submits selected programs, returning None if the provider declines the group.
+        """
+        del count
+        context = self._context
+        return lambda _indices, programs, shots: context.try_submit(programs, shots)
 
     def submit(
         self,
@@ -374,14 +358,12 @@ class QDMIDevice(Device):
             self.tracker.record()
 
         job = PennyLaneJob(
+            self,
             prepared,
             tapes,
-            wires=tuple(self._tape_wires(tape) for tape in tapes),
             single=single,
             max_retries=self._max_retries,
             submit_programs=self._batch_submitter(sum(map(len, shot_copies))),
-            on_submit=self._record_submission,
-            record_time=self._record_time,
         )
         self.last_job = job
         if tapes:
@@ -412,7 +394,6 @@ class DDSIMDevice(QDMIDevice):
             sets the simulator session width.
         session_parameters: Device-session parameters for the MQT Core QDMI driver.
         job_parameters: DDSIM custom job keyword arguments.
-        max_retries: Maximum automatic replacements per failed entry; disabled by default.
         seed: Base sampling seed from 1 to 2147483647, or None for system
             entropy. Program ``i`` of this device uses seed ``seed + i``, where
             ``i`` counts the programs of all earlier ``submit()`` and
@@ -421,6 +402,7 @@ class DDSIMDevice(QDMIDevice):
             programs into different batches gives the same samples. Do not
             combine with job parameter ``custom1``. Catalyst-compiled QNodes do
             not use this seed.
+        max_retries: Maximum automatic replacements per failed entry; disabled by default.
     """
 
     def __init__(
@@ -429,8 +411,8 @@ class DDSIMDevice(QDMIDevice):
         *,
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
-        max_retries: int = 0,
         seed: int | None = None,
+        max_retries: int = 0,
     ) -> None:
         """Open the built-in DDSIM device by its stable QDMI ID.
 

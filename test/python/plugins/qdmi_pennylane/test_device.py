@@ -148,7 +148,7 @@ def test_empty_batch_keeps_execution_state() -> None:
 def test_execution_time_accumulates_batch_wall_time(monkeypatch: pytest.MonkeyPatch) -> None:
     """Count overlapping execution once per submit/collect phase."""
     readings = iter([0.0, 0.5, 0.5, 1.5, 10.0, 11.0, 11.0, 12.25])
-    monkeypatch.setattr("mqt.core.plugins.pennylane.device.monotonic", lambda: next(readings))
+    monkeypatch.setattr("mqt.core.plugins.pennylane.job.monotonic", lambda: next(readings))
     device = QDMIDevice("mqt.ddsim.default", wires=2)
     tape = qp.tape.QuantumScript([qp.X(0)], [qp.sample(wires=[0, 1])], shots=[(5, 2), 7])
     device.execute(tape)

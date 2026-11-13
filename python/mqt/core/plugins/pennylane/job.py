@@ -20,6 +20,8 @@ __lazy_modules__ = {
     "pennylane.measurements",
 }
 
+from contextlib import contextmanager
+from time import monotonic
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -32,15 +34,14 @@ from mqt.core.plugins.qdmi_batch import Batch, BatchEntry, JobAttempt
 from mqt.core.qdmi import Job
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
-    from contextlib import AbstractContextManager
+    from collections.abc import Callable, Generator, Sequence
 
     from pennylane.measurements import SampleMeasurement
     from pennylane.tape import QuantumScript
     from pennylane.typing import Result, ResultBatch
-    from pennylane.wires import Wires
 
     from mqt.core.mlir import CompiledProgram
+    from mqt.core.plugins.pennylane.device import QDMIDevice
 
 __all__ = ["PennyLaneJob"]
 
@@ -57,21 +58,19 @@ class PennyLaneJob:
 
     def __init__(
         self,
+        device: QDMIDevice,
         prepared: Sequence[tuple[CompiledProgram | None, tuple[int, ...]]],
         tapes: Sequence[QuantumScript],
         *,
-        wires: Sequence[Wires],
         single: bool,
         max_retries: int,
         submit_programs: Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None],
-        on_submit: Callable[[int, int], None],
-        record_time: Callable[[], AbstractContextManager[None]],
     ) -> None:
         """Snapshot prepared programs and shot partitions before the first submission."""
+        self._device = device
         self._submit_group = submit_programs
         self._tapes = tuple(tapes)
-        self._wires = tuple(wires)
-        self._record_time = record_time
+        self._wires = tuple(device._tape_wires(tape) for tape in tapes)  # ruff:ignore[private-member-access] Match the compiled tape wire order.
         self._single = single
         self._prepared = tuple(
             (program, shots, len(wires), tape_index)
@@ -104,7 +103,7 @@ class PennyLaneJob:
             submission_error=lambda msg: PennyLaneExecutionError(msg, job=self),
             execution_error=lambda msg: PennyLaneExecutionError(msg, job=self),
             max_retries=max_retries,
-            on_submit=lambda indices: on_submit(len(indices), sum(self._prepared[index][1] for index in indices)),
+            on_submit=self._record_submission,
         )
 
     @property
@@ -176,6 +175,22 @@ class PennyLaneJob:
                 mean = math.dot(value, eigvals)
                 measured.append(mean if type(measurement) is ExpectationMP else math.dot(value, eigvals**2) - mean**2)
         return measured[0] if len(measured) == 1 else tuple(measured)
+
+    def _record_submission(self, indices: Sequence[int]) -> None:
+        self._device._submitted_jobs += 1  # ruff:ignore[private-member-access] Update the device's read-only total.
+        if self._device.tracker.active:
+            self._device.tracker.update(
+                executions=len(indices), shots=sum(self._prepared[index][1] for index in indices)
+            )
+            self._device.tracker.record()
+
+    @contextmanager
+    def _record_time(self) -> Generator[None, None, None]:
+        started = monotonic()
+        try:
+            yield
+        finally:
+            self._device._execution_time += monotonic() - started  # ruff:ignore[private-member-access] Include recovery in the device's read-only total.
 
     def submit(self, indices: Sequence[int] | None = None) -> None:
         """Submit selected untouched entries, or all remaining untouched entries.
