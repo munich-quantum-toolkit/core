@@ -450,6 +450,22 @@ Ordinary code fences document configuration or interfaces without executing
 them. Give figures descriptive alternative text and preserve full contracts in
 linked references when they would interrupt a tutorial.
 
+The docs job in **CI** runs this session through the shared MQT workflows and
+caches compilation with the same sccache configuration as the other CI builds.
+PRs that change only tests, agent files, paper sources, or issue/PR templates
+skip the build. The shared change detector owns the exclusion list; all other
+paths trigger validation. The existing **🚦 Check** includes the docs job. Main
+and merge groups always build; the **Documentation** workflow builds release
+tags.
+
+The **Publish documentation** workflow uploads the validated HTML and an offline
+ZIP to [Read the Docs][rtd-direct-upload]. It checks the artifact's run and
+current source commit before publishing. Fork PRs build without upload
+credentials; only the trusted publisher uses `READTHEDOCS_TOKEN`. Closed PRs,
+superseded commits, and builds without an artifact are not published.
+
+[rtd-direct-upload]: https://docs.readthedocs.com/platform/stable/guides/build/direct-upload.html
+
 ## MLIR
 
 These rules apply to MLIR dialects, transforms, tools, and bindings. MQT Core is

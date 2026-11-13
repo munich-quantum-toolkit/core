@@ -613,8 +613,9 @@ finding the cause of certain failures:
   [pre-commit.ci](https://pre-commit.ci) bot. The individual log messages
   frequently provide helpful suggestions on how to fix the warnings.
 
-- If the {code}`docs/readthedocs.org:\*` check fails, the documentation could
-  not be built properly. Inspect the corresponding log file for any errors.
+- If the docs job in **CI** fails, inspect its build log. The **🚦 Check**
+  includes documentation validation. The separate Read the Docs status reports
+  publication errors.
 
 (maintaining-changelog-upgrade-guide)=
 
