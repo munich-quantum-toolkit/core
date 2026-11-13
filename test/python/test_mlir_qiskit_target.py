@@ -83,6 +83,7 @@ def test_compile_program_qiskit_output(target_kind: str | None) -> None:
     """Compile a symbolic circuit with phase, routing, and backend constraints."""
     theta = Parameter("theta")
     circuit = QuantumCircuit(3 if target_kind is None else 4, global_phase=0.3)
+    circuit.append(GlobalPhaseGate(theta / 2), [])
     circuit.h(0)
     circuit.rx(theta, 1)
     circuit.cx(0, 2)
