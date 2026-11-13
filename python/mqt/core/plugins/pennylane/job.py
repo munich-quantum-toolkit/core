@@ -41,8 +41,6 @@ if TYPE_CHECKING:
     from pennylane.wires import Wires
 
     from mqt.core.mlir import CompiledProgram
-    from mqt.core.mlir._pennylane import Context
-    from mqt.core.typing import QDMIJobParameters
 
 __all__ = ["PennyLaneJob"]
 
@@ -59,19 +57,18 @@ class PennyLaneJob:
 
     def __init__(
         self,
-        context: Context,
         prepared: Sequence[tuple[CompiledProgram | None, tuple[int, ...]]],
         tapes: Sequence[QuantumScript],
         *,
         wires: Sequence[Wires],
         single: bool,
         max_retries: int,
-        parameters: tuple[QDMIJobParameters, ...] | None,
+        submit_programs: Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None],
         on_submit: Callable[[int, int], None],
         record_time: Callable[[], AbstractContextManager[None]],
     ) -> None:
         """Snapshot prepared programs and shot partitions before the first submission."""
-        self._context = context
+        self._submit_group = submit_programs
         self._tapes = tuple(tapes)
         self._wires = tuple(wires)
         self._record_time = record_time
@@ -81,7 +78,6 @@ class PennyLaneJob:
             for tape_index, ((program, copies), wires) in enumerate(zip(prepared, self._wires, strict=True))
             for shots in copies
         )
-        self._parameters = parameters
         self._batch: Batch[object] = Batch(
             [
                 BatchEntry(
@@ -130,13 +126,7 @@ class PennyLaneJob:
 
     def _submit_programs(self, indices: Sequence[int]) -> Job | None:
         _, shots, _, _ = self._prepared[indices[0]]
-        parameters: QDMIJobParameters = {}
-        if self._parameters is not None:
-            # A seeded job gives its program i the seed of entry indices[0] + i.
-            if any(index != indices[0] + offset for offset, index in enumerate(indices)):
-                return None
-            parameters = self._parameters[indices[0]]
-        return self._context.try_submit([self._program(index) for index in indices], shots, **parameters)
+        return self._submit_group(indices, [self._program(index) for index in indices], shots)
 
     def _process_samples(self, tape_index: int, values: np.ndarray) -> object:
         measured = tuple(

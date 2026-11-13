@@ -88,6 +88,7 @@ def test_seeded_shot_copies_retain_streams_on_retry(monkeypatch: pytest.MonkeyPa
     expected = reference.execute(tape)
     device = DDSIMDevice(wires=1, seed=17, max_retries=max_retries)
     batch = device.submit(tape)
+    np.testing.assert_array_equal(device.execute(tape), reference.execute(tape))
     failed = batch.entries[0].attempts[0].handle
     assert failed is not None
     assert failed.wait()

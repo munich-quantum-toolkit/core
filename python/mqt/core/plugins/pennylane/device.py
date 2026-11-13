@@ -53,7 +53,7 @@ from mqt.core.plugins.pennylane.job import PennyLaneJob
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Hashable, Mapping, Sequence
+    from collections.abc import Callable, Generator, Hashable, Mapping, Sequence
 
     from pennylane.measurements import Shots
     from pennylane.tape import QuantumScript, QuantumScriptOrBatch
@@ -61,7 +61,7 @@ if TYPE_CHECKING:
     from pennylane.wires import Wires
 
     from mqt.core.qdmi import Device as QDMIDeviceHandle
-    from mqt.core.qdmi import ProgramFormat
+    from mqt.core.qdmi import Job, ProgramFormat
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters
 
 __all__ = ["DDSIMDevice", "QDMIDevice"]
@@ -312,15 +312,15 @@ class QDMIDevice(Device):
                 raise TranslationError(str(exc)) from exc
         return prepared
 
-    @staticmethod
-    def _reserve_job_parameters(count: int) -> tuple[QDMIJobParameters, ...] | None:
-        """Reserve job parameters for a new batch of prepared programs.
+    def _batch_submitter(self, count: int) -> Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None]:
+        """Capture submission state for a batch and its later retries.
 
         Returns:
-            Parameters for each program, or None to use the retained job parameters.
+            Callable that submits selected programs, returning None if the provider declines the group.
         """
         del count
-        return None
+        context = self._context
+        return lambda _indices, programs, shots: context.try_submit(programs, shots)
 
     def _record_submission(self, executions: int, shots: int) -> None:
         self._submitted_jobs += 1
@@ -374,13 +374,12 @@ class QDMIDevice(Device):
             self.tracker.record()
 
         job = PennyLaneJob(
-            self._context,
             prepared,
             tapes,
             wires=tuple(self._tape_wires(tape) for tape in tapes),
             single=single,
             max_retries=self._max_retries,
-            parameters=self._reserve_job_parameters(sum(map(len, shot_copies))),
+            submit_programs=self._batch_submitter(sum(map(len, shot_copies))),
             on_submit=self._record_submission,
             record_time=self._record_time,
         )
@@ -459,20 +458,30 @@ class DDSIMDevice(QDMIDevice):
         self._next_seed = None if seed is None else int(seed)
         self._job_parameters: QDMIJobParameters = job_parameters.copy() if job_parameters else {}
 
-    def _reserve_job_parameters(self, count: int) -> tuple[QDMIJobParameters, ...] | None:
-        """Reserve one sampling seed for each program of a new batch.
+    def _batch_submitter(self, count: int) -> Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None]:
+        """Reserve streams and capture DDSIM submission state for a batch.
 
         Returns:
-            Parameters for each program, or None if the device has no seed.
+            Callable that submits programs with their reserved seeds, declining nonconsecutive groups.
 
         Raises:
             PennyLaneValidationError: If the batch needs a seed above the DDSIM limit.
         """
         if self._next_seed is None:
-            return None
+            return super()._batch_submitter(count)
         first = self._next_seed
         if first + count - 1 > _MAX_DDSIM_SEED:
             msg = f"The batch needs DDSIM seeds up to {first + count - 1}, but the limit is {_MAX_DDSIM_SEED}."
             raise ValidationError(msg)
         self._next_seed += count
-        return tuple({**self._job_parameters, "custom1": first + offset} for offset in range(count))
+        context = self._context
+        parameters = self._job_parameters.copy()
+
+        def submit(indices: Sequence[int], programs: Sequence[CompiledProgram], shots: int) -> Job | None:
+            # DDSIM offsets each program's seed from the first seed in its job.
+            if any(index != indices[0] + offset for offset, index in enumerate(indices)):
+                return None
+            overrides: QDMIJobParameters = {**parameters, "custom1": first + indices[0]}
+            return context.try_submit(programs, shots, **overrides)
+
+        return submit
