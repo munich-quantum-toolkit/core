@@ -769,6 +769,51 @@ def test_invalid_sampling_seeds(seed: object) -> None:
         DDSIMBackend(num_qubits=1).run(QuantumCircuit(1), seed_simulator=seed)
 
 
+@pytest.mark.parametrize("max_retries", [0, 1])
+def test_seeded_retries_keep_circuit_streams(monkeypatch: pytest.MonkeyPatch, max_retries: int) -> None:
+    """Retry nonconsecutive circuits of a seeded run without changing their samples."""
+    circuit = QuantumCircuit(3, 3)
+    circuit.h(range(3))
+    circuit.measure(range(3), range(3))
+    backend = DDSIMBackend(num_qubits=3)
+    reference = backend.run([circuit] * 3, shots=64, memory=True, seed_simulator=17).result()
+    expected = [reference.get_memory(index) for index in range(3)]
+    assert len({tuple(memory) for memory in expected}) == 3
+    job = backend.run([circuit] * 3, shots=64, memory=True, seed_simulator=17, max_retries=max_retries)
+    failed = job.entries[0].attempts[0].handle
+    assert failed is not None
+    assert failed.wait()
+    original_check = Job.check
+    original_status = Job.get_program_status
+
+    def check(handle: Job) -> Job.Status:
+        return Job.Status.FAILED if handle is failed else original_check(handle)
+
+    def status(handle: Job, program_index: int = 0) -> Job.Status | None:
+        if handle is failed and program_index in {0, 2}:
+            return Job.Status.FAILED
+        return original_status(handle, program_index)
+
+    monkeypatch.setattr(Job, "check", check)
+    monkeypatch.setattr(Job, "get_program_status", status)
+    if not max_retries:
+        job.collect()
+        job.resubmit([2, 0])
+    result = job.result()
+    assert [len(entry.attempts) for entry in job.entries] == [2, 1, 2]
+    assert [result.get_memory(index) for index in range(3)] == expected
+
+
+def test_seed_range_covers_every_circuit() -> None:
+    """Reject a run whose last circuit needs a seed above the device integer range."""
+    backend = DDSIMBackend(num_qubits=1)
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    with pytest.raises(ValueError, match="seed_simulator"):
+        backend.run([circuit, circuit], seed_simulator=2**31 - 1)
+    assert backend.run(circuit, shots=1, seed_simulator=2**31 - 1).result().get_counts() == {"0": 1}
+
+
 def test_serial_seed_reproducibility_and_statistics() -> None:
     """Reproduce serial samples and check their binomial distribution."""
     circuit = QuantumCircuit(1, 1)

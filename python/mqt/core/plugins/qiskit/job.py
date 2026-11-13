@@ -112,6 +112,7 @@ class QDMIJob(JobV1):
         self._shots = shots
         self._memory = memory
         self._job_parameters = job_parameters.copy() if job_parameters is not None else {}
+        self._submit_group = backend._batch_submitter(self._job_parameters, len(self._programs))  # ruff:ignore[private-member-access] Backend-specific submission policy.
         self._result: Result | None = None
         self._result_layouts = tuple(program.result_layout for program in self._programs)
         for header, layout in zip(self._headers, self._result_layouts, strict=True):
@@ -146,12 +147,7 @@ class QDMIJob(JobV1):
 
     def _submit_programs(self, indices: Sequence[int]) -> QDMIJobHandle | None:
         programs = [self._programs[index] for index in indices]
-        return self._context.try_submit(
-            programs,
-            self._shots,
-            destination=self._destinations[programs[0].program_format],
-            **self._job_parameters,
-        )
+        return self._submit_group(indices, programs, self._shots, self._destinations[programs[0].program_format])
 
     def collect(self) -> tuple[BatchEntry[ExperimentResult], ...]:
         """Read existing jobs without replacement executions or aggregate errors.

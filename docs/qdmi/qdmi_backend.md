@@ -39,9 +39,12 @@ print(f"Bell counts: {result.get_counts()}")
 
 `DDSIMBackend` opens the built-in DD simulator. `seed_simulator` accepts `None`
 for randomness or a positive signed 32-bit integer. `max_workers=0` selects
-automatic concurrency; `1` runs serially. Fixed seeds reproduce samples with the
-same program, build, execution path, shot count, and worker configuration. Use
-`backend.sampler()` and `backend.estimator()` for Qiskit V2 primitives.
+automatic concurrency; `1` runs serially. Circuit `i` of a run uses the DDSIM
+seed `seed_simulator + i`, including when it is retried, so the seed of the last
+circuit must not exceed 2,147,483,647. Each run starts again at
+`seed_simulator`. Fixed seeds reproduce samples with the same program, build,
+execution path, shot count, and worker configuration. Use `backend.sampler()`
+and `backend.estimator()` for Qiskit V2 primitives.
 
 Choose `num_qubits` to cover the circuit width. It limits target construction
 and the idle qubits added by Qiskit for an explicit layout. Omitting it selects
