@@ -29,9 +29,11 @@ __lazy_modules__ = {
 
 import operator
 import warnings
+from contextlib import contextmanager
 from importlib.metadata import version
 from numbers import Integral
 from pathlib import Path
+from time import monotonic
 from typing import TYPE_CHECKING, Any
 
 import pennylane as qp
@@ -51,7 +53,7 @@ from mqt.core.plugins.pennylane.job import PennyLaneJob
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable, Mapping, Sequence
+    from collections.abc import Generator, Hashable, Mapping, Sequence
 
     from pennylane.measurements import Shots
     from pennylane.tape import QuantumScript, QuantumScriptOrBatch
@@ -310,7 +312,8 @@ class QDMIDevice(Device):
                 raise TranslationError(str(exc)) from exc
         return prepared
 
-    def _reserve_job_parameters(self, count: int) -> tuple[QDMIJobParameters, ...] | None:  # ruff:ignore[no-self-use]
+    @staticmethod
+    def _reserve_job_parameters(count: int) -> tuple[QDMIJobParameters, ...] | None:
         """Reserve job parameters for a new batch of prepared programs.
 
         Returns:
@@ -318,6 +321,20 @@ class QDMIDevice(Device):
         """
         del count
         return None
+
+    def _record_submission(self, executions: int, shots: int) -> None:
+        self._submitted_jobs += 1
+        if self.tracker.active:
+            self.tracker.update(executions=executions, shots=shots)
+            self.tracker.record()
+
+    @contextmanager
+    def _record_time(self) -> Generator[None, None, None]:
+        started = monotonic()
+        try:
+            yield
+        finally:
+            self._execution_time += monotonic() - started
 
     @staticmethod
     def _shot_copies(shots: Shots) -> tuple[int, ...]:
@@ -357,11 +374,15 @@ class QDMIDevice(Device):
             self.tracker.record()
 
         job = PennyLaneJob(
-            self,
+            self._context,
             prepared,
             tapes,
+            wires=tuple(self._tape_wires(tape) for tape in tapes),
             single=single,
             max_retries=self._max_retries,
+            parameters=self._reserve_job_parameters(sum(map(len, shot_copies))),
+            on_submit=self._record_submission,
+            record_time=self._record_time,
         )
         self.last_job = job
         if tapes:

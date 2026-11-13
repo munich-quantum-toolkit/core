@@ -20,8 +20,6 @@ __lazy_modules__ = {
     "pennylane.measurements",
 }
 
-from contextlib import contextmanager
-from time import monotonic
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -34,14 +32,16 @@ from mqt.core.plugins.qdmi_batch import Batch, BatchEntry, JobAttempt
 from mqt.core.qdmi import Job
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Callable, Sequence
+    from contextlib import AbstractContextManager
 
     from pennylane.measurements import SampleMeasurement
     from pennylane.tape import QuantumScript
     from pennylane.typing import Result, ResultBatch
+    from pennylane.wires import Wires
 
     from mqt.core.mlir import CompiledProgram
-    from mqt.core.plugins.pennylane.device import QDMIDevice
+    from mqt.core.mlir._pennylane import Context
     from mqt.core.typing import QDMIJobParameters
 
 __all__ = ["PennyLaneJob"]
@@ -59,24 +59,29 @@ class PennyLaneJob:
 
     def __init__(
         self,
-        device: QDMIDevice,
+        context: Context,
         prepared: Sequence[tuple[CompiledProgram | None, tuple[int, ...]]],
         tapes: Sequence[QuantumScript],
         *,
+        wires: Sequence[Wires],
         single: bool,
         max_retries: int,
+        parameters: tuple[QDMIJobParameters, ...] | None,
+        on_submit: Callable[[int, int], None],
+        record_time: Callable[[], AbstractContextManager[None]],
     ) -> None:
         """Snapshot prepared programs and shot partitions before the first submission."""
-        self._device = device
+        self._context = context
         self._tapes = tuple(tapes)
-        self._wires = tuple(device._tape_wires(tape) for tape in tapes)  # ruff:ignore[private-member-access] Match the compiled tape wire order.
+        self._wires = tuple(wires)
+        self._record_time = record_time
         self._single = single
         self._prepared = tuple(
             (program, shots, len(wires), tape_index)
             for tape_index, ((program, copies), wires) in enumerate(zip(prepared, self._wires, strict=True))
             for shots in copies
         )
-        self._parameters = device._reserve_job_parameters(len(self._prepared))  # ruff:ignore[private-member-access] Seeds depend on the device's earlier batches.
+        self._parameters = parameters
         self._batch: Batch[object] = Batch(
             [
                 BatchEntry(
@@ -103,7 +108,7 @@ class PennyLaneJob:
             submission_error=lambda msg: PennyLaneExecutionError(msg, job=self),
             execution_error=lambda msg: PennyLaneExecutionError(msg, job=self),
             max_retries=max_retries,
-            on_submit=self._record_submission,
+            on_submit=lambda indices: on_submit(len(indices), sum(self._prepared[index][1] for index in indices)),
         )
 
     @property
@@ -131,9 +136,7 @@ class PennyLaneJob:
             if any(index != indices[0] + offset for offset, index in enumerate(indices)):
                 return None
             parameters = self._parameters[indices[0]]
-        return self._device._context.try_submit(  # ruff:ignore[private-member-access] Retained session and target snapshot.
-            [self._program(index) for index in indices], shots, **parameters
-        )
+        return self._context.try_submit([self._program(index) for index in indices], shots, **parameters)
 
     def _process_samples(self, tape_index: int, values: np.ndarray) -> object:
         measured = tuple(
@@ -183,22 +186,6 @@ class PennyLaneJob:
                 mean = math.dot(value, eigvals)
                 measured.append(mean if type(measurement) is ExpectationMP else math.dot(value, eigvals**2) - mean**2)
         return measured[0] if len(measured) == 1 else tuple(measured)
-
-    def _record_submission(self, indices: Sequence[int]) -> None:
-        self._device._submitted_jobs += 1  # ruff:ignore[private-member-access] Update the device's read-only total.
-        if self._device.tracker.active:
-            self._device.tracker.update(
-                executions=len(indices), shots=sum(self._prepared[index][1] for index in indices)
-            )
-            self._device.tracker.record()
-
-    @contextmanager
-    def _record_time(self) -> Generator[None, None, None]:
-        started = monotonic()
-        try:
-            yield
-        finally:
-            self._device._execution_time += monotonic() - started  # ruff:ignore[private-member-access] Include recovery in the device's read-only total.
 
     def submit(self, indices: Sequence[int] | None = None) -> None:
         """Submit selected untouched entries, or all remaining untouched entries.
