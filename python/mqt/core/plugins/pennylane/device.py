@@ -81,6 +81,8 @@ _SESSION_PARAMETERS = frozenset({
     "custom5",
 })
 _JOB_PARAMETERS = frozenset({"custom1", "custom2", "custom3", "custom4", "custom5"})
+# DDSIM reads its job seed as a positive native int.
+_MAX_DDSIM_SEED = 2**31 - 1
 
 
 def _validate_parameter_names(parameters: Mapping[str, object], allowed: frozenset[str], kind: str) -> None:
@@ -308,6 +310,15 @@ class QDMIDevice(Device):
                 raise TranslationError(str(exc)) from exc
         return prepared
 
+    def _reserve_job_parameters(self, count: int) -> tuple[QDMIJobParameters, ...] | None:  # ruff:ignore[no-self-use]
+        """Reserve job parameters for a new batch of prepared programs.
+
+        Returns:
+            Parameters for each program, or None to use the retained job parameters.
+        """
+        del count
+        return None
+
     @staticmethod
     def _shot_copies(shots: Shots) -> tuple[int, ...]:
         """Return one shot count for each shot-vector copy.
@@ -374,7 +385,23 @@ class QDMIDevice(Device):
 
 
 class DDSIMDevice(QDMIDevice):
-    """PennyLane entry point for MQT Core's local DDSIM QDMI device."""
+    """PennyLane entry point for MQT Core's local DDSIM QDMI device.
+
+    Args:
+        wires: PennyLane wire labels or number of wires. A positive width also
+            sets the simulator session width.
+        session_parameters: Device-session parameters for the MQT Core QDMI driver.
+        job_parameters: DDSIM custom job keyword arguments.
+        max_retries: Maximum automatic replacements per failed entry; disabled by default.
+        seed: Base sampling seed from 1 to 2147483647, or None for system
+            entropy. Program ``i`` of this device uses seed ``seed + i``, where
+            ``i`` counts the programs of all earlier ``submit()`` and
+            ``execute()`` calls on this instance. Each shot-vector copy of a
+            preprocessed tape is one program. Splitting the same ordered
+            programs into different batches gives the same samples. Do not
+            combine with job parameter ``custom1``. Catalyst-compiled QNodes do
+            not use this seed.
+    """
 
     def __init__(
         self,
@@ -383,8 +410,20 @@ class DDSIMDevice(QDMIDevice):
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
         max_retries: int = 0,
+        seed: int | None = None,
     ) -> None:
-        """Open the built-in DDSIM device by its stable QDMI ID."""
+        """Open the built-in DDSIM device by its stable QDMI ID.
+
+        Raises:
+            PennyLaneConfigurationError: If configuration, requested wires, or the seed are invalid.
+        """
+        if seed is not None:
+            if isinstance(seed, bool) or not isinstance(seed, Integral) or seed not in range(1, _MAX_DDSIM_SEED + 1):
+                msg = f"seed must be None or an integer from 1 to {_MAX_DDSIM_SEED}, got {seed!r}."
+                raise ConfigurationError(msg)
+            if job_parameters and job_parameters.get("custom1") is not None:
+                msg = "Specify the DDSIM seed with either seed or job parameter custom1, not both."
+                raise ConfigurationError(msg)
         if wires is not None:
             width = wires if isinstance(wires, int) else len(wires)
             if width > 0:
@@ -396,3 +435,24 @@ class DDSIMDevice(QDMIDevice):
             job_parameters=job_parameters,
             max_retries=max_retries,
         )
+        self._seed = None if seed is None else int(seed)
+        self._seeded_programs = 0
+        self._job_parameters: QDMIJobParameters = job_parameters.copy() if job_parameters else {}
+
+    def _reserve_job_parameters(self, count: int) -> tuple[QDMIJobParameters, ...] | None:
+        """Reserve one sampling seed for each program of a new batch.
+
+        Returns:
+            Parameters for each program, or None if the device has no seed.
+
+        Raises:
+            PennyLaneValidationError: If the batch needs a seed above the DDSIM limit.
+        """
+        if self._seed is None:
+            return None
+        first = self._seed + self._seeded_programs
+        if first + count - 1 > _MAX_DDSIM_SEED:
+            msg = f"The batch needs DDSIM seeds up to {first + count - 1}, but the limit is {_MAX_DDSIM_SEED}."
+            raise ValidationError(msg)
+        self._seeded_programs += count
+        return tuple({**self._job_parameters, "custom1": first + offset} for offset in range(count))

@@ -42,6 +42,7 @@ if TYPE_CHECKING:
 
     from mqt.core.mlir import CompiledProgram
     from mqt.core.plugins.pennylane.device import QDMIDevice
+    from mqt.core.typing import QDMIJobParameters
 
 __all__ = ["PennyLaneJob"]
 
@@ -75,6 +76,7 @@ class PennyLaneJob:
             for tape_index, ((program, copies), wires) in enumerate(zip(prepared, self._wires, strict=True))
             for shots in copies
         )
+        self._parameters = device._reserve_job_parameters(len(self._prepared))  # ruff:ignore[private-member-access] Seeds depend on the device's earlier batches.
         self._batch: Batch[object] = Batch(
             [
                 BatchEntry(
@@ -115,13 +117,22 @@ class PennyLaneJob:
         return program
 
     def _submit(self, index: int) -> Job:
-        _, shots, _, _ = self._prepared[index]
-        return self._device._context.submit(self._program(index), shots)  # ruff:ignore[private-member-access] Retained session and target snapshot.
+        job = self._submit_programs([index])
+        if job is None:
+            msg = "Device declined the compiled program before submission."
+            raise RuntimeError(msg)
+        return job
 
     def _submit_programs(self, indices: Sequence[int]) -> Job | None:
         _, shots, _, _ = self._prepared[indices[0]]
+        parameters: QDMIJobParameters = {}
+        if self._parameters is not None:
+            # A seeded job gives its program i the seed of entry indices[0] + i.
+            if list(indices) != list(range(indices[0], indices[0] + len(indices))):
+                return None
+            parameters = self._parameters[indices[0]]
         return self._device._context.try_submit(  # ruff:ignore[private-member-access] Retained session and target snapshot.
-            [self._program(index) for index in indices], shots
+            [self._program(index) for index in indices], shots, **parameters
         )
 
     def _process_samples(self, tape_index: int, values: np.ndarray) -> object:
