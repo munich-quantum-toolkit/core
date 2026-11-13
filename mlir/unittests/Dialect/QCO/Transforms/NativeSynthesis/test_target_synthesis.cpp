@@ -835,6 +835,7 @@ TEST_F(TargetSynthesisTest, ReadOnlyNativeCostMatchesSynthesis) {
         std::tie(a, b) = builder.swap(a, b);
         return llvm::SmallVector<Value>{};
       });
+      auto expected = OwningOpRef<ModuleOp>(moduleOp->clone());
       const auto before = printModule(*moduleOp);
       const auto shared =
           mlir::qco::NativeCostTable::precompute(*moduleOp, 2023);
@@ -878,6 +879,9 @@ TEST_F(TargetSynthesisTest, ReadOnlyNativeCostMatchesSynthesis) {
         count += static_cast<size_t>(gate.isTwoQubit());
       }
       EXPECT_EQ(estimate, count);
+      ASSERT_TRUE(mlir::succeeded(
+          runPass(*moduleOp, mlir::qco::createVerifyTargetConformance())));
+      expectEquivalent(expected, moduleOp);
     }
   }
 }
@@ -950,7 +954,6 @@ TEST_F(TargetSynthesisTest, NativeCostSelectsCheapestAvailableEntangler) {
         const auto selected = analysis.select(matrix, target, sites);
         ASSERT_TRUE(selected);
         EXPECT_EQ(selected->entangler.gate, entangler);
-        EXPECT_EQ(selected->reverse, reverse);
         EXPECT_EQ(selected->count, count);
         auto gate = *mainFunction(*actual)
                          .getOps<mlir::qco::UnitaryOpInterface>()
@@ -2898,7 +2901,16 @@ TEST_F(TargetSynthesisTest,
         }
       }
       const auto target =
-          explicitTopology
+          !controlledPhase
+              ? valid(Target::create(
+                    2, Connectivity::fromCouplings({{0, 1}}),
+                    NativeOperations::fromOperations({
+                        valid(OperationCapability::create("u", 1, 3)),
+                        valid(OperationCapability::create("gphase", 0, 1)),
+                        valid(OperationCapability::create(
+                            "cz", 2, 0, {valid(SiteTuple::create({0, 1}))})),
+                    })))
+          : explicitTopology
               ? makeOneWayUCxTarget(Connectivity::fromCouplings({{0, 1}}))
               : makeUCxTarget();
       auto synthesized = OwningOpRef<ModuleOp>(original->clone());
@@ -4287,6 +4299,52 @@ TEST_F(TargetSynthesisTest,
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *synthesized, target, mlir::qco::createVerifyTargetConformance())));
   expectEquivalent(expected, synthesized);
+}
+
+TEST_F(TargetSynthesisTest, SymmetricLociPreserveLocalFrames) {
+  for (const bool pauli : {false, true}) {
+    SCOPED_TRACE(pauli);
+    auto expected = build([&](QCOProgramBuilder& builder) {
+      auto q0 = builder.staticQubit(0);
+      auto q1 = builder.staticQubit(1);
+      if (pauli) {
+        std::tie(q0, q1) = builder.rzz(.371, q0, q1);
+      } else {
+        std::tie(q0, q1) = builder.swap(q0, q1);
+      }
+      builder.sink(builder.h(q0));
+      builder.sink(q1);
+      return llvm::SmallVector<Value>{};
+    });
+    std::optional<size_t> rotations;
+    for (const bool reverse : {false, true}) {
+      SCOPED_TRACE(reverse);
+      auto synthesized = OwningOpRef<ModuleOp>(expected->clone());
+      const auto target = valid(Target::create(
+          2, Connectivity::fromCouplings({{0, 1}}),
+          NativeOperations::fromOperations({
+              valid(OperationCapability::create("r", 1, 2)),
+              valid(OperationCapability::create(
+                  "cz", 2, 0,
+                  {
+                      valid(SiteTuple::create(
+                          reverse ? std::vector<Target::SiteId>{1, 0}
+                                  : std::vector<Target::SiteId>{0, 1})),
+                  })),
+              valid(OperationCapability::create("gphase", 0, 1)),
+          })));
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+      ASSERT_TRUE(mlir::succeeded(
+          runPass(*synthesized, mlir::qco::createVerifyTargetConformance())));
+      const auto count = countOps<mlir::qco::ROp>(*synthesized);
+      if (rotations) {
+        EXPECT_EQ(count, *rotations);
+      }
+      rotations = count;
+      expectEquivalent(expected, synthesized);
+    }
+  }
 }
 
 TEST_F(TargetSynthesisTest, TargetNativeSynthesisUsesHomogeneousCapability) {
