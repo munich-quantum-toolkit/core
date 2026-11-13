@@ -480,13 +480,20 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     other runs are left for individual lowering to retain exportability.
 
     Unknown native-operation metadata is valid when no
-    surviving unitary operation needs it. Targets without a complete synthesis
+    surviving unitary operation needs it. Targets without a continuous synthesis
     basis retain native operations and can lower SWAPs and reversed CX gates
-    using native CX and H gates. They do not approximate arbitrary rotations.
+    using native CX and H gates. Constant Pauli rotations and phase gates can
+    use exact Clifford+T decompositions. Required Pauli rotation angles must be
+    multiples of pi/4; single-controlled rotations and phase gates require
+    multiples of pi/2. Fixed Pauli, phase, and square-root-X aliases are also
+    supported. The pass checks every gate and ordered placement before emitting
+    a sequence of H, T, Tdg, S, Sdg, Z, and CX gates. It preserves phase
+    corrections and does not approximate angles.
+
     Otherwise, the pass fails when the metadata is unknown, a non-native
-    operation needs a missing synthesis basis, or an operation has no
-    compile-time unitary matrix and cannot be synthesized as a parameterized
-    single-qubit gate or a single-controlled phase gate.
+    operation has no supported exact decomposition or synthesis basis, or it
+    has no compile-time unitary matrix and cannot be synthesized as a
+    parameterized single-qubit gate or a single-controlled phase gate.
 
     Numerical decomposition failure is diagnosed before emitting a replacement.
     The input may be modified on failure.

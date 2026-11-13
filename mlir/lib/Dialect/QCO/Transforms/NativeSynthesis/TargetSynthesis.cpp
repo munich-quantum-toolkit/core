@@ -58,16 +58,19 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/xxhash.h"
 
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <utility>
@@ -1199,6 +1202,240 @@ lowerDiscreteRoutingOperation(IRRewriter& rewriter, UnitaryOpInterface op,
   return success();
 }
 
+// Plan the complete gate sequence before replacing an operation.
+static LogicalResult
+synthesizeExactCliffordT(IRRewriter& rewriter, UnitaryOpInterface op,
+                         const CompilerTarget& target,
+                         std::optional<ArrayRef<SiteId>> sites) {
+  enum class CliffordGate : uint8_t { H, T, Tdg, S, Sdg, Z, CX };
+  using decomposition::PauliAxis;
+  auto sequence = decomposition::getPauliRotations(op.getOperation());
+  std::optional<double> angle;
+  SmallVector<decomposition::PauliRotation, 3> rotations;
+  double phaseScale = 0.;
+  if (sequence) {
+    angle = mqt::valueToConstantDouble(sequence->angle);
+    rotations = sequence->rotations;
+    phaseScale = sequence->globalPhaseScale;
+  } else {
+    auto body = op;
+    auto controlled = dyn_cast<CtrlOp>(op.getOperation());
+    if (controlled) {
+      if (controlled.getNumControls() != 1 || controlled.getNumTargets() != 1) {
+        return failure();
+      }
+      body = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*controlled.getBody());
+      if (!body) {
+        return failure();
+      }
+    }
+    using Fixed = std::optional<std::pair<PauliAxis, double>>;
+    const auto fixed =
+        TypeSwitch<Operation*, Fixed>(body.getOperation())
+            .Case(
+                [](XOp) -> Fixed { return {{PauliAxis::X, std::numbers::pi}}; })
+            .Case(
+                [](YOp) -> Fixed { return {{PauliAxis::Y, std::numbers::pi}}; })
+            .Case(
+                [](ZOp) -> Fixed { return {{PauliAxis::Z, std::numbers::pi}}; })
+            .Case([](SXOp) -> Fixed {
+              return {{PauliAxis::X, std::numbers::pi / 2.}};
+            })
+            .Case([](SXdgOp) -> Fixed {
+              return {{PauliAxis::X, -std::numbers::pi / 2.}};
+            })
+            .Case([](SOp) -> Fixed {
+              return {{PauliAxis::Z, std::numbers::pi / 2.}};
+            })
+            .Case([](SdgOp) -> Fixed {
+              return {{PauliAxis::Z, -std::numbers::pi / 2.}};
+            })
+            .Case([](TOp) -> Fixed {
+              return {{PauliAxis::Z, std::numbers::pi / 4.}};
+            })
+            .Case([](TdgOp) -> Fixed {
+              return {{PauliAxis::Z, -std::numbers::pi / 4.}};
+            })
+            .Default([](Operation*) -> Fixed { return std::nullopt; });
+    if (!fixed) {
+      return failure();
+    }
+    angle = fixed->second;
+    rotations.push_back({.axes = {fixed->first, PauliAxis::I}});
+    phaseScale = 0.5;
+    if (controlled) {
+      rotations = {
+          {.axes = {PauliAxis::I, fixed->first}, .angleScale = 0.5},
+          {.axes = {PauliAxis::Z, fixed->first}, .angleScale = -0.5},
+          {.axes = {PauliAxis::Z, PauliAxis::I}, .angleScale = 0.5},
+      };
+      phaseScale = 0.25;
+    }
+  }
+  if (!angle || !std::isfinite(*angle)) {
+    return failure();
+  }
+  // Preserve the SU(2) sign without dividing large angles by an approximate pi.
+  *angle = 2. * std::atan2(std::sin(*angle / 2.), std::cos(*angle / 2.));
+  constexpr std::array<StringLiteral, 7> names{
+      "h", "t", "tdg", "s", "sdg", "z", "x",
+  };
+  SmallVector<std::pair<CliffordGate, size_t>, 16> plan;
+  const auto supports = [&](CliffordGate gate, size_t wire) {
+    SmallVector<SiteId, 2> ordered;
+    if (sites) {
+      ordered.push_back((*sites)[wire]);
+      if (gate == CliffordGate::CX) {
+        ordered.push_back((*sites)[1 - wire]);
+      }
+    }
+    const bool cx = gate == CliffordGate::CX;
+    return target
+               .findOperation(names[static_cast<size_t>(gate)], cx ? 2 : 1, {},
+                              knownSites(ordered), cx ? 1 : 0)
+               .capability != nullptr;
+  };
+  const auto single = [&](CliffordGate gate, size_t wire) {
+    if (!supports(gate, wire)) {
+      return false;
+    }
+    plan.emplace_back(gate, wire);
+    return true;
+  };
+  const auto phase = [&](int power, size_t wire) {
+    power = (power % 8 + 8) % 8;
+    if (power == 0) {
+      return true;
+    }
+    constexpr std::array steps{1, 7, 2, 6, 4};
+    constexpr std::array gates{
+        CliffordGate::T,   CliffordGate::Tdg, CliffordGate::S,
+        CliffordGate::Sdg, CliffordGate::Z,
+    };
+    std::array<bool, 5> available{};
+    for (size_t i = 0; i < gates.size(); ++i) {
+      available[i] = supports(gates[i], wire);
+    }
+    std::array<int, 8> previous;
+    previous.fill(-1);
+    std::array<size_t, 8> via{};
+    SmallVector<int, 8> queue{0};
+    previous[0] = 0;
+    for (size_t i = 0; i < queue.size() && previous[power] < 0; ++i) {
+      for (size_t j = 0; j < gates.size(); ++j) {
+        const int next = (queue[i] + steps[j]) % 8;
+        if (available[j] && previous[next] < 0) {
+          previous[next] = queue[i];
+          via[next] = j;
+          queue.push_back(next);
+        }
+      }
+    }
+    if (previous[power] < 0) {
+      return false;
+    }
+    SmallVector<CliffordGate, 4> gateSequence;
+    for (int next = power; next != 0; next = previous[next]) {
+      gateSequence.push_back(gates[via[next]]);
+    }
+    for (auto gate : llvm::reverse(gateSequence)) {
+      plan.emplace_back(gate, wire);
+    }
+    return true;
+  };
+  const auto cx = [&] {
+    if (supports(CliffordGate::CX, 0)) {
+      plan.emplace_back(CliffordGate::CX, 0);
+      return true;
+    }
+    if (!supports(CliffordGate::CX, 1) || !single(CliffordGate::H, 0) ||
+        !single(CliffordGate::H, 1)) {
+      return false;
+    }
+    plan.emplace_back(CliffordGate::CX, 1);
+    plan.emplace_back(CliffordGate::H, 0);
+    plan.emplace_back(CliffordGate::H, 1);
+    return true;
+  };
+  const auto frame = [&](PauliAxis axis, size_t wire, bool inverse) {
+    if (inverse && axis == PauliAxis::Y && !phase(-2, wire)) {
+      return false;
+    }
+    if ((axis == PauliAxis::X || axis == PauliAxis::Y) &&
+        !single(CliffordGate::H, wire)) {
+      return false;
+    }
+    return inverse || axis != PauliAxis::Y || phase(2, wire);
+  };
+  double globalPhase = *angle * phaseScale;
+  for (const auto& rotation : rotations) {
+    const double theta = *angle * rotation.angleScale;
+    const double ticks = std::round(theta / (std::numbers::pi / 4.));
+    if (std::abs(theta - ticks * (std::numbers::pi / 4.)) >
+        mqt::PARAMETER_COMPARISON_TOLERANCE) {
+      return failure();
+    }
+    const int power = static_cast<int>(ticks);
+    globalPhase -= theta / 2.;
+    if (power % 8 == 0) {
+      continue;
+    }
+    const bool entangling =
+        rotation.axes[0] != PauliAxis::I && rotation.axes[1] != PauliAxis::I;
+    const size_t wire = rotation.axes[0] == PauliAxis::I || entangling ? 1 : 0;
+    for (size_t i = 0; i < op.getNumQubits(); ++i) {
+      if (!frame(rotation.axes[i], i, true)) {
+        return failure();
+      }
+    }
+    if ((entangling && !cx()) || !phase(power, wire) || (entangling && !cx())) {
+      return failure();
+    }
+    for (size_t i = 0; i < op.getNumQubits(); ++i) {
+      if (!frame(rotation.axes[i], i, false)) {
+        return failure();
+      }
+    }
+  }
+  rewriter.setInsertionPoint(op);
+  SmallVector<Value, 2> wires(op.getInputQubits());
+  auto loc = op->getLoc();
+  for (const auto [gate, wire] : plan) {
+    switch (gate) {
+    case CliffordGate::H:
+      wires[wire] = HOp::create(rewriter, loc, wires[wire]).getOutputQubit(0);
+      break;
+    case CliffordGate::T:
+      wires[wire] = TOp::create(rewriter, loc, wires[wire]).getOutputQubit(0);
+      break;
+    case CliffordGate::Tdg:
+      wires[wire] = TdgOp::create(rewriter, loc, wires[wire]).getOutputQubit(0);
+      break;
+    case CliffordGate::S:
+      wires[wire] = SOp::create(rewriter, loc, wires[wire]).getOutputQubit(0);
+      break;
+    case CliffordGate::Sdg:
+      wires[wire] = SdgOp::create(rewriter, loc, wires[wire]).getOutputQubit(0);
+      break;
+    case CliffordGate::Z:
+      wires[wire] = ZOp::create(rewriter, loc, wires[wire]).getOutputQubit(0);
+      break;
+    case CliffordGate::CX: {
+      auto controlled = CtrlOp::create(
+          rewriter, loc, wires[wire], wires[1 - wire], [&](Value value) {
+            return XOp::create(rewriter, loc, value).getOutputQubit(0);
+          });
+      wires[wire] = controlled.getOutputControl(0);
+      wires[1 - wire] = controlled.getOutputTarget(0);
+      break;
+    }
+    }
+  }
+  decomposition::emitGPhaseIfNeeded(rewriter, loc, globalPhase);
+  rewriter.replaceOp(op, wires);
+  return success();
+}
+
 static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
     std::optional<CompilerTarget::SynthesisBasis> basis,
@@ -1219,6 +1456,9 @@ static LogicalResult synthesizeTargetOperation(
   if (!basis) {
     if (op.isTwoQubit() &&
         succeeded(lowerDiscreteRoutingOperation(rewriter, op, target, sites))) {
+      return success();
+    }
+    if (succeeded(synthesizeExactCliffordT(rewriter, op, target, sites))) {
       return success();
     }
     return unsupported("the target has no usable synthesis basis");
@@ -1707,9 +1947,9 @@ protected:
         return;
       }
       listener.foldPending();
-      if (failed(prepareGlobalPhases(moduleOp, target))) {
-        signalPassFailure();
-      }
+    }
+    if (failed(prepareGlobalPhases(moduleOp, target))) {
+      signalPassFailure();
     }
   }
 };
