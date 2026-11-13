@@ -77,7 +77,8 @@ class PennyLaneJob:
             for tape_index, ((program, copies), wires) in enumerate(zip(prepared, self._wires, strict=True))
             for shots in copies
         )
-        self._batch: Batch[object] = Batch(
+        self._batch: Batch[PennyLaneJob, object] = Batch(
+            self,
             [
                 BatchEntry(
                     index,
@@ -96,14 +97,14 @@ class PennyLaneJob:
                 for index, (program, copies) in enumerate(prepared)
                 for copy, shots in enumerate(copies)
             ],
-            submit=self._submit,
-            decode=self._readout,
-            submit_programs=self._submit_programs,
+            submit=PennyLaneJob._submit,
+            decode=PennyLaneJob._readout,
+            submit_programs=PennyLaneJob._submit_programs,
             group_by=[(program.program_format if program else None, shots) for program, shots, _, _ in self._prepared],
-            submission_error=lambda msg: PennyLaneExecutionError(msg, job=self),
-            execution_error=lambda msg: PennyLaneExecutionError(msg, job=self),
+            submission_error=lambda job, msg: PennyLaneExecutionError(msg, job=job),
+            execution_error=lambda job, msg: PennyLaneExecutionError(msg, job=job),
             max_retries=max_retries,
-            on_submit=self._record_submission,
+            on_submit=PennyLaneJob._record_submission,
         )
 
     @property

@@ -10,6 +10,9 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"weakref"}
+
+import weakref
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Generic, TypeVar
 
@@ -20,6 +23,7 @@ if TYPE_CHECKING:
 
 __all__ = ["Batch", "BatchEntry", "JobAttempt", "JobFailure"]
 
+_Owner = TypeVar("_Owner")
 _Result = TypeVar("_Result")
 _TERMINAL = {Job.Status.DONE, Job.Status.FAILED, Job.Status.CANCELED}
 
@@ -58,7 +62,7 @@ class BatchEntry(Generic[_Result]):
         return self.attempts[-1].result if self.attempts else None
 
 
-class Batch(Generic[_Result]):
+class Batch(Generic[_Owner, _Result]):
     """Shared recovery engine for the QDMI adapters.
 
     A batch retains submission attempts and completed results so that an adapter
@@ -69,22 +73,30 @@ class Batch(Generic[_Result]):
 
     Submit and recover work through the adapter's job handle. Operations on one
     batch are synchronous, and concurrent calls on the same batch are unsupported.
+
+    The batch holds only a weak reference to its owner, the adapter job that
+    holds the batch, and passes the owner to every callback as the first
+    argument. Callbacks must not capture the owner. Reference counting then
+    releases the adapter job and its native QDMI jobs when the application drops
+    its last reference, without the cyclic garbage collector.
     """
 
     def __init__(
         self,
+        owner: _Owner,
         entries: Sequence[BatchEntry[_Result]],
         *,
-        submit: Callable[[int], Job] | None,
-        decode: Callable[[int, Job, int], _Result],
-        submission_error: Callable[[str], Exception],
-        execution_error: Callable[[str], Exception],
+        submit: Callable[[_Owner, int], Job] | None,
+        decode: Callable[[_Owner, int, Job, int], _Result],
+        submission_error: Callable[[_Owner, str], Exception],
+        execution_error: Callable[[_Owner, str], Exception],
         max_retries: int,
-        on_submit: Callable[[Sequence[int]], None] | None = None,
-        submit_programs: Callable[[Sequence[int]], Job | None] | None = None,
+        on_submit: Callable[[_Owner, Sequence[int]], None] | None = None,
+        submit_programs: Callable[[_Owner, Sequence[int]], Job | None] | None = None,
         group_by: Sequence[Hashable] | None = None,
     ) -> None:
         """Capture prepared entries, adapter callbacks, and a lifetime retry limit."""
+        self._owner_ref = weakref.ref(owner)
         self._entries = list(entries)
         self._submit = submit
         self._decode = decode
@@ -95,6 +107,13 @@ class Batch(Generic[_Result]):
         self._on_submit = on_submit
         self._submit_programs = submit_programs
         self._group_by = tuple(group_by) if group_by is not None else None
+
+    @property
+    def _owner(self) -> _Owner:
+        owner = self._owner_ref()
+        # The owner holds the batch, so it outlives every call on the batch.
+        assert owner is not None
+        return owner
 
     @property
     def entries(self) -> tuple[BatchEntry[_Result], ...]:
@@ -170,10 +189,10 @@ class Batch(Generic[_Result]):
         try:  # ruff:ignore[too-many-statements-in-try-clause] Retain every accepted handle before tracking.
             if len(indices) > 1:
                 assert self._submit_programs is not None
-                handle = self._submit_programs(indices)
+                handle = self._submit_programs(self._owner, indices)
             else:
                 assert self._submit is not None
-                handle = self._submit(indices[0])
+                handle = self._submit(self._owner, indices[0])
             if handle is None:
                 # NOTSUPPORTED before submission consumes neither an attempt nor a retry.
                 for index, entry in zip(indices, previous, strict=True):
@@ -183,14 +202,14 @@ class Batch(Generic[_Result]):
                 self._set_attempt(index, JobAttempt(handle=handle, program_index=program_index))
             stage = "tracking"
             if self._on_submit is not None:
-                self._on_submit(indices)
+                self._on_submit(self._owner, indices)
         except BaseException as exc:
             for index in indices:
                 self.record_failure(index, stage, exc)
             if not isinstance(exc, Exception):
                 raise
             msg = f"Failed to submit batch entries {list(indices)}: {exc}"
-            raise self._submission_error(msg) from exc
+            raise self._submission_error(self._owner, msg) from exc
         return True
 
     def _refresh(self, indices: Sequence[int], *, wait: bool = False) -> Iterator[list[int]]:
@@ -272,7 +291,7 @@ class Batch(Generic[_Result]):
                     continue
                 assert attempt.handle is not None
                 try:
-                    result = self._decode(index, attempt.handle, attempt.program_index)
+                    result = self._decode(self._owner, index, attempt.handle, attempt.program_index)
                     self._set_attempt(index, replace(attempt, result=result))
                 except BaseException as exc:
                     self.record_failure(index, "result", exc)
@@ -323,7 +342,7 @@ class Batch(Generic[_Result]):
             msg = f"{len(missing)} batch entries have no result: {details}."
             if first is not None:
                 msg += f" First failure: {first}"
-            raise self._execution_error(msg) from first
+            raise self._execution_error(self._owner, msg) from first
 
     def resubmit(self, indices: Sequence[int], *, allow_unknown: bool = False) -> None:
         """Validate all selected entries before explicitly submitting replacements.
