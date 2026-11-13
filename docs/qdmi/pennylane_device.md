@@ -51,8 +51,19 @@ reproducible.
 ```{code-cell} ipython3
 import pennylane as qp
 
-device = qp.device("mqt.ddsim.default", wires=2, job_parameters={"custom1": 7})
+device = qp.device("mqt.ddsim.default", wires=2, seed=7)
 ```
+
+The device gives every program its own random stream. Program `i` uses seed
+`7 + i`, where `i` counts programs across all earlier executions of this device
+instance. Each shot-vector copy of a preprocessed tape counts as one program.
+Thus, one execution of five programs gives the same samples as several smaller
+executions of the same programs in the same order, and repeated executions do
+not restart the same random stream. Seeds range from 1 to 2,147,483,647. A batch
+whose program seeds would exceed this limit fails before submission. The `seed`
+argument replaces DDSIM's job parameter `custom1`, which applies one fixed seed
+to every submission; do not combine them. Catalyst-compiled QNodes do not use
+`seed`.
 
 DDSIM scopes the session to the number of declared wires. An explicit
 `session_parameters={"custom1": "12"}` sets the session width instead. With
@@ -310,7 +321,8 @@ differentiation. Native device gradients and variance gradients are unsupported.
 Parameter broadcasting requires an explicit supported transform. Compiled counts
 and probabilities allocate $2^{n}$ entries for $n$ measured wires; use samples
 for large registers. Catalyst-level random seeds are unsupported; use
-provider-specific job parameters where available. See
+provider-specific job parameters where available, such as DDSIM's job parameter
+`custom1`. See
 [Catalyst's limitations](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/sharp_bits.html).
 
 ## Recovering results after a failure

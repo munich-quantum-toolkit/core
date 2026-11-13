@@ -34,7 +34,7 @@ from mqt.core.plugins.qdmi_batch import Batch, BatchEntry, JobAttempt
 from mqt.core.qdmi import Job
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Callable, Generator, Sequence
 
     from pennylane.measurements import SampleMeasurement
     from pennylane.tape import QuantumScript
@@ -64,9 +64,11 @@ class PennyLaneJob:
         *,
         single: bool,
         max_retries: int,
+        submit_programs: Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None],
     ) -> None:
         """Snapshot prepared programs and shot partitions before the first submission."""
         self._device = device
+        self._submit_group = submit_programs
         self._tapes = tuple(tapes)
         self._wires = tuple(device._tape_wires(tape) for tape in tapes)  # ruff:ignore[private-member-access] Match the compiled tape wire order.
         self._single = single
@@ -115,14 +117,15 @@ class PennyLaneJob:
         return program
 
     def _submit(self, index: int) -> Job:
-        _, shots, _, _ = self._prepared[index]
-        return self._device._context.submit(self._program(index), shots)  # ruff:ignore[private-member-access] Retained session and target snapshot.
+        job = self._submit_programs([index])
+        if job is None:
+            msg = "Device declined the compiled program before submission."
+            raise RuntimeError(msg)
+        return job
 
     def _submit_programs(self, indices: Sequence[int]) -> Job | None:
         _, shots, _, _ = self._prepared[indices[0]]
-        return self._device._context.try_submit(  # ruff:ignore[private-member-access] Retained session and target snapshot.
-            [self._program(index) for index in indices], shots
-        )
+        return self._submit_group(indices, [self._program(index) for index in indices], shots)
 
     def _process_samples(self, tape_index: int, values: np.ndarray) -> object:
         measured = tuple(

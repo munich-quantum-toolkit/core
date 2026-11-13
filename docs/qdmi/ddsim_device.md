@@ -210,11 +210,13 @@ move with it.
 With an explicit job seed, program `i` uses the unsigned 64-bit seed
 `job_seed + i`. The first program uses the supplied seed, as does a job with one
 program. This makes the assignment independent of worker scheduling, but
-splitting or reordering a batch changes which seed each program receives.
-Without an explicit seed, each program obtains fresh system entropy. QIR output
-capture is indexed by program, like shots, counts, and state results. Worker
-reuse supports ordinary QDMI programs; it does not isolate arbitrary native
-process-global side effects between executions.
+splitting or reordering a batch changes which seed each program receives. The
+PennyLane `DDSIMDevice(seed=...)` option instead numbers programs across all
+submissions of the device, so splitting does not change their seeds. Without an
+explicit seed, each program obtains fresh system entropy. QIR output capture is
+indexed by program, like shots, counts, and state results. Worker reuse supports
+ordinary QDMI programs; it does not isolate arbitrary native process-global side
+effects between executions.
 
 ## Program completion trace
 

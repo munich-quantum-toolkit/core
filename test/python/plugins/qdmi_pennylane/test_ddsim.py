@@ -21,18 +21,18 @@ import pytest
 from mqt.core.mlir import QCProgram, compile_program, submit_program
 from mqt.core.plugins.pennylane import (
     DDSIMDevice,
+    PennyLaneConfigurationError,
     PennyLaneJob,
     PennyLaneTranslationError,
     PennyLaneValidationError,
     QDMIDevice,
 )
-from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi import Job, ProgramFormat
 
 if TYPE_CHECKING:
     from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, SampleMP, VarianceMP
 
-    from mqt.core.qdmi import Job
-    from mqt.core.typing import QDMISessionParameters
+    from mqt.core.typing import QDMIJobParameters, QDMISessionParameters
 
 GRAPH_EDGES = ((0, 1), (0, 2), (1, 2), (2, 3))
 
@@ -47,6 +47,80 @@ def test_ddsim_session_width(wires: int | list[str] | None, parameters: QDMISess
     device = DDSIMDevice(wires=wires, session_parameters=parameters)
     assert device.qdmi_device.qubits_num() == width
     assert parameters == original
+
+
+@pytest.mark.parametrize("shots", [[64] * 5, [64, 32, 64, 32, 64]])
+def test_seed_streams_do_not_depend_on_batching(shots: list[int]) -> None:
+    """Give each program of a seeded device its own stream across submissions."""
+    tapes = [
+        qp.tape.QuantumScript([qp.Hadamard(wire) for wire in range(3)], [qp.sample(wires=range(3))], shots=count)
+        for count in shots
+    ]
+    batched = DDSIMDevice(wires=3, seed=17)
+    split = DDSIMDevice(wires=3, seed=17)
+
+    expected = [np.asarray(result) for result in batched.execute(tapes)]
+    actual = [np.asarray(result) for batch in (tapes[:2], tapes[2:4], tapes[4:]) for result in split.execute(batch)]
+
+    # Equal shots share one multi-program job; interleaved shot groups fall back to single-program jobs.
+    assert batched.submitted_jobs == (1 if len(set(shots)) == 1 else len(shots))
+    for expected_samples, actual_samples in zip(expected, actual, strict=True):
+        np.testing.assert_array_equal(actual_samples, expected_samples)
+    first, second = (np.asarray(split.execute(tapes[0])) for _ in range(2))
+    assert not np.array_equal(first, second)
+
+
+@pytest.mark.parametrize(
+    ("seed", "job_parameters"),
+    [(0, {}), (True, {}), (2**31, {}), (1.0, {}), (5, {"custom1": 5})],
+)
+def test_seed_validation(seed: object, job_parameters: QDMIJobParameters) -> None:
+    """Reject invalid seeds and conflicting raw DDSIM seeds before opening a session."""
+    with pytest.raises(PennyLaneConfigurationError, match="seed"):
+        DDSIMDevice(wires=1, seed=seed, job_parameters=job_parameters)  # ty: ignore[invalid-argument-type]
+
+
+@pytest.mark.parametrize("max_retries", [0, 1])
+def test_seeded_shot_copies_retain_streams_on_retry(monkeypatch: pytest.MonkeyPatch, max_retries: int) -> None:
+    """Retry nonconsecutive copies without changing their samples or later streams."""
+    tape = qp.tape.QuantumScript([qp.Hadamard(0)], [qp.sample(wires=0)], shots=[(64, 3)])
+    reference = DDSIMDevice(wires=1, seed=17)
+    expected = reference.execute(tape)
+    device = DDSIMDevice(wires=1, seed=17, max_retries=max_retries)
+    batch = device.submit(tape)
+    np.testing.assert_array_equal(device.execute(tape), reference.execute(tape))
+    failed = batch.entries[0].attempts[0].handle
+    assert failed is not None
+    assert failed.wait()
+    original_check = Job.check
+    original_status = Job.get_program_status
+
+    def check(job: Job) -> Job.Status:
+        return Job.Status.FAILED if job is failed else original_check(job)
+
+    def status(job: Job, program_index: int = 0) -> Job.Status | None:
+        if job is failed and program_index in {0, 2}:
+            return Job.Status.FAILED
+        return original_status(job, program_index)
+
+    monkeypatch.setattr(Job, "check", check)
+    monkeypatch.setattr(Job, "get_program_status", status)
+    if not max_retries:
+        batch.collect()
+        batch.resubmit([2, 0])
+    np.testing.assert_array_equal(batch.result(), expected)
+    assert [len(entry.attempts) for entry in batch.entries] == [2, 1, 2]
+    np.testing.assert_array_equal(device.execute(tape), reference.execute(tape))
+
+
+def test_seed_range_exhaustion_prevents_submission() -> None:
+    """Reject a batch whose program seeds exceed the DDSIM seed range."""
+    device = DDSIMDevice(wires=1, seed=2**31 - 1)
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=0)], shots=1)
+    with pytest.raises(PennyLaneValidationError, match="limit"):
+        device.execute([tape, tape])
+    assert device.submitted_jobs == 0
+    np.testing.assert_array_equal(device.execute(tape), [[0]])
 
 
 def test_multi_controlled_gate_uses_no_spare_device_wires() -> None:
