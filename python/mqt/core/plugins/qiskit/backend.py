@@ -72,21 +72,26 @@ from mqt.core.plugins.qiskit.job import QDMIJob
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
     from typing import Unpack
 
     from qiskit.circuit import Instruction
     from qiskit.circuit.parameterexpression import ParameterValueType
     from qiskit.transpiler import CouplingMap
 
-    from mqt.core.mlir import CompilationOptions
+    from mqt.core.mlir import CompilationOptions, TargetEnvironment
     from mqt.core.plugins.qiskit.provider import QDMIProvider
     from mqt.core.qdmi import Device as QDMIDevice
+    from mqt.core.qdmi import Job as QDMIJobHandle
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
 
     ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
+    SubmitPrograms = Callable[[Sequence[int], Sequence[CompiledProgram], int, TargetEnvironment], QDMIJobHandle | None]
 
 __all__ = ["DDSIMBackend", "QDMIBackend"]
+
+# DDSIM reads its job seed as a positive native int.
+_MAX_SEED = 2**31 - 1
 
 
 def __dir__() -> list[str]:
@@ -247,6 +252,18 @@ class QDMIBackend(BackendV2):
             msg = f"Unsupported execution options: {', '.join(sorted(options))}"
             raise CircuitValidationError(msg)
         return {}
+
+    def _batch_submitter(self, job_parameters: QDMIJobParameters, count: int) -> SubmitPrograms:
+        """Capture submission state for the programs of one run and their later retries.
+
+        Returns:
+            Callable that submits selected programs, returning None if the provider declines the group.
+        """
+        del count
+        context = self._context
+        return lambda _indices, programs, shots, destination: context.try_submit(
+            programs, shots, destination=destination, **job_parameters
+        )
 
     def _build_target(self) -> Target:
         """Project the shared device snapshot into Qiskit's physical positions.
@@ -709,7 +726,7 @@ class DDSIMBackend(QDMIBackend):
     def _job_parameters(options: Mapping[str, object]) -> QDMIJobParameters:
         seed = options["seed_simulator"]
         if seed is not None:
-            if isinstance(seed, bool) or not isinstance(seed, Integral) or seed not in range(1, 2**31):
+            if isinstance(seed, bool) or not isinstance(seed, Integral) or seed not in range(1, _MAX_SEED + 1):
                 msg = "seed_simulator must be None or an integer from 1 to 2147483647"
                 raise ValueError(msg)
             seed = int(seed)
@@ -718,3 +735,32 @@ class DDSIMBackend(QDMIBackend):
             msg = "max_workers must be an integer from 0 to 2147483647 (0 selects automatic concurrency)"
             raise ValueError(msg)
         return {"custom1": seed, "custom3": int(workers)}
+
+    def _batch_submitter(self, job_parameters: QDMIJobParameters, count: int) -> SubmitPrograms:
+        """Give circuit ``i`` of a run the DDSIM seed ``seed_simulator + i`` in every job.
+
+        Returns:
+            Callable that submits consecutive programs with their seeds and declines other groups.
+
+        Raises:
+            ValueError: If the run needs a seed above the signed 32-bit range.
+        """
+        seed = job_parameters.get("custom1")
+        if seed is None:
+            return super()._batch_submitter(job_parameters, count)
+        assert isinstance(seed, int)
+        if seed + count - 1 > _MAX_SEED:
+            msg = f"seed_simulator + number of circuits - 1 must not exceed {_MAX_SEED}, got {seed + count - 1}"
+            raise ValueError(msg)
+        context = self._context
+
+        def submit(
+            indices: Sequence[int], programs: Sequence[CompiledProgram], shots: int, destination: TargetEnvironment
+        ) -> QDMIJobHandle | None:
+            # DDSIM seeds program j of a job with custom1 + j.
+            if any(index != indices[0] + offset for offset, index in enumerate(indices)):
+                return None
+            parameters: QDMIJobParameters = {**job_parameters, "custom1": seed + indices[0]}
+            return context.try_submit(programs, shots, destination=destination, **parameters)
+
+        return submit
