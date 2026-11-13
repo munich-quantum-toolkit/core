@@ -91,6 +91,7 @@ def _test_target_environment(target: CompilerTarget) -> TargetEnvironment:
 
 
 STANDARD_GATES = (
+    library.GlobalPhaseGate(0.37),
     library.IGate(),
     library.XGate(),
     library.YGate(),
@@ -161,6 +162,8 @@ def test_native_api_initialization_supports_concurrent_translation() -> None:
     "gate",
     [
         *STANDARD_GATES,
+        pytest.param(library.GlobalPhaseGate(0.37).control(2, annotated=True), id="controlled_phase"),
+        pytest.param(AnnotatedOperation(library.GlobalPhaseGate(0.37), InverseModifier()), id="inverse_phase"),
         library.PhaseGate(0.25).control(2, annotated=False),
         library.RXGate(0.2).control(2, annotated=False),
         library.SwapGate().control(2, annotated=False),

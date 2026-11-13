@@ -749,6 +749,7 @@ struct VersionGate {
 [[nodiscard]] static const auto& gateMap() {
   using Gate = mlir::qc::StandardGate;
   static const std::array GATES{
+      VersionGate{"global_phase", QkGate_GlobalPhase, {Gate::GPhase, 0}},
       VersionGate{"h", QkGate_H, {Gate::H, 0}},
       VersionGate{"id", QkGate_I, {Gate::Id, 0}},
       VersionGate{"x", QkGate_X, {Gate::X, 0}},
