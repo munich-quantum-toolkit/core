@@ -14,7 +14,7 @@ releases may include breaking changes.
 
 - ✨ Seed PennyLane `DDSIMDevice` sampling with `seed=<int>`. Program `i` of the
   device uses seed `seed + i` across all submissions, so splitting a workload
-  into batches no longer repeats or changes its samples. ([#PRNUM])
+  into batches no longer repeats or changes its samples. ([#3003])
   ([**@burgholzer**])
 
 ## [4.2.0] - 2026-11-10
@@ -1582,6 +1582,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#3003]: https://github.com/munich-quantum-toolkit/core/pull/3003
 [#2993]: https://github.com/munich-quantum-toolkit/core/pull/2993
 [#2991]: https://github.com/munich-quantum-toolkit/core/pull/2991
 [#2990]: https://github.com/munich-quantum-toolkit/core/pull/2990
