@@ -25,10 +25,11 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
     and loops correspond positionally to their region arguments. Reject wire
     permutations and changes to quantum loop-state counts or types. Classical
     loop state can change type in `scf.while`. Extraction becomes `memref.load`;
-    reinsertion preserves the same slot and needs no store. Known slot changes
-    are rejected; equality of dynamic extraction and insertion indices is a
-    program precondition. See the shared
-    [quantum resource contract](index.md#quantum-resource-contract).
+    reinsertion preserves the same slot and needs no store. Extraction and
+    insertion indices must be the same value, equal constants, or expressions
+    whose equality MLIR value-bounds analysis can prove. Unproved equalities
+    are rejected before rewriting. See the shared
+    [quantum resource rules](index.md#quantum-resource-rules).
 
     Determine the module's allocation mode before converting any function.
     Dynamic qubit sinks become deallocations; static qubit sinks are removed.

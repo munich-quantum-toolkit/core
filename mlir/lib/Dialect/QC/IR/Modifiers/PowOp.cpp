@@ -492,9 +492,13 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         // pow(r) { barrier } → barrier
         .Case([&](BarrierOp gate) {
           rewriter.replaceOpWithNewOp<BarrierOp>(
-              op, llvm::map_to_vector(gate.getTargets(), [&](Value qubit) {
-                return mqt::getValueFromBlockArgument(qubit, op.getQubits());
-              }));
+              op,
+              llvm::map_to_vector(gate.getTargets(),
+                                  [&](Value qubit) {
+                                    return mqt::getValueFromBlockArgument(
+                                        qubit, op.getQubits());
+                                  }),
+              gate.getLabelAttr());
           return success();
         })
         .Default([](auto*) -> LogicalResult {

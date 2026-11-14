@@ -35,14 +35,15 @@ class BatchFixture:
         self.error_at: int | None = None
         self.submission_error: BaseException = RuntimeError("admission failed")
         self.status = Job.Status.DONE
-        self.batch: Batch[str] = Batch(
+        self.batch: Batch[BatchFixture, str] = Batch(
+            self,
             [BatchEntry(i) for i in range(3)],
-            submit=self.submit,
-            submit_programs=self.submit_programs,
+            submit=BatchFixture.submit,
+            submit_programs=BatchFixture.submit_programs,
             group_by=[0, 0, 0] if native else None,
-            decode=lambda _i, job, program_index: job.get_shots(program_index)[0],
-            submission_error=RuntimeError,
-            execution_error=RuntimeError,
+            decode=lambda _owner, _i, job, program_index: job.get_shots(program_index)[0],
+            submission_error=lambda _owner, msg: RuntimeError(msg),
+            execution_error=lambda _owner, msg: RuntimeError(msg),
             max_retries=max_retries,
         )
 

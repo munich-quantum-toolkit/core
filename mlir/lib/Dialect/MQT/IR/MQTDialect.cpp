@@ -19,7 +19,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
-#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/RandomSeed.h"
 
@@ -474,8 +474,9 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     auto count = dyn_cast<IntegerAttr>(attribute.getValue());
     if (!isa<ModuleOp>(operation) || !count ||
         !count.getType().isSignlessInteger(64) || count.getInt() < 0) {
-      return operation->emitError(
-          "source qubit count requires a nonnegative i64 on a module");
+      return operation->emitError()
+             << attribute.getName()
+             << " requires a nonnegative i64 on a module";
     }
     return success();
   }
@@ -508,9 +509,9 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     llvm::SmallDenseSet<int64_t> seen;
     for (const auto vertex : order.asArrayRef()) {
-      if (vertex < 0 || vertex >= order.size() || !seen.insert(vertex).second) {
+      if (vertex < 0 || !seen.insert(vertex).second) {
         return operation->emitError(
-            "placement order must be a permutation of dense target vertices");
+            "placement order must contain distinct nonnegative vertices");
       }
     }
     return success();
@@ -522,7 +523,8 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     return success(succeeded(QubitLayout::fromAttr(
         attribute.getValue(), [&] { return operation->emitError(); })));
   }
-  if (attribute.getName() == TargetEnvAttr::name) {
+  if (attribute.getName() == TargetEnvAttr::name ||
+      attribute.getName() == ORIGINAL_TARGET_ENV_ATTR) {
     if (!isa<ModuleOp>(operation)) {
       return operation->emitError()
              << "attribute '" << attribute.getName().getValue()

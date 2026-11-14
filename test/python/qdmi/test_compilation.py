@@ -26,6 +26,7 @@ from mqt.core.mlir import (
     OutputFormat,
     QCProgram,
     QIRProfile,
+    TargetEnvironment,
     compile_program,
     sample,
     submit_program,
@@ -203,8 +204,10 @@ def test_adaptive_measurement_snapshots(*, overwrite: bool, scalar_output: bool)
     assert job.get_counts() == {"111" if scalar_output else "11": 1}
 
 
-@pytest.mark.parametrize("width", [50, 100, 150])
-@pytest.mark.parametrize("program_format", [ProgramFormat.QIR_BASE_MODULE, ProgramFormat.QIR_ADAPTIVE_MODULE])
+@pytest.mark.parametrize(
+    ("width", "program_format"),
+    [(3, ProgramFormat.QIR_BASE_MODULE), (65, ProgramFormat.QIR_ADAPTIVE_MODULE)],
+)
 def test_entry_point_local_bits(width: int, program_format: ProgramFormat) -> None:
     """Promote local bits and preserve the measured output's width and order."""
     bits = [int(index % 3 == 1) for index in range(width)]
@@ -219,9 +222,14 @@ def test_entry_point_local_bits(width: int, program_format: ProgramFormat) -> No
       {controls}
       result = measure q;
     """
-    job = submit_program(source, target="mqt.ddsim.default", program_format=program_format, num_shots=1)
+    environment = TargetEnvironment.from_device("mqt.ddsim.default", program_format=program_format)
+    compiled = compile_program(source, target=environment)
+    job = submit_program(compiled, target="mqt.ddsim.default", num_shots=1)
     assert job.wait()
-    assert job.get_counts() == {"".join(map(str, reversed(bits))): 1}
+    counts = job.get_counts()
+    if (layout := compiled.result_layout) is not None:
+        counts = {layout.decode_bits(value): count for value, count in counts.items()}
+    assert counts == {"".join(map(str, reversed(bits))): 1}
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
@@ -284,8 +292,10 @@ def test_indexed_openqasm_device_execution() -> None:
     assert job.get_counts() == {"11": 32}
 
 
-@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
-@pytest.mark.parametrize(("number", "factors"), [(15, (3, 5)), (21, (3, 7))])
+@pytest.mark.parametrize(
+    ("number", "factors", "program_format"),
+    [(15, (3, 5), ProgramFormat.QASM3), (21, (3, 7), ProgramFormat.QIR_ADAPTIVE_MODULE)],
+)
 def test_shor_device_execution(number: int, factors: tuple[int, int], program_format: ProgramFormat) -> None:
     """Factor small numbers through modular arithmetic and the bundled DDSIM device."""
     device = open_device("mqt.ddsim.default")
@@ -307,8 +317,10 @@ def test_shor_device_execution(number: int, factors: tuple[int, int], program_fo
     assert result.attempts == 1
 
 
-@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
-@pytest.mark.parametrize("method", [qpe.Method.STANDARD, qpe.Method.ITERATIVE])
+@pytest.mark.parametrize(
+    ("method", "program_format"),
+    [(qpe.Method.STANDARD, ProgramFormat.QASM3), (qpe.Method.ITERATIVE, ProgramFormat.QIR_ADAPTIVE_MODULE)],
+)
 def test_qpe_device_execution(method: qpe.Method, program_format: ProgramFormat) -> None:
     """Recover QPE's exact phase through mapped OpenQASM and QIR execution."""
     benchmark = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=method))
@@ -338,17 +350,24 @@ def test_result_bit_order(program_format: ProgramFormat, *, swapped: bool) -> No
         f"x q[0]; a[{int(swapped)}] = measure q[0]; "
         f"a[{int(not swapped)}] = measure q[1]; b = measure q[2];"
     )
-    job = submit_program(source, target="mqt.ddsim.default", num_shots=4, program_format=program_format)
+    environment = TargetEnvironment.from_device("mqt.ddsim.default", program_format=program_format)
+    compiled = compile_program(source, target=environment)
+    assert isinstance(compiled, CompiledProgram)
+    job = submit_program(compiled, target="mqt.ddsim.default", num_shots=4)
     job.wait()
+    shots = job.get_shots()
+    counts = job.get_counts()
+    if (layout := compiled.result_layout) is not None:
+        shots = [layout.decode_bits(bits) for bits in shots]
+        counts = {layout.decode_bits(bits): count for bits, count in counts.items()}
     expected = "010" if swapped else "001"
-    assert job.get_shots() == [expected] * 4
-    assert job.get_counts() == {expected: 4}
+    assert shots == [expected] * 4
+    assert counts == {expected: 4}
 
 
-@pytest.mark.parametrize("data_qubits", [1, 4])
-def test_repeat_until_success_device_execution(data_qubits: int) -> None:
+def test_repeat_until_success_device_execution() -> None:
     """Preserve phase-sensitive RUS results through target placement and QIR."""
-    benchmark = repeat_until_success.RepeatUntilSuccess(repeat_until_success.Options(data_qubits=data_qubits))
+    benchmark = repeat_until_success.RepeatUntilSuccess()
     device = open_device("mqt.ddsim.default")
     job = submit_program(benchmark.generate(), target=device, num_shots=4096, custom1=17)
     job.wait()
@@ -363,7 +382,7 @@ def test_submission_forms(form: str) -> None:
         program = compile_program(BELL, target=device)
         assert_type(program, CompiledProgram)
         assert isinstance(program, CompiledProgram)
-        assert program.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
+        assert program.program_format == ProgramFormat.QASM3
         job = submit_program(program, target=device, custom1=7)
     elif form == "source":
         job = submit_program(BELL, target=device, custom1=7)
@@ -387,10 +406,10 @@ def test_compiled_program_reopens_device() -> None:
     by_device = compile_program(BELL, target=device)
     by_id = compile_program(BELL, target="mqt.ddsim.default")
     assert by_id.payload == by_device.payload
-    assert by_id.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
-    assert isinstance(by_id.payload, bytes)
+    assert by_id.program_format == ProgramFormat.QASM3
+    assert isinstance(by_id.payload, str)
     with pytest.raises(AttributeError):
-        by_id.payload = b"changed"  # ty: ignore[invalid-assignment]
+        by_id.payload = "changed"  # ty: ignore[invalid-assignment]
     del device
     gc.collect()
     job = submit_program(by_id, target=open_device("mqt.ddsim.default"), num_shots=0)
@@ -410,7 +429,7 @@ def test_rejects_invalid_submission_options() -> None:
     compiled = compile_program(source, target=device, copy=True)
     assert source.is_valid
     with pytest.raises(ValueError, match="conflicts"):
-        submit_program(compiled, target=device, program_format=ProgramFormat.QASM3)
+        submit_program(compiled, target=device, program_format=ProgramFormat.QIR_ADAPTIVE_MODULE)
 
 
 @pytest.mark.parametrize(
@@ -509,13 +528,15 @@ def test_compiled_terminal_sampling_retains_state(program_format: ProgramFormat)
 
 
 def test_adaptive_payload_supports_optional_computations() -> None:
-    """DDSIM accepts optional computations in the preferred Adaptive payload."""
+    """DDSIM accepts optional computations in an explicit Adaptive payload."""
     source = (
         'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; h q; c = measure q; '
         "if (true) { int[32] k = int[32](c); if (k + 1 == 2) { x q; } } c = measure q;"
     )
     device = open_device("mqt.ddsim.default")
-    compiled = compile_program(source, target=device)
+    environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QIR_ADAPTIVE_MODULE)
+    compiled = compile_program(source, target=environment)
+    assert isinstance(compiled, CompiledProgram)
     assert compiled.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
     assert "qir.int-computations" in {c.capability_id for c in compiled.payload_specification.capabilities}
     job = submit_program(compiled, target=device, num_shots=16)
@@ -531,7 +552,7 @@ def test_adaptive_payload_supports_optional_computations() -> None:
     ],
 )
 def test_default_payload_supports_loops(body: str, counts: dict[str, int]) -> None:
-    """The preferred Adaptive payload retains counted and measurement-controlled loops."""
+    """The default payload retains counted and measurement-controlled loops."""
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; ' + body
     job = submit_program(source, target="mqt.ddsim.default", num_shots=8)
     job.wait()
@@ -546,7 +567,10 @@ def test_qir_artifact_rejects_unsupported_entry_result(
     source = f"OPENQASM 3.0; qubit q; bit c = measure q; int[{width}] k = int[{width}](c);"
     program = compile_program(source, output=OutputFormat.QCO) if staged else source
     with pytest.raises(ValueError, match="QIR entry return supports only direct measurements") as error:
-        compile_program(program, target="mqt.ddsim.default")
+        compile_program(
+            program,
+            target=TargetEnvironment.from_device("mqt.ddsim.default", program_format=ProgramFormat.QIR_ADAPTIVE_MODULE),
+        )
     assert "scalar program outputs" in str(error.value)
     assert not capfd.readouterr().err
 

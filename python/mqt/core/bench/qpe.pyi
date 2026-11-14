@@ -28,7 +28,7 @@ class Phase:
         """The reduced denominator :math:`q`."""
 
 class Method(enum.Enum):
-    """Full-register or iterative measurement-and-feed-forward method."""
+    """Full-register QPE or a reused query qubit with classical feedback."""
 
     STANDARD = 0
 

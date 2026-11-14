@@ -57,7 +57,10 @@ void registerShor(nb::module_& m) {
       .def_ro("factors", &bench::ShorEvaluation::factors,
               "A sorted factor pair, or ``None``.");
   auto shor = nb::class_<bench::Shor>(
-      m, "Shor", "A validated semiclassical Shor benchmark.");
+      m, "Shor", R"pb(A validated Shor order-finding benchmark.
+
+The circuit uses a semiclassical inverse QFT and reuses one query qubit across
+its phase measurements. Modular-arithmetic registers remain allocated.)pb");
   shor.def("__init__", benchmarkInit(&bench::Shor::create), "options"_a)
       .def_prop_ro("options", &bench::Shor::options,
                    nb::rv_policy::reference_internal,

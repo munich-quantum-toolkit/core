@@ -928,9 +928,7 @@ TEST_P(DriverTest, QuerySessionProperty) {
 
 constexpr std::array DEVICES{
     "MQT SC Default QDMI Device",
-#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
     "MQT Core DDSIM QDMI Device",
-#endif
 };
 
 namespace {
@@ -1021,17 +1019,15 @@ TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
   std::ranges::transform(devices, std::back_inserter(ids), [](auto device) {
     return queryTextProperty(device, QDMI_DEVICE_PROPERTY_ID);
   });
-  std::vector<std::string> expectedIds{
-      "mqt.sc.default",          "mqt.sc.ibm.heron",
-      "mqt.sc.ibm.nighthawk",    "mqt.sc.iqm.emerald",
-      "mqt.sc.iqm.garnet",       "test.sc.runtime-default",
-      "test.sc.runtime-custom",  "test.sc.runtime-one",
-      "test.sc.runtime-two",     "test.session-overrides",
-      "test.session-with-child", "test.typed-configuration",
+  const std::vector<std::string> expectedIds{
+      "mqt.ddsim.default",        "mqt.sc.default",
+      "mqt.sc.ibm.heron",         "mqt.sc.ibm.nighthawk",
+      "mqt.sc.iqm.emerald",       "mqt.sc.iqm.garnet",
+      "test.sc.runtime-default",  "test.sc.runtime-custom",
+      "test.sc.runtime-one",      "test.sc.runtime-two",
+      "test.session-overrides",   "test.session-with-child",
+      "test.typed-configuration",
   };
-#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
-  expectedIds.emplace_back("mqt.ddsim.default");
-#endif
   EXPECT_THAT(ids, testing::UnorderedElementsAreArray(expectedIds));
   QDMI_session_free(session);
 }

@@ -10,6 +10,7 @@
 
 #include "mqt/Support/Passes.h"
 
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
@@ -35,6 +36,7 @@
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/CommandLine.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <bit>
@@ -72,7 +74,9 @@ void registerMQTCompilerPasses() {
     registerConvertCBitToMemRef();
     qco::registerCombineControlledGates();
     qco::registerDecomposeMultiControlled();
+    qco::registerElideTerminalSwapsPass();
     qco::registerFuseSingleQubitUnitaryRuns();
+    qco::registerFuseTwoQubitGates();
     qco::registerHadamardLifting();
     qco::registerLegalizeControlFlow();
     qco::registerMeasurementLifting();
@@ -87,10 +91,12 @@ void registerMQTCompilerPasses() {
     qco::registerTargetNativeSynthesis();
     qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();
+    mqt::registerRemoveUnusedQubits();
     mqt::registerSimplifyQuantum();
     mqt::registerLowerQuantumModifiers();
     mqt::registerDropGlobalPhases();
     mqt::registerNormalizeGlobalPhases();
+    mqt::registerLegalizeControlFlow();
     mqt::registerPromoteClassicalMemory();
     mqt::registerSimplifyClassicalControl();
     mqt::registerUnrollModifiers();
@@ -116,6 +122,7 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createCombineControlledGates());
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
+  pm.addPass(mqt::createRemoveUnusedQubits());
 }
 
 void populateOpenQASM2PreparationPipeline(OpPassManager& pm,
@@ -139,8 +146,6 @@ void populateQIRPreparationPipeline(OpPassManager& pm,
     llvm::raw_string_ostream stream(options.payloadSpec);
     stream << payload;
     pm.addPass(qco::createUnrollLoopsForPayload(options));
-  } else {
-    pm.addPass(mqt::createPromoteClassicalMemory());
   }
   pm.addPass(createCanonicalizerPass());
 }
@@ -164,21 +169,39 @@ void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
 }
 
 LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
-                              const CompilationOptions& options) {
+                              const CompilationOptions& options,
+                              const TargetEnvironment* environment,
+                              bool preservesLayout) {
   registerMQTCompilerPasses();
   PassManager pm(mod.getContext());
   std::string diagnostics;
   llvm::raw_string_ostream errorStream(diagnostics);
-  if (failed(parsePassPipeline(pipeline, pm, errorStream))) {
+  auto passes = pipeline.trim();
+  auto [anchor, body] = passes.split('(');
+  if (anchor.rtrim() == ModuleOp::getOperationName()) {
+    if (!body.consume_back(")")) {
+      return mod.emitError("unclosed builtin.module pass pipeline");
+    }
+    passes = body;
+  }
+  if (failed(parsePassPipeline(passes, pm, errorStream))) {
     return mod.emitError() << "failed to parse pass pipeline '" << pipeline
                            << "': " << diagnostics;
   }
-  return runWithCompilationOptions(pm, mod, options);
+  if (environment != nullptr) {
+    attachTargetEnvironment(mod, *environment);
+  }
+  return runWithCompilationOptions(pm, mod, options, preservesLayout);
 }
 
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
                                         const CompilationOptions& options,
                                         bool preservesLayout) {
+  // Embedders need not register command-line options.
+  if (llvm::cl::getRegisteredOptions().contains("mlir-print-ir-before-all") &&
+      failed(applyPassManagerCLOptions(pm))) {
+    return failure();
+  }
   if (!preservesLayout) {
     moduleOp->removeAttr("mqt.layout");
     moduleOp->removeAttr(mqt::kPlacementOrderAttr);
@@ -216,6 +239,7 @@ void populateQCExportPipeline(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass(GreedyRewriteConfig{}
                                          .enableCSEBetweenIterations()
                                          .setUseTopDownTraversal()));
+  pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createSymbolDCEPass());
 }
@@ -225,18 +249,18 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
+void populateQCOCleanupPipeline(OpPassManager& pm, bool removeUnusedValues) {
   pm.addPass(mlir::mqt::createSimplifyClassicalControl());
   pm.addPass(mqt::createPromoteClassicalMemory());
   pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}
-          .enableCSEBetweenIterations()
-          .setUseTopDownTraversal()
-          .setMaxIterations(GreedyRewriteConfig::kNoLimit)));
-  pm.addPass(qtensor::createShrinkQTensorToFitPass());
+      CanonicalizerPassOptions{.cseBetweenIterations = true}));
+  pm.addPass(mqt::createRemoveUnusedQubits());
+  if (removeUnusedValues) {
+    pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  }
   pm.addPass(createSymbolDCEPass());
-  if (removeDeadValues) {
+  if (removeUnusedValues) {
     pm.addPass(createRemoveDeadValuesPass());
   }
 }

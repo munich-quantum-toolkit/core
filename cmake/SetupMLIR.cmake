@@ -104,7 +104,8 @@ if(NOT MLIR_FOUND)
     endif()
     message(
       STATUS
-        "Installing LLVM/MLIR ${MQT_CORE_MLIR_VERSION} (assertions ${_mqt_mlir_assertions}) in ${_mqt_mlir_prefix}")
+        "Installing LLVM/MLIR ${MQT_CORE_MLIR_VERSION} (assertions ${_mqt_mlir_assertions}) in ${_mqt_mlir_prefix}"
+    )
     execute_process(COMMAND ${_mqt_mlir_command} COMMAND_ERROR_IS_FATAL ANY)
     file(WRITE "${_mqt_mlir_prefix}/.complete" "")
   endif()

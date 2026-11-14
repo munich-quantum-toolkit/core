@@ -152,7 +152,9 @@ TEST_F(ErrorHandling, CustomEnums) {
        }) {
     EXPECT_EQ(
         MQT_DDSIM_QDMI_device_session_set_parameter(session, param, 0, nullptr),
-        QDMI_ERROR_NOTSUPPORTED)
+        param == QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1
+            ? QDMI_SUCCESS
+            : QDMI_ERROR_NOTSUPPORTED)
         << param;
   }
   MQT_DDSIM_QDMI_device_session_free(session);
@@ -166,8 +168,10 @@ TEST_F(ErrorHandling, CustomEnums) {
        }) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
                   s.session, prop, 0, nullptr, nullptr),
-              prop == QDMI_DEVICE_PROPERTY_CUSTOM1 ? QDMI_SUCCESS
-                                                   : QDMI_ERROR_NOTSUPPORTED)
+              prop == QDMI_DEVICE_PROPERTY_CUSTOM2 ||
+                      prop == QDMI_DEVICE_PROPERTY_CUSTOM3
+                  ? QDMI_SUCCESS
+                  : QDMI_ERROR_NOTSUPPORTED)
         << prop;
   }
 

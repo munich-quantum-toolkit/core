@@ -30,7 +30,7 @@ function(mqt_configure_qdmi_device target)
   set_target_properties(
     ${target}
     PROPERTIES
-      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}"
       RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
   target_compile_definitions(
     ${target}
@@ -45,7 +45,8 @@ function(mqt_configure_qdmi_device target)
   endforeach()
 
   set(device_entries
-      "      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }")
+      "      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }"
+  )
   set(configuration_ids "${ARG_ID}")
   foreach(configuration IN LISTS ARG_CONFIGURATIONS)
     string(REPLACE "|" ";" configuration_parts "${configuration}")
@@ -53,14 +54,16 @@ function(mqt_configure_qdmi_device target)
     if(NOT configuration_length EQUAL 2)
       message(
         FATAL_ERROR
-          "QDMI configuration '${configuration}' must use the form '<device-id>|<runtime-file-name>'")
+          "QDMI configuration '${configuration}' must use the form '<device-id>|<runtime-file-name>'"
+      )
     endif()
     list(GET configuration_parts 0 configuration_id)
     list(GET configuration_parts 1 configuration_file)
     if(configuration_id STREQUAL "" OR configuration_file STREQUAL "")
       message(
         FATAL_ERROR
-          "QDMI configuration '${configuration}' must use a non-empty device ID and runtime file name")
+          "QDMI configuration '${configuration}' must use a non-empty device ID and runtime file name"
+      )
     endif()
     list(FIND configuration_ids "${configuration_id}" configuration_id_index)
     if(NOT configuration_id_index EQUAL -1)
@@ -71,12 +74,15 @@ function(mqt_configure_qdmi_device target)
     if(runtime_file_index EQUAL -1)
       message(
         FATAL_ERROR
-          "QDMI configuration '${configuration_id}' refers to unknown runtime file '${configuration_file}'")
+          "QDMI configuration '${configuration_id}' refers to unknown runtime file '${configuration_file}'"
+      )
     endif()
     _mqt_qdmi_json_escape(configuration_id "${configuration_id}")
     _mqt_qdmi_json_escape(configuration_file "${configuration_file}")
-    string(APPEND device_entries
-           ",\n      {\n        \"id\": \"${configuration_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true,\n        \"session\": {\n          \"device-config\": {\n            \"file\": \"${configuration_file}\"\n          }\n        }\n      }")
+    string(
+      APPEND device_entries
+      ",\n      {\n        \"id\": \"${configuration_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${target}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true,\n        \"session\": {\n          \"device-config\": {\n            \"file\": \"${configuration_file}\"\n          }\n        }\n      }"
+    )
   endforeach()
 
   set(fragment "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${target}.qdmi.json")
@@ -84,7 +90,8 @@ function(mqt_configure_qdmi_device target)
     GENERATE
     OUTPUT "${fragment}"
     CONTENT
-      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${device_entries}\n    ]\n  }\n}\n")
+      "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n${device_entries}\n    ]\n  }\n}\n"
+  )
 
   # Assets can change without relinking the device.
   add_custom_target(
@@ -179,6 +186,7 @@ function(mqt_copy_qdmi_runtime target)
     endif()
     get_target_property(imported ${library_target} IMPORTED)
     set(files "$<TARGET_FILE:${library}>")
+    set(runtime_targets)
     if(UNIX AND library_type STREQUAL "SHARED_LIBRARY")
       # Source installations may use a versioned SONAME in linked applications.
       list(APPEND files "$<TARGET_SONAME_FILE:${library}>")
@@ -191,7 +199,8 @@ function(mqt_copy_qdmi_runtime target)
         if(NOT device_id OR NOT device_prefix)
           message(
             FATAL_ERROR
-              "QDMI device target '${library}' must define either QDMI_MANIFEST_NAME or both QDMI_DEVICE_ID and QDMI_DEVICE_PREFIX")
+              "QDMI device target '${library}' must define either QDMI_MANIFEST_NAME or both QDMI_DEVICE_ID and QDMI_DEVICE_PREFIX"
+          )
         endif()
         _mqt_qdmi_json_escape(device_id "${device_id}")
         _mqt_qdmi_json_escape(device_prefix "${device_prefix}")
@@ -202,11 +211,18 @@ function(mqt_copy_qdmi_runtime target)
           GENERATE
           OUTPUT "${manifest}"
           CONTENT
-            "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${library}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }\n    ]\n  }\n}\n")
+            "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\n        \"id\": \"${device_id}\",\n        \"library\": \"$<TARGET_FILE_NAME:${library}>\",\n        \"prefix\": \"${device_prefix}\",\n        \"enabled\": true\n      }\n    ]\n  }\n}\n"
+        )
       else()
         set(manifest "$<TARGET_FILE_DIR:${library}>/${manifest_name}")
       endif()
       list(APPEND files "${manifest}")
+      get_target_property(runtime_targets ${library_target} QDMI_RUNTIME_TARGETS)
+      if(runtime_targets)
+        foreach(runtime_target IN LISTS runtime_targets)
+          list(APPEND files "$<TARGET_FILE:${runtime_target}>")
+        endforeach()
+      endif()
       get_target_property(assets ${library_target} QDMI_RUNTIME_FILES)
       if(assets)
         foreach(asset IN LISTS assets)
@@ -214,16 +230,28 @@ function(mqt_copy_qdmi_runtime target)
         endforeach()
       endif()
     endif()
-    add_custom_target(
-      ${staging_target}
-      COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${target}>"
-      COMMAND
-        ${CMAKE_COMMAND} -E copy_if_different "$<REMOVE_DUPLICATES:${files}>"
-        "$<TARGET_FILE_DIR:${target}>"
-      COMMAND_EXPAND_LISTS
-      VERBATIM)
+    set(script "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/${staging_target}.cmake")
+    string(
+      CONFIGURE
+      [=[
+set(destination [==[$<TARGET_FILE_DIR:@target@>]==])
+set(files [==[$<REMOVE_DUPLICATES:@files@>]==])
+file(MAKE_DIRECTORY "${destination}")
+# Consumers and separate builds can copy into the same directory concurrently.
+file(LOCK "${destination}/.mqt-qdmi-copy.lock" GUARD PROCESS)
+foreach(runtime_file IN LISTS files)
+  cmake_path(GET runtime_file FILENAME filename)
+  file(COPY_FILE "${runtime_file}" "${destination}/${filename}" ONLY_IF_DIFFERENT)
+endforeach()
+]=]
+      script_content @ONLY)
+    file(GENERATE OUTPUT "${script}" CONTENT "${script_content}")
+    add_custom_target(${staging_target} COMMAND ${CMAKE_COMMAND} -P "${script}" VERBATIM)
     if(NOT imported)
       add_dependencies(${staging_target} ${library_target})
+    endif()
+    if(runtime_targets)
+      add_dependencies(${staging_target} ${runtime_targets})
     endif()
     add_dependencies(${target} ${staging_target})
   endforeach()

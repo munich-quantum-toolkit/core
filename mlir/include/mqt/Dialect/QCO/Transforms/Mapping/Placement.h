@@ -84,7 +84,7 @@ findTopologyLayout(const Graph& graph, const CompilerTarget& target,
 /// Find a bounded layout using selected topology patterns and the VF2 cover.
 ///
 /// Uses findTopologyLayout's graph and layout contract. Canonical occurrences
-/// share the target's lazy caches; oriented tuple indexes are built per call.
+/// and oriented tuple indexes share the target's thread-safe lazy caches.
 /// Unavailable groups are ignored. Returns nullopt if the selected groups do
 /// not cover all edges or the search exhausts maxCandidates. An empty selection
 /// supports only edgeless queries or all-to-all targets. Include QubitPair to
@@ -98,5 +98,15 @@ findTopologyLayout(const Graph& graph, const CompilerTarget& target,
     const Graph& graph, const CompilerTarget& target, MLIRContext& context,
     size_t maxCandidates,
     ArrayRef<CompilerTarget::TopologyPatterns::Type> selected);
+
+/// Select direct search or cached extended patterns including twelve-cycles.
+///
+/// Uses pattern search only when at least twelve vertices remain after
+/// repeatedly removing vertices of degree below two. This is necessary for a
+/// twelve-cycle, but does not prove one exists. Other queries use direct
+/// search. Layout and budget contracts follow the selected search.
+[[nodiscard]] std::optional<SmallVector<size_t>>
+findTopologyAutomaticLayout(const Graph& graph, const CompilerTarget& target,
+                            MLIRContext& context, size_t maxCandidates);
 
 } // namespace mlir::qco

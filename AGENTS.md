@@ -33,28 +33,41 @@ Use relevant sections of the [development policy](docs/development.md) and the
 - Existing code is evidence, not authority over current policy. Follow
   repository policy, enforcing configuration, and explicitly adopted upstream
   guidance in that order.
-- Apply Orwell's six writing rules and the relevant ASD-STE100 principles in
-  every category of prose: choose short familiar words, remove needless words,
-  use active voice, keep each sentence direct, and prefer clarity over rigid
-  application of a style rule. Do not claim formal ASD-STE100 compliance.
-- Use established technical terms, one term per concept, and the spelling in
-  `docs/glossary.md`. Preserve project names such as `jeff` and `jeff-mlir`.
-  Update the glossary when introducing or changing public or ambiguous terms.
-- Document contracts, reasons, ownership, numerical limits, and useful examples.
-  Keep small additions brief; extend existing explanations and link to the
-  owning reference for details. Follow the
-  [prose policy](docs/development.md#prose-and-terminology). Remove repetition
-  of code, boilerplate parameters, change narration, and unsupported assurances.
-  Use symbol references instead of brittle line pointers. Keep prompts and
-  review history out of code and API docs.
-- Test changed behavior and concrete regressions, not implementation details.
-  Low-impact edits need no new tests. Before weakening a test, check history,
-  callers, invariants, and resource limits; equal line coverage or a shared
-  failure does not establish redundancy.
-- Put tests in the owning subsystem's test tree. Use direct unit tests for
-  semantic contracts and subprocesses only for irreducible CLI behavior. Do not
-  put MLIR tests under production tools or enable an optional production tool
-  solely to satisfy a subprocess test.
+- Write for readers who know neither the implementation nor its design history.
+  Apply Orwell's six writing rules throughout. Prioritize technical accuracy,
+  reader understanding, and natural flow over brevity or rigid style rules.
+- Use ASD-STE100 principles for implementation comments, API summaries, and
+  parameter, return, and error descriptions. Do not require STE in guides or
+  detailed API explanations, or claim formal compliance. Follow the
+  [prose policy](docs/development.md#prose-and-terminology).
+- Explain the task and concepts before implementation details. Integrate
+  additions into the existing explanation. Preserve useful examples,
+  limitations, ownership, and failure behavior; link to the owning reference for
+  specialist detail.
+- Use established quantum-computing and software terms, explaining unfamiliar
+  terms where readers first need them. Identify MQT-specific names as such.
+  Consult `docs/glossary.md`, but check definitions against primary sources
+  before adding or changing terms. Keep API-object and schema definitions in
+  their owning references. Use “program qubits” for unmapped circuit qubits;
+  distinguish placement, allocation, and fault-tolerant encoding.
+- Keep prompts, conversations, review instructions, and iteration history out of
+  documentation, comments, and PR descriptions. Describe the current system and
+  the reasons readers need to understand it. Put release history and migration
+  advice in their designated documents.
+- Follow the [testing priorities](docs/development.md#testing-priorities):
+  extend a small end-to-end workflow before adding a unit test. Assert
+  observable semantics and resource bounds, not private structure or a
+  particular rewrite. A bug fix does not need a separate test when an existing
+  workflow can expose it.
+- Cover native semantics in C++ once. Python tests own SDK integration, binding
+  conversions, ownership, and Python failure behavior; do not repeat native
+  parameter sweeps across the Python/dependency matrix. Keep workloads small.
+- Before removing a test, check its callers, history, and surviving assertions.
+  Keep distinct phase, wire-order, ownership, failure, and complexity contracts;
+  equal line coverage alone does not establish redundancy. Put tests in the
+  owning subsystem and use subprocesses only for irreducible CLI behavior. Do
+  not put MLIR tests under production tools or enable an optional production
+  tool solely to satisfy a subprocess test.
 - Diagnose failed checks before changing code or build policy. Distinguish
   defects from stale output, dependency mismatches, and service failures. Use
   supported presets and keep machine setup in local configuration.

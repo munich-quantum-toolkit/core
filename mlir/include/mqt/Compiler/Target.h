@@ -31,8 +31,21 @@ namespace mlir {
 class MLIRContext;
 class Operation;
 
-/// Immutable description of an MQT compiler target.
+/// A native pulse alias for a fixed-angle R gate, including its global phase.
+struct NativeRAlias {
+  double angle;
+  double globalPhase;
+};
+
+/// Return the fixed-angle R definition of a recognized native pulse name.
+[[nodiscard]] std::optional<NativeRAlias> nativeRAlias(llvm::StringRef name);
+
+/// Immutable description of the operations and topology available to
+/// compilation.
 ///
+/// This is a snapshot of target properties, not a live device connection.
+///
+/// Gate-set targets have no device sites or placement constraints.
 /// Hardware sites retain their target-defined nonnegative i64
 /// identifiers. Routing algorithms use dense zero-based vertices in site order.
 /// Connectivity is either all-to-all or explicitly enumerated. Native-operation
@@ -58,6 +71,7 @@ public:
       EightCycle,
       Grid2x3,
       Grid2x4,
+      TwelveCycle,
     };
 
     /// Packed rows of dense compiler vertices, without per-occurrence
@@ -85,10 +99,31 @@ public:
       Group(Type type, size_t arity, llvm::ArrayRef<Edge> edges);
       Type type_;
       llvm::ArrayRef<Edge> edges_;
-      // Templates have at most eight vertices, each with at most three
+      // Templates have at most twelve vertices, each with at most three
       // neighbours.
       llvm::SmallVector<llvm::SmallVector<size_t, 3>, 4> neighbours_;
       llvm::SmallVector<size_t, 0> vertices_;
+    };
+
+    /// Oriented tuples and column/site postings for equality joins.
+    ///
+    /// Rows include every template automorphism in deterministic order.
+    class Index {
+    public:
+      [[nodiscard]] size_t arity() const noexcept;
+      [[nodiscard]] size_t size() const noexcept;
+      [[nodiscard]] llvm::ArrayRef<size_t> operator[](size_t row) const;
+      [[nodiscard]] llvm::ArrayRef<size_t> candidates(size_t column,
+                                                      size_t vertex) const;
+
+    private:
+      friend class CompilerTarget;
+      Index(const Group& group, size_t numSites);
+      size_t arity_;
+      size_t numSites_;
+      llvm::SmallVector<size_t, 0> tuples_;
+      llvm::SmallVector<size_t, 0> offsets_;
+      llvm::SmallVector<size_t, 0> rows_;
     };
   };
 
@@ -376,7 +411,8 @@ public:
     XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
     ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
     ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
-    GPI,  ///< R(π, φ) and R(π/2, φ) with unrestricted φ.
+    GPI,  ///< R(π, φ) and R(π/2, φ) with unrestricted φ; GPi export corrects
+          ///< phase.
   };
 
   /// Native RX, RY, or R(theta, 0) quarter turns for the ZSXX Euler recipe.
@@ -411,10 +447,19 @@ public:
     std::optional<QuarterTurnGates> quarterTurnGates;
     /// Whether the Euler recipe can emit a half turn in one native gate.
     bool hasHalfTurn = true;
+    /// Emit Z rotations as phase gates with their compensating global phase.
+    bool phaseRotation = false;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;
   };
+
+  /// Create a gate-set target without device sites or placement constraints.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  forGateSet(NativeOperations nativeOperations);
+
+  /// Whether this target constrains placement on device sites.
+  [[nodiscard]] bool hasDeviceConstraints() const noexcept;
 
   /// Create an unnamed target with dense site IDs `0..numSites-1`.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
@@ -462,6 +507,11 @@ public:
   /// Return detailed sites in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<Site> sites() const noexcept;
 
+  /// Return sites supporting a single-qubit gate.
+  ///
+  /// If the target supports measurement, require readout on these sites too.
+  [[nodiscard]] std::vector<SiteId> placeableSites() const;
+
   /// Return target site identifiers in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<SiteId> siteIds() const noexcept;
 
@@ -497,10 +547,10 @@ public:
   /// Return one complete topology-pattern group, prepared lazily by type.
   ///
   /// In addition to topologyPatterns(), this supports four- and six-vertex
-  /// chains, six- and eight-vertex cycles, and full 2×3 and 2×4 grids. Chains
-  /// and cycles use consecutive template vertices; grids use row-major
-  /// vertices. Extra target edges are allowed. Occurrences are unique up to
-  /// template automorphisms and use deterministic order, without assuming
+  /// chains, six-, eight-, and twelve-vertex cycles, and full 2×3 and 2×4
+  /// grids. Chains and cycles use consecutive template vertices; grids use
+  /// row-major vertices. Extra target edges are allowed. Occurrences are unique
+  /// up to template automorphisms and use deterministic order, without assuming
   /// hardware coordinates.
   ///
   /// Each additional type stops preparation after 2,000,000 candidate probes
@@ -512,6 +562,16 @@ public:
   [[nodiscard]] const TopologyPatterns::Group*
   topologyPattern(TopologyPatterns::Type type) const;
 
+  /// Return a lazily cached oriented index for a complete pattern group.
+  ///
+  /// Returns nullptr when topologyPattern(type) is unavailable. Immutable
+  /// indexes are initialized thread-safely and shared by target copies. Views
+  /// live as long as any target copy. Storage grows with sites, oriented
+  /// occurrences and their postings, including the uncapped pair, star, and
+  /// four-cycle groups. Only requested types allocate an index.
+  [[nodiscard]] const TopologyPatterns::Index*
+  topologyPatternIndex(TopologyPatterns::Type type) const;
+
   /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;
 
@@ -521,6 +581,15 @@ public:
   /// Explicit topologies cache breadth-first searches because every coupling
   /// has unit cost.
   [[nodiscard]] size_t distanceBetween(size_t source, size_t target) const;
+
+  /// Return the shared immutable row-major distance matrix for explicit
+  /// targets.
+  ///
+  /// Dense-vertex entry source * numSites() + target holds their shortest-path
+  /// distance; use vertexForSite() to convert site IDs.
+  /// All-to-all targets return an empty view without allocating a matrix.
+  /// The view remains valid while this target or a copy of it exists.
+  [[nodiscard]] llvm::ArrayRef<size_t> distanceMatrix() const;
 
   /// Return a shortest path of dense vertices, including both endpoints.
   ///
@@ -582,7 +651,7 @@ public:
                 llvm::function_ref<bool(const OperationCapability&)> filter =
                     nullptr) const;
 
-  /// Return whether a QCO operation is supported.
+  /// Return whether a QCO operation is supported without knowing its sites.
   [[nodiscard]] bool supports(::mlir::Operation* operation) const;
 
   /// Return whether a QCO operation is supported on ordered target sites.
@@ -599,6 +668,9 @@ public:
   [[nodiscard]] bool supports(GateKind gate,
                               llvm::ArrayRef<SiteId> sites) const;
 
+  /// Check the entangler's synthesis domain without knowing its sites.
+  [[nodiscard]] bool supports(Entangler entangler) const;
+
   /// Check the entangler's synthesis domain on ordered sites.
   [[nodiscard]] bool supports(Entangler entangler,
                               llvm::ArrayRef<SiteId> sites) const;
@@ -611,6 +683,9 @@ public:
   /// The cached basis remains valid while this target or a copy exists.
   [[nodiscard]] const std::optional<SynthesisBasis>&
   synthesisBasis() const noexcept;
+
+  /// Return whether native operations or a synthesis basis cover unknown sites.
+  [[nodiscard]] bool supportsIndexedSynthesis() const noexcept;
 
   /// Return globally usable entanglers in deterministic preference order.
   ///
@@ -631,7 +706,8 @@ private:
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   createImpl(std::optional<std::string> name, std::vector<Site> sites,
              Connectivity connectivity, NativeOperations nativeOperations,
-             std::optional<DurationUnit> durationUnit);
+             std::optional<DurationUnit> durationUnit,
+             bool deviceConstraints = true);
 
   [[nodiscard]] bool
   supportsImpl(::mlir::Operation* operation,

@@ -94,6 +94,3 @@ Local validation after rebasing on `6559f17812` passed:
 - Optimized rebuild, `uvx nox -s stubs`, and `uvx nox -s lint`, including Ruff
   and ty. All-line clang-tidy checked all four changed C++ files without
   diagnostics.
-- Independent enum/ownership scrutiny and a Ponytail review found no
-  substantiated defects. No extra implementation or test infrastructure was
-  retained.

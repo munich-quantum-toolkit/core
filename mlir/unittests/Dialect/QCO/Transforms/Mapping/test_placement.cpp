@@ -44,9 +44,10 @@ constexpr std::array SMALL_PATTERN_TYPES{
     PatternType::Star,
 };
 constexpr std::array EXTENDED_PATTERN_TYPES{
-    PatternType::FourCycle,  PatternType::QubitPair, PatternType::Star,
-    PatternType::Chain4,     PatternType::Chain6,    PatternType::SixCycle,
-    PatternType::EightCycle, PatternType::Grid2x3,   PatternType::Grid2x4,
+    PatternType::FourCycle,   PatternType::QubitPair, PatternType::Star,
+    PatternType::Chain4,      PatternType::Chain6,    PatternType::SixCycle,
+    PatternType::EightCycle,  PatternType::Grid2x3,   PatternType::Grid2x4,
+    PatternType::TwelveCycle,
 };
 class TopologyPatternMatching : public testing::Test {
 protected:
@@ -484,6 +485,53 @@ TEST(TopologyPatternJoin, SelectedPatternsRespectBudgetsAndThreadCounts) {
   EXPECT_FALSE(findTopologyPatternLayout(
       Graph(llvm::to_vector(llvm::seq<size_t>(0, 65))), target, serial, 100000,
       EXTENDED_PATTERN_TYPES));
+}
+
+TEST(TopologyPatternJoin, AutomaticSelectionPreservesBoundedSearchContracts) {
+  MLIRContext context(MLIRContext::Threading::DISABLED);
+  for (const size_t cycleSize : {0U, 11U, 12U}) {
+    // Sparse IDs and a tail exercise peeling without assuming dense queries.
+    Graph graph(llvm::to_vector(llvm::seq<size_t>(30, 46)));
+    SmallVector<CompilerTarget::Coupling> couplings;
+    for (size_t vertex = 0; vertex < 15; ++vertex) {
+      graph.addEdge(vertex + 30, vertex + 31);
+      graph.addEdge(vertex + 31, vertex + 30);
+      couplings.emplace_back(vertex, vertex + 1);
+    }
+    if (cycleSize != 0) {
+      graph.addEdge(30, 29 + cycleSize);
+      graph.addEdge(29 + cycleSize, 30);
+      couplings.emplace_back(0, cycleSize - 1);
+    }
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        16, CompilerTarget::Connectivity::fromCouplings(couplings),
+        CompilerTarget::NativeOperations::unrestricted()));
+    for (const size_t budget : {0U, 1U, 8U, 64U, 100000U}) {
+      const auto cold =
+          findTopologyAutomaticLayout(graph, target, context, budget);
+      const auto expected =
+          cycleSize < 12
+              ? findTopologyLayout(graph, target, context, budget)
+              : findTopologyPatternLayout(graph, target, context, budget,
+                                          EXTENDED_PATTERN_TYPES);
+      EXPECT_EQ(cold, expected);
+      EXPECT_EQ(findTopologyAutomaticLayout(graph, target, context, budget),
+                expected);
+      if (budget == 100000) {
+        ASSERT_TRUE(cold);
+        const auto nodes = graph.getNodes();
+        auto ordered = nodes;
+        llvm::sort(ordered);
+        for (size_t a = 0; a < ordered.size(); ++a) {
+          for (size_t b = a + 1; b < ordered.size(); ++b) {
+            if (graph.hasEdge(ordered[a], ordered[b])) {
+              EXPECT_TRUE(target.areAdjacent((*cold)[a], (*cold)[b]));
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 TEST(TopologyPatternJoin, UnavailablePatternsFallBackToCompletePairs) {

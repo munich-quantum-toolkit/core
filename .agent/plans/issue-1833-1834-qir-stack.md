@@ -77,9 +77,9 @@ own diff before the next layer is created.
 
 - Break the unreleased MQT-specific QIR ABI instead of retaining source or
   binary compatibility. Rationale: compatibility shims would preserve ambiguous
-  symbols, incorrect parameter order, and divergent compiler/runtime tables. The
-  user explicitly prioritized compliance and broad ecosystem compatibility over
-  compatibility with unreleased code.
+  symbols, incorrect parameter order, and divergent compiler/runtime tables. QIR
+  specification compliance and ecosystem interoperability take precedence over
+  compatibility with unreleased APIs.
 
 - Treat qir-spec as the authority for QIR 2.1 profiles and runtime functions,
   and use qir-runner only as a reference for generic controlled specializations.

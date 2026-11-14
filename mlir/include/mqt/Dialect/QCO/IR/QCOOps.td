@@ -100,8 +100,9 @@ def StaticOp : QCOOp<"static", [Pure]> {
 //===----------------------------------------------------------------------===//
 
 def MeasureOp
-    : QCOOp<"measure", [Pure, DeclareOpInterfaceMethods<
-                                  OpAsmOpInterface, ["getAsmResultNames"]>]> {
+    : QCOOp<"measure", [Pure, WireOpInterface,
+                        DeclareOpInterfaceMethods<
+                            OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "Measure a qubit in the computational basis";
   let description = [{
         Measures a qubit in the computational (Z) basis, collapsing the state
@@ -118,9 +119,22 @@ def MeasureOp
   let assemblyFormat = [{
         $qubit_in `:` type($qubit_in) attr-dict
     }];
+  let extraClassDeclaration = [{
+    Value getInputQubit(size_t i) { return getInputQubits()[i]; }
+    OperandRange getInputQubits() { return getOperation()->getOperands(); }
+    Value getOutputQubit(size_t i) { return getOutputQubits()[i]; }
+    ResultRange getOutputQubits() { return getResults().take_front(1); }
+    Value getInputForOutput(Value output) {
+      return output == getQubitOut() ? getQubitIn() : Value{};
+    }
+    Value getOutputForInput(Value input) {
+      return input == getQubitIn() ? getQubitOut() : Value{};
+    }
+  }];
 }
 
-def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure]> {
+def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure,
+                              WireOpInterface]> {
   let summary = "Reset a qubit to |0⟩ state";
   let description = [{
         Resets a qubit to the |0⟩ state, regardless of its current state,
@@ -136,11 +150,27 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure]> {
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
   let hasFolder = 1;
+  let extraClassDeclaration = [{
+    Value getInputQubit(size_t i) { return getInputQubits()[i]; }
+    OperandRange getInputQubits() { return getOperation()->getOperands(); }
+    Value getOutputQubit(size_t i) { return getOutputQubits()[i]; }
+    ResultRange getOutputQubits() { return getOperation()->getResults(); }
+    Value getInputForOutput(Value output) {
+      return output == getQubitOut() ? getQubitIn() : Value{};
+    }
+    Value getOutputForInput(Value input) {
+      return input == getQubitIn() ? getQubitOut() : Value{};
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//
 // Traits
 //===----------------------------------------------------------------------===//
+
+def QubitScope : NativeOpTrait<"QubitScope"> {
+  let cppNamespace = "::mlir::qco";
+}
 
 class TargetAndParameterArityTrait<int T, int P>
     : ParamNativeOpTrait<"TargetAndParameterArityTrait",
@@ -1106,8 +1136,8 @@ def BarrierOp
         ```
     }];
 
-  let arguments =
-      (ins Arg<Variadic<QubitType>, "the target qubits">:$qubits_in);
+  let arguments = (ins Arg<Variadic<QubitType>, "the target qubits">:$qubits_in,
+      OptionalAttr<StrAttr>:$label);
   let results = (outs Variadic<QubitType>:$qubits_out);
   let assemblyFormat = "$qubits_in attr-dict `:` type($qubits_in)";
 
@@ -1137,7 +1167,8 @@ def BarrierOp
         [[nodiscard]] DynamicMatrix getUnitaryMatrix();
     }];
 
-  let builders = [OpBuilder<(ins "ValueRange":$qubits)>];
+  let builders = [OpBuilder<(ins "ValueRange":$qubits,
+      CArg<"StringAttr", "{}">:$label)>];
 
   let hasCanonicalizer = 1;
   let hasVerifier = 1;
@@ -1254,7 +1285,7 @@ def YieldOp
 def CtrlOp
     : QCOOp<"ctrl",
             traits =
-                [UnitaryOpInterface, AttrSizedOperandSegments,
+                [UnitaryOpInterface, QubitScope, AttrSizedOperandSegments,
                  AttrSizedResultSegments,
                  RangedTypesMatchWith<"control qubit types match",
                                       "controls_in", "controls_out", "$_self">,
@@ -1307,6 +1338,7 @@ def CtrlOp
     static void getLoweringPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
 
     /// Populate explicit quantum simplification patterns.
+    /// Adjacent control merging requires gate optimization patterns in the same driver.
     static void getOptimizationPatterns(::mlir::RewritePatternSet &patterns, ::mlir::MLIRContext *context);
 
         size_t getNumBodyUnitaries();
@@ -1353,7 +1385,7 @@ def CtrlOp
 }
 
 def InvOp
-    : QCOOp<"inv", traits = [UnitaryOpInterface,
+    : QCOOp<"inv", traits = [UnitaryOpInterface, QubitScope,
                              SingleBlockImplicitTerminator<"YieldOp">,
                              RecursivelySpeculatable, RecursiveMemoryEffects]> {
   let summary =
@@ -1437,7 +1469,7 @@ def InvOp
 
 def PowOp
     : QCOOp<"pow",
-            traits = [UnitaryOpInterface,
+            traits = [UnitaryOpInterface, QubitScope,
                       SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
                       RecursivelySpeculatable, RecursiveMemoryEffects]> {
   let summary = "Raise a unitary operation to a power";
@@ -1561,9 +1593,10 @@ def IfOp
                                                   "getEntrySuccessorRegions",
                                                   "getEntrySuccessorOperands"]>,
                     DeclareOpInterfaceMethods<PromotableRegionOpInterface>,
-                    SingleBlock, SingleBlockImplicitTerminator<"YieldOp">,
+                    QubitScope, SingleBlock,
+                    SingleBlockImplicitTerminator<"YieldOp">,
                     RecursivelySpeculatable, RecursiveMemoryEffects,
-                    AttrSizedResultSegments]> {
+                    AttrSizedResultSegments, WireOpInterface]> {
 
   let summary = "If-then-else operation with classical and linear results";
   let description = [{
@@ -1574,6 +1607,8 @@ def IfOp
         classical SSA values. Classical results precede the linear results.
         The number and types of the linear results must match the input qubit
         and qtensor values.
+        Classical values may be captured from above; quantum values must enter
+        each branch through its block arguments or be defined within it.
 
         Example:
         ```mlir
@@ -1626,6 +1661,13 @@ def IfOp
            CArg<"function_ref<Value(Value)>", "nullptr">:$elseBuilder)>];
 
   let extraClassDeclaration = [{
+        Value getInputQubit(size_t i) { return getQubits()[i]; }
+        OperandRange getInputQubits() { return getQubits(); }
+        Value getOutputQubit(size_t i) { return getLinearResults()[i]; }
+        ResultRange getOutputQubits() { return getLinearResults(); }
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+
         /// Return the then-block.
         Block *thenBlock() {
           return &getThenRegion().back();
@@ -1703,9 +1745,9 @@ def IndexSwitchOp
                                                   "getEntrySuccessorRegions",
                                                   "getEntrySuccessorOperands"]>,
                     DeclareOpInterfaceMethods<PromotableRegionOpInterface>,
-                    SingleBlockImplicitTerminator<"YieldOp">,
+                    QubitScope, SingleBlockImplicitTerminator<"YieldOp">,
                     RecursivelySpeculatable, RecursiveMemoryEffects,
-                    AttrSizedResultSegments]> {
+                    AttrSizedResultSegments, WireOpInterface]> {
 
   let summary =
       "Index-based switch operation with classical and linear results";
@@ -1717,6 +1759,8 @@ def IndexSwitchOp
         The operation may additionally return ordinary classical SSA values.
         Classical results precede the linear results. The number and types of
         the linear results must match the input qubit and qtensor values.
+        Classical values may be captured from above; quantum values must enter
+        each branch through its block arguments or be defined within it.
 
         The operation has one region for each case value plus a default region. Each region
         must terminate with a `qco.yield` operation that yields values matching the operation's
@@ -1783,6 +1827,13 @@ def IndexSwitchOp
            "function_ref<Value(Value)>":$defaultBuilder)>];
 
   let extraClassDeclaration = [{
+        Value getInputQubit(size_t i) { return getTargets()[i]; }
+        OperandRange getInputQubits() { return getTargets(); }
+        Value getOutputQubit(size_t i) { return getLinearResults()[i]; }
+        ResultRange getOutputQubits() { return getLinearResults(); }
+        Value getInputForOutput(Value output);
+        Value getOutputForInput(Value input);
+
         /// Return the number of case regions
         size_t getNumCases();
 

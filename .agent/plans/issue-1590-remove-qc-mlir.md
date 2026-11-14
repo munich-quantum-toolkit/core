@@ -33,8 +33,8 @@ test-only use does not translate a `QuantumComputation` to or from MLIR.
 - the QCO decision-diagram implementation uses lightweight Core gate identifiers
   and qubit indices but does not construct a `QuantumComputation`. Some
   DD-oriented tests deliberately compare QCO DDs to the established
-  `QuantumComputation` DD simulator. These are retained as the requested DD
-  boundary and independent oracle.
+  `QuantumComputation` DD simulator. These provide an independent oracle for the
+  DD boundary.
 
 - the Qiskit helper-gate matrix test remains a useful translation regression and
   is retained unchanged.
@@ -52,9 +52,9 @@ test-only use does not translate a `QuantumComputation` to or from MLIR.
   compiler inputs.
 
 - Preserve `MLIRQCODDFunctionality` and DD-based reference tests even where the
-  oracle is expressed as a `QuantumComputation`. Rationale: the user explicitly
-  requested that DD code remain, and those tests exercise MLIR-to-DD behavior
-  without translating between the two circuit representations.
+  oracle is expressed as a `QuantumComputation`. Rationale: those tests exercise
+  MLIR-to-DD behavior without translating between the two circuit
+  representations.
 
 ## Outcome and validation
 

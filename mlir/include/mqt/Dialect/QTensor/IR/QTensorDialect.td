@@ -18,16 +18,19 @@ def QTensorDialect : Dialect {
                 "with linear semantics.";
 
   let description = [{
-    The QTensor dialect represents one-dimensional tensors of qubits with
-    linear ownership. Each quantum SSA value must have exactly one use.
-    Extraction consumes a tensor and returns both the extracted qubits and
-    the remaining tensor. Allocation and deallocation create and consume
-    whole qubit tensors.
-    Register slots retain their qubit identities, and quantum operands must
-    denote disjoint resources. See the shared
-    [quantum resource contract](index.md#quantum-resource-contract) for helper
-    boundaries, dynamic-index preconditions, and semantic round trips.
+    QTensor groups QCO qubits into one-dimensional tensors, for example to
+    represent a register. Like individual QCO qubit values, each tensor value
+    has exactly one use.
 
+    Extracting a qubit consumes the tensor and returns both the qubit and the
+    remaining tensor. The extracted slot is unavailable until the qubit is
+    inserted back into it. Gates may change the qubit's state, but reinsertion
+    must restore the same qubit identity to the same slot. Allocation and
+    deallocation create and consume complete tensors.
+
+    A gate or call must receive distinct quantum resources. The shared
+    [quantum resource rules](index.md#quantum-resource-rules) explain how
+    these rules apply to helpers, loops, and dynamically computed indices.
   }];
 
   let dependentDialects = ["::mlir::qco::QCODialect",

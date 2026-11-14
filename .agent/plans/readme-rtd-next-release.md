@@ -62,8 +62,7 @@ documentation framework remains in use.
   executables on `PATH`. Without Ninja, configuration fails as in RtD build
   `34501147`; the notebook now includes CMake diagnostics in its output.
 - External linkcheck, the two generated-link regression tests, general lint, and
-  `git diff --check` pass. The final ponytail review found no further
-  unnecessary code or dependencies in the documentation changes.
+  `git diff --check` pass.
 
 Compiler validation is recorded in its separate plan and audit: 922 native
 tests, 315 Python tests, full-file C++ lint, general lint, and generated MLIR

@@ -18,6 +18,7 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
@@ -38,8 +39,9 @@ protected:
   MLIRContext context;
 
   void SetUp() override {
-    context.loadDialect<arith::ArithDialect, cbit::CBitDialect,
-                        func::FuncDialect, qco::QCODialect, scf::SCFDialect>();
+    context
+        .loadDialect<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                     memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
   }
 
   OwningOpRef<ModuleOp> parse(StringRef source) {
@@ -197,4 +199,29 @@ TEST_F(TopologicalSortingTest,
 
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_TRUE(write->isBeforeInBlock(load));
+}
+
+TEST_F(TopologicalSortingTest, PreservesAliasedMemRefEffectsDuringRepair) {
+  auto moduleOp = parse(R"mlir(
+    func.func @test(%x: i64) -> i64 {
+      %zero = arith.constant 0 : index
+      %storage = memref.alloca() : memref<1xi64>
+      %alias = memref.cast %storage : memref<1xi64> to memref<?xi64>
+      %value = arith.addi %x, %x : i64
+      memref.store %value, %alias[%zero] : memref<?xi64>
+      %result = memref.load %storage[%zero] : memref<1xi64>
+      return %result : i64
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto store = *function.getOps<memref::StoreOp>().begin();
+  auto load = *function.getOps<memref::LoadOp>().begin();
+  store.getValue().getDefiningOp()->moveAfter(load);
+
+  sort(*moduleOp);
+
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(store->isBeforeInBlock(load));
 }

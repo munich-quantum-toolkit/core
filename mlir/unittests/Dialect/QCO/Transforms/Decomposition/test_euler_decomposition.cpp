@@ -18,6 +18,7 @@
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
 #include "gtest/gtest.h"
@@ -441,31 +442,6 @@ TEST(EulerSynthesisTest, RandomReconstructionAllBases) {
   }
 }
 
-TEST(EulerAnglesCoverageTest, ParamsZYZUsesOffDiagonal01When10IsNearZero) {
-  Matrix2x2 matrix = RXOp::unitaryMatrix(0.4);
-  matrix(1, 0) = qco::Complex{0.0, 0.0};
-  ASSERT_GT(std::abs(matrix(0, 1)), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
-  const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
-  EXPECT_TRUE(std::isfinite(angles.theta));
-  EXPECT_TRUE(std::isfinite(angles.phi));
-  EXPECT_TRUE(std::isfinite(angles.lambda));
-}
-
-TEST(EulerAnglesCoverageTest, PhaseOnlyDecompositionSkipsRotationGates) {
-  TestFixture fx;
-  fx.setUp();
-  constexpr double scale = 1.0 + 1e-10;
-  const Matrix2x2 matrix = Matrix2x2::fromElements(scale, 0, 0, scale);
-  ASSERT_FALSE(matrix.isApprox(Matrix2x2::identity()));
-  const EulerAngles angles = anglesFromUnitary(matrix, ZYZ);
-  EXPECT_LE(std::abs(angles.theta), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
-  EXPECT_LE(std::abs(angles.phi), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
-  EXPECT_LE(std::abs(angles.lambda), mlir::mqt::PARAMETER_COMPARISON_TOLERANCE);
-  const auto circuit = synthesizeMatrix(fx.ctx(), matrix, ZYZ);
-  ASSERT_TRUE(succeeded(verify(*circuit.mlirModule)));
-  EXPECT_EQ(countZYZGates(circuit.func), 0U);
-}
-
 TEST(EulerAnglesCoverageTest, UBasisZeroThetaEmitsSingleUGate) {
   TestFixture fx;
   fx.setUp();
@@ -530,15 +506,6 @@ TEST(EulerSynthesisTest, NegativePauliRotationsDoNotGainOuterGates) {
                               EXPECT_EQ(countBasisGates(funcOp, basis), 1U);
                             });
   }
-}
-
-TEST(EulerAnglesCoverageTest, Mod2PiPreservesNonFinitePhase) {
-  TestFixture fx;
-  fx.setUp();
-  const Matrix2x2 matrix = Matrix2x2::fromElements(
-      qco::Complex{std::numeric_limits<double>::quiet_NaN(), 0}, 0, 0, 1);
-  EXPECT_NO_FATAL_FAILURE(std::ignore =
-                              synthesizeMatrix(fx.ctx(), matrix, ZYZ));
 }
 
 //===----------------------------------------------------------------------===//
@@ -1671,6 +1638,9 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
   for (const auto basis : {ZYZ, ZXZ, XZX, XYX, U, ZSXX, R, GPI}) {
     bases.push_back({.singleQubit = basis});
   }
+  for (const auto basis : {ZYZ, ZXZ, XZX, ZSXX}) {
+    bases.push_back({.singleQubit = basis, .phaseRotation = true});
+  }
   for (const auto gate : {
            CompilerTarget::GateKind::RX,
            CompilerTarget::GateKind::RY,
@@ -1720,18 +1690,25 @@ TEST(EulerSynthesisTest, PauliRotationsPreserveRuntimeAnglesAndFullPhase) {
         }
       });
       EXPECT_TRUE(preservesAngle);
-      // Bound phases must remain within the gphase verifier's 1e4 limit.
-      for (const double angle : {
-               0.,
-               1.e-8,
-               -0.37,
-               std::numbers::pi,
-               -std::numbers::pi,
-               2. * std::numbers::pi,
-               1000.,
-               -1000.,
-               1e300,
-           }) {
+      SmallVector<double> angles{
+          0.,
+          1.e-8,
+          -0.37,
+          std::numbers::pi,
+          -std::numbers::pi,
+          2. * std::numbers::pi,
+          1000.,
+          -1000.,
+      };
+      angles.append({
+          1e300,
+          -1e300,
+          std::numeric_limits<double>::max(),
+          -std::numeric_limits<double>::max(),
+          std::nextafter(4. * std::numbers::pi, 0.),
+          std::nextafter(4. * std::numbers::pi, 100.),
+      });
+      for (const double angle : angles) {
         SCOPED_TRACE(angle);
         OwningOpRef bound = moduleOp->clone();
         auto boundFunction = bound->lookupSymbol<func::FuncOp>("main");

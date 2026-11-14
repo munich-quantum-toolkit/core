@@ -23,6 +23,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <memory>
 #include <random>
@@ -43,6 +44,8 @@ using DDArgumentBindings = DenseMap<Value, Attribute>;
 /// Counted loops and the total number of gates are not bounded by this budget.
 struct DDExecutionOptions {
   size_t maxWhileIterations = 1'000'000'000;
+  /// Maximum number of DD wires, including wires whose lifetimes have ended.
+  size_t maxQubits = std::numeric_limits<size_t>::max();
 };
 
 /// An uncollapsed sampling state and the package that owns its DD nodes.
@@ -148,8 +151,8 @@ FailureOr<std::vector<dd::fp>> expectationValues(
 /// samples all DD wires. Terminal measurements use
 /// one simulation for all shots. Counts-only sampling groups outcomes directly
 /// in the DD. Adaptive programs share shot prefixes through for/while loops,
-/// conditionals and index switches. Measurements in called functions use
-/// independent shots. Seeded draws are reproducible for a fixed sampling
+/// conditionals, index switches, and non-recursive function calls.
+/// Seeded draws are reproducible for a fixed sampling
 /// strategy; requesting individual outcomes may select another strategy.
 ///
 /// The containing module must pass MLIR verification and

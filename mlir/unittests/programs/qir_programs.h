@@ -109,6 +109,7 @@ Value dynamicallyIndexedMeasurement(QIRProgramBuilder& b);
 /// Measures a single qubit into a single classical bit, without explicitly
 /// allocating a quantum or classical register.
 Value measurementWithoutRegisters(QIRProgramBuilder& b);
+Value measurementWithoutRegistersBase(QIRProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
 
@@ -216,6 +217,7 @@ Value multipleControlledH(QIRProgramBuilder& b);
 
 /// Creates a circuit with just an H gate and no qubit register.
 Value hWithoutRegister(QIRProgramBuilder& b);
+Value hWithoutRegisterBase(QIRProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 

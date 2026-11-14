@@ -70,8 +70,7 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
   transforms create Arith, QC, and QCO entities but no MQT entities.
 
 - Do not introduce a shared QC/QCO unitary operation interface. Rationale: QC
-  has reference semantics and QCO has value semantics. The user explicitly
-  excluded that abstraction from this refactor.
+  has reference semantics and QCO has value semantics.
 
 - Split the former `Utils.h` by semantic responsibility instead of renaming the
   monolith. Rationale: a path move alone would preserve unclear ownership and
@@ -79,8 +78,8 @@ documentation lists both the MQT metadata dialect and its cross-dialect passes.
 
 - Do not preserve forwarding headers below the old project-owned
   `mlir/Dialect/Utils` path. Rationale: the compiler collection and these APIs
-  are part of the unreleased general launch, and the requested cleanup should
-  remove the ambiguous project-owned include surface.
+  are unreleased; forwarding headers would perpetuate the ambiguous
+  project-owned include surface.
 
 - Put all IR-aware shared helpers below `mlir/Dialect/MQT/Utils` in `mlir::mqt`,
   including constant folding. Rationale: the helpers depend on MLIR IR,

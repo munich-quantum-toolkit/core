@@ -213,109 +213,8 @@ struct PatternSearchResult {
 
 } // namespace
 
-// Degree/adjacency pruning avoids trying all 8! permutations of a 2x4 grid.
-static SmallVector<SmallVector<size_t, 8>>
-automorphisms(const PatternGroup& group) {
-  const auto arity = group.arity();
-  SmallVector<size_t, 8> order;
-  while (order.size() != arity) {
-    size_t best = UNASSIGNED;
-    const auto score = [&](size_t vertex) {
-      return std::pair{llvm::count_if(group.neighbours(vertex),
-                                      [&](size_t n) {
-                                        return llvm::is_contained(order, n);
-                                      }),
-                       group.neighbours(vertex).size()};
-    };
-    for (size_t vertex = 0; vertex < arity; ++vertex) {
-      if (!llvm::is_contained(order, vertex) &&
-          (best == UNASSIGNED || score(best) < score(vertex))) {
-        best = vertex;
-      }
-    }
-    order.push_back(best);
-  }
-  SmallVector<SmallVector<size_t, 8>> result;
-  SmallVector<size_t, 8> permutation(arity, UNASSIGNED);
-  llvm::BitVector used(arity);
-  const auto visit = [&](auto&& self, size_t depth) -> void {
-    if (depth == arity) {
-      result.push_back(permutation);
-      return;
-    }
-    const auto vertex = order[depth];
-    for (size_t candidate = 0; candidate < arity; ++candidate) {
-      if (used[candidate] ||
-          group.neighbours(vertex).size() !=
-              group.neighbours(candidate).size() ||
-          llvm::any_of(group.neighbours(vertex), [&](size_t n) {
-            return permutation[n] != UNASSIGNED &&
-                   !llvm::is_contained(group.neighbours(candidate),
-                                       permutation[n]);
-          })) {
-        continue;
-      }
-      permutation[vertex] = candidate;
-      used.set(candidate);
-      self(self, depth + 1);
-      used.reset(candidate);
-      permutation[vertex] = UNASSIGNED;
-    }
-  };
-  visit(visit, 0);
-  llvm::sort(result);
-  return result;
-}
-
 namespace {
-// Column/vertex postings let a bound logical vertex select only compatible
-// occurrences. Tuples and postings are immutable and shared by all workers.
-struct PatternIndex {
-  size_t arity;
-  size_t numSites;
-  SmallVector<size_t, 0> tuples;
-  SmallVector<size_t, 0> offsets;
-  SmallVector<size_t, 0> rows;
-
-  PatternIndex(const PatternGroup& group, size_t sites)
-      : arity(group.arity()), numSites(sites) {
-    // The cache removes symmetries; logical vertices remain distinguishable.
-    const auto orientations = automorphisms(group);
-    for (size_t row = 0; row < group.size(); ++row) {
-      for (const auto& orientation : orientations) {
-        for (const auto column : orientation) {
-          tuples.push_back(group[row][column]);
-        }
-      }
-    }
-    offsets.resize(arity * numSites + 1);
-    for (size_t row = 0; row < size(); ++row) {
-      for (size_t column = 0; column < arity; ++column) {
-        ++offsets[column * numSites + (*this)[row][column] + 1];
-      }
-    }
-    for (size_t i = 1; i < offsets.size(); ++i) {
-      offsets[i] += offsets[i - 1];
-    }
-    rows.resize(tuples.size());
-    auto cursor = offsets;
-    for (size_t row = 0; row < size(); ++row) {
-      for (size_t column = 0; column < arity; ++column) {
-        rows[cursor[column * numSites + (*this)[row][column]]++] = row;
-      }
-    }
-  }
-
-  [[nodiscard]] size_t size() const { return tuples.size() / arity; }
-  ArrayRef<size_t> operator[](size_t row) const {
-    return ArrayRef<size_t>(tuples).slice(row * arity, arity);
-  }
-  ArrayRef<size_t> candidates(size_t column, size_t vertex) const {
-    const auto key = column * numSites + vertex;
-    return ArrayRef<size_t>(rows).slice(offsets[key],
-                                        offsets[key + 1] - offsets[key]);
-  }
-};
+using PatternIndex = CompilerTarget::TopologyPatterns::Index;
 
 struct PatternStep {
   // A singleton step assigns an isolated vertex, or an all-to-all vertex.
@@ -533,7 +432,6 @@ findTopologyPatternLayout(const Graph& graph, const CompilerTarget& target,
     return std::nullopt;
   }
 
-  SmallVector<std::unique_ptr<PatternIndex>> indexes;
   SmallVector<PatternStep> remaining;
   const bool hasEdges =
       llvm::any_of(degrees, [](size_t degree) { return degree != 0; });
@@ -543,9 +441,9 @@ findTopologyPatternLayout(const Graph& graph, const CompilerTarget& target,
     types.erase(std::ranges::unique(types).begin(), types.end());
     // Necessary degree bounds avoid preparing rectangles for rings and other
     // patterns that cannot occur in the query.
-    constexpr std::array<size_t, 9> arities{4, 2, 4, 4, 6, 6, 8, 6, 8};
-    constexpr std::array<size_t, 9> degreeTwo{4, 0, 1, 2, 4, 6, 8, 6, 8};
-    constexpr std::array<size_t, 9> degreeThree{0, 0, 1, 0, 0, 0, 0, 2, 4};
+    constexpr std::array<size_t, 10> arities{4, 2, 4, 4, 6, 6, 8, 6, 8, 12};
+    constexpr std::array<size_t, 10> degreeTwo{4, 0, 1, 2, 4, 6, 8, 6, 8, 12};
+    constexpr std::array<size_t, 10> degreeThree{0, 0, 1, 0, 0, 0, 0, 2, 4, 0};
     const size_t numDegreeTwo =
         llvm::count_if(degrees, [](size_t degree) { return degree >= 2; });
     const size_t numDegreeThree =
@@ -564,13 +462,12 @@ findTopologyPatternLayout(const Graph& graph, const CompilerTarget& target,
     if (failed(slices)) {
       return std::nullopt;
     }
-    indexes.resize(groups.size());
+    SmallVector<const PatternIndex*> indexes(groups.size());
     parallelFor(&context, 0, groups.size(), [&](size_t slot) {
       if (llvm::any_of(*slices, [&](const auto& slice) {
             return slice.type == groups[slot]->type();
           })) {
-        indexes[slot] =
-            std::make_unique<PatternIndex>(*groups[slot], target.numSites());
+        indexes[slot] = target.topologyPatternIndex(groups[slot]->type());
       }
     });
     for (const auto [slot, group] : llvm::enumerate(groups)) {
@@ -579,7 +476,7 @@ findTopologyPatternLayout(const Graph& graph, const CompilerTarget& target,
           continue;
         }
         PatternStep step{
-            .index = indexes[slot].get(),
+            .index = indexes[slot],
             .vertices = {},
             .bound = {},
             .added = {},
@@ -619,5 +516,49 @@ findTopologyPatternLayout(const Graph& graph, const CompilerTarget& target,
   }
   return searchPatternLayouts(steps, degrees, targetDegrees, context,
                               maxCandidates);
+}
+
+std::optional<SmallVector<size_t>>
+findTopologyAutomaticLayout(const Graph& graph, const CompilerTarget& target,
+                            MLIRContext& context, size_t maxCandidates) {
+  DenseMap<size_t, size_t> degrees;
+  SmallVector<size_t> pending;
+  size_t remaining = graph.getNumNodes();
+  if (remaining >= 12) {
+    for (const auto vertex : graph.getNodes()) {
+      degrees[vertex] = graph.getDegree(vertex);
+      if (degrees[vertex] < 2) {
+        pending.push_back(vertex);
+      }
+    }
+    for (size_t next = 0; next < pending.size() && remaining >= 12; ++next) {
+      --remaining;
+      for (const auto neighbor : graph.getNeighbours(pending[next])) {
+        auto& degree = degrees[neighbor];
+        if (degree >= 2) {
+          --degree;
+          if (degree == 1) {
+            pending.push_back(neighbor);
+          }
+        }
+      }
+    }
+  }
+  if (remaining < 12) {
+    return findTopologyLayout(graph, target, context, maxCandidates);
+  }
+  return findTopologyPatternLayout(graph, target, context, maxCandidates,
+                                   {
+                                       PatternType::FourCycle,
+                                       PatternType::QubitPair,
+                                       PatternType::Star,
+                                       PatternType::Chain4,
+                                       PatternType::Chain6,
+                                       PatternType::SixCycle,
+                                       PatternType::EightCycle,
+                                       PatternType::Grid2x3,
+                                       PatternType::Grid2x4,
+                                       PatternType::TwelveCycle,
+                                   });
 }
 } // namespace mlir::qco

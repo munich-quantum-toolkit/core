@@ -10,7 +10,7 @@
 
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
-#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -141,6 +141,7 @@ static LogicalResult bind(ModuleOp moduleOp,
     return failure();
   }
   auto pm = PassManager::on<func::FuncOp>(moduleOp.getContext());
+  // Eliminate dead branches before verifying folded gate parameters.
   pm.addPass(createCanonicalizerPass());
   return pm.run(entry);
 }

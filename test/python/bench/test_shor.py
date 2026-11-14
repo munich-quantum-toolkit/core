@@ -15,8 +15,7 @@ import json
 import pytest
 
 from mqt.core.bench import shor
-
-from .utils import assert_generates
+from mqt.core.mlir import QCOProgram
 
 
 def test_shor_instance() -> None:
@@ -36,7 +35,7 @@ def test_shor_instance() -> None:
     assert evaluation.shots == 4
     assert evaluation.factors == (3, 7)
     assert evaluation.success_probability == pytest.approx(0.75)
-    assert_generates(benchmark.generate())
+    assert isinstance(benchmark.generate().to_qco(), QCOProgram)
 
 
 def test_factor_callback() -> None:

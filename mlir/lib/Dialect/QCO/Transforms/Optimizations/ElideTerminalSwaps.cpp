@@ -36,6 +36,9 @@
 
 namespace mlir::qco {
 
+#define GEN_PASS_DEF_ELIDETERMINALSWAPSPASS
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
+
 /// Find the disposal of a straight-line qubit wire.
 static Value terminalQubit(Value root) {
   WireIterator wire(root);
@@ -51,8 +54,7 @@ static Value terminalQubit(Value root) {
 namespace {
 
 struct ElideTerminalSwapsPass final
-    : PassWrapper<ElideTerminalSwapsPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(ElideTerminalSwapsPass)
+    : impl::ElideTerminalSwapsPassBase<ElideTerminalSwapsPass> {
 
 protected:
   void runOnOperation() override {
@@ -199,9 +201,5 @@ protected:
 };
 
 } // namespace
-
-std::unique_ptr<Pass> createElideTerminalSwapsPass() {
-  return std::make_unique<ElideTerminalSwapsPass>();
-}
 
 } // namespace mlir::qco

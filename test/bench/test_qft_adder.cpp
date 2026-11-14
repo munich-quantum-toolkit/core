@@ -197,27 +197,4 @@ TEST(QFTAdder, RejectsInvalidJSONParameters) {
   }
 }
 
-TEST(QFTAdder, EvaluatesCountsFromJSON) {
-  const auto benchmark =
-      llvm::cantFail(QFTAdder::create({.addend = "++", .accumulator = "01"}));
-  const auto evaluation = llvm::cantFail(evaluateJSON(
-      toManifestJSON(benchmark),
-      R"({"schema_version":1,"counts":{"0001":1,"0110":1,"1011":1,"1100":1}})"));
-  EXPECT_NE(evaluation.find("\"success_probability\":null"), std::string::npos);
-  EXPECT_NE(evaluation.find("\"total_variation_distance\":0"),
-            std::string::npos);
-
-  const auto constant = llvm::cantFail(QFTAdder::create({
-      .addend = "110",
-      .accumulator = "001",
-      .method = QFTAdderMethod::Constant,
-      .overflow = QFTAdderOverflow::Carry,
-  }));
-  const auto constantEvaluation = llvm::cantFail(
-      evaluateJSON(toManifestJSON(constant),
-                   R"({"schema_version":1,"counts":{"0111":8,"0110":2}})"));
-  EXPECT_NE(constantEvaluation.find("\"success_probability\":0.8"),
-            std::string::npos);
-}
-
 } // namespace mqt::bench

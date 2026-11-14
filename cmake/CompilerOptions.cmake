@@ -51,7 +51,8 @@ function(enable_project_options target_name)
     target_compile_options(
       ${target_name}
       INTERFACE
-        /utf-8 "$<$<NOT:$<IN_LIST:_HAS_EXCEPTIONS=0,$<TARGET_PROPERTY:COMPILE_DEFINITIONS>>>:/EHsc>")
+        /utf-8 "$<$<NOT:$<IN_LIST:_HAS_EXCEPTIONS=0,$<TARGET_PROPERTY:COMPILE_DEFINITIONS>>>:/EHsc>"
+    )
   else()
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)
     if(ENABLE_COVERAGE)
@@ -86,7 +87,8 @@ function(enable_project_options target_name)
     target_compile_options(
       ${target_name}
       INTERFACE
-        "$<$<CONFIG:DEBUG>:-fno-omit-frame-pointer;-fno-optimize-sibling-calls;-fno-inline-functions>")
+        "$<$<CONFIG:DEBUG>:-fno-omit-frame-pointer;-fno-optimize-sibling-calls;-fno-inline-functions>"
+    )
   endif()
 
   option(BINDINGS "Configure for building Python bindings")

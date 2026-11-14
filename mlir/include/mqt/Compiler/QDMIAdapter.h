@@ -12,12 +12,17 @@
 
 #include "mqt/Compiler/CompilationOptions.h"
 #include "mqt/Compiler/Programs.h"
+#include "mqt/Compiler/ResultLayout.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "qdmi/common/Common.hpp"
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -27,18 +32,40 @@
 namespace qdmi {
 class Device;
 class Job;
+class Operation;
 } // namespace qdmi
 
 namespace mlir {
+
+/// Optional QPY exporter installed by the Python bindings.
+/// The callback owns its output and must acquire the Python GIL itself.
+using QPYExporter = llvm::Expected<std::string> (*)(QCProgram,
+                                                    const TargetEnvironment&);
+void setQPYExporter(QPYExporter exporter);
+
+/// One alternative in the temporary operation-parameter metadata contract.
+struct OperationParameterConstraints {
+  std::vector<std::optional<double>> fixed;
+  std::vector<
+      std::optional<CompilerTarget::OperationCapability::ParameterBounds>>
+      bounds;
+};
+
+/// Parse the temporary operation CUSTOM2 metadata for the given arity.
+///
+/// Empty means absent or foreign metadata. Recognized malformed metadata fails.
+/// Remove this compatibility contract when QDMI standardizes parameter domains.
+[[nodiscard]] llvm::Expected<
+    llvm::SmallVector<OperationParameterConstraints, 1>>
+parseOperationParameterConstraints(llvm::StringRef text, size_t numParameters);
 
 /// Snapshot a circuit-model QDMI device as an MQT compiler target.
 ///
 /// The returned target owns all queried metadata and remains valid
 /// after the originating device and session have been destroyed. Neutral-atom
-/// zone models are not supported. Explicit QDMI site lists must cover every
-/// site for one-qubit operations, every undirected topology edge for two-qubit
-/// operations, and every ordered tuple of distinct sites for higher arities.
-/// Each supported ordered placement carries optional calibration data.
+/// zone models are not supported. Exact ordered operation placements and
+/// optional calibration are retained. Compilation separately checks its
+/// required synthesis basis and every emitted operation at its assigned sites.
 [[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDevice(const qdmi::Device& device);
 
@@ -59,29 +86,77 @@ registeredQDMIDeviceIds();
 [[nodiscard]] llvm::Expected<PayloadSpecification>
 payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 
+/// Apply versioned device payload capabilities; unrelated metadata is ignored.
+[[nodiscard]] llvm::Expected<PayloadSpecification>
+parsePayloadCapabilities(llvm::StringRef text,
+                         const PayloadSpecification& baseline);
+
 /// Snapshot the device and select its executable payload before compilation.
 ///
-/// Preference: Adaptive QIR (binary, text), OpenQASM 3, IQM JSON, Base QIR
-/// (binary, text).
+/// Preference: QPY, OpenQASM 3, Adaptive QIR (binary, text), IQM JSON, Base QIR
+/// (binary, text), OpenQASM 2. Selection requires an available local
+/// serializer.
 [[nodiscard]] llvm::Expected<TargetEnvironment> targetEnvironmentFromDevice(
     const qdmi::Device& device,
     std::optional<QDMI_Program_Format> format = std::nullopt);
 
-/// Check equality of legality-relevant contracts, ignoring calibration data.
+/// Snapshot a device's execution formats and features without serializing a
+/// program.
+///
+/// An omitted format uses the device's highest-preference compiler-supported
+/// format. Checks before submission can omit calibration, which does not affect
+/// compatibility.
+[[nodiscard]] llvm::Expected<TargetEnvironment> inspectTargetEnvironment(
+    const qdmi::Device& device,
+    std::optional<QDMI_Program_Format> format = std::nullopt,
+    bool includeCalibration = true);
+
+/// Check hardware compatibility and supported program features, ignoring
+/// calibration.
 ///
 /// Ordered site IDs and ordered operation operands retain their meaning.
-/// IQM JSON also requires unchanged site names.
+/// IQM JSON also requires unchanged site names. The destination must support
+/// every feature allowed by the compiled program's format specification.
 [[nodiscard]] llvm::Error
 validateTargetCompatibility(const TargetEnvironment& compiled,
                             const TargetEnvironment& destination);
 
-/// Compiled payload and the target used to check submission compatibility.
+/// Serialized program and target information used to check submission
+/// compatibility.
 class CompiledProgram {
 public:
-  /// Compile and serialize for one selected hardware/payload contract.
+  /// Compile and serialize for the selected target and execution format.
   [[nodiscard]] static llvm::Expected<CompiledProgram>
   compile(CompilerInput program, const TargetEnvironment& environment,
           const CompilationOptions& options = {});
+
+  /// Serialize an already native program without routing or gate synthesis.
+  ///
+  /// The caller supplies valid native operations and placements.
+  /// Programs with static device-site references measure each read-out site
+  /// once at the end and retain a map back to the program's output bits.
+  /// Programs with allocated qubits retain their classical outputs.
+  [[nodiscard]] static llvm::Expected<CompiledProgram>
+  serialize(QCProgram program, const TargetEnvironment& environment,
+            const CompilationOptions& options = {});
+
+  /// Snapshot exact operation placements and serialize for a QDMI device.
+  ///
+  /// Input wires already denote target site IDs.
+  [[nodiscard]] static llvm::Expected<CompiledProgram>
+  serialize(QCProgram program, const qdmi::Device& device,
+            std::optional<QDMI_Program_Format> format = std::nullopt);
+
+  /// Logical binary output reconstruction; absent for an identity layout.
+  [[nodiscard]] const std::optional<ResultLayout>&
+  resultLayout() const noexcept {
+    return resultLayout_;
+  }
+
+  /// Total logical binary output width, absent for non-bit output types.
+  [[nodiscard]] std::optional<size_t> resultWidth() const noexcept {
+    return resultWidth_;
+  }
 
   [[nodiscard]] const TargetEnvironment& environment() const noexcept {
     return environment_;
@@ -94,10 +169,14 @@ public:
 
 private:
   CompiledProgram(TargetEnvironment environment, std::string payload,
-                  QDMI_Program_Format format);
+                  QDMI_Program_Format format,
+                  std::optional<ResultLayout> resultLayout,
+                  std::optional<size_t> resultWidth);
   TargetEnvironment environment_;
   std::string payload_;
   QDMI_Program_Format format_;
+  std::optional<ResultLayout> resultLayout_;
+  std::optional<size_t> resultWidth_;
 };
 
 /// Compile for a QDMI device.
@@ -106,7 +185,9 @@ compileProgram(CompilerInput program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format = std::nullopt,
                const CompilationOptions& options = {});
 
-/// Validate the destination contract before creating and submitting a QDMI job.
+/// Check the destination supports the program before creating a QDMI job.
+/// Raw job results require decoding with the compiled result layout, if
+/// present.
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
     const qdmi::Device& device, const CompiledProgram& program,
     int64_t numShots = 1024,
@@ -115,6 +196,33 @@ compileProgram(CompilerInput program, const qdmi::Device& device,
     const std::optional<qdmi::CustomJobParameter>& custom3 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt);
+
+/// Check one format group and retain its destination requirements.
+///
+/// Without a retained destination, snapshot the device without calibration.
+/// No job is created. All programs must be non-null and use the same format.
+/// A retained destination must belong to the supplied device session.
+[[nodiscard]] llvm::Expected<TargetEnvironment>
+prepareProgramSubmission(const qdmi::Device& device,
+                         llvm::ArrayRef<const CompiledProgram*> programs,
+                         const TargetEnvironment* destination = nullptr);
+
+/// Validate and submit compiled programs together when the provider supports
+/// it.
+///
+/// Programs must use the same payload format. An empty optional means the
+/// provider declined a multi-program job before submission; other failures
+/// return an error. No job is submitted unless every target is compatible.
+/// A retained destination snapshot must belong to the supplied device session.
+[[nodiscard]] llvm::Expected<std::optional<qdmi::Job>> trySubmitPrograms(
+    const qdmi::Device& device, llvm::ArrayRef<const CompiledProgram*> programs,
+    int64_t numShots = 1024,
+    const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom3 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt,
+    const TargetEnvironment* destination = nullptr);
 
 /// Compile and submit source using one snapshot of the destination.
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(

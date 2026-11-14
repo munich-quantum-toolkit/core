@@ -122,6 +122,7 @@ private:
   static constexpr uintptr_t MIN_DYN_RESULT_ADDRESS = 0x10000;
   ResourceMode resultMode;
   std::unordered_map<Result*, ResultStruct> rRegister;
+  size_t maxQubits_ = dd::Package::MAX_POSSIBLE_QUBITS;
   std::optional<size_t> staticQubits_;
   std::optional<size_t> staticResults_;
   std::vector<ResultStruct> resultValues_;

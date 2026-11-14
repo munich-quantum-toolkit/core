@@ -99,9 +99,7 @@ their consumers while QCO's explicit single-use quantum flow remains intact.
   parent-aware verifier. Rationale: one terminator can then express mixed
   conditional results without weakening modifier or index-switch semantics.
 
-- Add classical results to `qco.index_switch` in the same change, superseding
-  the earlier decision to defer them. Rationale: the user requested one coherent
-  conditional-result contract, and index switches can use the exact same
+- Use classical results in `qco.index_switch`. Index switches use the same
   classical-prefix, linear-suffix representation without scratch memory or a
   separate abstraction.
 

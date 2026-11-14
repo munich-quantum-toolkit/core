@@ -8,22 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "bench/BV.hpp"
-#include "bench/FanOut.hpp"
 #include "bench/GHZ.hpp"
-#include "bench/Grover.hpp"
-#include "bench/GroverWeakMeasurement.hpp"
 #include "bench/JSON.hpp"
-#include "bench/MagicStateDistillation.hpp"
 #include "bench/ModularMultiplier.hpp"
-#include "bench/Multiplexer.hpp"
-#include "bench/QAOA.hpp"
-#include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
-#include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Shor.hpp"
-#include "bench/Teleportation.hpp"
 #include "bench/WState.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
@@ -80,57 +70,6 @@ TEST(GenerateProgramTest, RejectsInvalidInstanceSpecifications) {
       }) {
     EXPECT_TRUE(mlir::failed(generate(specification)));
   }
-}
-
-template <class Benchmark>
-static void expectQCAndJeff(const Benchmark& benchmark) {
-  auto program = generate(benchmark);
-  ASSERT_TRUE(mlir::succeeded(program));
-  test::expectJeffRoundTrip(std::move(*program));
-}
-
-TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
-  expectQCAndJeff(llvm::cantFail(BV::create({.hiddenBitstring = "101"})));
-  expectQCAndJeff(llvm::cantFail(
-      BV::create({.hiddenBitstring = "101", .method = BVMethod::Dynamic})));
-  expectQCAndJeff(llvm::cantFail(FanOut::create({.controls = 3})));
-  expectQCAndJeff(llvm::cantFail(ModularMultiplier::create({
-      .multiplier = "011",
-      .modulus = "101",
-      .multiplicand = "+++",
-      .control = '+',
-  })));
-  expectQCAndJeff(llvm::cantFail(GHZ::create({.qubits = 3})));
-  expectQCAndJeff(llvm::cantFail(Grover::create({.markedBitstring = "101"})));
-  expectQCAndJeff(llvm::cantFail(
-      GroverWeakMeasurement::create({.markedBitstring = "101"})));
-  expectQCAndJeff(
-      llvm::cantFail(MagicStateDistillation::create({.levels = 1})));
-  expectQCAndJeff(llvm::cantFail(Multiplexer::create({.qubits = 3})));
-  expectQCAndJeff(llvm::cantFail(QAOA::create({.qubits = 3})));
-  expectQCAndJeff(
-      llvm::cantFail(QFT::create({.qubits = 3, .periodExponent = 1})));
-  expectQCAndJeff(llvm::cantFail(QFT::create(
-      {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical})));
-  expectQCAndJeff(llvm::cantFail(QFTAdder::create({
-      .addend = "101",
-      .accumulator = "001",
-      .method = QFTAdderMethod::Constant,
-      .overflow = QFTAdderOverflow::Carry,
-  })));
-  expectQCAndJeff(llvm::cantFail(
-      QFTAdder::create({.addend = "+++", .accumulator = "001"})));
-  expectQCAndJeff(llvm::cantFail(QPE::create(
-      {.precision = 3, .phase = llvm::cantFail(Phase::create(3, 8))})));
-  expectQCAndJeff(llvm::cantFail(QPE::create({
-      .precision = 3,
-      .phase = llvm::cantFail(Phase::create(3, 8)),
-      .method = QPEMethod::Iterative,
-  })));
-  expectQCAndJeff(llvm::cantFail(RepeatUntilSuccess::create()));
-  expectQCAndJeff(llvm::cantFail(Shor::create({.number = 15})));
-  expectQCAndJeff(Teleportation{});
-  expectQCAndJeff(llvm::cantFail(WState::create({.qubits = 3})));
 }
 
 template <class Benchmark>

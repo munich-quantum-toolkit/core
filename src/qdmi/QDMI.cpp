@@ -153,7 +153,7 @@ Expected<std::map<std::string, T>> getSparseResult(
     if (idx >= values.size()) {
       return qdmi::makeError(QDMI_ERROR_FATAL, std::string(mismatch));
     }
-    result[key.str()] = values[idx];
+    result.insert_or_assign(result.end(), key.str(), values[idx]);
     ++idx;
   }
 

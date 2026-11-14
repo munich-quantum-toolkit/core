@@ -84,7 +84,10 @@ public:
                                                const CompilerTarget& target,
                                                Sites sites);
 
-  /// Operand direction for a synthesis entangler, or unavailable placement.
+  /// Recipe direction for a synthesis entangler, or unavailable placement.
+  ///
+  /// Symmetric entanglers use program order; native operands are legalized
+  /// separately.
   static std::optional<bool>
   entanglerOrientation(const CompilerTarget& target,
                        CompilerTarget::Entangler entangler, Sites sites);

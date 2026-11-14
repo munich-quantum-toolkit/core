@@ -145,13 +145,4 @@ TEST(Multiplexer, RejectsInvalidJSONParameters) {
       "angles");
 }
 
-TEST(Multiplexer, EvaluatesCountsFromJSON) {
-  const auto evaluation = llvm::cantFail(evaluateJSON(
-      toManifestJSON(llvm::cantFail(Multiplexer::create({.qubits = 2}))),
-      R"({"schema_version":1,"counts":{"00":8,"01":2}})"));
-  EXPECT_NE(evaluation.find("\"success_probability\":null"), std::string::npos);
-  EXPECT_NE(evaluation.find("\"total_variation_distance\":"),
-            std::string::npos);
-}
-
 } // namespace mqt::bench

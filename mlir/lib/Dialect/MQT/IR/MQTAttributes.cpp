@@ -14,8 +14,10 @@
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Operation.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
@@ -34,6 +36,17 @@
 
 using namespace mlir;
 using namespace mlir::mqt;
+
+bool mlir::mqt::preservesProgramQubits(Operation* operation) {
+  auto moduleOp = dyn_cast<ModuleOp>(operation);
+  if (!moduleOp) {
+    moduleOp = operation->getParentOfType<ModuleOp>();
+  }
+  const auto environment =
+      moduleOp ? moduleOp->getAttrOfType<TargetEnvAttr>(TargetEnvAttr::name)
+               : TargetEnvAttr{};
+  return environment && environment.getCompilationTarget().getGateSet();
+}
 
 LogicalResult
 PayloadFormatAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
@@ -299,12 +312,17 @@ LogicalResult CompilationTargetAttr::verify(
     const ArrayRef<SiteAttr> sites, const DurationUnitAttr durationUnit,
     const ConnectivityKind connectivity, const ArrayRef<CouplingAttr> couplings,
     const NativeOperationsKind nativeOperations,
-    const ArrayRef<NativeOperationAttr> operations) {
+    const ArrayRef<NativeOperationAttr> operations, const UnitAttr gateSet) {
   if (name && name.getValue().empty()) {
     return emitError() << "compiler target name must not be empty when present";
   }
-  if (sites.empty()) {
+  if (!gateSet && sites.empty()) {
     return emitError() << "compiler target must contain at least one site";
+  }
+  if (gateSet &&
+      (!sites.empty() || connectivity != ConnectivityKind::AllToAll ||
+       !couplings.empty() || durationUnit)) {
+    return emitError() << "gate-set target cannot contain device constraints";
   }
 
   llvm::SmallDenseSet<int64_t> siteIds;
@@ -343,7 +361,11 @@ LogicalResult CompilationTargetAttr::verify(
            << "compiler target operations require explicit native operations";
   }
   for (const NativeOperationAttr operation : operations) {
-    if (operation.getArity().getValue() > sites.size()) {
+    if (gateSet && !operation.getSiteTuples().empty()) {
+      return emitError()
+             << "gate-set target cannot contain site-specific operations";
+    }
+    if (!gateSet && operation.getArity().getValue() > sites.size()) {
       if (operation.getArity().getKind() == OperationArityKind::Variadic) {
         return emitError() << "compiler target operation variadic minimum "
                               "exceeds its site count";

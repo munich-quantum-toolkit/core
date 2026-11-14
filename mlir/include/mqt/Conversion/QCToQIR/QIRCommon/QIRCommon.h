@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
@@ -22,8 +23,10 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -33,6 +36,8 @@
 #include <variant>
 
 namespace mlir {
+
+class OpPassManager;
 
 /// Register dialects and bufferization interfaces for constant tensor reads.
 void registerQIRClassicalTensorDialects(DialectRegistry& registry);
@@ -57,7 +62,7 @@ struct LoweringState {
   [[nodiscard]] LogicalResult nameNativeCall(LLVM::CallOp call, StringRef name,
                                              ValueRange qubits) const;
 
-  /// Result-array pointers to be deallocated at the end of the program
+  /// Returned result-register arrays that reject non-measurement stores.
   llvm::SmallSetVector<Value, 4> resultArrays;
 
   /// CBit read operations whose register is backed by a result array.
@@ -90,11 +95,13 @@ struct LoweringState {
   /// Measurement stores kept as SSA users across structural conversion.
   DenseMap<Operation*, Operation*> deferredMeasurementStores;
 
-  /// Owned scalar results in allocation order; array elements are owned
-  /// separately.
-  SmallVector<Value> scalarResults;
+  /// Number of static results assigned after the reserved register IDs.
+  size_t numScalarResults = 0;
 
-  /// Reusable Adaptive measurement result, owned by `scalarResults`.
+  /// Number of static IDs reserved for returned result registers.
+  int64_t staticRegisterResults = 0;
+
+  /// Reusable Adaptive measurement result.
   Value scratchResult;
 
   /// Converted controls associated with their specific body unitary.
@@ -112,6 +119,28 @@ struct LoweringState {
   [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
                                                    Operation* op);
 };
+
+/// Check a target payload matching the requested QIR profile before lowering.
+///
+/// The profile is the payload identifier, "base" or "adaptive".
+/// Return no payload when the module has no matching QIR target. Otherwise,
+/// return a copy with proved counted-loop constraints discharged. Run child
+/// passes through the caller to preserve instrumentation and reproducers.
+[[nodiscard]] FailureOr<std::optional<PayloadSpecification>>
+prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
+                 function_ref<LogicalResult(OpPassManager&)> runPipeline,
+                 const TargetEnvironment* environment = nullptr);
+
+/// Attach QIR metadata and validate emitted requirements for a matching target.
+///
+/// The profile is the payload identifier, "base" or "adaptive".
+[[nodiscard]] LogicalResult
+finalizeQIRMetadata(ModuleOp moduleOp, StringRef profile,
+                    const std::optional<PayloadSpecification>& payload,
+                    function_ref<LogicalResult(OpPassManager&)> runPipeline);
+
+/// Bufferize classical tensors and expose strided-copy loops before lowering.
+[[nodiscard]] LogicalResult prepareQIRClassicalMemory(ModuleOp moduleOp);
 
 /// Lower remaining classical dialects and reconcile casts for either profile.
 [[nodiscard]] LogicalResult
@@ -196,7 +225,8 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 [[nodiscard]] LogicalResult
 prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                         bool allowComputedOutputs = false,
-                        bool deferMeasurementStores = false);
+                        bool deferMeasurementStores = false,
+                        const TargetEnvironment* environment = nullptr);
 
 /// Refresh measurement indices from surviving stores and consume those stores.
 void finalizeClassicalResults(LoweringState& state);
@@ -204,6 +234,6 @@ void finalizeClassicalResults(LoweringState& state);
 /// Returns a result pointer for a measurement that does not write into a
 /// returned classical bit register
 Value getResultPtr(LoweringState& state, Operation* op,
-                   ConversionPatternRewriter& rewriter, bool dynamic);
+                   ConversionPatternRewriter& rewriter);
 
 } // namespace mlir
