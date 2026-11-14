@@ -16,6 +16,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/LogicalResult.h"
 
@@ -108,5 +109,18 @@ findTopologyLayout(const Graph& graph, const CompilerTarget& target,
 [[nodiscard]] std::optional<SmallVector<size_t>>
 findTopologyAutomaticLayout(const Graph& graph, const CompilerTarget& target,
                             MLIRContext& context, size_t maxCandidates);
+
+/// Visit injective layouts serially without retaining the candidate set.
+///
+/// Uses findTopologyLayout's graph and layout contract. The borrowed layout is
+/// valid only during the callback. Returning true stops enumeration. The
+/// assignment budget counts vertex or pattern-tuple probes, including rejected
+/// candidates. If usePatterns is true, use cached extended patterns only when
+/// the query and target contain a twelve-cycle; otherwise use direct search.
+/// Cache preparation and query decomposition are outside the probe budget.
+void enumerateTopologyLayouts(const Graph& graph, const CompilerTarget& target,
+                              MLIRContext& context, size_t maxCandidates,
+                              function_ref<bool(ArrayRef<size_t>)> visit,
+                              bool usePatterns = false);
 
 } // namespace mlir::qco

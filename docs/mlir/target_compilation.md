@@ -168,6 +168,26 @@ input, target, seed, and explicit trial count. Sampling uses a separate seed.
 For routing costs, search limits, and synthesis behavior, see the
 `place-and-route` pass in {doc}`QCO`.
 
+`MappingOptions(placement_ranking="patterns")` enables calibrated placement
+ranking after native synthesis. It uses cached patterns when the query and
+target contain a twelve-cycle and direct enumeration otherwise. Use `"direct"`
+to rank with direct enumeration throughout. The default, `"none"`, keeps direct
+initial placement without adding ranking. The CLI option is
+`--placement-ranking=none|direct|patterns`.
+
+Ranking scores up to 4,096 complete placements within ten million assignment
+probes and retains the original placement unless its calibrated CZ loss strictly
+improves. It changes physical sites and layout provenance while preserving
+quantum operations and classical result order. Target reuse amortizes pattern
+preparation; cold queries can be slower. This is a two-qubit calibration
+objective, not an estimate of full-circuit fidelity. The best-effort mode
+applies to flat scalar programs with physical provenance, standard named CZ
+capabilities, complete CZ fidelity metadata, and globally supported
+single-qubit, measurement, and reset operations. Structured programs, other
+entanglers, nonstandard native aliases, missing calibration, and fixed preplaced
+inputs retain their placement. See `rank-qubit-placements` in {doc}`QCO` for the
+standalone pass and its budgets.
+
 Controlled-gate decomposition can borrow other allocated qubits as ancilla
 qubits when this reduces estimated entangling cost. It restores their states and
 correlations and allocates no additional qubits. See

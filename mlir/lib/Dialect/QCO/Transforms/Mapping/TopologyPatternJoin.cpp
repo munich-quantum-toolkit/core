@@ -98,7 +98,8 @@ static SmallVector<JoinStep> planJoins(const Graph& graph,
 static std::optional<SmallVector<size_t>>
 searchLayouts(ArrayRef<JoinStep> steps, const Adjacency& adjacency,
               ArrayRef<size_t> sites, bool allToAll, size_t begin, size_t end,
-              size_t maxCandidates) {
+              size_t maxCandidates,
+              function_ref<bool(ArrayRef<size_t>)> visit) {
   SmallVector<size_t> layout(steps.size());
   llvm::BitVector used(sites.size());
   SmallVector<JoinFrame> frames(steps.size());
@@ -130,7 +131,10 @@ searchLayouts(ArrayRef<JoinStep> steps, const Adjacency& adjacency,
     }
     layout[step.vertex] = candidate;
     if (depth + 1 == steps.size()) {
-      return layout;
+      if (!visit || visit(layout)) {
+        return layout;
+      }
+      continue;
     }
     used.set(candidate);
     const auto& next = steps[++depth];
@@ -147,15 +151,19 @@ searchLayouts(ArrayRef<JoinStep> steps, const Adjacency& adjacency,
   }
 }
 
-std::optional<SmallVector<size_t>>
-findTopologyLayout(const Graph& graph, const CompilerTarget& target,
-                   MLIRContext& context, size_t maxCandidates) {
+static std::optional<SmallVector<size_t>>
+findTopologyLayoutImpl(const Graph& graph, const CompilerTarget& target,
+                       MLIRContext& context, size_t maxCandidates,
+                       function_ref<bool(ArrayRef<size_t>)> visit = nullptr) {
   if (graph.getNumNodes() > target.numSites()) {
     return std::nullopt;
   }
   auto nodes = graph.getNodes();
   llvm::sort(nodes);
   if (nodes.empty()) {
+    if (visit) {
+      visit({});
+    }
     return SmallVector<size_t>{};
   }
   const auto steps = planJoins(graph, nodes);
@@ -179,7 +187,7 @@ findTopologyLayout(const Graph& graph, const CompilerTarget& target,
   const auto sites = llvm::to_vector(llvm::seq<size_t>(0, target.numSites()));
   // Scheduling dominates small searches; a single vertex has no join work.
   // Fixed ranges keep bounded-search results independent of thread count.
-  const auto tasks = sites.size() >= 64 && steps.size() > 1
+  const auto tasks = !visit && sites.size() >= 64 && steps.size() > 1
                          ? std::min(sites.size(), size_t{32})
                          : size_t{1};
   SmallVector<std::optional<SmallVector<size_t>>> results(tasks);
@@ -190,8 +198,8 @@ findTopologyLayout(const Graph& graph, const CompilerTarget& target,
         begin + sites.size() / tasks + (task < sites.size() % tasks ? 1 : 0);
     const auto budget =
         maxCandidates / tasks + (task < maxCandidates % tasks ? 1 : 0);
-    results[task] =
-        searchLayouts(steps, adjacency, sites, allToAll, begin, end, budget);
+    results[task] = searchLayouts(steps, adjacency, sites, allToAll, begin, end,
+                                  budget, visit);
   });
   for (auto& result : results) {
     if (result) {
@@ -199,6 +207,12 @@ findTopologyLayout(const Graph& graph, const CompilerTarget& target,
     }
   }
   return std::nullopt;
+}
+
+std::optional<SmallVector<size_t>>
+findTopologyLayout(const Graph& graph, const CompilerTarget& target,
+                   MLIRContext& context, size_t maxCandidates) {
+  return findTopologyLayoutImpl(graph, target, context, maxCandidates);
 }
 
 namespace {
@@ -236,10 +250,11 @@ struct PatternFrame {
 class PatternSearch {
 public:
   PatternSearch(ArrayRef<PatternStep> steps, ArrayRef<size_t> degrees,
-                ArrayRef<size_t> targetDegrees, size_t begin, size_t end)
-      : steps_(steps), degrees_(degrees), targetDegrees_(targetDegrees),
-        layout_(degrees.size(), UNASSIGNED), used_(targetDegrees.size()),
-        frames_(steps.size()) {
+                ArrayRef<size_t> targetDegrees, size_t begin, size_t end,
+                function_ref<bool(ArrayRef<size_t>)> visit = nullptr)
+      : visit_(visit), steps_(steps), degrees_(degrees),
+        targetDegrees_(targetDegrees), layout_(degrees.size(), UNASSIGNED),
+        used_(targetDegrees.size()), frames_(steps.size()) {
     frames_[0] = {.rows = {}, .next = begin, .end = end};
   }
 
@@ -279,9 +294,13 @@ public:
         used_.set(tuple[column]);
       }
       if (depth_ + 1 == steps_.size()) {
-        result.layout = layout_;
-        done_ = true;
-        return result;
+        if (!visit_ || visit_(layout_)) {
+          result.layout = layout_;
+          done_ = true;
+          return result;
+        }
+        undo(step);
+        continue;
       }
       ++depth_;
       frames_[depth_] = candidates(steps_[depth_]);
@@ -316,6 +335,7 @@ private:
     }
   }
 
+  function_ref<bool(ArrayRef<size_t>)> visit_;
   ArrayRef<PatternStep> steps_;
   ArrayRef<size_t> degrees_;
   ArrayRef<size_t> targetDegrees_;
@@ -330,12 +350,17 @@ private:
 static std::optional<SmallVector<size_t>>
 searchPatternLayouts(ArrayRef<PatternStep> steps, ArrayRef<size_t> degrees,
                      ArrayRef<size_t> targetDegrees, MLIRContext& context,
-                     size_t budget) {
+                     size_t budget,
+                     function_ref<bool(ArrayRef<size_t>)> visit) {
   const auto seeds = steps.front().index != nullptr
                          ? steps.front().index->size()
                          : targetDegrees.size();
   if (seeds == 0 || budget == 0) {
     return std::nullopt;
+  }
+  if (visit) {
+    PatternSearch search(steps, degrees, targetDegrees, 0, seeds, visit);
+    return search.advance(budget).layout;
   }
   // Fixed logical ranges make budget allocation independent of worker count.
   const auto tasks = std::min(seeds, size_t{64});
@@ -397,16 +422,19 @@ searchPatternLayouts(ArrayRef<PatternStep> steps, ArrayRef<size_t> degrees,
   return std::nullopt;
 }
 
-std::optional<SmallVector<size_t>>
-findTopologyPatternLayout(const Graph& graph, const CompilerTarget& target,
-                          MLIRContext& context, size_t maxCandidates,
-                          ArrayRef<PatternType> selected) {
+static std::optional<SmallVector<size_t>> findTopologyPatternLayoutImpl(
+    const Graph& graph, const CompilerTarget& target, MLIRContext& context,
+    size_t maxCandidates, ArrayRef<PatternType> selected,
+    function_ref<bool(ArrayRef<size_t>)> visit = nullptr) {
   if (graph.getNumNodes() > target.numSites()) {
     return std::nullopt;
   }
   auto nodes = graph.getNodes();
   llvm::sort(nodes);
   if (nodes.empty()) {
+    if (visit) {
+      visit({});
+    }
     return SmallVector<size_t>{};
   }
   if (maxCandidates == 0) {
@@ -449,14 +477,21 @@ findTopologyPatternLayout(const Graph& graph, const CompilerTarget& target,
     const size_t numDegreeThree =
         llvm::count_if(degrees, [](size_t degree) { return degree >= 3; });
     SmallVector<const PatternGroup*> groups(types.size(), nullptr);
-    parallelFor(&context, 0, types.size(), [&](size_t slot) {
+    const auto prepare = [&](size_t slot) {
       const auto type = static_cast<size_t>(types[slot]);
       assert(type < arities.size() && "Unknown topology pattern type");
       if (arities[type] <= nodes.size() && numDegreeTwo >= degreeTwo[type] &&
           numDegreeThree >= degreeThree[type]) {
         groups[slot] = target.topologyPattern(types[slot]);
       }
-    });
+    };
+    if (visit) {
+      for (size_t slot = 0; slot < types.size(); ++slot) {
+        prepare(slot);
+      }
+    } else {
+      parallelFor(&context, 0, types.size(), prepare);
+    }
     llvm::erase(groups, nullptr);
     auto slices = decomposeConnectivityGraph(graph, groups);
     if (failed(slices)) {
@@ -515,12 +550,18 @@ findTopologyPatternLayout(const Graph& graph, const CompilerTarget& target,
     }
   }
   return searchPatternLayouts(steps, degrees, targetDegrees, context,
-                              maxCandidates);
+                              maxCandidates, visit);
 }
 
 std::optional<SmallVector<size_t>>
-findTopologyAutomaticLayout(const Graph& graph, const CompilerTarget& target,
-                            MLIRContext& context, size_t maxCandidates) {
+findTopologyPatternLayout(const Graph& graph, const CompilerTarget& target,
+                          MLIRContext& context, size_t maxCandidates,
+                          ArrayRef<PatternType> selected) {
+  return findTopologyPatternLayoutImpl(graph, target, context, maxCandidates,
+                                       selected);
+}
+
+static bool hasTwelveVertexCore(const Graph& graph) {
   DenseMap<size_t, size_t> degrees;
   SmallVector<size_t> pending;
   size_t remaining = graph.getNumNodes();
@@ -544,21 +585,42 @@ findTopologyAutomaticLayout(const Graph& graph, const CompilerTarget& target,
       }
     }
   }
-  if (remaining < 12) {
+  return remaining >= 12;
+}
+
+static constexpr std::array EXTENDED_PATTERNS{
+    PatternType::FourCycle,   PatternType::QubitPair, PatternType::Star,
+    PatternType::Chain4,      PatternType::Chain6,    PatternType::SixCycle,
+    PatternType::EightCycle,  PatternType::Grid2x3,   PatternType::Grid2x4,
+    PatternType::TwelveCycle,
+};
+
+std::optional<SmallVector<size_t>>
+findTopologyAutomaticLayout(const Graph& graph, const CompilerTarget& target,
+                            MLIRContext& context, size_t maxCandidates) {
+  if (!hasTwelveVertexCore(graph)) {
     return findTopologyLayout(graph, target, context, maxCandidates);
   }
   return findTopologyPatternLayout(graph, target, context, maxCandidates,
-                                   {
-                                       PatternType::FourCycle,
-                                       PatternType::QubitPair,
-                                       PatternType::Star,
-                                       PatternType::Chain4,
-                                       PatternType::Chain6,
-                                       PatternType::SixCycle,
-                                       PatternType::EightCycle,
-                                       PatternType::Grid2x3,
-                                       PatternType::Grid2x4,
-                                       PatternType::TwelveCycle,
-                                   });
+                                   EXTENDED_PATTERNS);
+}
+
+void enumerateTopologyLayouts(const Graph& graph, const CompilerTarget& target,
+                              MLIRContext& context, size_t maxCandidates,
+                              function_ref<bool(ArrayRef<size_t>)> visit,
+                              bool usePatterns) {
+  if (maxCandidates == 0 && graph.getNumNodes() != 0) {
+    return;
+  }
+  if (usePatterns && hasTwelveVertexCore(graph)) {
+    const auto* cycle = target.topologyPattern(PatternType::TwelveCycle);
+    if (cycle != nullptr && cycle->size() != 0 &&
+        matchTopologyPattern(graph, *cycle)) {
+      findTopologyPatternLayoutImpl(graph, target, context, maxCandidates,
+                                    EXTENDED_PATTERNS, visit);
+      return;
+    }
+  }
+  findTopologyLayoutImpl(graph, target, context, maxCandidates, visit);
 }
 } // namespace mlir::qco

@@ -85,6 +85,7 @@ void registerMQTCompilerPasses() {
     qco::registerMappingPass();
     qco::registerPlacementPass();
     qco::registerQuantumLoopUnroll();
+    qco::registerRankPlacements();
     qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();

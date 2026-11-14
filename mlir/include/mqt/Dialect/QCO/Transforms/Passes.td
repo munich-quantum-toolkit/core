@@ -528,6 +528,44 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
                         "Seed for numerical synthesis retries.">];
 }
 
+def RankPlacements : Pass<"rank-qubit-placements", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect", "mlir::mqt::MQTDialect"];
+  let summary = "Rank native CZ placements by calibrated two-qubit loss";
+  let description = [{
+    Enumerates injective placements after native synthesis and retains the
+    smallest sum of negative log CZ fidelities. The original placement remains
+    a fallback. Candidate layouts are streamed, with deterministic tie breaking.
+    Direct enumeration is the default. With `use-patterns`, cached patterns are
+    used only when both query and target contain a twelve-cycle; other queries
+    use direct enumeration.
+
+    This best-effort optimization requires a flat scalar program, physical
+    `mqt.layout` provenance in target site order, standard native spellings,
+    globally supported single-qubit/measurement/reset operations, and complete
+    fidelity metadata for standard named `cz` capabilities on supported topology
+    edges. Generic variadic Z capabilities retain their placement.
+    Tuple fidelity overrides
+    the operation default. Zero fidelity has infinite loss; missing fidelity
+    disables ranking. Other valid programs retain their placement, including
+    structured programs, non-CZ entanglers, indexed qubits, and fixed preplaced
+    programs without layout provenance.
+
+    A winning global permutation renames static sites and updates initial and
+    routing provenance without changing classical results or quantum operations.
+    The objective excludes single-qubit, readout, idle, and correlated errors.
+    Preparation and decomposition are outside the candidate-assignment budget.
+    Run target conformance verification after this pass.
+  }];
+  let options =
+      [Option<"usePatterns", "use-patterns", "bool", "false",
+              "Select cached patterns for queries containing a twelve-cycle.">,
+       Option<"maxLayouts", "max-layouts", "size_t", "4096",
+              "Maximum complete layouts to score; zero leaves placement "
+              "unchanged.">,
+       Option<"maxCandidates", "max-candidates", "size_t", "10000000",
+              "Maximum vertex or pattern-tuple assignment probes.">];
+}
+
 def VerifyTargetConformance
     : Pass<"verify-target-conformance", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];

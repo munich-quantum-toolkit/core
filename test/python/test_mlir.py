@@ -699,7 +699,8 @@ def test_mc_borrow_ancillas_wide_measured_roundtrip() -> None:
     ("method", "all_to_all"),
     [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],
 )
-def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) -> None:
+@pytest.mark.parametrize("control", ["trials", "placement_ranking"])
+def test_mapping_options_reject_invalid_controls(method: str, control: str, *, all_to_all: bool) -> None:
     """Reject invalid public mapping controls before rewriting the input."""
     target = CompilerTarget(
         2,
@@ -711,8 +712,13 @@ def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) ->
     program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
     before = program.ir
 
-    mapping = MappingOptions(trials=0)
-    with pytest.raises(RuntimeError, match="mapping trials must be greater than zero"):
+    mapping = MappingOptions(trials=0) if control == "trials" else MappingOptions(placement_ranking="unknown")
+    message = (
+        "mapping trials must be greater than zero"
+        if control == "trials"
+        else "placement ranking must be none, direct, or patterns"
+    )
+    with pytest.raises(RuntimeError, match=message):
         getattr(program, method)(_test_target_environment(target), options=CompilationOptions(seed=7, mapping=mapping))
 
     assert program.ir == before
@@ -731,10 +737,32 @@ out = measure q;
     target = CompilerTarget(
         4,
         connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
-        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("measure", 1, 0),
+            CompilerTarget.OperationCapability(
+                "cz",
+                2,
+                0,
+                [
+                    CompilerTarget.SiteTuple([a, b], fidelity=fidelity)
+                    for a, b, fidelity in [
+                        (0, 1, 0.8),
+                        (1, 0, 0.8),
+                        (1, 2, 0.9),
+                        (2, 1, 0.9),
+                        (2, 3, 0.99),
+                        (3, 2, 0.99),
+                    ]
+                ],
+            ),
+        ]),
     )
     options = CompilationOptions(
-        seed=7, mapping=MappingOptions(trials=3, iterations=2, lookahead=5, search_memory_limit=1024)
+        seed=7,
+        mapping=MappingOptions(
+            trials=3, iterations=2, lookahead=5, search_memory_limit=1024, placement_ranking="patterns"
+        ),
     )
     program = QCProgram.from_openqasm_str(source).to_qco()
     program.compile_for_target(_test_target_environment(target), options=options)
@@ -744,6 +772,7 @@ out = measure q;
     assert options.mapping.iterations == 2
     assert options.mapping.lookahead == 5
     assert options.mapping.search_memory_limit == 1024
+    assert options.mapping.placement_ranking == "patterns"
 
 
 @pytest.mark.parametrize("output_kind", ["typed", "default", "device", "submit"])
@@ -2159,6 +2188,7 @@ def test_qco_program_textual_passes_preserve_routed_layout() -> None:
     assert before.layout.routing_permutation() != list(range(3))
 
     program.run_pass_pipeline("target-native-synthesis", preserve_layout=True)
+    program.run_pass_pipeline("rank-qubit-placements", preserve_layout=True)
     program.run_pass_pipeline("verify-target-conformance", preserve_layout=True)
     result = program.to_qiskit(target=target)
 

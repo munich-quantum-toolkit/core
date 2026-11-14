@@ -16,6 +16,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Threading.h"
 
 #include <algorithm>
@@ -64,6 +65,10 @@ createDecomposeMultiControlled(const CompilerTarget& target,
 /// Normalize placed QCO, synthesize native gates, and verify target support.
 ///
 /// Requires a valid target environment and placed qubits.
-void populateTargetNativeSynthesisPipeline(OpPassManager& pm);
+/// Pass the compilation target to reuse its topology indexes during ranking.
+/// The supplied target must match the attached target environment.
+void populateTargetNativeSynthesisPipeline(
+    OpPassManager& pm, StringRef placementRanking = "none",
+    const CompilerTarget* rankingTarget = nullptr);
 
 } // namespace mlir::qco

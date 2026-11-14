@@ -288,7 +288,7 @@ public:
                                         bool allToAllOnly = false,
                                         MappingOptions mapping = {})
       : environment_(std::move(environment)), allToAllOnly_(allToAllOnly),
-        mapping_(mapping) {}
+        mapping_(std::move(mapping)) {}
 
 protected:
   void runOnOperation() override {
@@ -301,6 +301,14 @@ protected:
     }
     if (mapping_.trials == 0) {
       getOperation().emitError("mapping trials must be greater than zero");
+      signalPassFailure();
+      return;
+    }
+    if (mapping_.placementRanking != "none" &&
+        mapping_.placementRanking != "direct" &&
+        mapping_.placementRanking != "patterns") {
+      getOperation().emitError(
+          "placement ranking must be none, direct, or patterns");
       signalPassFailure();
       return;
     }
@@ -600,7 +608,8 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   case CompilerTarget::Connectivity::Kind::AllToAll:
     break;
   }
-  qco::populateTargetNativeSynthesisPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm, mapping.placementRanking,
+                                             &target);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
@@ -622,7 +631,8 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
     pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   pm.addPass(mqt::createUnrollModifiers());
-  qco::populateTargetNativeSynthesisPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm, mapping.placementRanking,
+                                             &target);
 }
 
 } // namespace mlir

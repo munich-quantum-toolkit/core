@@ -31,6 +31,7 @@
 #include <optional>
 #include <set>
 #include <utility>
+#include <vector>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -71,6 +72,72 @@ static Edges getEdges(const Graph& graph) {
     }
   }
   return edges;
+}
+
+TEST(TopologyEnumeration, OverlappingCycleAndIdleVertex) {
+  std::vector<CompilerTarget::Coupling> edges;
+  Graph graph(llvm::to_vector(llvm::seq<size_t>(0, 13)));
+  for (size_t vertex = 0; vertex < 12; ++vertex) {
+    const auto next = (vertex + 1) % 12;
+    edges.emplace_back(vertex, next);
+    graph.addEdge(vertex, next);
+    graph.addEdge(next, vertex);
+  }
+  edges.emplace_back(0, 6);
+  edges.emplace_back(0, 12);
+  edges.emplace_back(1, 13);
+  // The chord becomes a fully bound join after assigning the twelve-cycle.
+  graph.addEdge(0, 6);
+  graph.addEdge(6, 0);
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      14, CompilerTarget::Connectivity::fromCouplings(edges),
+      CompilerTarget::NativeOperations::unrestricted()));
+  std::set<std::vector<size_t>> expected;
+  for (size_t start = 0; start < 12; ++start) {
+    for (const bool reverse : {false, true}) {
+      std::vector<size_t> layout;
+      layout.reserve(13);
+      for (size_t vertex = 0; vertex < 12; ++vertex) {
+        layout.push_back((start + (reverse ? 12 - vertex : vertex)) % 12);
+      }
+      if (target.areAdjacent(layout[0], layout[6])) {
+        for (const auto idle : {size_t{12}, size_t{13}}) {
+          layout.push_back(idle);
+          expected.insert(layout);
+          layout.pop_back();
+        }
+      }
+    }
+  }
+  MLIRContext context;
+  for (const bool usePatterns : {false, true}) {
+    std::set<std::vector<size_t>> actual;
+    size_t count = 0;
+    enumerateTopologyLayouts(
+        graph, target, context, 10000000,
+        [&](ArrayRef<size_t> layout) {
+          ++count;
+          EXPECT_TRUE(actual.emplace(layout.begin(), layout.end()).second);
+          return false;
+        },
+        usePatterns);
+    EXPECT_EQ(actual, expected);
+    EXPECT_EQ(count, expected.size());
+    count = 0;
+    enumerateTopologyLayouts(
+        graph, target, context, 10000000,
+        [&](ArrayRef<size_t>) { return ++count == 3; }, usePatterns);
+    EXPECT_EQ(count, 3);
+    count = 0;
+    enumerateTopologyLayouts(
+        graph, target, context, 1,
+        [&](ArrayRef<size_t>) {
+          ++count;
+          return false;
+        },
+        usePatterns);
+    EXPECT_EQ(count, 0);
+  }
 }
 
 static Edges matchEdges(PatternType type, ArrayRef<size_t> vertices) {

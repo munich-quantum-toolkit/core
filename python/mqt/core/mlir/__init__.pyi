@@ -770,6 +770,7 @@ class MappingOptions:
         iterations: int = 2,
         lookahead: int = 20,
         search_memory_limit: int = 268435456,
+        placement_ranking: str = "none",
     ) -> None: ...
     @property
     def trials(self) -> int | None:
@@ -798,6 +799,17 @@ class MappingOptions:
 
     @search_memory_limit.setter
     def search_memory_limit(self, arg: int, /) -> None: ...
+    @property
+    def placement_ranking(self) -> str:
+        """Post-synthesis calibrated CZ placement ranking.
+
+        Use ``none`` to retain direct placement without ranking (the default),
+        ``direct`` to enumerate directly, or ``patterns`` for the twelve-cycle selector.
+        Unsupported programs or missing calibration retain their placement.
+        """
+
+    @placement_ranking.setter
+    def placement_ranking(self, arg: str, /) -> None: ...
 
 class CompilationOptions:
     """Shared compiler controls.
