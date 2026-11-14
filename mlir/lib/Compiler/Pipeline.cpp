@@ -27,6 +27,7 @@
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 #include "mqt/Target/QIR/Export.h"
 
+#include "ActionProfile.h"
 #include "Diagnostics.h"
 #include "Export.h"
 #include "ResonatorRouting.h"
@@ -43,6 +44,7 @@
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -655,6 +657,80 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
   return exportQCProgram(std::move(*qc), output, environment, options);
 }
 
+static llvm::Error importOpenQASM(CompilerInput& program) {
+  if (auto* source = std::get_if<OpenQASMProgram>(&program)) {
+    auto qc = QCProgram::fromOpenQASMString(source->source());
+    if (!qc) {
+      return qc.takeError();
+    }
+    program = std::move(*qc);
+  }
+  return llvm::Error::success();
+}
+
+static std::shared_ptr<MLIRContext> contextOf(const CompilerInput& program) {
+  return std::visit(
+      [](const auto& value) -> std::shared_ptr<MLIRContext> {
+        if constexpr (std::is_base_of_v<Program,
+                                        std::remove_cvref_t<decltype(value)>>) {
+          return value.context();
+        } else {
+          llvm_unreachable("OpenQASM inputs must be imported first");
+        }
+      },
+      program);
+}
+
+llvm::Error
+withActionProfile(CompilerInput& program, const CompilationOptions& options,
+                  function_ref<llvm::Error(const CompilationOptions&)> run) {
+  if (!options.profileActionsTo) {
+    return run(options);
+  }
+  if (auto error = importOpenQASM(program)) {
+    return error;
+  }
+  const auto context = contextOf(program);
+  if (context->hasActionHandler()) {
+    return createStringError(std::errc::invalid_argument,
+                             "action profiling requires a context without an "
+                             "existing action handler");
+  }
+  const auto path = options.profileActionsTo->string();
+  std::error_code error;
+  llvm::raw_fd_ostream stream(path, error);
+  if (error) {
+    return createStringError(error, "failed to open action profile '%s': %s",
+                             path.c_str(), error.message().c_str());
+  }
+  auto stepOptions = options;
+  stepOptions.profileActionsTo.reset();
+  auto result = [&] {
+    tracing::ActionProfiler profiler(stream);
+    tracing::ExecutionContext executionContext;
+    executionContext.registerObserver(&profiler);
+    context->registerActionHandler(std::move(executionContext));
+    const auto clearHandler =
+        llvm::scope_exit([&] { context->registerActionHandler(nullptr); });
+    return run(stepOptions);
+  }();
+  // raw_fd_ostream must not close stdout.
+  if (path == "-") {
+    stream.flush();
+  } else {
+    stream.close();
+  }
+  if (!stream.has_error()) {
+    return result;
+  }
+  error = stream.error();
+  stream.clear_error();
+  return llvm::joinErrors(
+      std::move(result),
+      createStringError(error, "failed to write action profile '%s': %s",
+                        path.c_str(), error.message().c_str()));
+}
+
 static Expected<CompilerProgram>
 runNativePipeline(CompilerInput program, ProgramFormat output,
                   const TargetEnvironment* environment,
@@ -676,75 +752,24 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
         "a custom QCO pass pipeline cannot be used with an output that stops "
         "before QCO optimization");
   }
-  if (auto* source = std::get_if<OpenQASMProgram>(&program)) {
-    auto qc = QCProgram::fromOpenQASMString(source->source());
-    if (!qc) {
-      return qc.takeError();
-    }
-    program = std::move(*qc);
-  }
-  const auto context = std::visit(
-      [](const auto& value) -> std::shared_ptr<MLIRContext> {
-        if constexpr (std::is_base_of_v<Program,
-                                        std::remove_cvref_t<decltype(value)>>) {
-          return value.context();
-        } else {
-          llvm_unreachable("OpenQASM inputs were imported above");
+  return withActionProfile<CompilerProgram>(
+      program, options,
+      [&](const CompilationOptions& pipelineOptions)
+          -> Expected<CompilerProgram> {
+        if (auto error = importOpenQASM(program)) {
+          return std::move(error);
         }
-      },
-      program);
-  const auto run = [&](const CompilationOptions& pipelineOptions)
-      -> Expected<CompilerProgram> {
-    CompilerDiagnostics diagnostics(context.get());
-    auto result = runDefaultPipelineImpl(
-        std::move(program), output, environment, qcoPipeline, pipelineOptions);
-    if (failed(result)) {
-      return diagnostics.takeError(
-          std::make_error_code(std::errc::invalid_argument));
-    }
-    return std::move(*result);
-  };
-  if (options.profileActionsTo.empty()) {
-    return run(options);
-  }
-  if (context->hasActionHandler()) {
-    return createStringError(std::errc::invalid_argument,
-                             "action profiling requires a context without an "
-                             "existing action handler");
-  }
-  std::error_code error;
-  llvm::raw_fd_ostream stream(options.profileActionsTo, error);
-  if (error) {
-    return createStringError(error, "failed to open action profile '%s': %s",
-                             options.profileActionsTo.c_str(),
-                             error.message().c_str());
-  }
-  auto pipelineOptions = options;
-  pipelineOptions.profileActionsTo.clear();
-  auto result = [&] {
-    tracing::ActionProfiler profiler(stream);
-    tracing::ExecutionContext executionContext;
-    executionContext.registerObserver(&profiler);
-    context->registerActionHandler(std::move(executionContext));
-    const auto clearHandler =
-        llvm::scope_exit([&] { context->registerActionHandler(nullptr); });
-    return run(pipelineOptions);
-  }();
-  if (options.profileActionsTo == "-") {
-    stream.flush();
-  } else {
-    stream.close();
-  }
-  if (stream.has_error()) {
-    error = stream.error();
-    stream.clear_error();
-    return llvm::joinErrors(
-        result.takeError(),
-        createStringError(error, "failed to write action profile '%s': %s",
-                          options.profileActionsTo.c_str(),
-                          error.message().c_str()));
-  }
-  return result;
+        const auto context = contextOf(program);
+        CompilerDiagnostics diagnostics(context.get());
+        auto result =
+            runDefaultPipelineImpl(std::move(program), output, environment,
+                                   qcoPipeline, pipelineOptions);
+        if (failed(result)) {
+          return diagnostics.takeError(
+              std::make_error_code(std::errc::invalid_argument));
+        }
+        return std::move(*result);
+      });
 }
 
 Expected<CompilerProgram>

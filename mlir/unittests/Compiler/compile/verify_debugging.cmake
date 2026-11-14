@@ -48,23 +48,14 @@ file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 # The default checkpoint is QC, including when the input format is explicit.
 run_compiler(0 "${QASM_INPUT}")
 set(default_output "${output}")
-set(normal_profile "${OUTPUT_DIR}/normal-profile.json")
-file(REMOVE "${normal_profile}")
-run_compiler(
-  0
-  "${QASM_INPUT}"
-  --input-format=openqasm
-  --emit=qc
-  "--profile-actions-to=${normal_profile}"
-  --mlir-timing
-  --mlir-pass-statistics)
+run_compiler(0 "${QASM_INPUT}" --input-format=openqasm --emit=qc --mlir-timing
+             --mlir-pass-statistics)
 if(NOT output STREQUAL default_output OR NOT output MATCHES "qc.h")
   message(FATAL_ERROR "Default and explicit QC checkpoints disagree: ${output}")
 endif()
 if(NOT error MATCHES "Execution time report" OR NOT error MATCHES "Pass statistics report")
   message(FATAL_ERROR "MLIR timing or statistics report missing: ${error}")
 endif()
-check_action_profile("${normal_profile}" "QCToQCO")
 set(openqasm_text "${OUTPUT_DIR}/program.txt")
 configure_file("${QASM_INPUT}" "${openqasm_text}" COPYONLY)
 run_compiler(0 "${openqasm_text}" --input-format=openqasm --emit=qc)
@@ -359,19 +350,10 @@ module {
   }
 }
 ]=])
-set(qir_profile "${OUTPUT_DIR}/qir-profile.json")
-file(REMOVE "${qir_profile}")
-run_compiler(
-  0
-  "${reusable}"
-  --emit=qir-adaptive
-  "--pass-pipeline=builtin.module(hadamard-lifting)"
-  --mlir-print-ir-before-all
-  --mlir-disable-threading
-  "--profile-actions-to=${qir_profile}")
+run_compiler(0 "${reusable}" --emit=qir-adaptive "--pass-pipeline=builtin.module(hadamard-lifting)"
+             --mlir-print-ir-before-all --mlir-disable-threading)
 string(FIND "${error}" "Before Inliner" inliner)
 string(FIND "${error}" "Before HadamardLifting" custom_pass)
 if(inliner LESS 0 OR NOT inliner LESS custom_pass OR NOT output MATCHES "define i64 @main")
   message(FATAL_ERROR "Custom pipeline discarded required inlining: ${error}")
 endif()
-check_action_profile("${qir_profile}" "ReconcileUnrealizedCasts")

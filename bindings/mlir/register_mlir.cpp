@@ -912,7 +912,7 @@ qpyCircuit(mlir::QCProgram program,
     }
   }
 
-  if (programs && !options.profileActionsTo.empty()) {
+  if (programs && options.profileActionsTo) {
     throw nb::value_error("action profiling requires a scalar program input");
   }
 
@@ -981,9 +981,7 @@ submitProgram(PythonInputTypes& types, const nb::handle program,
               const std::optional<PythonCustomJobParameter>& custom3,
               const std::optional<PythonCustomJobParameter>& custom4,
               const std::optional<PythonCustomJobParameter>& custom5,
-              // Snapshot mutable Python options before releasing the GIL.
-              // NOLINTNEXTLINE(performance-unnecessary-value-param)
-              std::optional<mlir::CompilationOptions> options) {
+              const std::optional<mlir::CompilationOptions>& options) {
   if (numShots < 0) {
     throw nb::value_error("num_shots must be nonnegative");
   }
@@ -2156,22 +2154,19 @@ Zero disables node expansion. Container overhead, caches, and IR are extra.)pb")
 
 An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds.)pb")
       .def(nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions,
-                    bool, std::string>(),
+                    std::optional<std::filesystem::path>>(),
            nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
            "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
-           "enable_pass_logging"_a = false, "profile_actions_to"_a = "")
+           "profile_actions_to"_a = nb::none())
       .def_rw("seed", &mlir::CompilationOptions::seed)
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
       .def_rw("mapping", &mlir::CompilationOptions::mapping)
-      .def_rw("enable_pass_logging",
-              &mlir::CompilationOptions::enablePassLogging,
-              "Write pass names and execution status to stderr.")
       .def_rw(
           "profile_actions_to", &mlir::CompilationOptions::profileActionsTo,
-          "Write native MLIR action traces during scalar compilation or source "
-          "submission; empty disables. Typed transformations and sequences "
-          "reject this option.");
+          R"pb(File for native MLIR action traces, or None to disable tracing.
+
+Scalar compilation and source submission support tracing. Typed transformations and sequences reject this option.)pb");
 
   nb::class_<mlir::QuantumProgramInfo>(
       m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.

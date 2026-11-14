@@ -12,8 +12,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
-#include <string>
 
 namespace mlir {
 
@@ -43,11 +43,12 @@ struct CompilationOptions {
   bool enableTiming = false;
   bool enableStatistics = false;
   MappingOptions mapping;
-  /// Write pass names and execution status to stderr.
-  bool enablePassLogging = false;
-  /// Write native MLIR action traces during runDefaultPipeline; empty disables.
-  /// Typed transformations reject this option.
-  std::string profileActionsTo = {};
+  /// Write native MLIR action traces to this file.
+  ///
+  /// No value disables tracing, and `-` selects stdout. runDefaultPipeline and
+  /// CompiledProgram::compile support tracing. Typed transformations reject
+  /// this option.
+  std::optional<std::filesystem::path> profileActionsTo;
 };
 
 } // namespace mlir

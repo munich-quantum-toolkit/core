@@ -3274,8 +3274,7 @@ TEST_F(CompilerPipelineTest,
   registerMQTCompilerPasses();
   pm.enableCrashReproducerGeneration(path);
   pm.addPass(qco::createVerifyTargetConformance());
-  EXPECT_TRUE(failed(runWithCompilationOptions(
-      pm, moduleOp, {.seed = 9876, .enablePassLogging = true})));
+  EXPECT_TRUE(failed(runWithCompilationOptions(pm, moduleOp, {.seed = 9876})));
   EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
   auto reproducer = llvm::MemoryBuffer::getFile(path);
   ASSERT_TRUE(reproducer);
@@ -7432,7 +7431,6 @@ h q;
                              .enableTiming = true,
                              .enableStatistics = true,
                              .mapping = {},
-                             .enablePassLogging = true,
                              .profileActionsTo = profilePath.str().str(),
                          });
   MQT_ASSERT_SUCCESS(profiled);

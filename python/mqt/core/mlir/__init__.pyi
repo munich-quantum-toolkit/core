@@ -10,6 +10,7 @@
 
 import enum
 import os
+import pathlib
 from collections.abc import Hashable, Iterable, Mapping, Sequence
 from typing import Annotated, Any, Generic, Literal, Self, SupportsFloat, TypeAlias, TypedDict, Unpack, overload
 
@@ -812,8 +813,7 @@ class CompilationOptions:
         enable_timing: bool = False,
         enable_statistics: bool = False,
         mapping: MappingOptions = ...,
-        enable_pass_logging: bool = False,
-        profile_actions_to: str = "",
+        profile_actions_to: str | os.PathLike | None = None,
     ) -> None: ...
     @property
     def seed(self) -> int | None: ...
@@ -832,17 +832,14 @@ class CompilationOptions:
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
     @property
-    def enable_pass_logging(self) -> bool:
-        """Write pass names and execution status to stderr."""
+    def profile_actions_to(self) -> pathlib.Path | None:
+        """File for native MLIR action traces, or None to disable tracing.
 
-    @enable_pass_logging.setter
-    def enable_pass_logging(self, arg: bool, /) -> None: ...
-    @property
-    def profile_actions_to(self) -> str:
-        """Write native MLIR action traces during scalar compilation or source submission; empty disables. Typed transformations and sequences reject this option."""
+        Scalar compilation and source submission support tracing. Typed transformations and sequences reject this option.
+        """
 
     @profile_actions_to.setter
-    def profile_actions_to(self, arg: str, /) -> None: ...
+    def profile_actions_to(self, arg: str | os.PathLike | None, /) -> None: ...
 
 class QuantumProgramInfo:
     """Quantum resources and static IR statistics.
