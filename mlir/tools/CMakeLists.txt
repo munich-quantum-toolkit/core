@@ -16,6 +16,7 @@ target_link_libraries(
   PUBLIC
     MQTCompilerQDMIAdapter
     MQTCompilerPipeline
+    MLIRDebug
     MLIRParser
     MLIRSupport
     MLIRQCOpenQASMTranslation

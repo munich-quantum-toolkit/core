@@ -86,6 +86,7 @@
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
@@ -99,6 +100,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
@@ -3272,7 +3274,8 @@ TEST_F(CompilerPipelineTest,
   registerMQTCompilerPasses();
   pm.enableCrashReproducerGeneration(path);
   pm.addPass(qco::createVerifyTargetConformance());
-  EXPECT_TRUE(failed(runWithCompilationOptions(pm, moduleOp, {.seed = 9876})));
+  EXPECT_TRUE(failed(runWithCompilationOptions(
+      pm, moduleOp, {.seed = 9876, .enablePassLogging = true})));
   EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
   auto reproducer = llvm::MemoryBuffer::getFile(path);
   ASSERT_TRUE(reproducer);
@@ -7331,6 +7334,65 @@ TEST_F(CompilerPipelineTest, QCOProgramQubitReuseAPIs) {
   EXPECT_NE(compositeQCO->str().find("qco.reset"), std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest, ActionProfilingPreservesExistingHandler) {
+  std::atomic<size_t> actions = 0;
+  auto input = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
+  MQT_ASSERT_SUCCESS(input);
+  auto unprofiled = input->copy();
+  auto inputContext = input->context();
+  inputContext->registerActionHandler(
+      [&](llvm::function_ref<void()> transform, const tracing::Action&) {
+        ++actions;
+        transform();
+      });
+  llvm::SmallString<128> path;
+  ASSERT_FALSE(
+      llvm::sys::fs::createTemporaryFile("mqt-action-profile", "json", path));
+  const llvm::FileRemover cleanup(path);
+  {
+    std::error_code error;
+    llvm::raw_fd_ostream stream(path, error);
+    ASSERT_FALSE(error);
+    stream << "existing trace";
+  }
+  CompilationOptions options;
+  options.profileActionsTo = path.str().str();
+
+  auto rejected =
+      runDefaultPipeline(CompilerInput{std::move(*input)}, ProgramFormat::QC,
+                         "mqt-qco-default", options);
+  EXPECT_NE(
+      llvm::toString(rejected.takeError()).find("existing action handler"),
+      std::string::npos);
+  EXPECT_EQ(actions.load(), 0U);
+  auto profile = llvm::MemoryBuffer::getFile(path);
+  ASSERT_TRUE(profile);
+  EXPECT_EQ((*profile)->getBuffer(), "existing trace");
+
+  auto result = runDefaultPipeline(CompilerInput{std::move(unprofiled)},
+                                   ProgramFormat::QC);
+  MQT_ASSERT_SUCCESS(result);
+  EXPECT_GT(actions.load(), 0U);
+}
+
+TEST_F(CompilerPipelineTest, ActionProfilingReportsWriteFailure) {
+  if (!std::filesystem::exists("/dev/full")) {
+    GTEST_SKIP() << "/dev/full is unavailable";
+  }
+  auto input = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
+  MQT_ASSERT_SUCCESS(input);
+  auto context = input->context();
+  CompilationOptions options;
+  options.profileActionsTo = "/dev/full";
+  auto result = runDefaultPipeline(CompilerInput{std::move(*input)},
+                                   ProgramFormat::QCOOptimized,
+                                   "mqt-qco-default", options);
+  EXPECT_NE(
+      llvm::toString(result.takeError()).find("failed to write action profile"),
+      std::string::npos);
+  EXPECT_FALSE(context->hasActionHandler());
+}
+
 // Test: default compilation returns the requested typed program format
 TEST_F(CompilerPipelineTest, DefaultPipelineSelectsRequestedProgramFormats) {
   const std::string qasm = R"(OPENQASM 3.0;
@@ -7358,11 +7420,27 @@ h q;
 
   auto profiledInput = QCProgram::fromOpenQASMString(qasm);
   MQT_ASSERT_SUCCESS(profiledInput);
-  auto profiled = runDefaultPipeline(
-      CompilerInput{std::move(*profiledInput)}, ProgramFormat::QCOOptimized,
-      "mqt-qco-default", {.enableTiming = true, .enableStatistics = true});
+  llvm::SmallString<128> profilePath;
+  ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-action-profile", "json",
+                                                  profilePath));
+  const llvm::FileRemover cleanup(profilePath);
+  auto profiled =
+      runDefaultPipeline(CompilerInput{std::move(*profiledInput)},
+                         ProgramFormat::QCOOptimized, "mqt-qco-default",
+                         {
+                             .seed = {},
+                             .enableTiming = true,
+                             .enableStatistics = true,
+                             .mapping = {},
+                             .enablePassLogging = true,
+                             .profileActionsTo = profilePath.str().str(),
+                         });
   MQT_ASSERT_SUCCESS(profiled);
-  EXPECT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
+  ASSERT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
+  EXPECT_FALSE(std::get<QCOProgram>(*profiled).context()->hasActionHandler());
+  auto profile = llvm::MemoryBuffer::getFile(profilePath);
+  ASSERT_TRUE(profile);
+  EXPECT_TRUE((*profile)->getBuffer().contains("QCToQCO"));
 
   auto customPipelineInput = QCProgram::fromOpenQASMString(qasm);
   MQT_ASSERT_SUCCESS(customPipelineInput);

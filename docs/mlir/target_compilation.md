@@ -163,10 +163,11 @@ compiled = compile_program(bell_qasm, target=device, options=options)
 ```
 
 {py:class}`~mqt.core.mlir.CompilationOptions` owns randomness, timing,
-statistics, and mapping controls. Repeatable mapping requires the same build,
-input, target, seed, and explicit trial count. Sampling uses a separate seed.
-For routing costs, search limits, and synthesis behavior, see the
-`place-and-route` pass in {doc}`QCO`.
+statistics, and mapping controls. See {ref}`compiler-profiling` for pass
+progress and action traces. Repeatable mapping requires the same build, input,
+target, seed, and explicit trial count. Sampling uses a separate seed. For
+routing costs, search limits, and synthesis behavior, see the `place-and-route`
+pass in {doc}`QCO`.
 
 Controlled-gate decomposition can borrow other allocated qubits as ancilla
 qubits when this reduces estimated entangling cost. It restores their states and

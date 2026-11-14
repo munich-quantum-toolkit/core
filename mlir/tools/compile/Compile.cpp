@@ -32,6 +32,8 @@
 
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
+#include "mlir/Debug/CLOptionsSetup.h"
+#include "mlir/Debug/Counter.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
@@ -41,6 +43,7 @@
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/FileUtilities.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/Timing.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -223,6 +226,7 @@ static ParsedProgram loadJeffFile(const StringRef filename,
   if (failed(applyPassManagerCLOptions(pm))) {
     return {};
   }
+  applyDefaultTimingPassManagerCLOptions(pm);
   pm.addPass(createJeffToQCO());
   if (pm.run(*mod).failed()) {
     llvm::errs() << "Failed to convert jeff input to QCO.\n";
@@ -396,6 +400,8 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
   registerAsmPrinterCLOptions();
   registerMLIRContextCLOptions();
   registerPassManagerCLOptions();
+  registerDefaultTimingManagerCLOptions();
+  tracing::DebugConfig::registerCLOptions();
 
   // Parse command-line options; exit on error and print to stderr
   llvm::cl::ParseCommandLineOptions(argc, argv,
@@ -593,6 +599,25 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
   llvm::SourceMgr sourceMgr;
   auto context = createCompilerContext();
   SourceMgrDiagnosticHandler diagnosticHandler(sourceMgr, context.get());
+  std::optional<tracing::InstallDebugHandler> debugHandler;
+  const auto debugConfig = tracing::DebugConfig::createFromCLOptions();
+  bool debugSetupFailed = false;
+  if (!debugConfig.getLogActionsTo().empty() ||
+      !debugConfig.getProfileActionsTo().empty() ||
+      debugConfig.isDebuggerActionHookEnabled() ||
+      tracing::DebugCounter::isActivated()) {
+    ScopedDiagnosticHandler setupDiagnosticHandler(
+        context.get(), [&](Diagnostic& diagnostic) {
+          if (diagnostic.getSeverity() == DiagnosticSeverity::Error) {
+            debugSetupFailed = true;
+          }
+          return failure();
+        });
+    debugHandler.emplace(*context, debugConfig);
+  }
+  if (debugSetupFailed) {
+    return 1;
+  }
   PassReproducerOptions reproducerOptions;
   ParserConfig parserConfig(context.get(), /*verifyAfterParse=*/!runReproducer);
   if (runReproducer) {

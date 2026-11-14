@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from gc import collect
 from itertools import starmap
@@ -868,11 +869,19 @@ def test_compile_program_for_qdmi_target(garnet_target: CompilerTarget) -> None:
     assert "qco.ry" not in mapped.ir
 
 
-def test_compile_and_serialize_with_device_environment() -> None:
+def test_compile_and_serialize_with_device_environment(tmp_path: Path) -> None:
     """Reuse one selected payload for compilation, serialization, and execution."""
     device = open_builtin_device("mqt.ddsim.default", custom1="2")
     environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QASM3)
-    compiled = compile_program(QASM_STRING, target=environment)
+    profile = tmp_path / "compile.json"
+    options = CompilationOptions(profile_actions_to=str(profile))
+    compiled = compile_program(QASM_STRING, target=environment, options=options)
+    assert json.loads(profile.read_text())
+    profile.unlink()
+    source_job = submit_program(QASM_STRING, target=device, num_shots=8, options=options)
+    assert source_job.wait()
+    assert sum(source_job.get_counts().values()) == 8
+    assert json.loads(profile.read_text())
     assert_type(compiled, CompiledProgram)
     assert compiled.program_format == ProgramFormat.QASM3
     native = compile_program(QASM_STRING, target=environment, output=OutputFormat.QC)
@@ -2428,11 +2437,126 @@ def test_compilation_seed_reaches_nested_modules() -> None:
 
 
 def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) -> None:
-    """Shared options reach MLIR timing and statistics instrumentation."""
-    compile_program(QASM_STRING, options=CompilationOptions(enable_timing=True, enable_statistics=True))
+    """Pass logging preserves compiler output and MLIR reports."""
+    options = CompilationOptions(enable_timing=True, enable_statistics=True)
+    assert not options.enable_pass_logging
+    expected = compile_program(QASM_STRING, output=OutputFormat.QC, options=options)
     output = capfd.readouterr().err
     assert "Execution time report" in output
     assert "Pass statistics report" in output
+    assert "[mqt-core] pass" not in output
+
+    options.enable_pass_logging = True
+    actual = compile_program(QASM_STRING, output=OutputFormat.QC, options=options)
+    assert actual.ir == expected.ir
+    output = capfd.readouterr().err
+    assert "Execution time report" in output
+    assert "Pass statistics report" in output
+    assert "[mqt-core] pass CanonicalizerPass started\n" in output
+    assert "[mqt-core] pass CanonicalizerPass completed\n" in output
+    assert " failed\n" not in output
+
+
+def test_pass_logging_failure_is_local(capfd: pytest.CaptureFixture[str]) -> None:
+    """A failed pass is logged without affecting a later shared-context run."""
+    program = QCOProgram.from_mlir_str("module {}")
+    other = program.copy()
+    with pytest.raises(RuntimeError, match="requires exactly one entry point"):
+        program.run_pass_pipeline(
+            "set-qir-attributes-and-metadata", options=CompilationOptions(enable_pass_logging=True)
+        )
+    output = capfd.readouterr().err
+    assert "[mqt-core] pass QIRSetAttributesAndMetadata started\n" in output
+    assert "[mqt-core] pass QIRSetAttributesAndMetadata failed\n" in output
+    assert "[mqt-core] pass QIRSetAttributesAndMetadata completed\n" not in output
+
+    other.run_pass_pipeline("canonicalize")
+    assert "[mqt-core] pass" not in capfd.readouterr().err
+
+
+def test_concurrent_pass_logging(capfd: pytest.CaptureFixture[str]) -> None:
+    """Concurrent compilations keep complete pass log records."""
+    options = CompilationOptions(enable_pass_logging=True)
+    expected = compile_program(QASM_STRING, output=OutputFormat.QC, options=options)
+    records = capfd.readouterr().err.splitlines()
+    assert records
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(compile_program, QASM_STRING, output=OutputFormat.QC, options=options) for _ in range(4)]
+        for future in futures:
+            result = future.result()
+            assert isinstance(result, QCProgram)
+            assert result.ir == expected.ir
+    assert sorted(capfd.readouterr().err.splitlines()) == sorted(records * 4)
+
+
+@pytest.mark.parametrize("source_kind", ["qasm", "jeff"])
+def test_compilation_action_profile(tmp_path: Path, source_kind: str) -> None:
+    """In-process traces cover input conversion through QIR cleanup."""
+    assert not CompilationOptions().profile_actions_to
+    source = QASM_STRING
+    if source_kind == "jeff":
+        source = compile_program(QASM_STRING, output=OutputFormat.JEFF)
+    expected = compile_program(source, output=OutputFormat.QIR_ADAPTIVE, copy=True)
+    profile = tmp_path / "compile.json"
+    actual = compile_program(
+        source,
+        output=OutputFormat.QIR_ADAPTIVE,
+        options=CompilationOptions(profile_actions_to=str(profile)),
+    )
+    assert actual.ir == expected.ir
+    events = json.loads(profile.read_text())
+    assert events[0]["ph"] == "B"
+    assert events[-1]["ph"] == "E"
+    passes = [event["args"]["desc"] for event in events if event["name"] == "pass-execution" and event["ph"] == "B"]
+    conversion = "JeffToQCO" if source_kind == "jeff" else "QCToQCO"
+    assert any(conversion in description for description in passes)
+    assert any("ReconcileUnrealizedCasts" in description for description in passes)
+
+
+def test_compilation_action_profile_failure(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
+    """A failed compilation closes the trace and restores its shared context."""
+    program = QCOProgram.from_mlir_str("module {}")
+    profile = tmp_path / "failure.json"
+    with pytest.raises(RuntimeError, match="requires exactly one entry point") as expected_failure:
+        compile_program(program, qco_pipeline="set-qir-attributes-and-metadata", copy=True)
+    expected_error = capfd.readouterr().err
+    with pytest.raises(RuntimeError, match="requires exactly one entry point") as actual_failure:
+        compile_program(
+            program,
+            qco_pipeline="set-qir-attributes-and-metadata",
+            copy=True,
+            options=CompilationOptions(profile_actions_to=str(profile)),
+        )
+    assert str(actual_failure.value) == str(expected_failure.value)
+    assert capfd.readouterr().err == expected_error
+    recorded = profile.read_text()
+    events = json.loads(recorded)
+    assert events[-1]["ph"] == "E"
+    assert any("QIRSetAttributesAndMetadata" in event.get("args", {}).get("desc", "") for event in events)
+    compile_program(program)
+    assert profile.read_text() == recorded
+
+
+def test_compilation_action_profile_open_failure(tmp_path: Path) -> None:
+    """An unusable trace destination returns its cause to Python."""
+    with pytest.raises(RuntimeError, match="failed to open action profile"):
+        compile_program(QASM_STRING, options=CompilationOptions(profile_actions_to=str(tmp_path)))
+
+
+def test_action_profile_rejects_unsupported_inputs(tmp_path: Path) -> None:
+    """Unsupported requests preserve the trace file and leave passes unrun."""
+    profile = tmp_path / "compile.json"
+    profile.write_text("existing trace")
+    options = CompilationOptions(profile_actions_to=str(profile))
+    for source in ([], [QASM_STRING], [QASM_STRING, QASM_STRING]):
+        with pytest.raises(ValueError, match="scalar program input"):
+            compile_program(source, options=options)
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    before = program.ir
+    with pytest.raises(RuntimeError, match="coordinated compilation pipeline"):
+        program.run_pass_pipeline("canonicalize", options=options)
+    assert program.ir == before
+    assert profile.read_text() == "existing trace"
 
 
 @requires_qiskit_translation

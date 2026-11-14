@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 
 namespace mlir {
 
@@ -42,6 +43,11 @@ struct CompilationOptions {
   bool enableTiming = false;
   bool enableStatistics = false;
   MappingOptions mapping;
+  /// Write pass names and execution status to stderr.
+  bool enablePassLogging = false;
+  /// Write native MLIR action traces during runDefaultPipeline; empty disables.
+  /// Typed transformations reject this option.
+  std::string profileActionsTo = {};
 };
 
 } // namespace mlir
