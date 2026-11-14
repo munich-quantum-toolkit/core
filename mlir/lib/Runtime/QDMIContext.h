@@ -53,8 +53,17 @@ public:
             const mlir::TargetEnvironment* destination = nullptr) const;
   [[nodiscard]] llvm::Expected<qdmi::Job>
   submit(const mlir::CompiledProgram& program, int64_t shots) const;
+  /// Check whether the device accepts `count` programs of `format` with
+  /// defaults or a complete per-call parameter override, without submitting.
+  [[nodiscard]] llvm::Expected<bool>
+  supports(QDMI_Program_Format format, size_t count, int64_t shots,
+           const BorrowedJobParameters* parameters = nullptr) const;
 
 private:
+  /// Borrow the retained parameters unless the call supplies its own.
+  [[nodiscard]] BorrowedJobParameters
+  borrow(const BorrowedJobParameters* parameters) const;
+
   qdmi::Device device_;
   JobParameters parameters_;
   mlir::TargetEnvironment environment_;

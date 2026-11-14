@@ -1772,6 +1772,29 @@ TEST(DeviceRegistrationTest, SubmitsOrderedTextProgramsAtomically) {
   }
 }
 
+TEST(DeviceRegistrationTest, JudgesProgramListsWithRequestedShots) {
+  registerSessionTestDevice();
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
+  // The test device accepts at most eight shots in total.
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
+  EXPECT_TRUE(value(device.supportsJob(format, 3U)));
+  EXPECT_TRUE(value(device.supportsJob(format, 2U, 4U)));
+  EXPECT_FALSE(value(device.supportsJob(format, 3U, 4U)));
+
+  const std::array<std::string, 3> programs{
+      "OPENQASM 3.0;",
+      "OPENQASM 3.0;",
+      "OPENQASM 3.0;",
+  };
+  EXPECT_FALSE(value(device.trySubmitJob(programs, format, 4U)).has_value());
+  const auto job =
+      value(device.trySubmitJob(std::span(programs).first(2U), format, 4U));
+  ASSERT_TRUE(job.has_value());
+  EXPECT_EQ(value(job->getNumPrograms()), 2U);
+  EXPECT_EQ(value(job->getNumShots()), 4U);
+}
+
 TEST(DeviceRegistrationTest, RejectedProgramListPreservesPreviousPayload) {
   registerSessionTestDevice();
   const auto device =

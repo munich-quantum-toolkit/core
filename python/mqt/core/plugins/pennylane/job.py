@@ -100,6 +100,7 @@ class PennyLaneJob:
             submit=PennyLaneJob._submit,
             decode=PennyLaneJob._readout,
             submit_programs=PennyLaneJob._submit_programs,
+            supports_programs=PennyLaneJob._supports_programs,
             group_by=[(program.program_format if program else None, shots) for program, shots, _, _ in self._prepared],
             submission_error=lambda job, msg: PennyLaneExecutionError(msg, job=job),
             execution_error=lambda job, msg: PennyLaneExecutionError(msg, job=job),
@@ -127,6 +128,11 @@ class PennyLaneJob:
     def _submit_programs(self, indices: Sequence[int]) -> Job | None:
         _, shots, _, _ = self._prepared[indices[0]]
         return self._submit_group(indices, [self._program(index) for index in indices], shots)
+
+    def _supports_programs(self, indices: Sequence[int]) -> bool:
+        _, shots, _, _ = self._prepared[indices[0]]
+        context = self._device._context  # ruff:ignore[private-member-access] Check the device that submits the batch.
+        return context.supports(self._program(indices[0]).program_format, len(indices), shots)
 
     def _process_samples(self, tape_index: int, values: np.ndarray) -> object:
         measured = tuple(

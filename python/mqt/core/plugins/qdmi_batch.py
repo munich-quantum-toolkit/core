@@ -74,6 +74,12 @@ class Batch(Generic[_Owner, _Result]):
     Submit and recover work through the adapter's job handle. Operations on one
     batch are synchronous, and concurrent calls on the same batch are unsupported.
 
+    Entries with the same group key share one multi-program job when the device
+    accepts it. If the device declines a group, the batch checks the largest
+    accepted program count and submits the fewest near-equal contiguous parts.
+    It halves a declined part down to single entries. Without a support check,
+    it halves the declined group.
+
     The batch holds only a weak reference to its owner, the adapter job that
     holds the batch, and passes the owner to every callback as the first
     argument. Callbacks must not capture the owner. Reference counting then
@@ -94,6 +100,7 @@ class Batch(Generic[_Owner, _Result]):
         on_submit: Callable[[_Owner, Sequence[int]], None] | None = None,
         submit_programs: Callable[[_Owner, Sequence[int]], Job | None] | None = None,
         group_by: Sequence[Hashable] | None = None,
+        supports_programs: Callable[[_Owner, Sequence[int]], bool] | None = None,
     ) -> None:
         """Capture prepared entries, adapter callbacks, and a lifetime retry limit."""
         self._owner_ref = weakref.ref(owner)
@@ -107,6 +114,8 @@ class Batch(Generic[_Owner, _Result]):
         self._on_submit = on_submit
         self._submit_programs = submit_programs
         self._group_by = tuple(group_by) if group_by is not None else None
+        self._supports_programs = supports_programs
+        self._group_limits: dict[Hashable, int] = {}
 
     @property
     def _owner(self) -> _Owner:
@@ -171,11 +180,55 @@ class Batch(Generic[_Owner, _Result]):
         for index in indices:
             key = self._group_by[index] if self._group_by is not None else index
             groups.setdefault(key, []).append(index)
-        for group in groups.values():
-            if len(group) > 1 and self._submit_programs is not None and self._admit(group, automatic=automatic):
+        for key, group in groups.items():
+            if self._submit_programs is None:
+                self._admit_parts(group, len(group), automatic=automatic)
                 continue
-            for index in group:
-                self._admit([index], automatic=automatic)
+            limit = self._group_limits.get(key)
+            if limit is None or len(group) <= limit:
+                if self._admit(group, automatic=automatic):
+                    continue
+                limit = self._supported_count(group)
+                if not 0 < limit < len(group):
+                    # The device declined the group for another reason or cannot check support.
+                    self._admit_parts(group, 2, automatic=automatic)
+                    continue
+                self._group_limits[key] = limit
+            self._admit_parts(group, (len(group) + limit - 1) // limit, automatic=automatic)
+
+    def _supported_count(self, group: Sequence[int]) -> int:
+        """Return the largest accepted leading program count, or 0 without a support check.
+
+        A failed check raises the adapter's submission error before any part is admitted.
+        """
+        # shortcut: bisection assumes one upper count limit; a lower count limit above half of
+        # it (for example, a minimum total shot count) can hide that limit, and halving takes over.
+        if self._supports_programs is None:
+            return 0
+        low, high = 0, len(group) + 1
+        while high - low > 1:
+            middle = (low + high) // 2
+            try:
+                supported = self._supports_programs(self._owner, group[:middle])
+            except Exception as exc:
+                msg = f"Failed to check device support for batch entries {list(group)}: {exc}"
+                raise self._submission_error(self._owner, msg) from exc
+            if supported:
+                low = middle
+            else:
+                high = middle
+        return low
+
+    def _admit_parts(self, group: Sequence[int], parts: int, *, automatic: bool) -> None:
+        """Admit near-equal contiguous parts in order, halving each declined part."""
+        size, larger = divmod(len(group), parts)
+        start = 0
+        for part in range(parts):
+            end = start + size + (part < larger)
+            chunk = group[start:end]
+            start = end
+            if not self._admit(chunk, automatic=automatic) and len(chunk) > 1:
+                self._admit_parts(chunk, 2, automatic=automatic)
 
     def _admit(self, indices: Sequence[int], *, automatic: bool) -> bool:
         previous = [self._entries[index] for index in indices]
