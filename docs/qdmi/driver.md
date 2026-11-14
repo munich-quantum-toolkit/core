@@ -117,9 +117,10 @@ format and common job parameters. `num_shots` applies to each program. Text
 programs carry one terminating null byte; binary programs retain their exact
 bytes. Text strings can include one final null byte. Embedded null bytes are
 invalid. `try_submit_job` returns `None` only when the device reports that it
-cannot accept the format or program count before submission. Device
-unavailability and submission errors propagate, since retrying an uncertain
-submission could duplicate execution.
+cannot accept the format or program count before submission. The device judges
+the count with the requested shot count and custom parameters, which are set
+before the programs. Device unavailability and submission errors propagate,
+since retrying an uncertain submission could duplicate execution.
 
 Use `job.num_programs` and the optional `program_index` argument on result
 methods to retrieve results in input order. Use `job.get_program(index)` for

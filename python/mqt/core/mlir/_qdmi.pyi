@@ -71,3 +71,34 @@ class Context:
         The context itself is unchanged. With no supplied custom parameters, use the
         retained defaults.
         """
+
+    def supports(
+        self,
+        program_format: mqt.core.qdmi.ProgramFormat,
+        count: int,
+        num_shots: int,
+        *,
+        custom1: str | bool | float | bytes | None = None,
+        custom2: str | bool | float | bytes | None = None,
+        custom3: str | bool | float | bytes | None = None,
+        custom4: str | bool | float | bytes | None = None,
+        custom5: str | bool | float | bytes | None = None,
+    ) -> bool:
+        """Check whether the device accepts a job of this size without submitting it.
+
+        Args:
+            program_format: Payload format of every program.
+            count: Positive number of programs in the job.
+            num_shots: Nonnegative shot count applied to every program.
+            custom1: First provider-specific job parameter.
+            custom2: Second provider-specific job parameter.
+            custom3: Third provider-specific job parameter.
+            custom4: Fourth provider-specific job parameter.
+            custom5: Fifth provider-specific job parameter.
+
+        Returns:
+            False if the device declines this format and count with these parameters.
+            A supported size can still be declined for its actual programs.
+
+        Custom parameters follow the same rules as in try_submit.
+        """

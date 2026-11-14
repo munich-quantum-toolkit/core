@@ -126,6 +126,7 @@ class QDMIJob(JobV1):
             submit=QDMIJob._submit_entry,
             decode=QDMIJob._collect_result,
             submit_programs=QDMIJob._submit_programs,
+            supports_programs=QDMIJob._supports_programs,
             group_by=[program.program_format for program in self._programs],
             submission_error=lambda job, msg: JobSubmissionError(msg, job=job),
             execution_error=lambda job, msg: JobExecutionError(msg, job=job),
@@ -147,6 +148,10 @@ class QDMIJob(JobV1):
     def _submit_programs(self, indices: Sequence[int]) -> QDMIJobHandle | None:
         programs = [self._programs[index] for index in indices]
         return self._submit_group(indices, programs, self._shots, self._destinations[programs[0].program_format])
+
+    def _supports_programs(self, indices: Sequence[int]) -> bool:
+        program_format = self._programs[indices[0]].program_format
+        return self._context.supports(program_format, len(indices), self._shots, **self._job_parameters)
 
     def collect(self) -> tuple[BatchEntry[ExperimentResult], ...]:
         """Read existing jobs without replacement executions or aggregate errors.

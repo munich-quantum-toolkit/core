@@ -387,13 +387,15 @@ String (LLVM assembly).
 
 QDMI C++ applications pass a `std::string` to `Device::submitJob` for a text
 program, or a `std::span<const std::byte>` for a binary module. The same method
-accepts a span of text or binary programs for a multi-program job. Text includes
-the required terminator once; binary programs preserve their exact bytes,
-including embedded nulls. `Job::getProgramBytes()` retrieves those bytes without
-interpreting their contents or removing terminal null bytes. `Job::getProgram()`
-retrieves null-terminated text. It rejects known binary and non-text formats
-based on their QDMI format identifier, even if their data happens to end in a
-null byte.
+accepts a span of text or binary programs for a multi-program job.
+`Device::supportsJob` checks whether the device accepts a format, program count,
+and set of job parameters without sending programs or submitting a job. Text
+includes the required terminator once; binary programs preserve their exact
+bytes, including embedded nulls. `Job::getProgramBytes()` retrieves those bytes
+without interpreting their contents or removing terminal null bytes.
+`Job::getProgram()` retrieves null-terminated text. It rejects known binary and
+non-text formats based on their QDMI format identifier, even if their data
+happens to end in a null byte.
 
 The Python API follows the same distinction: pass `str` or `bytes` to
 `Device.submit_job` for one program, or a sequence of either type for multiple

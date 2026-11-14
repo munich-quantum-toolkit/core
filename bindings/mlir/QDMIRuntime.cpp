@@ -169,6 +169,51 @@ Args:
 A supplied custom parameter replaces the retained parameter set for this call.
 The context itself is unchanged. With no supplied custom parameters, use the
 retained defaults.
+)doc")
+      .def(
+          "supports",
+          [](const runtime::Context& context, const QDMI_Program_Format format,
+             const size_t count, int64_t shots,
+             const std::optional<PythonCustomJobParameter>& custom1,
+             const std::optional<PythonCustomJobParameter>& custom2,
+             const std::optional<PythonCustomJobParameter>& custom3,
+             const std::optional<PythonCustomJobParameter>& custom4,
+             const std::optional<PythonCustomJobParameter>& custom5) {
+            const runtime::BorrowedJobParameters parameters{
+                toCustomJobParameter(custom1), toCustomJobParameter(custom2),
+                toCustomJobParameter(custom3), toCustomJobParameter(custom4),
+                toCustomJobParameter(custom5),
+            };
+            const nb::gil_scoped_release release;
+            return unwrap(context.supports(format, count, shots,
+                                           custom1 || custom2 || custom3 ||
+                                                   custom4 || custom5
+                                               ? &parameters
+                                               : nullptr));
+          },
+          "program_format"_a, "count"_a, "num_shots"_a, nb::kw_only(),
+          "custom1"_a.noconvert() = nb::none(),
+          "custom2"_a.noconvert() = nb::none(),
+          "custom3"_a.noconvert() = nb::none(),
+          "custom4"_a.noconvert() = nb::none(),
+          "custom5"_a.noconvert() = nb::none(),
+          R"doc(Check whether the device accepts a job of this size without submitting it.
+
+Args:
+    program_format: Payload format of every program.
+    count: Positive number of programs in the job.
+    num_shots: Nonnegative shot count applied to every program.
+    custom1: First provider-specific job parameter.
+    custom2: Second provider-specific job parameter.
+    custom3: Third provider-specific job parameter.
+    custom4: Fourth provider-specific job parameter.
+    custom5: Fifth provider-specific job parameter.
+
+Returns:
+    False if the device declines this format and count with these parameters.
+    A supported size can still be declined for its actual programs.
+
+Custom parameters follow the same rules as in try_submit.
 )doc");
 }
 

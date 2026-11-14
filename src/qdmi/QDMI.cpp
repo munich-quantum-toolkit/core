@@ -1060,16 +1060,13 @@ Device::trySubmitJob(const std::span<const std::span<const std::byte>> programs,
                        custom3, custom4, custom5);
 }
 
-Expected<std::optional<Job>>
-Device::submitJobImpl(const QDMI_Program_Format format,
-                      const std::span<const size_t> sizes,
-                      const std::span<const void* const> programs,
-                      const std::optional<size_t> numShots,
-                      const std::optional<CustomJobParameter>& custom1,
-                      const std::optional<CustomJobParameter>& custom2,
-                      const std::optional<CustomJobParameter>& custom3,
-                      const std::optional<CustomJobParameter>& custom4,
-                      const std::optional<CustomJobParameter>& custom5) const {
+Expected<Job>
+Device::createJob(const std::optional<size_t> numShots,
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
   QDMI_Job job = nullptr;
   if (auto error = qdmi::checkError(api().device_create_job(device_, &job),
                                     "Creating job")) {
@@ -1089,9 +1086,36 @@ Device::submitJobImpl(const QDMI_Program_Format format,
       }
     }
   }
+  // Devices check program support against the configured shot count.
+  if (numShots.has_value()) {
+    const auto result = api().job_set_parameter(
+        jobWrapper, QDMI_JOB_PARAMETER_SHOTSNUM, sizeof(*numShots), &*numShots);
+    // Some devices accept shot counts only for a known program format.
+    if (result != QDMI_ERROR_NOTSUPPORTED) {
+      if (auto error = qdmi::checkError(result, "Setting number of shots")) {
+        return error;
+      }
+    }
+  }
+  return jobWrapper;
+}
 
-  const auto result = api().job_set_programs(
-      jobWrapper, format, programs.size(), sizes.data(), programs.data());
+Expected<std::optional<Job>>
+Device::submitJobImpl(const QDMI_Program_Format format,
+                      const std::span<const size_t> sizes,
+                      const std::span<const void* const> programs,
+                      const std::optional<size_t> numShots,
+                      const std::optional<CustomJobParameter>& custom1,
+                      const std::optional<CustomJobParameter>& custom2,
+                      const std::optional<CustomJobParameter>& custom3,
+                      const std::optional<CustomJobParameter>& custom4,
+                      const std::optional<CustomJobParameter>& custom5) const {
+  auto job = createJob(numShots, custom1, custom2, custom3, custom4, custom5);
+  if (!job) {
+    return job.takeError();
+  }
+  const auto result = api().job_set_programs(*job, format, programs.size(),
+                                             sizes.data(), programs.data());
   if (result == QDMI_ERROR_NOTSUPPORTED) {
     return std::optional<Job>{};
   }
@@ -1101,17 +1125,40 @@ Device::submitJobImpl(const QDMI_Program_Format format,
   // The program format determines whether this device accepts shot counts.
   if (numShots.has_value()) {
     if (auto error = qdmi::checkError(
-            api().job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_SHOTSNUM,
+            api().job_set_parameter(*job, QDMI_JOB_PARAMETER_SHOTSNUM,
                                     sizeof(*numShots), &*numShots),
             "Setting number of shots")) {
       return error;
     }
   }
-  if (auto error =
-          qdmi::checkError(api().job_submit(jobWrapper), "Submitting job")) {
+  if (auto error = qdmi::checkError(api().job_submit(*job), "Submitting job")) {
     return error;
   }
-  return std::optional<Job>{std::move(jobWrapper)};
+  return std::optional<Job>{std::move(*job)};
+}
+
+Expected<bool>
+Device::supportsJob(const QDMI_Program_Format format, const size_t count,
+                    const std::optional<size_t> numShots,
+                    const std::optional<CustomJobParameter>& custom1,
+                    const std::optional<CustomJobParameter>& custom2,
+                    const std::optional<CustomJobParameter>& custom3,
+                    const std::optional<CustomJobParameter>& custom4,
+                    const std::optional<CustomJobParameter>& custom5) const {
+  auto job = createJob(numShots, custom1, custom2, custom3, custom4, custom5);
+  if (!job) {
+    return job.takeError();
+  }
+  // Null programs check the format and count without changing the job.
+  const auto result =
+      api().job_set_programs(*job, format, count, nullptr, nullptr);
+  if (result == QDMI_ERROR_NOTSUPPORTED) {
+    return false;
+  }
+  if (auto error = qdmi::checkError(result, "Checking program support")) {
+    return error;
+  }
+  return true;
 }
 
 Expected<Job> Device::retrieveJobById(const std::string_view jobId) const {

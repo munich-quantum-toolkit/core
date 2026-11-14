@@ -134,6 +134,11 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
         ) -> Job | None:
             return submit_programs(self.device, programs, num_shots, destination=destination, **parameters)
 
+        @staticmethod
+        def supports(_program_format: ProgramFormat, count: int, _num_shots: int, **_parameters: object) -> bool:
+            # Device doubles decline every program list before submission.
+            return count == 1
+
     monkeypatch.setattr(
         backend_module,
         "Context",

@@ -870,6 +870,22 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
+  /// Checks whether the device accepts a job of `count` programs in `format`
+  /// with the given job parameters.
+  ///
+  /// The check sends no program and submits nothing. It returns false when
+  /// the device does not support this format and count with these parameters.
+  /// A device can still decline the actual programs.
+  /// @see QDMI_job_set_programs
+  [[nodiscard]] llvm::Expected<bool> supportsJob(
+      QDMI_Program_Format format, size_t count,
+      std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
   /// Retrieves an existing job by its device-provided ID.
   ///
   /// Opening a job does not submit, clone, or modify the remote job.
@@ -912,6 +928,16 @@ private:
         llvm::Twine("Querying ") + qdmi::toString(prop),
         llvm::Twine("Querying ") + qdmi::toString(prop));
   }
+
+  /// Create a job with custom parameters and, if the device accepts it before
+  /// the program format is known, the shot count.
+  [[nodiscard]] llvm::Expected<Job>
+  createJob(std::optional<size_t> numShots,
+            const std::optional<CustomJobParameter>& custom1,
+            const std::optional<CustomJobParameter>& custom2,
+            const std::optional<CustomJobParameter>& custom3,
+            const std::optional<CustomJobParameter>& custom4,
+            const std::optional<CustomJobParameter>& custom5) const;
 
   [[nodiscard]] llvm::Expected<std::optional<Job>>
   submitJobImpl(QDMI_Program_Format format, std::span<const size_t> sizes,
