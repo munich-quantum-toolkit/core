@@ -463,13 +463,13 @@ findTopologyPatternLayout(const Graph& graph, const CompilerTarget& target,
       return std::nullopt;
     }
     SmallVector<const PatternIndex*> indexes(groups.size());
-    parallelFor(&context, 0, groups.size(), [&](size_t slot) {
+    for (size_t slot = 0; slot < groups.size(); ++slot) {
       if (llvm::any_of(*slices, [&](const auto& slice) {
             return slice.type == groups[slot]->type();
           })) {
         indexes[slot] = target.topologyPatternIndex(groups[slot]->type());
       }
-    });
+    }
     for (const auto [slot, group] : llvm::enumerate(groups)) {
       for (const auto& slice : *slices) {
         if (slice.type != group->type()) {
