@@ -1029,8 +1029,10 @@ CompiledProgram::compile(CompilerInput program,
   if (!native) {
     return native.takeError();
   }
+  auto serializationOptions = options;
+  serializationOptions.profileActionsTo.clear();
   return serialize(std::move(std::get<QCProgram>(*native)), environment,
-                   options);
+                   serializationOptions);
 }
 
 Expected<CompiledProgram>

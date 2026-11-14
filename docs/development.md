@@ -665,6 +665,70 @@ same textual syntax; individual pass flags are not supported. The CLI and
 library share QCO pass and upstream transform registration. The driver also
 registers its conversion passes so they can be selected for debugging.
 
+(compiler-profiling)=
+
+#### Compiler profiling
+
+Use MLIR's pass timing and statistics for routine performance analysis:
+
+```sh
+"$mqt_core" compile input.qasm --mlir-timing --mlir-pass-statistics > compiled.mlir
+```
+
+Native timing options such as `--mlir-timing-display=list` and
+`--mlir-output-format=json` control the reports. Each pass manager emits its own
+report. Detailed action traces also record rewrite attempts and iterations;
+enable them when investigating compiler internals.
+
+Record MLIR pass and rewrite actions with the
+[native action profiler](https://mlir.llvm.org/docs/ActionTracing/):
+
+```sh
+"$mqt_core" compile input.qasm --profile-actions-to=compile.json > compiled.mlir
+```
+
+In Python, configure profiling through
+{py:class}`~mqt.core.mlir.CompilationOptions`:
+
+```python
+from mqt.core.mlir import CompilationOptions, compile_program
+
+options = CompilationOptions(
+    enable_pass_logging=True,
+    enable_timing=True,
+    enable_statistics=True,
+    profile_actions_to="compile.json",
+)
+compiled = compile_program("input.qasm", options=options)
+```
+
+All controls are disabled by default. Pass progress writes the pass name and
+`started`, `completed`, or `failed` to native stderr. Timing and statistics also
+use stderr. These three controls cover pipelines that receive the options, not
+every conversion or cleanup stage. Parallel records can arrive in any order.
+Follow
+[MLIR's pass timing semantics](https://mlir.llvm.org/docs/PassManagement/#pass-timing);
+overlapping durations cannot be summed as total compilation time.
+
+Open `compile.json` in [Perfetto](https://ui.perfetto.dev). Each slice shows its
+duration and pass or rewrite name in `args.desc`. Tracing adds overhead and
+covers context actions, including conversions, but not every parsing or
+serialization operation. Device compilation and source submission trace through
+native QC; subsequent payload preparation, lowering, and serialization are
+outside that trace.
+
+Pass a scalar program when tracing. Sequences and individual typed
+transformations reject `profile_actions_to`. Each compilation overwrites its
+file, including on pass failure; in-process file I/O failures return compiler
+errors. A crash can leave the trace incomplete. Use separate files for
+concurrent compilations, and do not concurrently use the same context or copies
+of a typed program. Contexts with an existing MLIR action handler reject
+in-process tracing; configure profiling through that handler instead.
+
+For whole-process resource use, wrap the command or Python script with
+`/usr/bin/time -v` on Linux or `/usr/bin/time -l` on macOS. Peak memory includes
+all work in that process, not just an individual pass.
+
 #### Diagnostics and reproducers
 
 Use `--mlir-print-stacktrace-on-diagnostic` to attach a trace when the LLVM

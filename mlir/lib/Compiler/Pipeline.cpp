@@ -37,13 +37,17 @@
 #include "jeff/Translation/Serialize.hpp"
 #include "kj/array.h"
 
+#include "mlir/Debug/ExecutionContext.h"
+#include "mlir/Debug/Observers/ActionProfiler.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/LLVMContext.h"
@@ -57,9 +61,11 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -687,14 +693,58 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
         }
       },
       program);
-  CompilerDiagnostics diagnostics(context.get());
-  auto result = runDefaultPipelineImpl(std::move(program), output, environment,
-                                       qcoPipeline, options);
-  if (failed(result)) {
-    return diagnostics.takeError(
-        std::make_error_code(std::errc::invalid_argument));
+  const auto run = [&](const CompilationOptions& pipelineOptions)
+      -> Expected<CompilerProgram> {
+    CompilerDiagnostics diagnostics(context.get());
+    auto result = runDefaultPipelineImpl(
+        std::move(program), output, environment, qcoPipeline, pipelineOptions);
+    if (failed(result)) {
+      return diagnostics.takeError(
+          std::make_error_code(std::errc::invalid_argument));
+    }
+    return std::move(*result);
+  };
+  if (options.profileActionsTo.empty()) {
+    return run(options);
   }
-  return std::move(*result);
+  if (context->hasActionHandler()) {
+    return createStringError(std::errc::invalid_argument,
+                             "action profiling requires a context without an "
+                             "existing action handler");
+  }
+  std::error_code error;
+  llvm::raw_fd_ostream stream(options.profileActionsTo, error);
+  if (error) {
+    return createStringError(error, "failed to open action profile '%s': %s",
+                             options.profileActionsTo.c_str(),
+                             error.message().c_str());
+  }
+  auto pipelineOptions = options;
+  pipelineOptions.profileActionsTo.clear();
+  auto result = [&] {
+    tracing::ActionProfiler profiler(stream);
+    tracing::ExecutionContext executionContext;
+    executionContext.registerObserver(&profiler);
+    context->registerActionHandler(std::move(executionContext));
+    const auto clearHandler =
+        llvm::scope_exit([&] { context->registerActionHandler(nullptr); });
+    return run(pipelineOptions);
+  }();
+  if (options.profileActionsTo == "-") {
+    stream.flush();
+  } else {
+    stream.close();
+  }
+  if (stream.has_error()) {
+    error = stream.error();
+    stream.clear_error();
+    return llvm::joinErrors(
+        result.takeError(),
+        createStringError(error, "failed to write action profile '%s': %s",
+                          options.profileActionsTo.c_str(),
+                          error.message().c_str()));
+  }
+  return result;
 }
 
 Expected<CompilerProgram>
