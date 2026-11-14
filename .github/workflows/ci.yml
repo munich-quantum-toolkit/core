@@ -17,8 +17,10 @@ permissions: {}
 jobs:
   change-detection:
     name: 🔍 Change
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@d6345b25f19cb7223ac883e5333ae9d63ae9238b # v2.5.9
+    # Temporary PR #522 pin; replace with a released commit before merging.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@d57d0543d16a0ac025f1f62cdbb822ca31ea2c2f # zizmor: ignore[stale-action-refs]
     with:
+      enable-docs: true
       additional-python-files: "mlir/**"
       additional-cd-files: |
         .github/workflows/ci.yml
@@ -28,6 +30,19 @@ jobs:
         cmake/**
         pyproject.toml
         scripts/check_wheel_runtime.py
+    permissions:
+      contents: read
+
+  docs:
+    name: 📚 Docs
+    needs: change-detection
+    if: fromJSON(needs.change-detection.outputs.run-docs)
+    # Temporary PR #522 pin; replace with a released commit before merging.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@d57d0543d16a0ac025f1f62cdbb822ca31ea2c2f # zizmor: ignore[stale-action-refs]
+    with:
+      apt-packages: doxygen
+      setup-mlir: true
+      llvm-version: 23.1.4
     permissions:
       contents: read
 
@@ -122,7 +137,7 @@ jobs:
       llvm-version: 23.1.4
     permissions:
       contents: read
-      id-token: write
+      id-token: write # Authenticate coverage uploads with Codecov
 
   cpp-linter:
     name: 🇨 Lint
@@ -171,7 +186,7 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-coverage.yml@d6345b25f19cb7223ac883e5333ae9d63ae9238b # v2.5.9
     permissions:
       contents: read
-      id-token: write
+      id-token: write # Authenticate coverage uploads with Codecov
 
   python-linter:
     name: 🐍 Lint
@@ -227,6 +242,7 @@ jobs:
     if: always()
     needs:
       - change-detection
+      - docs
       - cpp-tests-ubuntu
       - cpp-tests-macos
       - cpp-tests-windows
@@ -243,6 +259,10 @@ jobs:
         uses: re-actors/alls-green@b5b5b37504aa4183270bd3d855c52a67f212be35 # v1.3.0
         with:
           allowed-skips: >-
+            ${{
+              !fromJSON(needs.change-detection.outputs.run-docs)
+              && 'docs,' || ''
+            }}
             ${{
               !fromJSON(needs.change-detection.outputs.run-cpp-tests)
               && 'cpp-tests-ubuntu,cpp-tests-macos,cpp-tests-windows,' || ''
