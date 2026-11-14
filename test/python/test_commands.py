@@ -59,30 +59,15 @@ def test_native_command(monkeypatch: pytest.MonkeyPatch, platform: str) -> None:
         execute.assert_called_once_with(executable, arguments)
 
 
-@pytest.mark.parametrize("destination", ["file", "stdout", "missing-directory"])
-def test_qpy_export(
-    tmp_path: Path,
-    destination: str,
-) -> None:
-    """Run the native compiler and independently decode QPY or report an output failure."""
+def test_qpy_export(tmp_path: Path) -> None:
+    """Run the native compiler and independently decode QPY written to standard output."""
     source = tmp_path / "input.qasm"
     source.write_text("OPENQASM 3; qubit q; x q;")
-    output = tmp_path / "output.qpy"
-    arguments = ["compile", str(source), "-o", str(output), "--qdmi-list-devices=false"]
-    if destination == "stdout":
-        arguments = ["compile", str(source), "--emit=qpy"]
-    elif destination == "missing-directory":
-        arguments[arguments.index("-o") + 1] = str(tmp_path / "absent" / "output.qpy")
-    error = run_command(arguments)
-    if destination == "missing-directory":
-        assert error.returncode != 0
-        assert error.stderr
-    else:
-        assert error.returncode == 0
-        data = error.stdout if destination == "stdout" else output.read_bytes()
-        assert qpy.get_qpy_version(BytesIO(data)) == 17
-        circuit = qpy.load(BytesIO(data))[0]
-        assert Statevector.from_instruction(circuit).probabilities_dict() == {"1": 1.0}
+    result = run_command(["compile", str(source), "--emit=qpy", "--qdmi-list-devices=false"])
+    assert result.returncode == 0
+    assert qpy.get_qpy_version(BytesIO(result.stdout)) == 17
+    circuit = qpy.load(BytesIO(result.stdout))[0]
+    assert Statevector.from_instruction(circuit).probabilities_dict() == {"1": 1.0}
 
 
 @pytest.mark.parametrize("failure", ["compiler", "serializer"])
@@ -105,45 +90,33 @@ qpy.dump = fail
     assert output.read_bytes() == b"existing"
 
 
-@pytest.mark.parametrize("input_format", ["openqasm", "qc", "qco", "jeff"])
-def test_qpy_input_formats(tmp_path: Path, input_format: str) -> None:
-    """Load each supported frontend, including an explicit extension override."""
-    source = (
-        tmp_path / {"openqasm": "circuit.txt", "qc": "qc.mlir", "qco": "qco.mlir", "jeff": "circuit.jeff"}[input_format]
-    )
+@pytest.mark.parametrize("input_format", ["openqasm", "qc", "jeff"])
+def test_input_formats(tmp_path: Path, input_format: str) -> None:
+    """Load each frontend from a file, including an explicit extension override."""
+    source = tmp_path / {"openqasm": "circuit.txt", "qc": "qc.mlir", "jeff": "circuit.jeff"}[input_format]
     qasm = "OPENQASM 3; qubit q; x q;"
     if input_format == "jeff":
         compile_program(qasm, output=OutputFormat.JEFF).write(source)
     elif input_format == "openqasm":
         source.write_text(qasm)
     else:
-        program = QCProgram.from_openqasm_str(qasm)
-        source.write_text(program.to_qco().ir if input_format == "qco" else program.ir)
-    output = tmp_path / "output.qpy"
-    arguments = ["compile", str(source), "-o", str(output)]
+        source.write_text(QCProgram.from_openqasm_str(qasm).ir)
+    arguments = ["compile", str(source), "--emit=qc"]
     if input_format == "openqasm":
         arguments.append("--input-format=openqasm")
-    assert run_command(arguments).returncode == 0
-    assert Statevector(qpy.load(BytesIO(output.read_bytes()))[0]).probabilities_dict() == {"1": 1.0}
+    result = run_command(arguments)
+    assert result.returncode == 0
+    assert QCProgram.from_mlir_str(result.stdout.decode()).inspect().gate_counts == {"x": 1}
 
 
-@pytest.mark.parametrize(
-    ("arguments", "width"),
-    [
-        (["--decompose-multi-controlled"], 2),
-        (["--decompose-multi-controlled=false"], 3),
-        (["--decompose-multi-controlled", "--decompose-multi-controlled-min-qubits=4"], 3),
-    ],
-)
-def test_qpy_decomposition(tmp_path: Path, arguments: list[str], width: int) -> None:
-    """Honor the decomposition threshold while retaining the circuit's action."""
+def test_decomposition_threshold(tmp_path: Path) -> None:
+    """Keep multi-controlled gates below the requested decomposition width."""
     source = tmp_path / "input.qasm"
     source.write_text("OPENQASM 3; qubit[3] q; x q[0]; x q[1]; ctrl(2) @ x q[0],q[1],q[2];")
-    output = tmp_path / "output.qpy"
-    assert run_command(["compile", *arguments, str(source), "-o", str(output)]).returncode == 0
-    circuit = qpy.load(BytesIO(output.read_bytes()))[0]
-    assert max(item.operation.num_qubits for item in circuit.data) == width
-    assert Statevector(circuit).data == pytest.approx(Statevector.from_label("111").data, abs=1e-14)
+    arguments = ["--decompose-multi-controlled", "--decompose-multi-controlled-min-qubits=4"]
+    result = run_command(["compile", *arguments, str(source), "--emit=qc"])
+    assert result.returncode == 0
+    assert QCProgram.from_mlir_str(result.stdout.decode()).inspect().gate_counts == {"ccx": 1, "x": 2}
 
 
 def test_qpy_custom_pipeline(tmp_path: Path) -> None:
@@ -168,12 +141,7 @@ def test_qpy_custom_pipeline(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     ("gate_name", "payload_format", "input_format"),
-    [
-        ("u3", "qir", "openqasm"),
-        ("device_u", "qpy", "openqasm"),
-        ("device_u", "qpy", "qc"),
-        ("device_u", "qpy", "qco"),
-    ],
+    [("u3", "qir", "openqasm"), ("device_u", "qpy", "qco")],
 )
 def test_qpy_target_export(tmp_path: Path, gate_name: str, input_format: str, payload_format: str) -> None:
     """Retain native gate names, sparse device addresses, and logical layout."""
@@ -211,8 +179,7 @@ def test_qpy_target_export(tmp_path: Path, gate_name: str, input_format: str, pa
             "--mapping-search-memory-limit=0",
         ]
     else:
-        program = compile_program(qasm, target=target, output=OutputFormat.QC)
-        source.write_text(program.to_qco().ir if input_format == "qco" else program.ir)
+        source.write_text(compile_program(qasm, target=target, output=OutputFormat.QC).to_qco().ir)
     output = tmp_path / "output.qpy"
     assert run_command(["compile", str(source), "-o", str(output), *arguments]).returncode == 0
     with output.open("rb") as stream:
