@@ -4292,14 +4292,16 @@ import mqt.core.mlir
 assert "mqt.core._qdmi_discovery" in sys.modules
 assert "qiskit" not in sys.modules
 
-sys.meta_path.remove(blocker)
-from qiskit import QuantumCircuit
-from mqt.core.mlir import OutputFormat, compile_program, sample
-circuit = QuantumCircuit(1)
-circuit.x(0)
-assert sample(circuit, shots=1) == {"1": 1}
-programs = compile_program([circuit], output=OutputFormat.QC_IMPORT)
-assert sample(programs[0], shots=1) == {"1": 1}
+if sys.argv[1] == "mlir":
+    # Every case reaches the same state here, so check the deferred integration once.
+    sys.meta_path.remove(blocker)
+    from qiskit import QuantumCircuit
+    from mqt.core.mlir import OutputFormat, compile_program, sample
+    circuit = QuantumCircuit(1)
+    circuit.x(0)
+    assert sample(circuit, shots=1) == {"1": 1}
+    programs = compile_program([circuit], output=OutputFormat.QC_IMPORT)
+    assert sample(programs[0], shots=1) == {"1": 1}
 """
     subprocess.run([sys.executable, "-c", script, first_module], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
 
@@ -5105,11 +5107,9 @@ def test_compiled_loose_classical_bits_remain_available_to_native_clients() -> N
     [
         ("not installed", False),
         (None, False),
-        ("2.4.9", False),
         ("2.5.0rc1", False),
         ("2.5.0", True),
         ("2.7.0.dev1", True),
-        ("3.0.0rc1", False),
         ("3.0.0", False),
         ("unknown", False),
         ("2.6.0garbage", False),

@@ -443,6 +443,7 @@ error-on-warning = true
 addopts = [
   "-ra",
   "--numprocesses=auto",                             # Automatically use all available CPU cores for parallel testing
+  "--dist=worksteal",                                # Let idle workers take queued tests so slow neighboring tests do not form a serial tail
   "-m",
   "not (linkcheck or qiskit_c_api or catalyst_abi)",
 ]

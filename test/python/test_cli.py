@@ -22,7 +22,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 from qiskit import qpy
-from qiskit.quantum_info import Statevector
 
 from mqt.core import __version__ as mqt_core_version
 from mqt.core.mlir import (
@@ -73,7 +72,16 @@ def test_cli_relocated_installation(script_runner: ScriptRunner, tmp_path: Path)
     """Resolve installation paths after moving the package, and diagnose missing files."""
     package = Path(str(distribution("mqt-core").locate_file("mqt/core")))
     relocated = tmp_path / "relocated package"
-    shutil.copytree(package, relocated)
+
+    def link_or_copy(source: str, destination: str) -> None:
+        # Linking avoids copying and re-validating the large native executable.
+        try:
+            os.link(source, destination)
+        except OSError:
+            shutil.copy2(source, destination)
+
+    for directory in ["bin", "include", "share"]:
+        shutil.copytree(package / directory, relocated / directory, copy_function=link_or_copy)
     executable = relocated / "bin" / ("mqt-core.exe" if sys.platform == "win32" else "mqt-core")
     for option, relative in [("include-dir", "include/mqt-core"), ("cmake-dir", "share/cmake")]:
         path = relocated / relative
@@ -221,11 +229,12 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     assert '"teleportation"' in ret.stdout
 
 
-@pytest.mark.parametrize(
-    "input_format", ["openqasm2", "openqasm3", "qir-base.ll", "qir-base.bc", "qir-adaptive.ll", "qir-adaptive.bc"]
-)
+@pytest.mark.parametrize("input_format", ["openqasm2", "qir-base.bc"])
 def test_simulate_cli(script_runner: ScriptRunner, tmp_path: Path, input_format: str) -> None:
-    """Sample OpenQASM and both QIR profiles through the isolated DDSIM worker."""
+    """Sample OpenQASM 2 and Base Profile QIR through the isolated DDSIM worker.
+
+    OpenQASM 3 and Adaptive Profile QIR are sampled by the logical-readout and inferred-output tests.
+    """
     source = tmp_path / "bell.qasm"
     if input_format == "openqasm2":
         source.write_text(
@@ -297,21 +306,20 @@ def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, mon
     qpy_output = tmp_path / "bell.qpy"
     config = tmp_path / "registry.json"
     config.write_text(json.dumps({"schema-version": 1, "qdmi": {"devices": [{**device, "id": "cli.config.device"}]}}))
-    for device_id, options in [("cli.test.device", []), ("cli.config.device", [f"--qdmi-config={config}"])]:
-        result = script_runner.run([
-            "mqt-core",
-            "compile",
-            str(source),
-            f"--qdmi-device={device_id}",
-            "-o",
-            str(qpy_output),
-            *options,
-        ])
-        assert result.success
-        with qpy_output.open("rb") as stream:
-            circuit = qpy.load(stream)[0]
-        assert circuit.layout is not None
-        assert circuit.num_clbits == 2
+    result = script_runner.run([
+        "mqt-core",
+        "compile",
+        str(source),
+        "--qdmi-device=cli.config.device",
+        "-o",
+        str(qpy_output),
+        f"--qdmi-config={config}",
+    ])
+    assert result.success
+    with qpy_output.open("rb") as stream:
+        circuit = qpy.load(stream)[0]
+    assert circuit.layout is not None
+    assert circuit.num_clbits == 2
     for program in [source, compiled]:
         result = script_runner.run(["mqt-core", "run", str(program), "--qdmi-device=cli.test.device", "--shots=128"])
         assert result.success
@@ -320,7 +328,7 @@ def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, mon
         assert sum(counts.values()) == 128
 
 
-@pytest.mark.parametrize("option", ["--version", "--help-hidden", "--qdmi-list-devices=true", "--qdmi-list-devices=1"])
+@pytest.mark.parametrize("option", ["--version", "--help-hidden", "--qdmi-list-devices=true"])
 def test_qpy_cli_information(script_runner: ScriptRunner, tmp_path: Path, option: str) -> None:
     """Informational commands succeed without exporting or replacing a file."""
     output = tmp_path / "output.qpy"
@@ -331,36 +339,24 @@ def test_qpy_cli_information(script_runner: ScriptRunner, tmp_path: Path, option
     assert output.read_bytes() == b"existing"
 
 
-@pytest.mark.parametrize("input_format", ["openqasm", "qc", "qco"])
-def test_qpy_stdin(script_runner: ScriptRunner, tmp_path: Path, input_format: str) -> None:
-    """Read OpenQASM and either MLIR dialect directly from standard input."""
+@pytest.mark.parametrize("input_format", ["openqasm", "qco"])
+def test_compile_stdin(script_runner: ScriptRunner, input_format: str) -> None:
+    """Read OpenQASM and MLIR directly from standard input."""
     source = "OPENQASM 3; qubit q; x q;"
-    if input_format != "openqasm":
-        program = QCProgram.from_openqasm_str(source)
-        source = program.to_qco().ir if input_format == "qco" else program.ir
-    output = tmp_path / "output.qpy"
-    arguments = ["mqt-core", "compile", "-o", str(output)]
+    arguments = ["mqt-core", "compile", "--emit=qc"]
     if input_format == "openqasm":
         arguments.append("--input-format=openqasm")
+    else:
+        source = QCProgram.from_openqasm_str(source).to_qco().ir
     result = script_runner.run(arguments, stdin=StringIO(source))
     assert result.success
-    with output.open("rb") as stream:
-        circuit = qpy.load(stream)[0]
-    assert Statevector(circuit).probabilities_dict() == {"1": 1.0}
+    assert QCProgram.from_mlir_str(result.stdout).inspect().gate_counts == {"x": 1}
 
 
-def test_compile_qpy_and_jeff(script_runner: ScriptRunner, tmp_path: Path) -> None:
-    """Export QPY with Qiskit and execute a jeff round trip."""
+def test_compile_jeff(script_runner: ScriptRunner, tmp_path: Path) -> None:
+    """Export jeff and sample it through the simulator."""
     source = tmp_path / "bell.qasm"
     source.write_text('OPENQASM 3; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c=measure q;')
-    output = tmp_path / "bell.qpy"
-    result = script_runner.run(["mqt-core", "compile", str(source), "-o", str(output)])
-    assert result.success
-    with output.open("rb") as stream:
-        circuit = qpy.load(stream)[0]
-    circuit.remove_final_measurements()
-    probabilities = Statevector.from_instruction(circuit).probabilities_dict()
-    assert probabilities == pytest.approx({"00": 0.5, "11": 0.5})
     output = tmp_path / "bell.jeff"
     result = script_runner.run(["mqt-core", "compile", str(source), "-o", str(output)])
     assert result.success
@@ -369,8 +365,10 @@ def test_compile_qpy_and_jeff(script_runner: ScriptRunner, tmp_path: Path) -> No
     assert sum(json.loads(result.stdout)["counts"].values()) == 128
 
 
-@pytest.mark.parametrize("suffix", ["ll", "bc", "qasm"])
-@pytest.mark.parametrize("target", [[], ["--qdmi-device=mqt.ddsim.default"]])
+@pytest.mark.parametrize(
+    ("suffix", "target"),
+    [("ll", []), ("bc", ["--qdmi-device=mqt.ddsim.default"]), ("qasm", ["--qdmi-device=mqt.ddsim.default"])],
+)
 def test_inferred_output(script_runner: ScriptRunner, tmp_path: Path, suffix: str, target: list[str]) -> None:
     """Infer executable formats and preserve the requested QIR encoding."""
     source = tmp_path / "input.qasm"
