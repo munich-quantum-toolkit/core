@@ -33,7 +33,7 @@ jobs:
 
   catalyst-upstream-tests:
     name: 🐍⚛️ Catalyst development
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@d6345b25f19cb7223ac883e5333ae9d63ae9238b # v2.5.9
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@4e380c0bb1774aa8b9dd53194f4a7f6575cc3d42 # v2.5.10
     with:
       runs-on: ubuntu-26.04
       sessions: '["catalyst-dev"]'
@@ -49,7 +49,7 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [ubuntu-26.04, macos-15, windows-2025]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-qiskit-upstream-tests.yml@d6345b25f19cb7223ac883e5333ae9d63ae9238b # v2.5.9
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-qiskit-upstream-tests.yml@4e380c0bb1774aa8b9dd53194f4a7f6575cc3d42 # v2.5.10
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-z3: true
@@ -62,7 +62,7 @@ jobs:
     name: Report Qiskit failure
     needs: qiskit-upstream-tests
     if: ${{ always() }}
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@d6345b25f19cb7223ac883e5333ae9d63ae9238b # v2.5.9
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@4e380c0bb1774aa8b9dd53194f4a7f6575cc3d42 # v2.5.10
     with:
       tests-result: ${{ needs.qiskit-upstream-tests.result }}
       name: Qiskit
@@ -74,7 +74,7 @@ jobs:
     name: Report Catalyst failure
     needs: [catalyst-upstream-tests, catalyst-abi-check]
     if: ${{ always() }}
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@d6345b25f19cb7223ac883e5333ae9d63ae9238b # v2.5.9
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@4e380c0bb1774aa8b9dd53194f4a7f6575cc3d42 # v2.5.10
     with:
       tests-result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
       name: Catalyst
