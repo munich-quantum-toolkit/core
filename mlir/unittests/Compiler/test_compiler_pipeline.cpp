@@ -3278,8 +3278,7 @@ TEST_F(CompilerPipelineTest, FailedRunKeepsReproducerAndTraceAndRestoresSeed) {
                                                   tracePath));
   const llvm::FileRemover traceCleanup(tracePath);
   EXPECT_TRUE(failed(runWithCompilationOptions(
-      pm, moduleOp,
-      {.seed = 9876, .profileActionsTo = tracePath.str().str()})));
+      pm, moduleOp, {.seed = 9876, .traceFile = tracePath.str().str()})));
   EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
   EXPECT_FALSE(moduleOp.getContext()->hasActionHandler());
   auto reproducer = llvm::MemoryBuffer::getFile(path);
@@ -7343,7 +7342,7 @@ TEST_F(CompilerPipelineTest, QCOProgramQubitReuseAPIs) {
   EXPECT_NE(compositeQCO->str().find("qco.reset"), std::string::npos);
 }
 
-TEST_F(CompilerPipelineTest, ActionProfilingPreservesExistingHandler) {
+TEST_F(CompilerPipelineTest, TracingPreservesExistingHandler) {
   std::atomic<size_t> actions = 0;
   auto input = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
   MQT_ASSERT_SUCCESS(input);
@@ -7364,7 +7363,7 @@ TEST_F(CompilerPipelineTest, ActionProfilingPreservesExistingHandler) {
     stream << "existing trace";
   }
   CompilationOptions options;
-  options.profileActionsTo = path.str().str();
+  options.traceFile = path.str().str();
 
   auto rejected =
       runDefaultPipeline(CompilerInput{std::move(*input)}, ProgramFormat::QC,
@@ -7379,7 +7378,7 @@ TEST_F(CompilerPipelineTest, ActionProfilingPreservesExistingHandler) {
   EXPECT_TRUE(inputContext->hasActionHandler());
 }
 
-TEST_F(CompilerPipelineTest, ActionProfilingReportsWriteFailure) {
+TEST_F(CompilerPipelineTest, TracingReportsWriteFailure) {
   if (!std::filesystem::exists("/dev/full")) {
     GTEST_SKIP() << "/dev/full is unavailable";
   }
@@ -7387,12 +7386,12 @@ TEST_F(CompilerPipelineTest, ActionProfilingReportsWriteFailure) {
   MQT_ASSERT_SUCCESS(input);
   auto context = input->context();
   CompilationOptions options;
-  options.profileActionsTo = "/dev/full";
+  options.traceFile = "/dev/full";
   auto result = runDefaultPipeline(CompilerInput{std::move(*input)},
                                    ProgramFormat::QCOOptimized,
                                    "mqt-qco-default", options);
   EXPECT_NE(
-      llvm::toString(result.takeError()).find("failed to write action profile"),
+      llvm::toString(result.takeError()).find("failed to write trace file"),
       std::string::npos);
   EXPECT_FALSE(context->hasActionHandler());
 }
@@ -7434,7 +7433,7 @@ h q;
                          {
                              .enableTiming = true,
                              .enableStatistics = true,
-                             .profileActionsTo = profilePath.str().str(),
+                             .traceFile = profilePath.str().str(),
                          });
   MQT_ASSERT_SUCCESS(profiled);
   ASSERT_TRUE(std::holds_alternative<QCOProgram>(*profiled));

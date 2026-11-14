@@ -813,7 +813,7 @@ class CompilationOptions:
         enable_timing: bool = False,
         enable_statistics: bool = False,
         mapping: MappingOptions = ...,
-        profile_actions_to: str | os.PathLike | None = None,
+        trace_file: str | os.PathLike | None = None,
     ) -> None: ...
     @property
     def seed(self) -> int | None: ...
@@ -832,14 +832,15 @@ class CompilationOptions:
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
     @property
-    def profile_actions_to(self) -> pathlib.Path | None:
-        """File for native MLIR action traces, or None to disable tracing.
+    def trace_file(self) -> pathlib.Path | None:
+        """File for a Chrome trace of the native compilation, or None to disable tracing.
 
+        The trace records MLIR actions, such as pass runs and pattern applications.
         Each call overwrites the file. Program sequences reject this option.
         """
 
-    @profile_actions_to.setter
-    def profile_actions_to(self, arg: str | os.PathLike | None, /) -> None: ...
+    @trace_file.setter
+    def trace_file(self, arg: str | os.PathLike | None, /) -> None: ...
 
 class QuantumProgramInfo:
     """Quantum resources and static IR statistics.

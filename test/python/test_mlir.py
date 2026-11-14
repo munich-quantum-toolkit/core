@@ -873,7 +873,7 @@ def test_compile_and_serialize_with_device_environment(tmp_path: Path) -> None:
     device = open_builtin_device("mqt.ddsim.default", custom1="2")
     environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QASM3)
     profile = tmp_path / "compile.json"
-    options = CompilationOptions(profile_actions_to=profile)
+    options = CompilationOptions(trace_file=profile)
 
     def traced_passes() -> int:
         events = json.loads(profile.read_text())
@@ -2450,19 +2450,19 @@ def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) ->
     assert "Pass statistics report" in output
 
 
-def test_action_profile_python_inputs(tmp_path: Path) -> None:
+def test_trace_file_python_inputs(tmp_path: Path) -> None:
     """Python paths reach tracing, sequences reject it, and file errors raise."""
-    assert CompilationOptions().profile_actions_to is None
+    assert CompilationOptions().trace_file is None
     profile = tmp_path / "compile.json"
-    options = CompilationOptions(profile_actions_to=profile)
-    assert options.profile_actions_to == profile
+    options = CompilationOptions(trace_file=profile)
+    assert options.trace_file == profile
     with pytest.raises(ValueError, match="scalar program input"):
         compile_program([QASM_STRING], options=options)
     assert not profile.exists()
     QCProgram.from_openqasm_str(QASM_STRING).to_qco().run_pass_pipeline("canonicalize", options=options)
     assert "Canonicalizer" in profile.read_text()
-    with pytest.raises(RuntimeError, match="failed to open action profile"):
-        compile_program(QASM_STRING, options=CompilationOptions(profile_actions_to=tmp_path))
+    with pytest.raises(RuntimeError, match="failed to open trace file"):
+        compile_program(QASM_STRING, options=CompilationOptions(trace_file=tmp_path))
 
 
 @requires_qiskit_translation

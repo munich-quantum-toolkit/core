@@ -40,11 +40,11 @@ mlir::LogicalResult runWithPassManager(
     mlir::StringRef errorMessage, const mlir::CompilationOptions& options = {},
     bool preservesLayout = false);
 
-/// Run a compilation step and record native MLIR actions when requested.
+/// Run a compilation step and trace its MLIR actions when requested.
 ///
-/// If `options.profileActionsTo` has no value, the function calls `run` with
+/// If `options.traceFile` has no value, the function calls `run` with
 /// `options`. Otherwise, it writes the actions on `context` to that file and
-/// calls `run` with options that have no profile path, so nested steps do not
+/// calls `run` with options that have no trace file, so nested steps do not
 /// open the file again. Each call overwrites the file. The function rejects a
 /// context that already has an action handler and removes its own handler
 /// before it returns.
@@ -53,7 +53,7 @@ mlir::LogicalResult runWithPassManager(
 /// @param options The requested compilation options.
 /// @param run The compilation step.
 /// @return The error from `run`, from opening or writing the file, or both.
-[[nodiscard]] llvm::Error withActionProfile(
+[[nodiscard]] llvm::Error withActionTrace(
     mlir::MLIRContext& context, const mlir::CompilationOptions& options,
     mlir::function_ref<llvm::Error(const mlir::CompilationOptions&)> run);
 

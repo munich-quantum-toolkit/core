@@ -912,10 +912,10 @@ qpyCircuit(mlir::QCProgram program,
     }
   }
 
-  if (programs && options.profileActionsTo) {
+  if (programs && options.traceFile) {
     throw nb::value_error(
-        "action profiling requires a scalar program input; compile each "
-        "program separately with its own trace file");
+        "trace_file requires a scalar program input; compile each program "
+        "separately with its own trace file");
   }
 
   std::optional<mlir::TargetEnvironment> targetEnvironment;
@@ -2159,15 +2159,16 @@ An explicit seed overrides all compiler randomness; None preserves pass defaults
                     std::optional<std::filesystem::path>>(),
            nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
            "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
-           "profile_actions_to"_a = nb::none())
+           "trace_file"_a = nb::none())
       .def_rw("seed", &mlir::CompilationOptions::seed)
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
       .def_rw("mapping", &mlir::CompilationOptions::mapping)
       .def_rw(
-          "profile_actions_to", &mlir::CompilationOptions::profileActionsTo,
-          R"pb(File for native MLIR action traces, or None to disable tracing.
+          "trace_file", &mlir::CompilationOptions::traceFile,
+          R"pb(File for a Chrome trace of the native compilation, or None to disable tracing.
 
+The trace records MLIR actions, such as pass runs and pattern applications.
 Each call overwrites the file. Program sequences reject this option.)pb");
 
   nb::class_<mlir::QuantumProgramInfo>(

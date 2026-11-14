@@ -27,7 +27,7 @@
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 #include "mqt/Target/QIR/Export.h"
 
-#include "ActionProfile.h"
+#include "ActionTrace.h"
 #include "Diagnostics.h"
 #include "Export.h"
 #include "ResonatorRouting.h"
@@ -678,15 +678,15 @@ static std::shared_ptr<MLIRContext> contextOf(const CompilerInput& program) {
 }
 
 llvm::Error
-withActionProfile(CompilerInput& program, const CompilationOptions& options,
-                  function_ref<llvm::Error(const CompilationOptions&)> run) {
-  if (!options.profileActionsTo) {
+withActionTrace(CompilerInput& program, const CompilationOptions& options,
+                function_ref<llvm::Error(const CompilationOptions&)> run) {
+  if (!options.traceFile) {
     return run(options);
   }
   if (auto error = importOpenQASM(program)) {
     return error;
   }
-  return ::withActionProfile(*contextOf(program), options, run);
+  return ::withActionTrace(*contextOf(program), options, run);
 }
 
 static Expected<CompilerProgram>
@@ -710,7 +710,7 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
         "a custom QCO pass pipeline cannot be used with an output that stops "
         "before QCO optimization");
   }
-  return withActionProfile<CompilerProgram>(
+  return withActionTrace<CompilerProgram>(
       program, options,
       [&](const CompilationOptions& pipelineOptions)
           -> Expected<CompilerProgram> {

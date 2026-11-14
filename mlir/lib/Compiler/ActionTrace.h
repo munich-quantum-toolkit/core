@@ -25,26 +25,26 @@ namespace mlir {
 ///
 /// When `options` requests a trace, the function imports OpenQASM source in
 /// `program` and traces the actions on the program's context. See the
-/// context-based withActionProfile in `mqt/Support/Passes.h` for the
+/// context-based withActionTrace in `mqt/Support/Passes.h` for the
 /// tracing behavior.
 ///
 /// @param program The input that `run` compiles.
 /// @param options The requested compilation options.
 /// @param run The compilation step.
 /// @return The error from `run`, from opening or writing the file, or both.
-[[nodiscard]] llvm::Error withActionProfile(
-    CompilerInput& program, const CompilationOptions& options,
-    llvm::function_ref<llvm::Error(const CompilationOptions&)> run);
+[[nodiscard]] llvm::Error
+withActionTrace(CompilerInput& program, const CompilationOptions& options,
+                llvm::function_ref<llvm::Error(const CompilationOptions&)> run);
 
 /// Run a compilation step that returns a value with an optional action trace.
 ///
 /// See the overload that returns `llvm::Error` for the tracing behavior.
 template <typename T>
-[[nodiscard]] llvm::Expected<T> withActionProfile(
+[[nodiscard]] llvm::Expected<T> withActionTrace(
     CompilerInput& program, const CompilationOptions& options,
     llvm::function_ref<llvm::Expected<T>(const CompilationOptions&)> run) {
   std::optional<T> value;
-  if (auto error = withActionProfile(
+  if (auto error = withActionTrace(
           program, options,
           [&](const CompilationOptions& stepOptions) -> llvm::Error {
             auto result = run(stepOptions);

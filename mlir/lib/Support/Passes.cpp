@@ -44,6 +44,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -199,30 +200,53 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
   return runWithCompilationOptions(pm, mod, options, preservesLayout);
 }
 
+namespace {
+
+/// Forward output to a buffered stream and ignore flushes.
+///
+/// tracing::ActionProfiler flushes its stream after each event. With a file,
+/// each flush is a system call. On large circuits, these calls make tracing
+/// several times slower and add their cost to the traced durations. Remove this
+/// class when the profiler no longer flushes after each event.
+class FlushIgnoringStream final : public llvm::raw_ostream {
+public:
+  explicit FlushIgnoringStream(llvm::raw_ostream& os)
+      : raw_ostream(/*unbuffered=*/true), os_(os) {}
+
+private:
+  void write_impl(const char* ptr, size_t size) override {
+    os_.write(ptr, size);
+  }
+  [[nodiscard]] uint64_t current_pos() const override { return os_.tell(); }
+
+  llvm::raw_ostream& os_;
+};
+
+} // namespace
+
 llvm::Error
-withActionProfile(MLIRContext& context, const CompilationOptions& options,
-                  function_ref<llvm::Error(const CompilationOptions&)> run) {
-  if (!options.profileActionsTo) {
+withActionTrace(MLIRContext& context, const CompilationOptions& options,
+                function_ref<llvm::Error(const CompilationOptions&)> run) {
+  if (!options.traceFile) {
     return run(options);
   }
   if (context.hasActionHandler()) {
     return llvm::createStringError(
         std::errc::invalid_argument,
-        "action profiling requires a context without an existing action "
-        "handler");
+        "tracing requires a context without an existing action handler");
   }
-  const auto path = options.profileActionsTo->string();
+  const auto path = options.traceFile->string();
   std::error_code error;
   llvm::raw_fd_ostream stream(path, error);
   if (error) {
-    return llvm::createStringError(error,
-                                   "failed to open action profile '%s': %s",
+    return llvm::createStringError(error, "failed to open trace file '%s': %s",
                                    path.c_str(), error.message().c_str());
   }
   auto stepOptions = options;
-  stepOptions.profileActionsTo.reset();
+  stepOptions.traceFile.reset();
+  FlushIgnoringStream traceStream(stream);
   auto result = [&] {
-    tracing::ActionProfiler profiler(stream);
+    tracing::ActionProfiler profiler(traceStream);
     tracing::ExecutionContext executionContext;
     executionContext.registerObserver(&profiler);
     context.registerActionHandler(std::move(executionContext));
@@ -243,22 +267,22 @@ withActionProfile(MLIRContext& context, const CompilationOptions& options,
   stream.clear_error();
   return llvm::joinErrors(
       std::move(result),
-      llvm::createStringError(error, "failed to write action profile '%s': %s",
+      llvm::createStringError(error, "failed to write trace file '%s': %s",
                               path.c_str(), error.message().c_str()));
 }
 
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
                                         const CompilationOptions& options,
                                         bool preservesLayout) {
-  if (options.profileActionsTo) {
+  if (options.traceFile) {
     auto result = failure();
     if (auto error =
-            withActionProfile(*moduleOp.getContext(), options,
-                              [&](const CompilationOptions& passOptions) {
-                                result = runWithCompilationOptions(
-                                    pm, moduleOp, passOptions, preservesLayout);
-                                return llvm::Error::success();
-                              })) {
+            withActionTrace(*moduleOp.getContext(), options,
+                            [&](const CompilationOptions& passOptions) {
+                              result = runWithCompilationOptions(
+                                  pm, moduleOp, passOptions, preservesLayout);
+                              return llvm::Error::success();
+                            })) {
       moduleOp.emitError(llvm::toString(std::move(error)));
       return failure();
     }

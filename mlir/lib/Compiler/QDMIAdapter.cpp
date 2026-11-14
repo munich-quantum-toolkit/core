@@ -20,7 +20,7 @@
 #include "mqt/Support/Passes.h"
 #include "qdmi/QDMI.hpp"
 
-#include "ActionProfile.h"
+#include "ActionTrace.h"
 #include "Diagnostics.h"
 #include "Export.h"
 #include "TerminalReadout.h"
@@ -1025,7 +1025,7 @@ CompiledProgram::compile(CompilerInput program,
     return createStringError(std::errc::invalid_argument,
                              "Executable programs require a device target");
   }
-  return withActionProfile<CompiledProgram>(
+  return withActionTrace<CompiledProgram>(
       program, options,
       [&](const CompilationOptions& stepOptions) -> Expected<CompiledProgram> {
         auto native = runDefaultPipeline(std::move(program), ProgramFormat::QC,

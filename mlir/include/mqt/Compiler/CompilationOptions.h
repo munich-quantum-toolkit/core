@@ -43,12 +43,13 @@ struct CompilationOptions {
   bool enableTiming = false;
   bool enableStatistics = false;
   MappingOptions mapping;
-  /// Write native MLIR action traces to this file.
+  /// Write a Chrome trace of the MLIR actions to this file.
   ///
-  /// No value disables tracing, and `-` selects stdout. runDefaultPipeline and
+  /// MLIR actions include pass runs and pattern applications. No value
+  /// disables tracing, and `-` selects stdout. runDefaultPipeline and
   /// CompiledProgram::compile write one trace for the complete compilation.
   /// Typed transformations write one trace for their pass-manager run.
-  std::optional<std::filesystem::path> profileActionsTo;
+  std::optional<std::filesystem::path> traceFile;
 };
 
 } // namespace mlir
