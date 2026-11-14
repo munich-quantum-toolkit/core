@@ -7431,9 +7431,11 @@ h q;
   auto profiled =
       runDefaultPipeline(CompilerInput{std::move(*profiledInput)},
                          ProgramFormat::QCOOptimized, "mqt-qco-default",
-                         {.enableTiming = true,
-                          .enableStatistics = true,
-                          .profileActionsTo = profilePath.str().str()});
+                         {
+                             .enableTiming = true,
+                             .enableStatistics = true,
+                             .profileActionsTo = profilePath.str().str(),
+                         });
   MQT_ASSERT_SUCCESS(profiled);
   ASSERT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
   EXPECT_FALSE(std::get<QCOProgram>(*profiled).context()->hasActionHandler());
