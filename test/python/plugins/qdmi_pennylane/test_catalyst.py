@@ -128,8 +128,9 @@ def test_repeated_calls_and_observable_lowering(*, capture: bool) -> None:
     np.testing.assert_allclose(compiled(0.0), [1.5, -0.5, 1.5])
 
 
+@pytest.mark.parametrize("capture", [False, True])
 @pytest.mark.parametrize("probabilities", [False, True])
-def test_compiled_parameter_shift(*, probabilities: bool) -> None:
+def test_compiled_parameter_shift(*, capture: bool, probabilities: bool) -> None:
     """Differentiate finite-shot expectations and probabilities."""
     device = qp.device("mqt.ddsim.default", wires=1)
 
@@ -138,7 +139,10 @@ def test_compiled_parameter_shift(*, probabilities: bool) -> None:
         qp.RY(angle, 0)
         return qp.probs(wires=[0]) if probabilities else qp.expval(qp.Z(0))
 
-    derivative = qp.qjit(catalyst.jacobian(circuit))
+    @qp.qjit(capture=capture, skip_preprocess=capture, **_DECOMPOSITION_OPTIONS)
+    def derivative(angle: float) -> Result:
+        return qp.jacobian(circuit)(angle)
+
     np.testing.assert_allclose(derivative(np.pi / 2), [-0.5, 0.5] if probabilities else -1, atol=1e-12)
 
 
