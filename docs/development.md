@@ -590,7 +590,8 @@ infrastructure. Adapt the useful principles from the [MLIR Testing Guide]
 [mlir-testing] as follows:
 
 - Parse and transform IR in-process. Use a subprocess only for irreducible
-  command-line behavior.
+  command-line behavior or necessary process isolation, such as fatal native
+  failures.
 - Use the smallest input that isolates the contract.
 - Give the test a name that states the behavior.
 - Check semantic operations, types, attributes, and diagnostics instead of a
