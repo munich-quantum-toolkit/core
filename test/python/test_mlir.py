@@ -2450,44 +2450,19 @@ def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) ->
     assert "Pass statistics report" in output
 
 
-def test_compilation_action_profile_failure(tmp_path: Path) -> None:
-    """A failed compilation keeps its trace and removes the temporary handler."""
-    program = QCOProgram.from_mlir_str("module {}")
-    profile = tmp_path / "failure.json"
-    with pytest.raises(RuntimeError, match="requires exactly one entry point"):
-        compile_program(
-            program,
-            qco_pipeline="set-qir-attributes-and-metadata",
-            copy=True,
-            options=CompilationOptions(profile_actions_to=profile),
-        )
-    recorded = profile.read_text()
-    assert "QIRSetAttributesAndMetadata" in recorded
-    assert json.loads(recorded)[-1]["ph"] == "E"
-    compile_program(program)
-    assert profile.read_text() == recorded
-
-
-def test_compilation_action_profile_open_failure(tmp_path: Path) -> None:
-    """An unusable trace destination returns its cause to Python."""
-    with pytest.raises(RuntimeError, match="failed to open action profile"):
-        compile_program(QASM_STRING, options=CompilationOptions(profile_actions_to=tmp_path))
-
-
-def test_action_profile_rejects_unsupported_inputs(tmp_path: Path) -> None:
-    """Sequences and typed transformations reject tracing before running passes."""
+def test_action_profile_python_inputs(tmp_path: Path) -> None:
+    """Python paths reach tracing, sequences reject it, and file errors raise."""
     assert CompilationOptions().profile_actions_to is None
     profile = tmp_path / "compile.json"
     options = CompilationOptions(profile_actions_to=profile)
     assert options.profile_actions_to == profile
     with pytest.raises(ValueError, match="scalar program input"):
         compile_program([QASM_STRING], options=options)
-    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
-    before = program.ir
-    with pytest.raises(RuntimeError, match="coordinated compilation pipeline"):
-        program.run_pass_pipeline("canonicalize", options=options)
-    assert program.ir == before
     assert not profile.exists()
+    QCProgram.from_openqasm_str(QASM_STRING).to_qco().run_pass_pipeline("canonicalize", options=options)
+    assert "Canonicalizer" in profile.read_text()
+    with pytest.raises(RuntimeError, match="failed to open action profile"):
+        compile_program(QASM_STRING, options=CompilationOptions(profile_actions_to=tmp_path))
 
 
 @requires_qiskit_translation

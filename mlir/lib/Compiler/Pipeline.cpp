@@ -38,8 +38,6 @@
 #include "jeff/Translation/Serialize.hpp"
 #include "kj/array.h"
 
-#include "mlir/Debug/ExecutionContext.h"
-#include "mlir/Debug/Observers/ActionProfiler.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
@@ -49,7 +47,6 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
-#include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/LLVMContext.h"
@@ -67,7 +64,6 @@
 #include <span>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -690,45 +686,7 @@ withActionProfile(CompilerInput& program, const CompilationOptions& options,
   if (auto error = importOpenQASM(program)) {
     return error;
   }
-  const auto context = contextOf(program);
-  if (context->hasActionHandler()) {
-    return createStringError(std::errc::invalid_argument,
-                             "action profiling requires a context without an "
-                             "existing action handler");
-  }
-  const auto path = options.profileActionsTo->string();
-  std::error_code error;
-  llvm::raw_fd_ostream stream(path, error);
-  if (error) {
-    return createStringError(error, "failed to open action profile '%s': %s",
-                             path.c_str(), error.message().c_str());
-  }
-  auto stepOptions = options;
-  stepOptions.profileActionsTo.reset();
-  auto result = [&] {
-    tracing::ActionProfiler profiler(stream);
-    tracing::ExecutionContext executionContext;
-    executionContext.registerObserver(&profiler);
-    context->registerActionHandler(std::move(executionContext));
-    const auto clearHandler =
-        llvm::scope_exit([&] { context->registerActionHandler(nullptr); });
-    return run(stepOptions);
-  }();
-  // raw_fd_ostream must not close stdout.
-  if (path == "-") {
-    stream.flush();
-  } else {
-    stream.close();
-  }
-  if (!stream.has_error()) {
-    return result;
-  }
-  error = stream.error();
-  stream.clear_error();
-  return llvm::joinErrors(
-      std::move(result),
-      createStringError(error, "failed to write action profile '%s': %s",
-                        path.c_str(), error.message().c_str()));
+  return ::withActionProfile(*contextOf(program), options, run);
 }
 
 static Expected<CompilerProgram>

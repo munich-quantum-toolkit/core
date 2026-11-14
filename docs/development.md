@@ -711,13 +711,14 @@ duration and the pass or rewrite name in `args.desc`. The profiler writes each
 event immediately, so the last open slice of an interrupted compilation shows
 the active pass. Tracing adds overhead.
 
-In Python, the trace starts after input import and ends after native export,
-including device payload serialization. Conversion to Python objects, such as
-Qiskit circuits, is outside the trace. Tracing requires a scalar program;
-sequences and individual typed transformations reject `profile_actions_to`. Each
-compilation overwrites the file, also when compilation fails. Concurrent
-compilations need separate files and must not share a context. A context that
-already has an MLIR action handler rejects tracing.
+In Python, a compilation trace starts after input import and ends after native
+export, including device payload serialization. Conversion to Python objects,
+such as Qiskit circuits, is outside the trace. Typed transformations that accept
+options, such as `QCOProgram.run_pass_pipeline`, trace their own pass run. Each
+call overwrites the file, also when compilation fails, so program sequences
+reject `profile_actions_to`; compile each program separately with its own file.
+Concurrent compilations need separate files and must not share a context. A
+context that already has an MLIR action handler rejects tracing.
 
 #### Diagnostics and reproducers
 

@@ -46,8 +46,8 @@ struct CompilationOptions {
   /// Write native MLIR action traces to this file.
   ///
   /// No value disables tracing, and `-` selects stdout. runDefaultPipeline and
-  /// CompiledProgram::compile support tracing. Typed transformations reject
-  /// this option.
+  /// CompiledProgram::compile write one trace for the complete compilation.
+  /// Typed transformations write one trace for their pass-manager run.
   std::optional<std::filesystem::path> profileActionsTo;
 };
 

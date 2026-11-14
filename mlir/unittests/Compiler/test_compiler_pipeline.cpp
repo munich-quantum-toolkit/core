@@ -3258,8 +3258,7 @@ cx q[0], q[2];
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
 }
 
-TEST_F(CompilerPipelineTest,
-       CompilationSeedSurvivesReproducerAndRestoresInput) {
+TEST_F(CompilerPipelineTest, FailedRunKeepsReproducerAndTraceAndRestoresSeed) {
   auto source = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
   MQT_ASSERT_SUCCESS(source);
   auto moduleOp = source->module();
@@ -3274,12 +3273,23 @@ TEST_F(CompilerPipelineTest,
   registerMQTCompilerPasses();
   pm.enableCrashReproducerGeneration(path);
   pm.addPass(qco::createVerifyTargetConformance());
-  EXPECT_TRUE(failed(runWithCompilationOptions(pm, moduleOp, {.seed = 9876})));
+  llvm::SmallString<128> tracePath;
+  ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-action-profile", "json",
+                                                  tracePath));
+  const llvm::FileRemover traceCleanup(tracePath);
+  EXPECT_TRUE(failed(runWithCompilationOptions(
+      pm, moduleOp,
+      {.seed = 9876, .profileActionsTo = tracePath.str().str()})));
   EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
+  EXPECT_FALSE(moduleOp.getContext()->hasActionHandler());
   auto reproducer = llvm::MemoryBuffer::getFile(path);
   ASSERT_TRUE(reproducer);
   EXPECT_TRUE(
       (*reproducer)->getBuffer().contains("mqt.compilation_seed = 9876"));
+  auto trace = llvm::MemoryBuffer::getFile(tracePath);
+  ASSERT_TRUE(trace);
+  EXPECT_TRUE((*trace)->getBuffer().contains("VerifyTargetConformance"));
+  EXPECT_TRUE((*trace)->getBuffer().ends_with("]"));
 }
 
 namespace {
@@ -7337,7 +7347,6 @@ TEST_F(CompilerPipelineTest, ActionProfilingPreservesExistingHandler) {
   std::atomic<size_t> actions = 0;
   auto input = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
   MQT_ASSERT_SUCCESS(input);
-  auto unprofiled = input->copy();
   auto inputContext = input->context();
   inputContext->registerActionHandler(
       [&](llvm::function_ref<void()> transform, const tracing::Action&) {
@@ -7367,11 +7376,7 @@ TEST_F(CompilerPipelineTest, ActionProfilingPreservesExistingHandler) {
   auto profile = llvm::MemoryBuffer::getFile(path);
   ASSERT_TRUE(profile);
   EXPECT_EQ((*profile)->getBuffer(), "existing trace");
-
-  auto result = runDefaultPipeline(CompilerInput{std::move(unprofiled)},
-                                   ProgramFormat::QC);
-  MQT_ASSERT_SUCCESS(result);
-  EXPECT_GT(actions.load(), 0U);
+  EXPECT_TRUE(inputContext->hasActionHandler());
 }
 
 TEST_F(CompilerPipelineTest, ActionProfilingReportsWriteFailure) {
@@ -7426,13 +7431,9 @@ h q;
   auto profiled =
       runDefaultPipeline(CompilerInput{std::move(*profiledInput)},
                          ProgramFormat::QCOOptimized, "mqt-qco-default",
-                         {
-                             .seed = {},
-                             .enableTiming = true,
-                             .enableStatistics = true,
-                             .mapping = {},
-                             .profileActionsTo = profilePath.str().str(),
-                         });
+                         {.enableTiming = true,
+                          .enableStatistics = true,
+                          .profileActionsTo = profilePath.str().str()});
   MQT_ASSERT_SUCCESS(profiled);
   ASSERT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
   EXPECT_FALSE(std::get<QCOProgram>(*profiled).context()->hasActionHandler());

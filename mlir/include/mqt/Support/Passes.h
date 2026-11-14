@@ -14,9 +14,12 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/Error.h"
+
 #include <cstdint>
 
 namespace mlir {
+class MLIRContext;
 class ModuleOp;
 class OpPassManager;
 class PassManager;
@@ -37,10 +40,28 @@ mlir::LogicalResult runWithPassManager(
     mlir::StringRef errorMessage, const mlir::CompilationOptions& options = {},
     bool preservesLayout = false);
 
+/// Run a compilation step and record native MLIR actions when requested.
+///
+/// If `options.profileActionsTo` has no value, the function calls `run` with
+/// `options`. Otherwise, it writes the actions on `context` to that file and
+/// calls `run` with options that have no profile path, so nested steps do not
+/// open the file again. Each call overwrites the file. The function rejects a
+/// context that already has an action handler and removes its own handler
+/// before it returns.
+///
+/// @param context The context whose actions are recorded.
+/// @param options The requested compilation options.
+/// @param run The compilation step.
+/// @return The error from `run`, from opening or writing the file, or both.
+[[nodiscard]] llvm::Error withActionProfile(
+    mlir::MLIRContext& context, const mlir::CompilationOptions& options,
+    mlir::function_ref<llvm::Error(const mlir::CompilationOptions&)> run);
+
 /// Run passes with scoped compilation options and clear layout metadata.
 ///
-/// Set preservesLayout only when the pipeline retains wire and site identities
-/// or updates the layout to reflect changes.
+/// Record an action trace of this pass-manager run when the options request
+/// one. Set preservesLayout only when the pipeline retains wire and site
+/// identities or updates the layout to reflect changes.
 mlir::LogicalResult
 runWithCompilationOptions(mlir::PassManager& pm, mlir::ModuleOp moduleOp,
                           const mlir::CompilationOptions& options,

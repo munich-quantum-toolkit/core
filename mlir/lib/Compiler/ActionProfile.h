@@ -21,14 +21,12 @@
 
 namespace mlir {
 
-/// Run a compilation step and record native MLIR actions when requested.
+/// Run a compilation step on `program` with an optional action trace.
 ///
-/// If `options.profileActionsTo` has no value, the function calls `run` with
-/// `options`. Otherwise, it imports OpenQASM source in `program`, writes the
-/// actions on the program's context to that file, and calls `run` with options
-/// that have no profile path. Nested compilation steps thus do not open the
-/// file again. The function rejects a context that already has an action
-/// handler and removes its own handler before it returns.
+/// When `options` requests a trace, the function imports OpenQASM source in
+/// `program` and traces the actions on the program's context. See the
+/// context-based withActionProfile in `mqt/Support/Passes.h` for the
+/// tracing behavior.
 ///
 /// @param program The input that `run` compiles.
 /// @param options The requested compilation options.
@@ -40,7 +38,7 @@ namespace mlir {
 
 /// Run a compilation step that returns a value with an optional action trace.
 ///
-/// See the overload that returns `llvm::Error` for the profiling behavior.
+/// See the overload that returns `llvm::Error` for the tracing behavior.
 template <typename T>
 [[nodiscard]] llvm::Expected<T> withActionProfile(
     CompilerInput& program, const CompilationOptions& options,

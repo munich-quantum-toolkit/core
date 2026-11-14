@@ -835,7 +835,7 @@ class CompilationOptions:
     def profile_actions_to(self) -> pathlib.Path | None:
         """File for native MLIR action traces, or None to disable tracing.
 
-        Scalar compilation and source submission support tracing. Typed transformations and sequences reject this option.
+        Each call overwrites the file. Program sequences reject this option.
         """
 
     @profile_actions_to.setter

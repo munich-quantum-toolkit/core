@@ -913,7 +913,9 @@ qpyCircuit(mlir::QCProgram program,
   }
 
   if (programs && options.profileActionsTo) {
-    throw nb::value_error("action profiling requires a scalar program input");
+    throw nb::value_error(
+        "action profiling requires a scalar program input; compile each "
+        "program separately with its own trace file");
   }
 
   std::optional<mlir::TargetEnvironment> targetEnvironment;
@@ -2166,7 +2168,7 @@ An explicit seed overrides all compiler randomness; None preserves pass defaults
           "profile_actions_to", &mlir::CompilationOptions::profileActionsTo,
           R"pb(File for native MLIR action traces, or None to disable tracing.
 
-Scalar compilation and source submission support tracing. Typed transformations and sequences reject this option.)pb");
+Each call overwrites the file. Program sequences reject this option.)pb");
 
   nb::class_<mlir::QuantumProgramInfo>(
       m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.
