@@ -38,7 +38,7 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mqt.core.mlir import CompiledProgram, ResultLayout
+    from mqt.core.mlir import CompiledProgram
     from mqt.core.plugins.qiskit.backend import QDMIBackend
     from mqt.core.typing import QDMIJobParameters
 
@@ -120,16 +120,15 @@ class QDMIJob(JobV1):
                 msg = "Serialized result layout does not match the circuit's classical width."
                 raise JobError(msg)
         self._destinations = self._context.prepare(self._programs)
-        self._batch: Batch[ExperimentResult] = Batch(
+        self._batch: Batch[QDMIJob, ExperimentResult] = Batch(
+            self,
             [BatchEntry(i) for i in range(len(programs))],
-            submit=self._submit_entry,
-            decode=lambda index, handle, program_index: self._collect_result(
-                handle, self._headers[index], program_index, self._result_layouts[index]
-            ),
-            submit_programs=self._submit_programs,
+            submit=QDMIJob._submit_entry,
+            decode=QDMIJob._collect_result,
+            submit_programs=QDMIJob._submit_programs,
             group_by=[program.program_format for program in self._programs],
-            submission_error=lambda msg: JobSubmissionError(msg, job=self),
-            execution_error=lambda msg: JobExecutionError(msg, job=self),
+            submission_error=lambda job, msg: JobSubmissionError(msg, job=job),
+            execution_error=lambda job, msg: JobExecutionError(msg, job=job),
             max_retries=max_retries,
         )
 
@@ -227,13 +226,7 @@ class QDMIJob(JobV1):
             raise JobExecutionError(msg, job=self) from exc
         return self._result
 
-    def _collect_result(
-        self,
-        job: QDMIJobHandle,
-        header: dict[str, Any],
-        program_index: int = 0,
-        layout: ResultLayout | None = None,
-    ) -> ExperimentResult:
+    def _collect_result(self, index: int, job: QDMIJobHandle, program_index: int) -> ExperimentResult:
         """Collect and validate one circuit's result.
 
         Returns:
@@ -242,9 +235,16 @@ class QDMIJob(JobV1):
         Raises:
             JobError: If execution failed or the result cannot be decoded as the circuit's output.
         """
-        width = header["memory_slots"]
+        header = self._headers[index]
         try:
-            data = readout(job, width, self._shots, program_index, layout, memory=self._memory)
+            data = readout(
+                job,
+                header["memory_slots"],
+                self._shots,
+                program_index,
+                self._result_layouts[index],
+                memory=self._memory,
+            )
         except ResultDecodingError as exc:
             raise JobError(str(exc)) from exc
         except Exception as exc:

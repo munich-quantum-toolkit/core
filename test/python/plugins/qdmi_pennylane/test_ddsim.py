@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import gc
+import weakref
 from typing import TYPE_CHECKING
 
 import networkx as nx
@@ -360,6 +361,22 @@ def test_retained_native_job_outlives_adapter() -> None:
     del batch, device
     gc.collect()
     assert handle.get_shots() == ["1"] * 4
+
+
+def test_replaced_job_is_released_without_cycle_collection() -> None:
+    """Reference counting releases a completed batch and its native jobs once ``last_job`` moves on."""
+    device = DDSIMDevice(wires=1)
+    tape = qp.tape.QuantumScript([qp.PauliX(0)], [qp.sample(wires=[0])], shots=4)
+    gc.disable()
+    try:
+        job = device.submit(tape)
+        job.result()
+        released = weakref.ref(job)
+        del job
+        device.execute(tape)
+        assert released() is None
+    finally:
+        gc.enable()
 
 
 @pytest.mark.parametrize("aggregate", [False, True])

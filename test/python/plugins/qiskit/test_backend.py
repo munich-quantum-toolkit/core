@@ -10,10 +10,12 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 import re
 import struct
+import weakref
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, get_type_hints
 from unittest.mock import MagicMock
@@ -183,6 +185,23 @@ def test_backend_runs_circuit_lists(ddsim_backend: QDMIBackend, widths: tuple[in
         assert experiment.shots == 100
         expected = "0" * (circuit.num_qubits - min(index, circuit.num_qubits)) + "1" * min(index, circuit.num_qubits)
         assert result.get_counts(index) == {expected: 100}
+
+
+def test_completed_job_is_released_without_cycle_collection(ddsim_backend: QDMIBackend) -> None:
+    """Reference counting releases a completed job and its native jobs once ``last_job`` moves on."""
+    circuit = QuantumCircuit(1)
+    circuit.x(0)
+    circuit.measure_all()
+    gc.disable()
+    try:
+        job = ddsim_backend.run(circuit, shots=4)
+        job.result()
+        released = weakref.ref(job)
+        del job
+        ddsim_backend.run(circuit, shots=4).result()
+        assert released() is None
+    finally:
+        gc.enable()
 
 
 def test_unsupported_operation(ddsim_backend: QDMIBackend) -> None:
