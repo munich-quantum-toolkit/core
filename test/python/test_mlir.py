@@ -868,14 +868,29 @@ def test_compile_program_for_qdmi_target(garnet_target: CompilerTarget) -> None:
     assert "qco.ry" not in mapped.ir
 
 
-def test_compile_and_serialize_with_device_environment() -> None:
+def test_compile_and_serialize_with_device_environment(tmp_path: Path) -> None:
     """Reuse one selected payload for compilation, serialization, and execution."""
     device = open_builtin_device("mqt.ddsim.default", custom1="2")
     environment = TargetEnvironment.from_device(device, program_format=ProgramFormat.QASM3)
-    compiled = compile_program(QASM_STRING, target=environment)
+    profile = tmp_path / "compile.json"
+    options = CompilationOptions(trace_file=profile)
+
+    def traced_passes() -> int:
+        events = json.loads(profile.read_text())
+        profile.unlink()
+        return sum(event["name"] == "pass-execution" and event["ph"] == "B" for event in events)
+
+    native = compile_program(QASM_STRING, target=environment, output=OutputFormat.QC, options=options)
+    native_passes = traced_passes()
+    compiled = compile_program(QASM_STRING, target=environment, options=options)
+    # The trace also covers payload serialization.
+    assert traced_passes() > native_passes > 0
+    source_job = submit_program(QASM_STRING, target=device, num_shots=8, options=options)
+    assert source_job.wait()
+    assert sum(source_job.get_counts().values()) == 8
+    assert traced_passes() > native_passes
     assert_type(compiled, CompiledProgram)
     assert compiled.program_format == ProgramFormat.QASM3
-    native = compile_program(QASM_STRING, target=environment, output=OutputFormat.QC)
     serialized = serialize_program(native, target=environment)
     assert serialized.program_format == ProgramFormat.QASM3
     for program in (compiled, serialized):
@@ -2433,6 +2448,21 @@ def test_compilation_timing_and_statistics(capfd: pytest.CaptureFixture[str]) ->
     output = capfd.readouterr().err
     assert "Execution time report" in output
     assert "Pass statistics report" in output
+
+
+def test_trace_file_python_inputs(tmp_path: Path) -> None:
+    """Python paths reach tracing, sequences reject it, and file errors raise."""
+    assert CompilationOptions().trace_file is None
+    profile = tmp_path / "compile.json"
+    options = CompilationOptions(trace_file=profile)
+    assert options.trace_file == profile
+    with pytest.raises(ValueError, match="scalar program input"):
+        compile_program([QASM_STRING], options=options)
+    assert not profile.exists()
+    QCProgram.from_openqasm_str(QASM_STRING).to_qco().run_pass_pipeline("canonicalize", options=options)
+    assert "Canonicalizer" in profile.read_text()
+    with pytest.raises(RuntimeError, match="failed to open trace file"):
+        compile_program(QASM_STRING, options=CompilationOptions(trace_file=tmp_path))
 
 
 @requires_qiskit_translation

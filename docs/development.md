@@ -666,6 +666,63 @@ same textual syntax; individual pass flags are not supported. The CLI and
 library share QCO pass and upstream transform registration. The driver also
 registers its conversion passes so they can be selected for debugging.
 
+(compiler-profiling)=
+
+#### Compiler profiling
+
+Use MLIR's pass timing and statistics for routine performance analysis:
+
+```sh
+"$mqt_core" compile input.qasm --mlir-timing --mlir-pass-statistics > compiled.mlir
+```
+
+Native timing options such as `--mlir-timing-display=list` and
+`--mlir-output-format=json` control the reports. Each pass manager emits its own
+report. Follow
+[MLIR's pass timing semantics](https://mlir.llvm.org/docs/PassManagement/#pass-timing);
+overlapping durations cannot be summed as total compilation time.
+
+For a single timeline of the whole compilation, record a trace of the
+[MLIR actions](https://mlir.llvm.org/docs/ActionTracing/), such as pass runs and
+pattern applications:
+
+```sh
+"$mqt_core" compile input.qasm --profile-actions-to=compile.json > compiled.mlir
+```
+
+In Python, set the same controls through
+{py:class}`~mqt.core.mlir.CompilationOptions`:
+
+```python
+from mqt.core.mlir import CompilationOptions, compile_program
+
+options = CompilationOptions(
+    enable_timing=True,
+    enable_statistics=True,
+    trace_file="compile.json",
+)
+compiled = compile_program("input.qasm", options=options)
+```
+
+Timing and statistics reports go to native stderr. They cover pipelines that
+receive the options, not every conversion or cleanup stage.
+
+Open the trace in [Perfetto](https://ui.perfetto.dev). Each slice shows its
+duration and the pass or rewrite name in `args.desc`. Tracing adds overhead,
+mostly from pattern applications. The command-line option writes each event
+immediately, so the last open slice of an interrupted compilation shows the
+active pass. The `trace_file` option buffers the file to reduce the overhead; an
+interrupted compilation can lose the last events.
+
+In Python, a compilation trace starts after input import and ends after native
+export, including device payload serialization. Conversion to Python objects,
+such as Qiskit circuits, is outside the trace. Typed transformations that accept
+options, such as `QCOProgram.run_pass_pipeline`, trace their own pass run. Each
+call overwrites the file, also when compilation fails, so program sequences
+reject `trace_file`; compile each program separately with its own file.
+Concurrent compilations need separate files and must not share a context. A
+context that already has an MLIR action handler rejects tracing.
+
 #### Diagnostics and reproducers
 
 Use `--mlir-print-stacktrace-on-diagnostic` to attach a trace when the LLVM

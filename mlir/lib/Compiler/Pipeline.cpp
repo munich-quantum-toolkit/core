@@ -27,6 +27,7 @@
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
 #include "mqt/Target/QIR/Export.h"
 
+#include "ActionTrace.h"
 #include "Diagnostics.h"
 #include "Export.h"
 #include "ResonatorRouting.h"
@@ -39,7 +40,9 @@
 
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -57,6 +60,7 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -649,6 +653,42 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
   return exportQCProgram(std::move(*qc), output, environment, options);
 }
 
+static llvm::Error importOpenQASM(CompilerInput& program) {
+  if (auto* source = std::get_if<OpenQASMProgram>(&program)) {
+    auto qc = QCProgram::fromOpenQASMString(source->source());
+    if (!qc) {
+      return qc.takeError();
+    }
+    program = std::move(*qc);
+  }
+  return llvm::Error::success();
+}
+
+static std::shared_ptr<MLIRContext> contextOf(const CompilerInput& program) {
+  return std::visit(
+      [](const auto& value) -> std::shared_ptr<MLIRContext> {
+        if constexpr (std::is_base_of_v<Program,
+                                        std::remove_cvref_t<decltype(value)>>) {
+          return value.context();
+        } else {
+          llvm_unreachable("OpenQASM inputs must be imported first");
+        }
+      },
+      program);
+}
+
+llvm::Error
+withActionTrace(CompilerInput& program, const CompilationOptions& options,
+                function_ref<llvm::Error(const CompilationOptions&)> run) {
+  if (!options.traceFile) {
+    return run(options);
+  }
+  if (auto error = importOpenQASM(program)) {
+    return error;
+  }
+  return ::withActionTrace(*contextOf(program), options, run);
+}
+
 static Expected<CompilerProgram>
 runNativePipeline(CompilerInput program, ProgramFormat output,
                   const TargetEnvironment* environment,
@@ -670,31 +710,24 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
         "a custom QCO pass pipeline cannot be used with an output that stops "
         "before QCO optimization");
   }
-  if (auto* source = std::get_if<OpenQASMProgram>(&program)) {
-    auto qc = QCProgram::fromOpenQASMString(source->source());
-    if (!qc) {
-      return qc.takeError();
-    }
-    program = std::move(*qc);
-  }
-  const auto context = std::visit(
-      [](const auto& value) -> std::shared_ptr<MLIRContext> {
-        if constexpr (std::is_base_of_v<Program,
-                                        std::remove_cvref_t<decltype(value)>>) {
-          return value.context();
-        } else {
-          llvm_unreachable("OpenQASM inputs were imported above");
+  return withActionTrace<CompilerProgram>(
+      program, options,
+      [&](const CompilationOptions& pipelineOptions)
+          -> Expected<CompilerProgram> {
+        if (auto error = importOpenQASM(program)) {
+          return std::move(error);
         }
-      },
-      program);
-  CompilerDiagnostics diagnostics(context.get());
-  auto result = runDefaultPipelineImpl(std::move(program), output, environment,
-                                       qcoPipeline, options);
-  if (failed(result)) {
-    return diagnostics.takeError(
-        std::make_error_code(std::errc::invalid_argument));
-  }
-  return std::move(*result);
+        const auto context = contextOf(program);
+        CompilerDiagnostics diagnostics(context.get());
+        auto result =
+            runDefaultPipelineImpl(std::move(program), output, environment,
+                                   qcoPipeline, pipelineOptions);
+        if (failed(result)) {
+          return diagnostics.takeError(
+              std::make_error_code(std::errc::invalid_argument));
+        }
+        return std::move(*result);
+      });
 }
 
 Expected<CompilerProgram>

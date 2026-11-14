@@ -20,6 +20,7 @@
 #include "mqt/Support/Passes.h"
 #include "qdmi/QDMI.hpp"
 
+#include "ActionTrace.h"
 #include "Diagnostics.h"
 #include "Export.h"
 #include "TerminalReadout.h"
@@ -1024,13 +1025,17 @@ CompiledProgram::compile(CompilerInput program,
     return createStringError(std::errc::invalid_argument,
                              "Executable programs require a device target");
   }
-  auto native = runDefaultPipeline(std::move(program), ProgramFormat::QC,
-                                   environment, options);
-  if (!native) {
-    return native.takeError();
-  }
-  return serialize(std::move(std::get<QCProgram>(*native)), environment,
-                   options);
+  return withActionTrace<CompiledProgram>(
+      program, options,
+      [&](const CompilationOptions& stepOptions) -> Expected<CompiledProgram> {
+        auto native = runDefaultPipeline(std::move(program), ProgramFormat::QC,
+                                         environment, stepOptions);
+        if (!native) {
+          return native.takeError();
+        }
+        return serialize(std::move(std::get<QCProgram>(*native)), environment,
+                         stepOptions);
+      });
 }
 
 Expected<CompiledProgram>

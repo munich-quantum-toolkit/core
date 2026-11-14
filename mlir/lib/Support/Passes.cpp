@@ -20,28 +20,35 @@
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
 #include "mqt/Support/RandomSeed.h"
 
+#include "mlir/Debug/ExecutionContext.h"
+#include "mlir/Debug/Observers/ActionProfiler.h"
 #include "mlir/Dialect/MemRef/IR/MemRefMemorySlot.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/Timing.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <system_error>
 
 using namespace mlir;
 
@@ -193,13 +200,101 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
   return runWithCompilationOptions(pm, mod, options, preservesLayout);
 }
 
+namespace {
+
+/// Forward output to a buffered stream and ignore flushes.
+///
+/// tracing::ActionProfiler flushes its stream after each event. With a file,
+/// each flush is a system call. On large circuits, these calls make tracing
+/// several times slower and add their cost to the traced durations. Remove this
+/// class when the profiler no longer flushes after each event.
+class FlushIgnoringStream final : public llvm::raw_ostream {
+public:
+  explicit FlushIgnoringStream(llvm::raw_ostream& os)
+      : raw_ostream(/*unbuffered=*/true), os_(os) {}
+
+private:
+  void write_impl(const char* ptr, size_t size) override {
+    os_.write(ptr, size);
+  }
+  [[nodiscard]] uint64_t current_pos() const override { return os_.tell(); }
+
+  llvm::raw_ostream& os_;
+};
+
+} // namespace
+
+llvm::Error
+withActionTrace(MLIRContext& context, const CompilationOptions& options,
+                function_ref<llvm::Error(const CompilationOptions&)> run) {
+  if (!options.traceFile) {
+    return run(options);
+  }
+  if (context.hasActionHandler()) {
+    return llvm::createStringError(
+        std::errc::invalid_argument,
+        "tracing requires a context without an existing action handler");
+  }
+  const auto path = options.traceFile->string();
+  std::error_code error;
+  llvm::raw_fd_ostream stream(path, error);
+  if (error) {
+    return llvm::createStringError(error, "failed to open trace file '%s': %s",
+                                   path.c_str(), error.message().c_str());
+  }
+  auto stepOptions = options;
+  stepOptions.traceFile.reset();
+  FlushIgnoringStream traceStream(stream);
+  auto result = [&] {
+    tracing::ActionProfiler profiler(traceStream);
+    tracing::ExecutionContext executionContext;
+    executionContext.registerObserver(&profiler);
+    context.registerActionHandler(std::move(executionContext));
+    const llvm::scope_exit clearHandler(
+        [&] { context.registerActionHandler(nullptr); });
+    return run(stepOptions);
+  }();
+  // raw_fd_ostream must not close stdout.
+  if (path == "-") {
+    stream.flush();
+  } else {
+    stream.close();
+  }
+  if (!stream.has_error()) {
+    return result;
+  }
+  error = stream.error();
+  stream.clear_error();
+  return llvm::joinErrors(
+      std::move(result),
+      llvm::createStringError(error, "failed to write trace file '%s': %s",
+                              path.c_str(), error.message().c_str()));
+}
+
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
                                         const CompilationOptions& options,
                                         bool preservesLayout) {
+  if (options.traceFile) {
+    auto result = failure();
+    if (auto error =
+            withActionTrace(*moduleOp.getContext(), options,
+                            [&](const CompilationOptions& passOptions) {
+                              result = runWithCompilationOptions(
+                                  pm, moduleOp, passOptions, preservesLayout);
+                              return llvm::Error::success();
+                            })) {
+      moduleOp.emitError(llvm::toString(std::move(error)));
+      return failure();
+    }
+    return result;
+  }
   // Embedders need not register command-line options.
   if (llvm::cl::getRegisteredOptions().contains("mlir-print-ir-before-all") &&
       failed(applyPassManagerCLOptions(pm))) {
     return failure();
+  }
+  if (llvm::cl::getRegisteredOptions().contains("mlir-timing")) {
+    applyDefaultTimingPassManagerCLOptions(pm);
   }
   if (!preservesLayout) {
     moduleOp->removeAttr("mqt.layout");

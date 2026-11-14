@@ -862,7 +862,7 @@ qpyCircuit(mlir::QCProgram program,
     PythonInputTypes& types, const nb::handle program, const nb::handle target,
     std::optional<OutputFormat> output, bool copy,
     const std::string& qcoPipeline,
-    std::optional<mlir::CompilationOptions> suppliedOptions,
+    const std::optional<mlir::CompilationOptions>& suppliedOptions,
     const bool ignoreInputLayout, const bool includeOutputLayout) {
   const auto options = suppliedOptions.value_or(mlir::CompilationOptions{});
   if (!target.is_none() && qcoPipeline != "mqt-qco-default") {
@@ -910,6 +910,12 @@ qpyCircuit(mlir::QCProgram program,
         }
       }
     }
+  }
+
+  if (programs && options.traceFile) {
+    throw nb::value_error(
+        "trace_file requires a scalar program input; compile each program "
+        "separately with its own trace file");
   }
 
   std::optional<mlir::TargetEnvironment> targetEnvironment;
@@ -977,7 +983,7 @@ submitProgram(PythonInputTypes& types, const nb::handle program,
               const std::optional<PythonCustomJobParameter>& custom3,
               const std::optional<PythonCustomJobParameter>& custom4,
               const std::optional<PythonCustomJobParameter>& custom5,
-              std::optional<mlir::CompilationOptions> options) {
+              const std::optional<mlir::CompilationOptions>& options) {
   if (numShots < 0) {
     throw nb::value_error("num_shots must be nonnegative");
   }
@@ -2149,14 +2155,21 @@ Zero disables node expansion. Container overhead, caches, and IR are extra.)pb")
                                        R"pb(Shared compiler controls.
 
 An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds.)pb")
-      .def(
-          nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions>(),
-          nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
-          "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{})
+      .def(nb::init<std::optional<uint64_t>, bool, bool, mlir::MappingOptions,
+                    std::optional<std::filesystem::path>>(),
+           nb::kw_only(), "seed"_a = nb::none(), "enable_timing"_a = false,
+           "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
+           "trace_file"_a = nb::none())
       .def_rw("seed", &mlir::CompilationOptions::seed)
       .def_rw("enable_timing", &mlir::CompilationOptions::enableTiming)
       .def_rw("enable_statistics", &mlir::CompilationOptions::enableStatistics)
-      .def_rw("mapping", &mlir::CompilationOptions::mapping);
+      .def_rw("mapping", &mlir::CompilationOptions::mapping)
+      .def_rw(
+          "trace_file", &mlir::CompilationOptions::traceFile,
+          R"pb(File for a Chrome trace of the native compilation, or None to disable tracing.
+
+The trace records MLIR actions, such as pass runs and pattern applications.
+Each call overwrites the file. Program sequences reject this option.)pb");
 
   nb::class_<mlir::QuantumProgramInfo>(
       m, "QuantumProgramInfo", R"pb(Quantum resources and static IR statistics.
@@ -2405,6 +2418,8 @@ cancel, fuse, or specialize gates.)pb")
           "run_pass_pipeline",
           [](mlir::QCOProgram& program, const std::string& pipeline,
              const mlir::TargetEnvironment* environment,
+             // Snapshot mutable options before releasing the GIL.
+             // NOLINTNEXTLINE(performance-unnecessary-value-param)
              mlir::CompilationOptions options, bool preserveLayout) {
             FallibleMemberAdapter<&mlir::QCOProgram::runPassPipeline>::call(
                 program, pipeline, options, environment, preserveLayout);
