@@ -10,6 +10,7 @@
 
 #include "QDMIDevice.h"
 
+#include "mqt/Compiler/CompilationOptions.h"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/ResultLayout.h"
@@ -99,18 +100,20 @@ static uint64_t parseContext(const char* kwargs) {
 }
 
 Context::Context(const qdmi::Device& device, runtime::JobParameters parameters,
-                 std::optional<QDMI_Program_Format> programFormat)
+                 std::optional<QDMI_Program_Format> programFormat,
+                 mlir::CompilationOptions options)
     : runtime::Context(
           device,
           unwrap(mlir::targetEnvironmentFromDevice(device, programFormat)),
           std::move(parameters)),
-      qubits_(unwrap(device.getQubitsNum())) {}
+      qubits_(unwrap(device.getQubitsNum())), options_(options) {}
 
 std::shared_ptr<Context>
 Context::create(const qdmi::Device& device, runtime::JobParameters parameters,
-                std::optional<QDMI_Program_Format> programFormat) {
+                std::optional<QDMI_Program_Format> programFormat,
+                mlir::CompilationOptions options) {
   auto context = std::shared_ptr<Context>(
-      new Context(device, std::move(parameters), programFormat));
+      new Context(device, std::move(parameters), programFormat, options));
   auto& entries = registry();
   const std::scoped_lock lock(entries.mutex);
   require(entries.next < UINT64_MAX - 1, "QDMI context ID space exhausted.");
@@ -127,6 +130,9 @@ Context::~Context() {
 
 uint64_t Context::id() const noexcept { return id_; }
 size_t Context::qubits() const noexcept { return qubits_; }
+const mlir::CompilationOptions& Context::options() const noexcept {
+  return options_;
+}
 
 llvm::SmallVector<size_t>
 QDMIDevice::wireIndices(llvm::ArrayRef<QubitIdType> wires) const {
@@ -160,8 +166,9 @@ const runtime::Readout& QDMIDevice::read(bool samples) {
   }
   if (!result_ || (samples && !sampleReadout_)) {
     if (!compiled_) {
-      compiled_ = unwrap(mlir::CompiledProgram::compile(
-          recorder_.takeProgram(), context_->environment()));
+      compiled_ = unwrap(mlir::CompiledProgram::compile(recorder_.takeProgram(),
+                                                        context_->environment(),
+                                                        context_->options()));
     }
     if (!job_) {
       auto job =

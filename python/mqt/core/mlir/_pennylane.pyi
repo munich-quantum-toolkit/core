@@ -31,6 +31,7 @@ class Context(_ExecutionContext):
         custom4: str | bool | float | bytes | None = None,
         custom5: str | bool | float | bytes | None = None,
         program_format: mqt.core.qdmi.ProgramFormat | None = None,
+        options: mqt.core.mlir.CompilationOptions | None = None,
     ) -> None:
         """Create a context for native compilation and submission.
 
@@ -42,6 +43,7 @@ class Context(_ExecutionContext):
             custom4: Fourth provider-specific job parameter.
             custom5: Fifth provider-specific job parameter.
             program_format: Preferred program format, or automatic selection.
+            options: Compiler controls for each recorded program, or the defaults.
 
         Byte parameters are copied so later submissions do not borrow Python storage.
         """

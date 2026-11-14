@@ -58,6 +58,7 @@ if TYPE_CHECKING:
     from pennylane.typing import Result, ResultBatch
     from pennylane.wires import Wires
 
+    from mqt.core.mlir import CompilationOptions
     from mqt.core.qdmi import Device as QDMIDeviceHandle
     from mqt.core.qdmi import Job, ProgramFormat
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters
@@ -149,6 +150,7 @@ class QDMIDevice(Device):
         job_parameters: QDMI custom job keyword arguments.
         max_retries: Maximum automatic replacements per failed entry; disabled by default.
         program_format: Explicit QDMI execution format, or the device default.
+        compile_options: Compiler controls for every program, or the defaults.
     """
 
     config_filepath = str(Path(__file__).with_name("capabilities.toml"))
@@ -187,6 +189,7 @@ class QDMIDevice(Device):
         job_parameters: QDMIJobParameters | None = None,
         max_retries: int = 0,
         program_format: ProgramFormat | None = None,
+        compile_options: CompilationOptions | None = None,
     ) -> None:
         """Initialize from a stable ID or an open QDMI device.
 
@@ -238,10 +241,12 @@ class QDMIDevice(Device):
             self._context = Context(
                 self._qdmi_device,
                 program_format=program_format,
+                options=compile_options,
                 **job_parameters,
             )
         except (RuntimeError, ValueError) as exc:
             raise ConfigurationError(str(exc)) from exc
+        self._compile_options = compile_options
         self.device_kwargs = {"context": self._context.id}
         self._submitted_jobs = 0
         self._execution_time = 0.0
@@ -282,33 +287,35 @@ class QDMIDevice(Device):
         """
         return self.wires if any(not measurement.wires for measurement in tape.measurements) else tape.wires
 
-    def _prepare(self, tapes: Sequence[QuantumScript]) -> list[CompiledProgram | None]:
-        """Compile preprocessed tapes using one snapshot of the QDMI target.
+    def prepare_program(self, tape: QuantumScript) -> CompiledProgram | None:
+        """Compile one preprocessed tape for this device.
+
+        ``submit()`` calls this method once for each tape, in batch order, and
+        compiles all tapes before it submits a job. A subclass can call
+        ``super().prepare_program(tape)`` to record the payload, program
+        format, and result layout of each returned program.
+
+        Args:
+            tape: A tape after this device's preprocessing.
 
         Returns:
-            Programs ready for submission, or None for locally known samples.
+            The program to submit, or None if the results are known without
+            device execution.
 
         Raises:
             PennyLaneTranslationError: If an operation or target cannot be compiled.
         """
-        environment = self._context.environment
-        prepared = []
-        for tape in tapes:
-            if not tape.measurements:
-                prepared.append(None)
-                continue
-            try:
-                program = QCProgram.from_pennylane(tape, wires=self._tape_wires(tape))
-                compiled = (
-                    compile_program(program, target=environment)
-                    if program.operation_counts().get("qc.measure", 0)
-                    else None
-                )
-                assert compiled is None or isinstance(compiled, CompiledProgram)
-                prepared.append(compiled)
-            except (KeyError, RuntimeError, TypeError, ValueError) as exc:
-                raise TranslationError(str(exc)) from exc
-        return prepared
+        if not tape.measurements:
+            return None
+        try:
+            program = QCProgram.from_pennylane(tape, wires=self._tape_wires(tape))
+            if not program.operation_counts().get("qc.measure", 0):
+                return None
+            compiled = compile_program(program, target=self._context.environment, options=self._compile_options)
+        except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+            raise TranslationError(str(exc)) from exc
+        assert isinstance(compiled, CompiledProgram)
+        return compiled
 
     @staticmethod
     def _shot_copies(shots: Shots) -> tuple[int, ...]:
@@ -351,7 +358,7 @@ class QDMIDevice(Device):
         single = isinstance(circuits, qp.tape.QuantumScript)
         tapes = (circuits,) if single else tuple(circuits)
         shot_copies = tuple(self._shot_copies(tape.shots) for tape in tapes)
-        prepared = tuple(zip(self._prepare(tapes), shot_copies, strict=True)) if tapes else ()
+        prepared = tuple(zip(map(self.prepare_program, tapes), shot_copies, strict=True))
 
         if tapes and self.tracker.active:
             self.tracker.update(batches=1, batch_len=len(tapes))
@@ -403,6 +410,7 @@ class DDSIMDevice(QDMIDevice):
             combine with job parameter ``custom1``. Catalyst-compiled QNodes do
             not use this seed.
         max_retries: Maximum automatic replacements per failed entry; disabled by default.
+        compile_options: Compiler controls for every program, or the defaults.
     """
 
     def __init__(
@@ -413,6 +421,7 @@ class DDSIMDevice(QDMIDevice):
         job_parameters: QDMIJobParameters | None = None,
         seed: int | None = None,
         max_retries: int = 0,
+        compile_options: CompilationOptions | None = None,
     ) -> None:
         """Open the built-in DDSIM device by its stable QDMI ID.
 
@@ -436,6 +445,7 @@ class DDSIMDevice(QDMIDevice):
             session_parameters=session_parameters,
             job_parameters=job_parameters,
             max_retries=max_retries,
+            compile_options=compile_options,
         )
         self._next_seed = None if seed is None else int(seed)
         self._job_parameters: QDMIJobParameters = job_parameters.copy() if job_parameters else {}

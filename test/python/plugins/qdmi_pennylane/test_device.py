@@ -20,7 +20,7 @@ import pytest
 from qiskit import QuantumCircuit
 
 from mqt.core import UntestedVersionWarning
-from mqt.core.mlir import TargetEnvironment, serialize_program
+from mqt.core.mlir import CompilationOptions, TargetEnvironment, serialize_program
 from mqt.core.plugins.pennylane import (
     PennyLaneConfigurationError,
     PennyLaneExecutionError,
@@ -33,7 +33,10 @@ from mqt.core.qdmi.builtin_driver import open_device
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from pennylane.tape import QuantumScript
     from pennylane.typing import Result, ResultBatch
+
+    from mqt.core.mlir import CompiledProgram
 
 
 @pytest.mark.parametrize("installed", ["0.14.1", "0.15.0rc1", "1.0.0rc1", "1.0.0"])
@@ -198,7 +201,7 @@ def test_retry_shot_copies_preserves_order_and_tracking(
     )
     assert program.result_layout is not None
     # Inject an equivalent prepared program with permuted readout and a zero slot.
-    monkeypatch.setattr(device, "_prepare", lambda tapes: [program] * len(tapes))
+    monkeypatch.setattr(device, "prepare_program", lambda _tape: program)
     tape = qp.tape.QuantumScript([qp.X("right")], [qp.sample(wires=["right", "left", "idle"])], shots=[2, 3, 4])
 
     def execute() -> Result | ResultBatch:
@@ -226,11 +229,16 @@ def test_retry_shot_copies_preserves_order_and_tracking(
 
 
 @pytest.mark.parametrize("compiled", [False, True])
-def test_openqasm2_execution(*, compiled: bool) -> None:
-    """The shared compiler supports OpenQASM 2 in both PennyLane paths."""
+def test_openqasm2_execution(capfd: pytest.CaptureFixture[str], *, compiled: bool) -> None:
+    """The shared compiler applies the format and compile options in both PennyLane paths."""
     if compiled and find_spec("catalyst") is None:
         pytest.skip("Install Catalyst to run compiled device tests.")
-    device = QDMIDevice("mqt.ddsim.default", wires=2, program_format=ProgramFormat.QASM2)
+    device = QDMIDevice(
+        "mqt.ddsim.default",
+        wires=2,
+        program_format=ProgramFormat.QASM2,
+        compile_options=CompilationOptions(enable_timing=True),
+    )
 
     @qp.qnode(device, shots=16)
     def circuit() -> qp.measurements.SampleMP:
@@ -238,7 +246,36 @@ def test_openqasm2_execution(*, compiled: bool) -> None:
         return qp.sample(wires=[1, 0])
 
     execute = qp.qjit(circuit) if compiled else circuit
+    capfd.readouterr()
     np.testing.assert_array_equal(execute(), np.tile([1, 0], (16, 1)))
+    assert "Execution time report" in capfd.readouterr().err
+
+
+def test_subclass_observes_each_compiled_program() -> None:
+    """An override of prepare_program sees each tape's program in batch order."""
+
+    class RecordingDevice(QDMIDevice):
+        programs: list[CompiledProgram | None]
+
+        def prepare_program(self, tape: QuantumScript) -> CompiledProgram | None:
+            program = super().prepare_program(tape)
+            self.programs.append(program)
+            return program
+
+    device = RecordingDevice("mqt.ddsim.default", wires=2)
+    device.programs = []
+    tapes = (
+        qp.tape.QuantumScript([qp.X(1)], [qp.sample(wires=[1, 0])], shots=2),
+        qp.tape.QuantumScript([], [qp.sample(wires=[0])], shots=2),
+        qp.tape.QuantumScript([qp.X(0)], [qp.sample(wires=[0])], shots=3),
+    )
+    results = device.execute(tapes)
+    expected = qp.execute(tapes, qp.device("default.qubit", wires=2), diff_method=None)
+    for actual, oracle in zip(results, expected, strict=True):
+        np.testing.assert_array_equal(actual, oracle)
+    assert [program and program.result_width for program in device.programs] == [2, None, 1]
+    assert all(program.payload for program in device.programs if program)
+    assert device.submitted_jobs == 2
 
 
 def test_catalyst_patch_does_not_warn(monkeypatch: pytest.MonkeyPatch) -> None:
