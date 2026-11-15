@@ -49,6 +49,10 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#421)._
   two jobs of 64 instead of 128 individual jobs. ([#3015]) ([**@burgholzer**])
 - 🐛 Locate QDMI libraries relative to the launched executable on macOS when
   hard-linked executables share the same file. ([#3014]) ([**@burgholzer**])
+- 🐛 Simulate target-native IonQ programs on DDSIM by accepting `gpi`, `gpi2`,
+  and `zz` in the default OpenQASM import mode and QIR runtime. OpenQASM gate
+  parameters use radians; strict import mode is unchanged. ([#3019])
+  ([**@burgholzer**])
 
 ### Changed
 
@@ -1633,6 +1637,7 @@ for previous changelogs._
 [#3014]: https://github.com/munich-quantum-toolkit/core/pull/3014
 [#3015]: https://github.com/munich-quantum-toolkit/core/pull/3015
 [#3018]: https://github.com/munich-quantum-toolkit/core/pull/3018
+[#3019]: https://github.com/munich-quantum-toolkit/core/pull/3019
 [#2993]: https://github.com/munich-quantum-toolkit/core/pull/2993
 [#2991]: https://github.com/munich-quantum-toolkit/core/pull/2991
 [#2990]: https://github.com/munich-quantum-toolkit/core/pull/2990
