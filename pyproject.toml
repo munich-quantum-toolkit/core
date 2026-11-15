@@ -266,6 +266,10 @@ cache-keys = [
   { env = "DEPLOY" },
 ]
 
+[tool.uv.dependency-groups]
+# Patched Soup Sieve versions require Python 3.11.5 or newer.
+docs = { requires-python = ">=3.11.5" }
+
 [tool.uv.sources]
 mqt-core = { workspace = true }
 
