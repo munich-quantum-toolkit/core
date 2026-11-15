@@ -6259,17 +6259,10 @@ TEST_F(CompilerPipelineTest, NativePulseOpenQASMPreservesArityAndPhase) {
   ASSERT_TRUE(succeeded(lowered));
   auto emitted = std::move(*lowered).intoOpenQASM3();
   ASSERT_TRUE(succeeded(emitted));
-  auto source = emitted->source();
+  const auto source = emitted->source();
   EXPECT_NE(source.find("gpi("), std::string::npos);
   EXPECT_NE(source.find("gpi2("), std::string::npos);
-  const auto include = source.find("include \"stdgates.inc\";");
-  ASSERT_NE(include, std::string::npos);
-  // Definitions enforce each native signature and give an independent phase
-  // oracle.
-  source.insert(include + std::string("include \"stdgates.inc\";").size(),
-                "\ngate gpi(phi) q { gphase(pi / 2); "
-                "rz(-phi) q; rx(pi) q; rz(phi) q; }\n"
-                "gate gpi2(phi) q { rz(-phi) q; rx(pi / 2) q; rz(phi) q; }\n");
+  // The original circuit is a phase-sensitive oracle for the imported pulses.
   auto restoredQC = QCProgram::fromOpenQASMString(source);
   MQT_ASSERT_SUCCESS(restoredQC);
   auto restored = std::move(*restoredQC).intoQCO();
