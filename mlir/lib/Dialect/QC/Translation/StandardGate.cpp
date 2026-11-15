@@ -61,6 +61,8 @@ constexpr std::array DESCRIPTORS{
     StandardGateDescriptor{StandardGate::RZZ, "rzz", 1, 0, 2},
     StandardGateDescriptor{StandardGate::XXPlusYY, "xx_plus_yy", 2, 0, 2},
     StandardGateDescriptor{StandardGate::XXMinusYY, "xx_minus_yy", 2, 0, 2},
+    StandardGateDescriptor{StandardGate::GPI, "gpi", 1, 0, 1},
+    StandardGateDescriptor{StandardGate::GPI2, "gpi2", 1, 0, 1},
 };
 
 static_assert(
@@ -194,6 +196,8 @@ LogicalResult emitStandardGate(OpBuilder& builder, const Location loc,
     break;
   case StandardGate::BuiltinU:
   case StandardGate::CU:
+  case StandardGate::GPI:
+  case StandardGate::GPI2:
     return failure();
   }
   OperationState state(loc, operationName);

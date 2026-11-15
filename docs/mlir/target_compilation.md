@@ -243,6 +243,12 @@ radians. IonQ's API expresses the phase in turns, so the same axis angle there
 is `φ / (2π)`. Check the destination interface's units when exchanging these
 gates.
 
+Core's default OpenQASM import mode accepts `gpi(φ)`, `gpi2(φ)`, and the
+two-qubit `zz(θ)` alias of `rzz(θ)` with these radian definitions. Native QIR
+keeps both `R(θ, φ)` arguments in `gpi` and `gpi2` calls. The DDSIM device
+executes both payload kinds, so target-native IonQ programs can be simulated
+before submission.
+
 ### Placement and routing
 
 Placement assigns each qubit in the input program (a {term}`program qubit`) to a

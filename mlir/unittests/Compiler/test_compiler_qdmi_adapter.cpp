@@ -1379,6 +1379,42 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
   }
 }
 
+TEST(CompilerQDMIAdapterTest, ExecutesIonQNativePayloadsOnDDSIM) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("gpi", 1, 1)),
+          llvm::cantFail(Capability::create("gpi2", 1, 1)),
+          llvm::cantFail(Capability::create("zz", 2, 1)),
+          llvm::cantFail(Capability::create("measure", 1, 0)),
+      })));
+  const auto device =
+      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  for (const auto format : {
+           QDMI_PROGRAM_FORMAT_QASM3,
+           QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+           QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+       }) {
+    SCOPED_TRACE(format);
+    auto compiled = mlir::CompiledProgram::compile(
+        mlir::OpenQASMProgram("OPENQASM 3; include \"stdgates.inc\"; "
+                              "qubit[2] q; x q[0]; cx q[0], q[1]; "
+                              "bit[2] c = measure q;"),
+        mlir::TargetEnvironment(
+            target, llvm::cantFail(
+                        mlir::payloadSpecificationForProgramFormat(format))));
+    MQT_ASSERT_SUCCESS(compiled);
+    const auto& payload = compiled->payload();
+    EXPECT_NE(payload.find("gpi"), std::string::npos);
+    EXPECT_NE(payload.find("zz"), std::string::npos);
+    auto job = llvm::cantFail(device.submitJob(payload, format, 8));
+    ASSERT_TRUE(llvm::cantFail(job.wait()));
+    EXPECT_EQ(llvm::cantFail(job.getShots()),
+              std::vector<std::string>(8, "11"));
+  }
+}
+
 TEST(CompilerQDMIAdapterTest, RejectsScalarQIROutputs) {
   const auto device =
       llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
