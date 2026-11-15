@@ -34,7 +34,7 @@ keywords = [
 ]
 license = "MIT"
 license-files = [ "LICENSE" ]
-requires-python = ">=3.11"
+requires-python = ">=3.11.5"
 classifiers = [
   "Development Status :: 5 - Production/Stable",
   "Intended Audience :: Information Technology",
@@ -265,10 +265,6 @@ cache-keys = [
   { env = "CI" },
   { env = "DEPLOY" },
 ]
-
-[tool.uv.dependency-groups]
-# Patched Soup Sieve versions require Python 3.11.5 or newer.
-docs = { requires-python = ">=3.11.5" }
 
 [tool.uv.sources]
 mqt-core = { workspace = true }

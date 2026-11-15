@@ -52,6 +52,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#421)._
 
 ### Changed
 
+- 🐍 Require Python 3.11.5 or newer. ([#3018]) ([**@burgholzer**])
 - ⚡ Reduce Python extension loading overhead on macOS by using two-level symbol
   lookup. ([#3009]) ([**@burgholzer**])
 
@@ -1631,6 +1632,7 @@ for previous changelogs._
 [#3009]: https://github.com/munich-quantum-toolkit/core/pull/3009
 [#3014]: https://github.com/munich-quantum-toolkit/core/pull/3014
 [#3015]: https://github.com/munich-quantum-toolkit/core/pull/3015
+[#3018]: https://github.com/munich-quantum-toolkit/core/pull/3018
 [#2993]: https://github.com/munich-quantum-toolkit/core/pull/2993
 [#2991]: https://github.com/munich-quantum-toolkit/core/pull/2991
 [#2990]: https://github.com/munich-quantum-toolkit/core/pull/2990

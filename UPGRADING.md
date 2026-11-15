@@ -6,7 +6,8 @@ of changes including minor and patch releases, please refer to the
 
 ## [4.2.1]
 
-No migration is required for public APIs from 4.2.0.
+Python 3.11 users must upgrade to **3.11.5 or newer**. No migration is required
+for public APIs from 4.2.0.
 
 PennyLane integrations that overrode the private `QDMIDevice._prepare` method
 should override `prepare_program(tape)` instead. Call
