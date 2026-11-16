@@ -11,6 +11,7 @@
 #include "dd/Package.hpp"
 #include "mqt/Conversion/QCOToQC/QCOToQC.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
@@ -46,6 +47,7 @@
 #include <cstdint>
 #include <string>
 #include <utility>
+#include <vector>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -317,6 +319,47 @@ TEST_F(ElidePermutationsTest, TerminalModePreservesEarlierRouting) {
     // retain the original exchange instead of synthesizing a new permutation.
     EXPECT_EQ(swaps,
               StringRef(boundary).starts_with("%next = qco.h") ? 0U : 1U);
+  }
+}
+
+TEST_F(ElidePermutationsTest, ComposesOutputPermutationIntoCircuitLayout) {
+  // An imported Qiskit final layout may already exchange the two wires.
+  for (const bool imported : {false, true}) {
+    SCOPED_TRACE(imported);
+    auto program = parseSourceString<ModuleOp>(
+        std::string(
+            R"mlir(module attributes {mqt.source_qubit_count = 2 : i64)mlir") +
+            (imported ? R"mlir(, mqt.layout = {initial = array<i64: 1, 0>,
+                input_count = 2 : i64, routing = array<i64: 1, 0>})mlir"
+                      : "") +
+            R"mlir(} {
+          func.func @main() attributes {mqt.entry_point} {
+            %a = qco.alloc {mqt.source_qubit_indices = array<i64: 0>} : !qco.qubit
+            %b = qco.alloc {mqt.source_qubit_indices = array<i64: 1>} : !qco.qubit
+            %h = qco.h %a : !qco.qubit
+            %sa, %sb = qco.swap %h, %b : !qco.qubit, !qco.qubit
+            qco.sink %sa : !qco.qubit
+            qco.sink %sb : !qco.qubit
+            return
+          }
+        })mlir",
+        &context_);
+    ASSERT_TRUE(program);
+    ASSERT_NO_FATAL_FAILURE(rewrite(*program, /*terminal=*/true));
+    size_t swaps = 0;
+    program->walk([&](SWAPOp) { ++swaps; });
+    EXPECT_EQ(swaps, 0U);
+    auto layout =
+        mlir::mqt::QubitLayout::fromAttr((*program)->getAttr("mqt.layout"),
+                                         [&] { return program->emitError(); });
+    ASSERT_TRUE(succeeded(layout));
+    const std::vector<int64_t> identity{0, 1};
+    const std::vector<int64_t> exchange{1, 0};
+    EXPECT_EQ(layout->initial, imported ? exchange : identity);
+    EXPECT_EQ(layout->inputCount, 2);
+    EXPECT_FALSE(layout->sites);
+    // The elided exchange composes with the imported one into the identity.
+    EXPECT_EQ(layout->routing, imported ? identity : exchange);
   }
 }
 

@@ -240,6 +240,29 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
   return success();
 }
 
+/// Accept only a circuit-wire layout that placement can compose.
+///
+/// Its positions are the source labels of every allocated qubit.
+static LogicalResult verifyInputLayout(ModuleOp moduleOp) {
+  auto attribute = moduleOp->getAttr("mqt.layout");
+  if (!attribute) {
+    return success();
+  }
+  auto layout = mqt::QubitLayout::fromAttr(
+      attribute, [&] { return moduleOp.emitError(); });
+  if (failed(layout)) {
+    return failure();
+  }
+  auto count = moduleOp->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);
+  if (!count || layout->sites ||
+      std::cmp_not_equal(layout->initial.size(), count.getInt())) {
+    return moduleOp.emitError(
+        "target compilation composes only a circuit-wire layout of every "
+        "allocated qubit; discard existing layout metadata otherwise");
+  }
+  return success();
+}
+
 static void populateTargetPreparationCleanup(OpPassManager& pm) {
   // The module cleanup owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
@@ -263,19 +286,6 @@ public:
 
 protected:
   void runOnOperation() override {
-    if (getOperation()->hasAttr(mqt::kSourceOutputPermutationAttr)) {
-      getOperation().emitError(
-          "target compilation requires input without a pending source output "
-          "permutation");
-      signalPassFailure();
-      return;
-    }
-    if (getOperation()->hasAttr("mqt.layout")) {
-      getOperation().emitError("discard existing layout metadata before target "
-                               "compilation");
-      signalPassFailure();
-      return;
-    }
     if (mapping_.trials == 0) {
       getOperation().emitError("mapping trials must be greater than zero");
       signalPassFailure();
@@ -370,6 +380,10 @@ protected:
     } else if (hasStatic) {
       getOperation()->removeAttr(mqt::kSourceQubitCountAttr);
     } else if (failed(prepareLayout(getOperation(), environment_))) {
+      signalPassFailure();
+      return;
+    }
+    if (failed(verifyInputLayout(getOperation()))) {
       signalPassFailure();
       return;
     }

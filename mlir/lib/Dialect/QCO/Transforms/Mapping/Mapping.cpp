@@ -179,14 +179,31 @@ public:
         used[next] = true;
       }
     }
-    if (auto permutation = module_->getAttrOfType<DenseI64ArrayAttr>(
-            mqt::kSourceOutputPermutationAttr)) {
-      auto& routing = layout_->routing.emplace(layout_->initial.size());
-      std::iota(routing.begin(), routing.end(), int64_t{0});
-      for (auto [output, source] : llvm::enumerate(permutation.asArrayRef())) {
-        routing[layout_->initial[output]] = layout_->initial[source];
+    // Source wires now have sites. Compose the circuit-wire layout, whose
+    // positions are those wires, including permutations of elided SWAPs.
+    if (auto attribute = module_->getAttr("mqt.layout")) {
+      auto circuit = mqt::QubitLayout::fromAttr(
+          attribute, [&] { return module_.emitError(); });
+      if (failed(circuit)) {
+        return failure();
       }
-      module_->removeAttr(mqt::kSourceOutputPermutationAttr);
+      if (circuit->sites ||
+          std::cmp_not_equal(circuit->initial.size(), layout_->inputCount)) {
+        return module_.emitError("placement requires a circuit-wire layout of "
+                                 "every source qubit");
+      }
+      const auto sites = layout_->initial;
+      for (auto [program, wire] : llvm::enumerate(circuit->initial)) {
+        layout_->initial[program] = sites[wire];
+      }
+      layout_->inputCount = circuit->inputCount;
+      if (circuit->routing) {
+        auto& routing = layout_->routing.emplace(sites.size());
+        std::iota(routing.begin(), routing.end(), int64_t{0});
+        for (auto [wire, destination] : llvm::enumerate(*circuit->routing)) {
+          routing[sites[wire]] = sites[destination];
+        }
+      }
     }
     module_->setAttr("mqt.layout", layout_->toAttr(module_.getContext()));
     return success();
@@ -488,15 +505,6 @@ static bool needsPlacement(func::FuncOp func) {
          !func.getOps<qtensor::AllocOp>().empty();
 }
 
-/// Fail when no placement can consume a recorded output permutation.
-static LogicalResult rejectPendingPermutation(ModuleOp moduleOp) {
-  if (moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
-    return moduleOp.emitError(
-        "source output permutation requires dynamic placement");
-  }
-  return success();
-}
-
 namespace {
 
 struct PlacementPass final : impl::PlacementPassBase<PlacementPass> {
@@ -517,9 +525,6 @@ protected:
     }
 
     if (!needsPlacement(func)) {
-      if (failed(rejectPendingPermutation(moduleOp))) {
-        signalPassFailure();
-      }
       return;
     }
 
@@ -1074,9 +1079,6 @@ protected:
     }
 
     if (!needsPlacement(func)) {
-      if (failed(rejectPendingPermutation(moduleOp))) {
-        signalPassFailure();
-      }
       return;
     }
 

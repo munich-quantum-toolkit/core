@@ -507,26 +507,6 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     return success();
   }
-  if (attribute.getName() == kSourceOutputPermutationAttr) {
-    auto permutation = dyn_cast<DenseI64ArrayAttr>(attribute.getValue());
-    auto count = operation->getAttrOfType<IntegerAttr>(kSourceQubitCountAttr);
-    if (!isa<ModuleOp>(operation) || !permutation || !count ||
-        !count.getType().isSignlessInteger(64) || count.getInt() < 0 ||
-        permutation.size() != count.getInt()) {
-      return operation->emitError(
-          "source output permutation requires one i64 entry per source qubit "
-          "on a prepared module");
-    }
-    llvm::SmallDenseSet<int64_t> seen;
-    for (auto index : permutation.asArrayRef()) {
-      if (index < 0 || index >= permutation.size() ||
-          !seen.insert(index).second) {
-        return operation->emitError(
-            "source output permutation must be a complete permutation");
-      }
-    }
-    return success();
-  }
   if (attribute.getName() == "mqt.layout") {
     if (!isa<ModuleOp>(operation)) {
       return operation->emitError("qubit layout belongs on a program module");

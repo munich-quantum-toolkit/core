@@ -248,9 +248,10 @@ def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
     Programs without source labels keep their physical output order:
     permutations are reconciled before measurements and function exits.
     Programs prepared by `mqt-target-prepare` instead keep terminal output
-    permutations virtual through final observations and disposal and record
-    them in `mqt.source_output_permutation`. Placement consumes this
-    permutation into the published qubit layout.
+    permutations virtual through final observations and disposal. The pass
+    composes them into the `routing` of the circuit-wire `mqt.layout`, the form
+    an imported Qiskit `final_layout` takes. Placement composes that layout
+    into the published qubit layout.
 
     Run after inlining and cleanup, before fusion and placement.
   }];

@@ -558,10 +558,14 @@ and routing metadata if the input has fixed-size entry-block allocations.
 Programs with static device-site references already name physical sites;
 compilation preserves those IDs and does not attach a layout. Static device-site
 references and allocated program qubits cannot be mixed. Native target
-compilation rejects an already attached layout. See
-[custom pass sequences](#custom-pass-sequences) for layout preservation between
-passes and [transpiler layouts](qiskit.md#transpiler-layouts) for the import and
-export requirements.
+compilation composes an attached layout without sites, such as an imported
+Qiskit layout, with its own placement and routing. The program keeps its program
+qubits and output permutation, including SWAPs that Qiskit elided. This requires
+every qubit to be allocated in the entry block; other attached layouts are
+rejected. See [custom pass sequences](#custom-pass-sequences) for layout
+preservation between passes and
+[transpiler layouts](qiskit.md#transpiler-layouts) for the import and export
+requirements.
 
 ## Metadata for device implementers
 

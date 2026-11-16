@@ -1205,7 +1205,9 @@ class QCOProgram(Program):
     def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
         """Compile for the target and attach layout metadata when possible.
 
-        Reject existing layout metadata. Do not rely on program contents if compilation fails. Failures raise
+        Compose an attached layout without sites, such as an imported Qiskit layout, with
+        placement and routing when every qubit is allocated in the entry block. Reject other
+        layout metadata. Do not rely on program contents if compilation fails. Failures raise
         RuntimeError with MLIR diagnostics.
         """
 

@@ -811,14 +811,41 @@ public:
 
 } // namespace
 
+/// Compose an absorbed output permutation into the circuit-wire layout.
+///
+/// Entry `j` of @p permutation is the source wire that holds output `j`.
+static LogicalResult recordOutputPermutation(ModuleOp moduleOp,
+                                             ArrayRef<int64_t> permutation) {
+  mqt::QubitLayout layout;
+  if (auto attribute = moduleOp->getAttr("mqt.layout")) {
+    auto parsed = mqt::QubitLayout::fromAttr(
+        attribute, [&] { return moduleOp.emitError(); });
+    if (failed(parsed)) {
+      return failure();
+    }
+    layout = std::move(*parsed);
+  } else {
+    layout.initial.resize(permutation.size());
+    std::iota(layout.initial.begin(), layout.initial.end(), int64_t{0});
+    layout.inputCount = static_cast<int64_t>(permutation.size());
+  }
+  if (layout.sites || layout.initial.size() != permutation.size()) {
+    return moduleOp.emitError("permutation elision requires a circuit-wire "
+                              "layout of every source qubit");
+  }
+  std::vector<int64_t> routing(permutation.size());
+  for (auto [wire, destination] : llvm::enumerate(routing)) {
+    destination = permutation[layout.routing ? (*layout.routing)[wire] : wire];
+  }
+  layout.routing = std::move(routing);
+  moduleOp->setAttr("mqt.layout", layout.toAttr(moduleOp.getContext()));
+  return success();
+}
+
 /// Elide SWAPs, or only terminal SWAPs of prepared programs.
 static LogicalResult elidePermutations(ModuleOp moduleOp, bool terminalOnly) {
   auto entry = mqt::getEntryPoint(moduleOp);
   auto count = moduleOp->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);
-  if (count && moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
-    return moduleOp.emitError("permutation elision requires freshly "
-                              "prepared source qubit labels");
-  }
   Operation* firstEligibleSwap = nullptr;
   if (terminalOnly) {
     // Only a recorded output permutation can absorb terminal SWAPs.
@@ -926,8 +953,7 @@ static LogicalResult elidePermutations(ModuleOp moduleOp, bool terminalOnly) {
   if (llvm::any_of(llvm::enumerate(output), [](auto entry) {
         return static_cast<int64_t>(entry.index()) != entry.value();
       })) {
-    moduleOp->setAttr(mqt::kSourceOutputPermutationAttr,
-                      rewriter.getDenseI64ArrayAttr(output));
+    return recordOutputPermutation(moduleOp, output);
   }
   return success();
 }

@@ -3735,8 +3735,6 @@ TEST_F(CompilerPipelineTest, TargetLayoutRecoversRoutedUnitary) {
                     1e-12);
         }
       }
-      EXPECT_FALSE(
-          program->module()->hasAttr(mlir::mqt::kSourceOutputPermutationAttr));
       EXPECT_EQ(program->str().find("source_qubit_"), std::string::npos);
     }
   }
@@ -6784,8 +6782,6 @@ TEST_F(CompilerPipelineTest,
   ASSERT_TRUE(succeeded(counts));
   ASSERT_EQ(counts->size(), 1U);
   EXPECT_EQ(counts->begin()->first, "10");
-  EXPECT_FALSE(
-      program->module()->hasAttr(mlir::mqt::kSourceOutputPermutationAttr));
 }
 
 TEST_F(CompilerPipelineTest, TargetCompilationFusesRoutingSwaps) {
