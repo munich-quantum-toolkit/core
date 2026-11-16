@@ -12,12 +12,23 @@
 
 #include "mlir/IR/Block.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLFunctionalExtras.h"
 
 namespace mlir::qco {
 /// Check whether CBit or MemRef effects may access aliased storage.
 ///
 /// Direct allocations own distinct storage; other handles may alias them.
 bool hasPotentialClassicalAliases(Block& block);
+
+/// Visit SSA, nested-capture, and ordered memory-effect dependencies.
+///
+/// Calls the visitor with predecessor and successor operations in this block.
+/// Edges may repeat. Potentially aliased storage shares one effect chain;
+/// unknown and value-less effects are not ordered.
+void walkOperationDependencies(
+    Block& block, function_ref<void(Operation*, Operation*)> addDependency);
 
 /// Fix SSA dominance issues by reordering operations of the block in-place in
 /// topological order.

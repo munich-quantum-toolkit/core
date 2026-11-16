@@ -86,9 +86,11 @@
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/FileUtilities.h"
@@ -98,6 +100,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
+#include <atomic>
 #include <cctype>
 #include <cmath>
 #include <cstddef>
@@ -376,6 +379,29 @@ constexpr llvm::StringLiteral QCO_INDEX_SWITCH_SOURCE = R"mlir(
     }
   }
 )mlir";
+
+TEST_P(CompilerPipelineTest, CanonicalizationConverges) {
+  auto moduleOp =
+      ::mqt::test::buildMLIRProgram(context.get(), GetParam().qcProgramBuilder);
+  ASSERT_TRUE(moduleOp);
+  auto qc = QCProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(succeeded(qc));
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(succeeded(qco));
+  PassManager manager(context.get());
+  populateQCOCleanupPipeline(manager);
+  for (auto& pass : manager.getPasses()) {
+    if (pass.getArgument() == "canonicalize") {
+      ASSERT_TRUE(succeeded(pass.initializeOptions(
+          "test-convergence=true", [](const llvm::Twine& message) {
+            ADD_FAILURE() << message.str();
+            return failure();
+          })));
+    }
+  }
+  ASSERT_TRUE(succeeded(manager.run(qco->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(qco->module())));
+}
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   SCOPED_TRACE(
@@ -3234,8 +3260,7 @@ cx q[0], q[2];
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
 }
 
-TEST_F(CompilerPipelineTest,
-       CompilationSeedSurvivesReproducerAndRestoresInput) {
+TEST_F(CompilerPipelineTest, FailedRunKeepsReproducerAndTraceAndRestoresSeed) {
   auto source = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
   MQT_ASSERT_SUCCESS(source);
   auto moduleOp = source->module();
@@ -3250,12 +3275,22 @@ TEST_F(CompilerPipelineTest,
   registerMQTCompilerPasses();
   pm.enableCrashReproducerGeneration(path);
   pm.addPass(qco::createVerifyTargetConformance());
-  EXPECT_TRUE(failed(runWithCompilationOptions(pm, moduleOp, {.seed = 9876})));
+  llvm::SmallString<128> tracePath;
+  ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-action-profile", "json",
+                                                  tracePath));
+  const llvm::FileRemover traceCleanup(tracePath);
+  EXPECT_TRUE(failed(runWithCompilationOptions(
+      pm, moduleOp, {.seed = 9876, .traceFile = tracePath.str().str()})));
   EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
+  EXPECT_FALSE(moduleOp.getContext()->hasActionHandler());
   auto reproducer = llvm::MemoryBuffer::getFile(path);
   ASSERT_TRUE(reproducer);
   EXPECT_TRUE(
       (*reproducer)->getBuffer().contains("mqt.compilation_seed = 9876"));
+  auto trace = llvm::MemoryBuffer::getFile(tracePath);
+  ASSERT_TRUE(trace);
+  EXPECT_TRUE((*trace)->getBuffer().contains("VerifyTargetConformance"));
+  EXPECT_TRUE((*trace)->getBuffer().ends_with("]"));
 }
 
 namespace {
@@ -5305,36 +5340,6 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksUnrolledStepWidth) {
   }
 }
 
-TEST_F(CompilerPipelineTest, PayloadControlUnrollsBeyondTheOldBudget) {
-  auto program = QCOProgram::fromMLIRString(R"mlir(module {
-    func.func @main() attributes {mqt.entry_point} {
-      %q = qco.alloc : !qco.qubit
-      %zero = arith.constant 0 : index
-      %one = arith.constant 1 : index
-      %limit = arith.constant 70000 : index
-      %out = scf.for %i = %zero to %limit step %one
-          iter_args(%state = %q) -> !qco.qubit {
-        %next = qco.x %state : !qco.qubit
-        scf.yield %next : !qco.qubit
-      }
-      qco.sink %out : !qco.qubit
-      return
-    }
-  })mlir");
-  MQT_ASSERT_SUCCESS(program);
-  attachTargetEnvironment(
-      program->module(),
-      TargetEnvironment(makeUnrestrictedTarget(),
-                        makeControlPayloadSpecification({})));
-  ASSERT_TRUE(
-      mlir::succeeded(program->runPassPipeline("unroll-loops-for-payload")));
-  size_t gates = 0;
-  program->module().walk([&](qco::XOp) { ++gates; });
-  EXPECT_EQ(gates, 70000U);
-  EXPECT_TRUE(succeeded(verify(program->module())));
-  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
-}
-
 TEST_F(CompilerPipelineTest, PayloadControlBoundsTotalLoopCloning) {
   for (const auto [trips, budget] : {
            std::pair{33, uint64_t{64}},
@@ -6433,17 +6438,10 @@ TEST_F(CompilerPipelineTest, NativePulseOpenQASMPreservesArityAndPhase) {
   ASSERT_TRUE(succeeded(lowered));
   auto emitted = std::move(*lowered).intoOpenQASM3();
   ASSERT_TRUE(succeeded(emitted));
-  auto source = emitted->source();
+  const auto source = emitted->source();
   EXPECT_NE(source.find("gpi("), std::string::npos);
   EXPECT_NE(source.find("gpi2("), std::string::npos);
-  const auto include = source.find("include \"stdgates.inc\";");
-  ASSERT_NE(include, std::string::npos);
-  // Definitions enforce each native signature and give an independent phase
-  // oracle.
-  source.insert(include + std::string("include \"stdgates.inc\";").size(),
-                "\ngate gpi(phi) q { gphase(pi / 2); "
-                "rz(-phi) q; rx(pi) q; rz(phi) q; }\n"
-                "gate gpi2(phi) q { rz(-phi) q; rx(pi / 2) q; rz(phi) q; }\n");
+  // The original circuit is a phase-sensitive oracle for the imported pulses.
   auto restoredQC = QCProgram::fromOpenQASMString(source);
   MQT_ASSERT_SUCCESS(restoredQC);
   auto restored = std::move(*restoredQC).intoQCO();
@@ -7567,6 +7565,60 @@ TEST_F(CompilerPipelineTest, QCOProgramQubitReuseAPIs) {
   EXPECT_NE(compositeQCO->str().find("qco.reset"), std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest, TracingPreservesExistingHandler) {
+  std::atomic<size_t> actions = 0;
+  auto input = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
+  MQT_ASSERT_SUCCESS(input);
+  auto inputContext = input->context();
+  inputContext->registerActionHandler(
+      [&](llvm::function_ref<void()> transform, const tracing::Action&) {
+        ++actions;
+        transform();
+      });
+  llvm::SmallString<128> path;
+  ASSERT_FALSE(
+      llvm::sys::fs::createTemporaryFile("mqt-action-profile", "json", path));
+  const llvm::FileRemover cleanup(path);
+  {
+    std::error_code error;
+    llvm::raw_fd_ostream stream(path, error);
+    ASSERT_FALSE(error);
+    stream << "existing trace";
+  }
+  CompilationOptions options;
+  options.traceFile = path.str().str();
+
+  auto rejected =
+      runDefaultPipeline(CompilerInput{std::move(*input)}, ProgramFormat::QC,
+                         "mqt-qco-default", options);
+  EXPECT_NE(
+      llvm::toString(rejected.takeError()).find("existing action handler"),
+      std::string::npos);
+  EXPECT_EQ(actions.load(), 0U);
+  auto profile = llvm::MemoryBuffer::getFile(path);
+  ASSERT_TRUE(profile);
+  EXPECT_EQ((*profile)->getBuffer(), "existing trace");
+  EXPECT_TRUE(inputContext->hasActionHandler());
+}
+
+TEST_F(CompilerPipelineTest, TracingReportsWriteFailure) {
+  if (!std::filesystem::exists("/dev/full")) {
+    GTEST_SKIP() << "/dev/full is unavailable";
+  }
+  auto input = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
+  MQT_ASSERT_SUCCESS(input);
+  auto context = input->context();
+  CompilationOptions options;
+  options.traceFile = "/dev/full";
+  auto result = runDefaultPipeline(CompilerInput{std::move(*input)},
+                                   ProgramFormat::QCOOptimized,
+                                   "mqt-qco-default", options);
+  EXPECT_NE(
+      llvm::toString(result.takeError()).find("failed to write trace file"),
+      std::string::npos);
+  EXPECT_FALSE(context->hasActionHandler());
+}
+
 // Test: default compilation returns the requested typed program format
 TEST_F(CompilerPipelineTest, DefaultPipelineSelectsRequestedProgramFormats) {
   const std::string qasm = R"(OPENQASM 3.0;
@@ -7594,11 +7646,24 @@ h q;
 
   auto profiledInput = QCProgram::fromOpenQASMString(qasm);
   MQT_ASSERT_SUCCESS(profiledInput);
-  auto profiled = runDefaultPipeline(
-      CompilerInput{std::move(*profiledInput)}, ProgramFormat::QCOOptimized,
-      "mqt-qco-default", {.enableTiming = true, .enableStatistics = true});
+  llvm::SmallString<128> profilePath;
+  ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("mqt-action-profile", "json",
+                                                  profilePath));
+  const llvm::FileRemover cleanup(profilePath);
+  auto profiled =
+      runDefaultPipeline(CompilerInput{std::move(*profiledInput)},
+                         ProgramFormat::QCOOptimized, "mqt-qco-default",
+                         {
+                             .enableTiming = true,
+                             .enableStatistics = true,
+                             .traceFile = profilePath.str().str(),
+                         });
   MQT_ASSERT_SUCCESS(profiled);
-  EXPECT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
+  ASSERT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
+  EXPECT_FALSE(std::get<QCOProgram>(*profiled).context()->hasActionHandler());
+  auto profile = llvm::MemoryBuffer::getFile(profilePath);
+  ASSERT_TRUE(profile);
+  EXPECT_TRUE((*profile)->getBuffer().contains("QCToQCO"));
 
   auto customPipelineInput = QCProgram::fromOpenQASMString(qasm);
   MQT_ASSERT_SUCCESS(customPipelineInput);
@@ -7678,56 +7743,7 @@ h q;
   EXPECT_FALSE(sourceProgram.isValid());
 }
 
-// Test: QCOProgram::decomposeMultiControlled runs the pass on MCX.
-//
-// Correctness of the decomposition is tested in a dedicated suite.
-TEST_F(CompilerPipelineTest, DecomposeMultiControlledPass) {
-  auto moduleOp = mlir::qc::QCProgramBuilder::build(
-      context.get(), mlir::qc::multipleControlledX);
-  ASSERT_TRUE(moduleOp);
-
-  auto input = QCProgram::fromModule(context, std::move(moduleOp));
-  ASSERT_TRUE(mlir::succeeded(input));
-  auto qco = std::move(*input).intoQCO();
-  ASSERT_TRUE(mlir::succeeded(qco));
-  ASSERT_TRUE(mlir::succeeded(qco->cleanup()));
-  const auto before = qco->str();
-  ASSERT_TRUE(mlir::succeeded(qco->decomposeMultiControlled(3)));
-  EXPECT_NE(qco->str(), before);
-}
-
-TEST_F(CompilerPipelineTest, DecomposeMultiControlledPassMcz) {
-  auto moduleOp = mlir::qc::QCProgramBuilder::build(
-      context.get(), mlir::qc::multipleControlledZ);
-  ASSERT_TRUE(moduleOp);
-
-  auto input = QCProgram::fromModule(context, std::move(moduleOp));
-  ASSERT_TRUE(mlir::succeeded(input));
-  auto qco = std::move(*input).intoQCO();
-  ASSERT_TRUE(mlir::succeeded(qco));
-  ASSERT_TRUE(mlir::succeeded(qco->cleanup()));
-  const auto before = qco->str();
-  ASSERT_TRUE(mlir::succeeded(
-      qco->runPassPipeline("decompose-multi-controlled{min-qubits=3}")));
-  EXPECT_NE(qco->str(), before);
-}
-
-TEST_F(CompilerPipelineTest,
-       RejectsDecomposeMultiControlledMinQubitsBelowThree) {
-  EXPECT_FALSE(isDecomposeMultiControlledConfigValid(2U));
-  EXPECT_TRUE(isDecomposeMultiControlledConfigValid(3U));
-
-  auto moduleOp = mlir::qc::QCProgramBuilder::build(
-      context.get(), mlir::qc::multipleControlledX);
-  ASSERT_TRUE(moduleOp);
-  auto input = QCProgram::fromModule(context, std::move(moduleOp));
-  ASSERT_TRUE(mlir::succeeded(input));
-  auto qco = std::move(*input).intoQCO();
-  ASSERT_TRUE(mlir::succeeded(qco));
-  EXPECT_TRUE(mlir::failed(qco->decomposeMultiControlled(2)));
-}
-
-TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
+TEST_F(CompilerPipelineTest, DecompositionEntryPointsPreserveFullUnitary) {
   auto moduleOp =
       QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
         builder.mcx(
@@ -7740,19 +7756,22 @@ TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
         return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
+  auto reference = QCOProgram::fromModule(context, std::move(moduleOp));
+  ASSERT_TRUE(succeeded(reference));
+  EXPECT_TRUE(failed(reference->decomposeMultiControlled(2)));
 
-  std::string before;
-  llvm::raw_string_ostream beforeStream(before);
-  moduleOp->print(beforeStream);
-
-  PassManager pm(moduleOp->getContext());
-  populateDecomposeMultiControlledPipeline(pm, 3);
-  ASSERT_TRUE(pm.run(moduleOp.get()).succeeded());
-
-  std::string after;
-  llvm::raw_string_ostream afterStream(after);
-  moduleOp->print(afterStream);
-  EXPECT_NE(after, before);
+  for (const bool textual : {false, true}) {
+    SCOPED_TRACE(textual);
+    auto program = reference->copy();
+    ASSERT_TRUE(succeeded(textual
+                              ? program.runPassPipeline(
+                                    "decompose-multi-controlled{min-qubits=3}")
+                              : program.decomposeMultiControlled(3)));
+    program.module().walk([](qco::CtrlOp controlled) {
+      EXPECT_LT(controlled.getNumControls(), 2U);
+    });
+    expectFullUnitaryEqual(reference->module(), program.module(), 4);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(

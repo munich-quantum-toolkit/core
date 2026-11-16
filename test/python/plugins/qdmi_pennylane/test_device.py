@@ -20,7 +20,7 @@ import pytest
 from qiskit import QuantumCircuit
 
 from mqt.core import UntestedVersionWarning
-from mqt.core.mlir import TargetEnvironment, serialize_program
+from mqt.core.mlir import CompilationOptions, TargetEnvironment, serialize_program
 from mqt.core.plugins.pennylane import (
     PennyLaneConfigurationError,
     PennyLaneExecutionError,
@@ -31,7 +31,12 @@ from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from pennylane.tape import QuantumScript
     from pennylane.typing import Result, ResultBatch
+
+    from mqt.core.mlir import CompiledProgram
 
 
 @pytest.mark.parametrize("installed", ["0.14.1", "0.15.0rc1", "1.0.0rc1", "1.0.0"])
@@ -77,7 +82,7 @@ def test_compiles_only_requested_wires(*, all_wires: bool) -> None:
     np.testing.assert_array_equal(result, np.tile(expected, (2, 1)))
     assert device.last_job is not None
     entry = device.last_job.entries[0]
-    assert entry.result is not None
+    assert isinstance(entry.result, np.ndarray)
     assert entry.result.shape == (2, 8 if all_wires else 1)
 
 
@@ -196,7 +201,7 @@ def test_retry_shot_copies_preserves_order_and_tracking(
     )
     assert program.result_layout is not None
     # Inject an equivalent prepared program with permuted readout and a zero slot.
-    monkeypatch.setattr(device, "_prepare", lambda tapes: [program] * len(tapes))
+    monkeypatch.setattr(device, "prepare_program", lambda _tape: program)
     tape = qp.tape.QuantumScript([qp.X("right")], [qp.sample(wires=["right", "left", "idle"])], shots=[2, 3, 4])
 
     def execute() -> Result | ResultBatch:
@@ -224,19 +229,53 @@ def test_retry_shot_copies_preserves_order_and_tracking(
 
 
 @pytest.mark.parametrize("compiled", [False, True])
-def test_openqasm2_execution(*, compiled: bool) -> None:
-    """The shared compiler supports OpenQASM 2 in both PennyLane paths."""
+def test_openqasm2_execution(capfd: pytest.CaptureFixture[str], *, compiled: bool) -> None:
+    """The shared compiler applies the format and compile options in both PennyLane paths."""
     if compiled and find_spec("catalyst") is None:
         pytest.skip("Install Catalyst to run compiled device tests.")
-    device = QDMIDevice("mqt.ddsim.default", wires=2, program_format=ProgramFormat.QASM2)
+    device = QDMIDevice(
+        "mqt.ddsim.default",
+        wires=2,
+        program_format=ProgramFormat.QASM2,
+        compile_options=CompilationOptions(enable_timing=True),
+    )
 
     @qp.qnode(device, shots=16)
     def circuit() -> qp.measurements.SampleMP:
         qp.PauliX(1)
         return qp.sample(wires=[1, 0])
 
-    execute = qp.qjit(circuit) if compiled else circuit
+    execute = qp.qjit(circuit, capture=False) if compiled else circuit
+    capfd.readouterr()
     np.testing.assert_array_equal(execute(), np.tile([1, 0], (16, 1)))
+    assert "Execution time report" in capfd.readouterr().err
+
+
+def test_subclass_observes_each_compiled_program() -> None:
+    """An override of prepare_program sees each tape's program in batch order."""
+
+    class RecordingDevice(QDMIDevice):
+        programs: list[CompiledProgram | None]
+
+        def prepare_program(self, tape: QuantumScript) -> CompiledProgram | None:
+            program = super().prepare_program(tape)
+            self.programs.append(program)
+            return program
+
+    device = RecordingDevice("mqt.ddsim.default", wires=2)
+    device.programs = []
+    tapes = (
+        qp.tape.QuantumScript([qp.X(1)], [qp.sample(wires=[1, 0])], shots=2),
+        qp.tape.QuantumScript([], [qp.sample(wires=[0])], shots=2),
+        qp.tape.QuantumScript([qp.X(0)], [qp.sample(wires=[0])], shots=3),
+    )
+    results = device.execute(tapes)
+    expected = qp.execute(tapes, qp.device("default.qubit", wires=2), diff_method=None)
+    for actual, oracle in zip(results, expected, strict=True):
+        np.testing.assert_array_equal(actual, oracle)
+    assert [program and program.result_width for program in device.programs] == [2, None, 1]
+    assert all(program.payload for program in device.programs if program)
+    assert device.submitted_jobs == 2
 
 
 def test_catalyst_patch_does_not_warn(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -276,3 +315,46 @@ def test_local_results_need_no_provider_job(*, measured: bool) -> None:
     assert device.submitted_jobs == 0
     assert device.last_job is not None
     assert all(entry.result is not None for entry in device.last_job.entries)
+
+
+def test_aggregate_readout_preserves_wires_and_shot_partitions() -> None:
+    """Histograms retain all-wire measurements, subset ordering, and cached results."""
+    wires = ["left", "idle", "right"]
+    device = QDMIDevice("mqt.ddsim.default", wires=wires)
+    tape = qp.tape.QuantumScript(
+        [qp.X("right")],
+        [
+            qp.probs(),
+            qp.counts(),
+            qp.counts(wires=["right", "left"], all_outcomes=True),
+            qp.expval(2 * qp.Z("right")),
+            qp.var(2 * qp.Z("left")),
+            qp.measurements.ExpectationMP(wires=qp.wires.Wires(["right"]), eigvals=np.array([1j, -1j])),
+        ],
+        shots=[2, 3],
+    )
+    batch = device.submit(tape)
+    actual = batch.result()
+    (expected,) = qp.execute((tape,), qp.device("default.qubit", wires=wires), diff_method=None)
+    np.testing.assert_equal(actual, expected)
+    np.testing.assert_equal([entry.result for entry in batch.entries], actual)
+    retained = batch.entries[0].result
+    np.testing.assert_equal(batch.result(), actual)
+    assert batch.collect()[0].result is retained
+
+
+def test_custom_measurement_keeps_sample_processing() -> None:
+    """A custom sample processor is not replaced by inherited counts processing."""
+
+    class TwiceExpectation(qp.measurements.ExpectationMP):
+        def process_samples(
+            self,
+            samples: Sequence[complex],
+            wire_order: qp.wires.Wires,
+            shot_range: tuple[int, ...] | None = None,
+            bin_size: int | None = None,
+        ) -> np.ndarray:
+            return 2 * super().process_samples(samples, wire_order, shot_range, bin_size)
+
+    tape = qp.tape.QuantumScript([qp.X(0)], [TwiceExpectation(qp.Z(0))], shots=2)
+    assert QDMIDevice("mqt.ddsim.default", wires=1).execute(tape) == -2

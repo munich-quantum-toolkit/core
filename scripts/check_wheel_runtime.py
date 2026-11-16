@@ -22,13 +22,9 @@ from tempfile import TemporaryDirectory
 
 
 def main() -> None:
-    """Check the driver, DDSIM bundle, and imported tools with the LLVM SDK."""
+    """Check the driver, DDSIM bundle, and imported tools without an LLVM SDK."""
     source = (Path(__file__).resolve().parents[1] / "docs/cpp_api.md").read_text(encoding="utf-8")
     prefix = subprocess.check_output([sys.executable, "-m", "mqt.core", "--cmake-dir"], text=True).strip()
-    # Reuse SDKs downloaded by the source build that executes these docs.
-    project = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(__file__).resolve().parents[1]
-    sdks = project.glob("build/python/*/_deps/llvm-*")
-    cmake_prefix_path = ";".join([prefix, *(str(sdk) for sdk in sdks)])
     with TemporaryDirectory() as directory:
         root = Path(directory)
         for language, filename in (("cpp", "main.cpp"), ("cmake", "CMakeLists.txt")):
@@ -45,8 +41,9 @@ def main() -> None:
                 directory,
                 "-B",
                 str(root / "build"),
-                f"-DCMAKE_PREFIX_PATH={cmake_prefix_path}",
+                f"-DCMAKE_PREFIX_PATH={prefix}",
                 "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_DISABLE_FIND_PACKAGE_LLVM=TRUE",
             ],
             check=True,
         )

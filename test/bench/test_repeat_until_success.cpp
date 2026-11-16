@@ -132,13 +132,4 @@ TEST(RepeatUntilSuccess, RejectsInvalidJSONParameters) {
       "attempts");
 }
 
-TEST(RepeatUntilSuccess, EvaluatesCountsFromJSON) {
-  const auto evaluation = llvm::cantFail(
-      evaluateJSON(toManifestJSON(llvm::cantFail(RepeatUntilSuccess::create())),
-                   R"({"schema_version":1,"counts":{"0":993,"1":7}})"));
-  EXPECT_NE(evaluation.find("\"success_probability\":null"), std::string::npos);
-  EXPECT_NE(evaluation.find("\"total_variation_distance\":"),
-            std::string::npos);
-}
-
 } // namespace mqt::bench

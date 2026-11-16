@@ -56,13 +56,13 @@ def SimplifyQuantum : Pass<"simplify-quantum"> {
 def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::arith::ArithDialect", "mlir::mqt::MQTDialect",
                            "mlir::scf::SCFDialect"];
-  let summary = "Legalize SCF control flow for the selected payload";
+  let summary = "Adapt SCF control flow to the selected execution format";
   let description = [{
     Uses an explicit `payload-spec` attribute when set, otherwise reads
     `mqt.target_env`. Retains covered SCF branches and loops, lowers unsupported
     index switches to nested forward branches when possible, and rejects
     unsupported residual control flow. Loop bounds and steps must be literal
-    constants when the payload requires a trip-count proof. Switch expansion
+    constants when the execution format requires a known trip count. Switch expansion
     respects the forward-branching depth limit and a maximum generated nesting
     depth of 256.
 

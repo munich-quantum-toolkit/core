@@ -3,7 +3,7 @@
 MQT Core provides reusable C++20 and Python libraries for quantum computing: the
 **MQT Compiler Collection**, built on **MLIR and LLVM**, together with decision
 diagrams, QIR execution, QDMI device access, SDK and HPC integrations, and
-structured benchmarks. It forms the backbone of the
+quantum benchmarks. It forms the backbone of the
 {doc}`Munich Quantum Toolkit (MQT) <mqt:index>`.
 
 **MQT Core 4 is a major architectural release.** Structured compiler
@@ -58,11 +58,11 @@ Represent and manipulate quantum states and operations in C++ or Python.
 :img-top: _static/tasks/benchmarks.webp
 :img-alt:
 
-Configure structured programs and evaluate results against their references.
+Configure benchmark programs and compare results with their references.
 
 - **First example:**
   [Configure a benchmark](benchmarks.md#configure-a-typed-instance)
-- **Guide:** {doc}`Structured benchmarks <benchmarks>`
+- **Guide:** {doc}`Quantum benchmarks <benchmarks>`
 - **API:** {py:mod}`mqt.core.bench`
 :::
 

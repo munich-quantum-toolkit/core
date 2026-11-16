@@ -44,7 +44,7 @@ if(BUILD_MQT_CORE_BINDINGS)
 
   # top-level call to find Python
   find_package(
-    Python 3.11
+    Python 3.11.5
     REQUIRED
     COMPONENTS Interpreter Development.Module ${SKBUILD_SABI_COMPONENT})
 endif()
@@ -62,7 +62,8 @@ endif()
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   message(
     FATAL_ERROR
-      "MQT Core cannot build MLIR with GCC on macOS because MLIR uses an incompatible C++ standard library")
+      "MQT Core cannot build MLIR with GCC on macOS because MLIR uses an incompatible C++ standard library"
+  )
 endif()
 if(APPLE
    AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang"

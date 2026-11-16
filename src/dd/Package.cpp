@@ -1253,37 +1253,52 @@ Package::expectationValues(const vEdge& state,
       }
       auto [entry, inserted] = expectations.try_emplace(term.paulis, 1.);
       if (inserted && term.paulis.find_first_not_of('I') != std::string::npos) {
-        auto matrix = mCachedEdge::one();
-        for (size_t index = 0; index < numQubits; ++index) {
-          const auto pauli = term.paulis[numQubits - index - 1];
-          if (pauli == 'I') {
-            continue;
+        const auto lowest = static_cast<Qubit>(
+            numQubits - term.paulis.find_last_not_of('I') - 1);
+        llvm::DenseMap<std::tuple<vNode*, vNode*, size_t>, ComplexValue> memo;
+        const auto contract = [&](const auto& self, const vEdge& left,
+                                  const vEdge& right,
+                                  const size_t levels) -> ComplexValue {
+          if (levels <= lowest) {
+            return innerProduct(
+                {.p = left.p, .w = ComplexNumbers::conj(left.w)}, right,
+                static_cast<Qubit>(levels));
           }
-          std::array<mCachedEdge, NEDGE> edges{};
-          switch (pauli) {
-          case 'X':
-            edges[1] = matrix;
-            edges[2] = matrix;
-            break;
-          case 'Y':
-            edges[1] = {matrix.p, {matrix.w.i, -matrix.w.r}};
-            edges[2] = {matrix.p, {-matrix.w.i, matrix.w.r}};
-            break;
-          case 'Z':
-            edges[0] = matrix;
-            edges[3] = {matrix.p, {-matrix.w.r, -matrix.w.i}};
-            break;
-          default:
-            llvm_unreachable("Validated Pauli label");
+          const auto weight =
+              ComplexNumbers::conj(left.w) * static_cast<ComplexValue>(right.w);
+          if (left.w.approximatelyZero() || right.w.approximatelyZero()) {
+            return 0.;
           }
-          matrix = makeDDNode(static_cast<Qubit>(index), edges);
-        }
-        auto expectation = expectationValue(cn.lookup(matrix), state);
-        if (!expectation) {
-          return expectation.takeError();
-        }
-        entry->second = *expectation;
-        garbageCollect();
+          const auto key = std::tuple{left.p, right.p, levels};
+          if (const auto found = memo.find(key); found != memo.end()) {
+            return found->second * weight;
+          }
+          const auto qubit = static_cast<Qubit>(levels - 1);
+          const auto pauli = term.paulis[numQubits - levels];
+          ComplexValue sum = 0.;
+          for (size_t row = 0; row < RADIX; ++row) {
+            const auto column = (pauli == 'X' || pauli == 'Y') ? 1 - row : row;
+            const auto bra = !left.isTerminal() && left.p->v == qubit
+                                 ? left.p->e[row]
+                                 : vEdge{.p = left.p, .w = Complex::one()};
+            const auto ket = !right.isTerminal() && right.p->v == qubit
+                                 ? right.p->e[column]
+                                 : vEdge{.p = right.p, .w = Complex::one()};
+            auto contribution = self(self, bra, ket, qubit);
+            if (pauli == 'Y') {
+              contribution =
+                  contribution * ComplexValue{0., row == 0 ? -1. : 1.};
+            } else if (pauli == 'Z' && row == 1) {
+              contribution = contribution * ComplexValue{-1.};
+            }
+            sum += contribution;
+          }
+          if (memo.size() < config_.ctVecInnerProdNumBucket) {
+            memo.try_emplace(key, sum);
+          }
+          return sum * weight;
+        };
+        entry->second = contract(contract, state, state, numQubits).r;
       }
       value += term.coefficient * entry->second;
     }

@@ -52,6 +52,21 @@
 #include <vector>
 
 namespace mlir {
+std::optional<NativeRAlias> nativeRAlias(StringRef name) {
+  return llvm::StringSwitch<std::optional<NativeRAlias>>(name)
+      .Case("gpi",
+            NativeRAlias{
+                .angle = std::numbers::pi,
+                .globalPhase = std::numbers::pi / 2.,
+            })
+      .Case("gpi2",
+            NativeRAlias{
+                .angle = std::numbers::pi / 2.,
+                .globalPhase = 0.,
+            })
+      .Default(std::nullopt);
+}
+
 namespace {
 
 using GateKind = CompilerTarget::GateKind;
@@ -510,16 +525,14 @@ CompilerTarget::OperationCapability::create(
   }
 
   // Native GPI pulses expose only the azimuth of a fixed-angle R rotation.
-  if (arity == Arity::fixed(1) && numParameters == 1 &&
-      (canonical == "gpi" || canonical == "gpi2")) {
-    const double angle =
-        canonical == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+  if (const auto alias = nativeRAlias(canonical);
+      alias && arity == Arity::fixed(1) && numParameters == 1) {
     canonical = "r";
     numParameters = 2;
     if (fixedParameters.empty()) {
       fixedParameters.emplace_back();
     }
-    fixedParameters.insert(fixedParameters.begin(), angle);
+    fixedParameters.insert(fixedParameters.begin(), alias->angle);
     if (!parameterBounds.empty()) {
       parameterBounds.insert(parameterBounds.begin(), std::nullopt);
     }
@@ -919,8 +932,7 @@ bool CompilerTarget::Storage::supportsOperation(
     std::optional<ArrayRef<SiteId>> orderedSites, bool variadicOnly,
     function_ref<std::optional<double>(size_t)> parameterAt,
     function_ref<bool(const OperationCapability&)> capabilityFilter) const {
-  const auto canonical = canonicalOperationName(operationName);
-  if (canonical.empty() || (!sites.empty() && arity > sites.size()) ||
+  if (operationName.empty() || (!sites.empty() && arity > sites.size()) ||
       (orderedSites && orderedSites->size() != arity)) {
     return false;
   }
@@ -933,9 +945,12 @@ bool CompilerTarget::Storage::supportsOperation(
     }
   }
   if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
-    return true;
+    return !operationName.trim().empty();
   }
-  const auto found = capabilities.find(canonical);
+  auto found = capabilities.find(operationName);
+  if (found == capabilities.end()) {
+    found = capabilities.find(canonicalOperationName(operationName));
+  }
   if (found == capabilities.end()) {
     return false;
   }

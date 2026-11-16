@@ -23,7 +23,9 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-library)
   target_sources(
     ${MQT_CORE_TARGET_NAME}-bench-library
     PUBLIC
-    FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES ${BENCH_HEADERS})
+    FILE_SET HEADERS
+      BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR}
+      FILES ${BENCH_HEADERS})
 
   include(GenerateExportHeader)
   generate_export_header(${MQT_CORE_TARGET_NAME}-bench-library BASE_NAME mqt_core_bench)

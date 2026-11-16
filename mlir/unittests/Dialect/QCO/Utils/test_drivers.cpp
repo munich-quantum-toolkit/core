@@ -161,6 +161,46 @@ TEST_F(DriversFixture, ProgramWalkVisitsAllOps) {
   }));
 }
 
+TEST_F(DriversFixture, ProgramWalkPreservesPartialReleaseOrder) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Operation*> first;
+  SmallVector<Operation*> second;
+  SmallVector<WireIterator> wires;
+  for (size_t i = 0; i < 12; ++i) {
+    auto qubit = builder.allocQubit();
+    qubit = builder.h(qubit);
+    wires.emplace_back(qubit);
+    first.push_back(qubit.getDefiningOp());
+    qubit = builder.x(qubit);
+    second.push_back(qubit.getDefiningOp());
+  }
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+
+  size_t iteration = 0;
+  walkProgramGraph<WireDirection::Forward>(
+      wires,
+      [&](const Frontier& frontier, SmallVectorImpl<Operation*>& released) {
+        if (iteration++ == 0) {
+          EXPECT_EQ(llvm::to_vector(frontier.keys()), first);
+          released.append({first[9], first[1], first[6]});
+          return WalkResult::advance();
+        }
+        SmallVector<Operation*> expected;
+        for (size_t i = 0; i < first.size(); ++i) {
+          if (i != 9 && i != 1 && i != 6) {
+            expected.push_back(first[i]);
+          }
+        }
+        expected.append({second[9], second[1], second[6]});
+        EXPECT_EQ(llvm::to_vector(frontier.keys()), expected);
+        return WalkResult::interrupt();
+      });
+  EXPECT_EQ(iteration, 2U);
+}
+
 TEST_F(DriversFixture, ProgramWalkWaitsForAllYieldInputs) {
   for (const bool stagger : {false, true}) {
     SCOPED_TRACE(stagger ? "staggered arrivals" : "simultaneous arrivals");

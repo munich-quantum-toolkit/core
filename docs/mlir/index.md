@@ -5,7 +5,9 @@ compilation, simulation, and device execution, start with
 {doc}`compilation and execution <../compilation/index>`. Compiler contributions
 follow the [development policy](../development.md#mlir).
 
-We define multiple dialects, each with its dedicated purpose:
+A dialect defines related operations and types within MLIR. MQT Core uses
+several dialects so that importing a circuit, optimizing it, and managing its
+classical data can each use a suitable representation:
 
 - The {doc}`MQT dialect <MQT>` stores frontend-neutral program metadata that
   remains meaningful across dialect conversions.
@@ -35,9 +37,23 @@ interchange. Each exporter defines its supported result types;
 {doc}`QIR <../qir/index>` accepts direct measurements and CBit registers and
 creates its runtime exit status during conversion.
 
-## Quantum resource contract
+(quantum-resource-contract)=
 
-QC, QCO, and QTensor share these requirements for semantic round trips:
+## Quantum resource rules
+
+The compiler must track which qubit each operation acts on, even as its state
+changes. QC, QCO, and QTensor use different representations for this
+information, but share the rules below so that conversion between them preserves
+behavior. The {doc}`register tutorial <../tutorials/control_flow>` introduces
+these rules with an executable example.
+
+Quantum SSA representations have prior examples such as
+[QSSA](https://arxiv.org/abs/2109.02409). The rules below specify Core's
+representation: exactly-one-use and positional wire correspondence are distinct
+requirements. `WireOpInterface` pairs the first quantum input with the first
+quantum output, and so on; use counts alone do not establish that relation.
+
+When writing IR or a transformation, observe these requirements:
 
 - Quantum operands of a gate or helper call denote disjoint resources. A
   register and one of its elements cannot be separate operands of the same call.
@@ -56,8 +72,8 @@ QC, QCO, and QTensor share these requirements for semantic round trips:
   inputs in the same order. Updated quantum arguments form a suffix after the
   ordinary function results. Quantum values in QCO have exactly one use.
   `qco::verifyLinearity` checks both use counts and positional correspondence
-  after ordinary MLIR verification. Public QCO program boundaries run this
-  check; parsing MLIR alone does not establish it.
+  after ordinary MLIR verification. Public QCO program APIs run this check;
+  parsing MLIR alone does not establish it.
 
 Indices must be in bounds. Distinct runtime indices used together must select
 non-overlapping resources; extraction and reinsertion indices must select the
@@ -66,13 +82,13 @@ restoration from identical SSA values, equal constants, or arithmetic equality
 supported by MLIR value-bounds analysis; unproved restoration fails before
 rewriting. Other conversions diagnose known violations and unsupported IR
 shapes, but do not prove arbitrary index relationships or insert runtime checks.
-Type checking and linearity alone do not establish this contract.
+Type checking and use counts alone do not establish these index relationships.
 
 Slot identity refers to the underlying register and index. A view or slice may
 renumber those indices; it does not change the qubits they denote. Overlapping
 views may be used sequentially, but their overlapping resources cannot be
-separate quantum operands of one operation. This contract does not imply that
-every conversion already accepts every view representation.
+separate quantum operands of one operation. Each conversion documents which view
+representations it accepts.
 
 For example, this helper borrows one qubit. The caller restores it before
 passing the complete register to the next loop iteration:
@@ -101,7 +117,7 @@ func.func @main() attributes {mqt.entry_point} {
 
 Calling a whole-register helper with `%rest` before reinsertion is invalid: that
 argument still has an extracted slot. Yielding `%rest` and `%flipped` as
-separate loop-carried values is also outside the contract. Keep `%rest` in the
+separate loop-carried values also violates these rules. Keep `%rest` in the
 caller while a scalar helper processes `%q`, then restore `%full` before a
 whole-register call or loop yield.
 

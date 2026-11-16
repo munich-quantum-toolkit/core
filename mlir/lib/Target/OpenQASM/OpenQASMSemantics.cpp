@@ -4565,9 +4565,11 @@ private:
         }
         return success();
       }
-      // Reject shadowing of available language and standard-library gates.
-      return fail(location,
-                  "gate '" + declaration.identifier + "' is already declared");
+      // Implicit compatibility availability does not declare a library gate.
+      if (isGateDeclared(*catalog)) {
+        return fail(location, "gate '" + declaration.identifier +
+                                  "' is already declared");
+      }
     }
     customGates[declaration.identifier] = {
         .parameterCount = declaration.parameters.size(),
@@ -5685,9 +5687,7 @@ private:
     if (standard != nullptr && !isGateAvailable(*standard)) {
       standard = nullptr;
     }
-    // Prefer a user-defined gate when present. Available standard-library
-    // names are not registered as custom gates (OpenQASM 2 redefinitions are
-    // skipped), so this only applies to non-stdlib custom definitions.
+    // Explicit definitions take precedence over implicit catalog availability.
     if (custom != customGates.end()) {
       standard = nullptr;
     }

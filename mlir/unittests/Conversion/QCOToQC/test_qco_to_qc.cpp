@@ -21,7 +21,6 @@
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Support/Passes.h"
 
-#include "Conversion/ConversionTestCases.h"
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "qc_programs.h"
@@ -50,10 +49,8 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/FormatVariadic.h"
 
-#include <array>
 #include <memory>
 #include <string>
-#include <tuple>
 #include <utility>
 
 using namespace mlir;
@@ -1142,21 +1139,6 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
-
-static SmallVector<QCOToQCTestCase> commonConversionCases() {
-  SmallVector<QCOToQCTestCase> cases;
-  for (const auto& testCase : ::mqt::test::COMMON_QC_QCO_CONVERSION_CASES) {
-    cases.push_back({
-        .name = std::get<0>(testCase),
-        .programBuilder = std::get<2>(testCase),
-        .referenceBuilder = std::get<1>(testCase),
-    });
-  }
-  return cases;
-}
-
-INSTANTIATE_TEST_SUITE_P(CommonCases, QCOToQCTest,
-                         testing::ValuesIn(commonConversionCases()));
 
 INSTANTIATE_TEST_SUITE_P(
     SpecialCases, QCOToQCTest,

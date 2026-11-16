@@ -20,6 +20,7 @@
 #include "mqt/Support/Passes.h"
 #include "qdmi/QDMI.hpp"
 
+#include "ActionTrace.h"
 #include "Diagnostics.h"
 #include "Export.h"
 #include "TerminalReadout.h"
@@ -929,8 +930,9 @@ targetEnvironmentFromDevice(const qdmi::Device& device,
 
 Expected<TargetEnvironment>
 inspectTargetEnvironment(const qdmi::Device& device,
-                         std::optional<QDMI_Program_Format> format) {
-  return snapshotTargetEnvironment(device, format, true);
+                         std::optional<QDMI_Program_Format> format,
+                         bool includeCalibration) {
+  return snapshotTargetEnvironment(device, format, includeCalibration);
 }
 
 Error validateTargetCompatibility(const TargetEnvironment& compiled,
@@ -1023,13 +1025,17 @@ CompiledProgram::compile(CompilerInput program,
     return createStringError(std::errc::invalid_argument,
                              "Executable programs require a device target");
   }
-  auto native = runDefaultPipeline(std::move(program), ProgramFormat::QC,
-                                   environment, options);
-  if (!native) {
-    return native.takeError();
-  }
-  return serialize(std::move(std::get<QCProgram>(*native)), environment,
-                   options);
+  return withActionTrace<CompiledProgram>(
+      program, options,
+      [&](const CompilationOptions& stepOptions) -> Expected<CompiledProgram> {
+        auto native = runDefaultPipeline(std::move(program), ProgramFormat::QC,
+                                         environment, stepOptions);
+        if (!native) {
+          return native.takeError();
+        }
+        return serialize(std::move(std::get<QCProgram>(*native)), environment,
+                         stepOptions);
+      });
 }
 
 Expected<CompiledProgram>
@@ -1203,17 +1209,11 @@ submitProgram(const qdmi::Device& device, CompilerInput program,
                         custom3, custom4, custom5, &compiled->environment()));
 }
 
-llvm::Expected<std::optional<qdmi::Job>>
-trySubmitPrograms(const qdmi::Device& device,
-                  ArrayRef<const CompiledProgram*> programs, int64_t numShots,
-                  const std::optional<qdmi::CustomJobParameter>& custom1,
-                  const std::optional<qdmi::CustomJobParameter>& custom2,
-                  const std::optional<qdmi::CustomJobParameter>& custom3,
-                  const std::optional<qdmi::CustomJobParameter>& custom4,
-                  const std::optional<qdmi::CustomJobParameter>& custom5,
-                  const TargetEnvironment* destination) {
-  if (numShots < 0 || programs.empty() ||
-      llvm::is_contained(programs, nullptr)) {
+Expected<TargetEnvironment>
+prepareProgramSubmission(const qdmi::Device& device,
+                         ArrayRef<const CompiledProgram*> programs,
+                         const TargetEnvironment* destination) {
+  if (programs.empty() || llvm::is_contained(programs, nullptr)) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument),
         "A program batch requires non-null programs and nonnegative num_shots");
@@ -1239,6 +1239,28 @@ trySubmitPrograms(const qdmi::Device& device,
       return error;
     }
   }
+  return *destination;
+}
+
+llvm::Expected<std::optional<qdmi::Job>>
+trySubmitPrograms(const qdmi::Device& device,
+                  ArrayRef<const CompiledProgram*> programs, int64_t numShots,
+                  const std::optional<qdmi::CustomJobParameter>& custom1,
+                  const std::optional<qdmi::CustomJobParameter>& custom2,
+                  const std::optional<qdmi::CustomJobParameter>& custom3,
+                  const std::optional<qdmi::CustomJobParameter>& custom4,
+                  const std::optional<qdmi::CustomJobParameter>& custom5,
+                  const TargetEnvironment* destination) {
+  if (numShots < 0) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "A program batch requires non-null programs and nonnegative num_shots");
+  }
+  auto prepared = prepareProgramSubmission(device, programs, destination);
+  if (!prepared) {
+    return prepared.takeError();
+  }
+  const auto format = programs.front()->programFormat();
   if (qdmi::isBinaryProgramFormat(format)) {
     std::vector<std::span<const std::byte>> payloads;
     payloads.reserve(programs.size());

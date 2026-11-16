@@ -668,7 +668,8 @@ static void invertGate(ExportedInstruction& instruction) {
     break;
   }
 
-  if (instruction.gate.gate == Gate::P || instruction.gate.gate == Gate::RX ||
+  if (instruction.gate.gate == Gate::GPhase ||
+      instruction.gate.gate == Gate::P || instruction.gate.gate == Gate::RX ||
       instruction.gate.gate == Gate::RY || instruction.gate.gate == Gate::RZ ||
       instruction.gate.gate == Gate::RXX ||
       instruction.gate.gate == Gate::RYY ||
@@ -847,7 +848,7 @@ collectUnitaryInstruction(mlir::Operation& operation,
     };
   }
   auto gate = llvm::dyn_cast<mlir::qc::UnitaryOpInterface>(operation);
-  if (!gate || llvm::isa<mlir::qc::GPhaseOp, mlir::qc::BarrierOp>(operation)) {
+  if (!gate || llvm::isa<mlir::qc::BarrierOp>(operation)) {
     throw std::runtime_error(
         "QC modifier body is not a constructible standard Qiskit gate");
   }
@@ -858,7 +859,6 @@ collectUnitaryInstruction(mlir::Operation& operation,
   const auto* descriptor =
       mlir::qc::lookupStandardGateByOperationSymbol(gate.getBaseSymbol());
   if (descriptor == nullptr ||
-      descriptor->gate == mlir::qc::StandardGate::GPhase ||
       descriptor->gate == mlir::qc::StandardGate::BuiltinU ||
       descriptor->gate == mlir::qc::StandardGate::CU) {
     throw std::runtime_error(

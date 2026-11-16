@@ -93,6 +93,10 @@ def FuseSingleQubitUnitaryRuns
     length are left unchanged.
 
     The emitted basis is controlled via the `basis` option (e.g. `zyz`, `zsxx`).
+    The `gpi` option uses equatorial rotations `R(π, φ)` and `R(π/2, φ)`
+    with unrestricted axis angle `φ` in radians. Native GPi/GPi2 export
+    accounts for the GPi global-phase difference; see
+    [native single-qubit gates](target_compilation.md#native-single-qubit-gates).
     A `gphase` correction is inserted when needed so the rewritten sequence
     matches the composed matrix exactly (not only up to global phase).
 
@@ -317,8 +321,14 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     lowered before mapping. Tensor allocations must follow a flat
     extract/insert/deallocate chain without tensor control flow.
 
-    First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
-    mapping, which is referred to as the initial layout. The layout covers the
+    Measurements advance during routing when their results or qubit successors
+    are needed by subsequent quantum work. This dependency analysis includes
+    nested captures and ordered classical memory effects. Other measurements
+    remain terminal. Placement preserves the logical classification while
+    inserting SWAPs and threading physical workspace through regions.
+
+    First, the pass assigns each allocated program qubit to a device site.
+    This initial assignment is called the initial layout. The layout covers the
     complete target. The pass materializes all target sites as routing workspace
     and carries them through structured control flow. Cleanup after mapping
     removes unused sites. The pass traverses the circuit
@@ -326,7 +336,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     are executable on the target architecture, a process known as routing.
 
     Each routing block has one wire slot per physical site. Its layout is the
-    sole mapping from logical qubits to those sites. Candidate evaluation keeps
+    sole mapping from program qubits to those sites. Candidate evaluation keeps
     empty cursors for idle sites; final placement materializes their qubits.
     Virtual SWAPs exchange the cursors at their two sites, matching the SSA
     successors of emitted SWAPs. Both traversal directions stop at region
@@ -335,22 +345,25 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     layout. For `scf.while`, the before-region exit places the after region
     and loop results; the after region restores the loop-entry layout.
 
-    For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
-    or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
-    sequence of `SWAP` operations that makes these two-qubit operations executable. The A* search also considers
-    subsequent layers, which are determined by the `nlookahead` parameter.
+    Each routing search finds a sequence of `SWAP` operations that makes the
+    leading two-qubit interaction executable. The remaining interactions in
+    the window guide the heuristic; they need not be executable when the
+    search finishes. The `nlookahead` parameter limits these additional
+    interactions.
 
     The cost function of the A* search is defined as follows:
 
     - `f(n) = g(n) + h(n)`
-    - `g(n) = alpha * depth(n)`
-    - `h(n) = sum(pow(lambda, i) * h(gate, p) for [i, gate] in enumerate(window))`
+    - `g(n) = alpha * cost(n)`
+    - `h(n) = swapCost * sum(pow(lambda, i) * h(gate, p) for [i, gate] in enumerate(window))`
 
     Where:
 
     - `p` is the dynamic-to-static mapping associated with search node `n`.
     - `window` contains at most `1 + nlookahead` two-qubit operations in program order.
-    - `depth(n)` returns the distance from the node `n` to the root node.
+    - `cost(n)` is the accumulated SWAP cost from the root to node `n`.
+      Without native costs, each SWAP costs one.
+    - `swapCost` is the uniform standalone SWAP cost, or one without native costs.
     - `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
     - `h(gate, p)` is `dist(p[gate.first], p[gate.second]) - 1`.
 
@@ -372,6 +385,11 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Each search limits retained nodes using `search-memory-limit`, an estimated
     byte budget for the nodes and their qubit layouts (256 MiB by default).
     At least the root node is retained; zero disables node expansion.
+    Search states are identified by the positions of all program qubits,
+    including idle spectators. Unused-site labels do not distinguish states.
+    Candidates are discarded when those positions already have an equal or
+    lower search cost. They skip heuristic evaluation and do not consume
+    retained-node capacity.
     The pass stops allocating nodes at the limit, checks the remaining queue,
     and, if no solution is queued, completes the route with SWAPs that reduce
     the leading pair's distance. This always makes progress on a connected
@@ -400,8 +418,10 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     Otherwise, the pass option `ntrials` determines the number of initial refinement trials:
     a greedy layout when available, then identity if a slot remains, and random
-    layouts for the remaining slots. Every trial uses `niterations` refinement
-    rounds before scoring; zero scores the initial layouts directly.
+    layouts for the remaining slots. Every trial uses up to `niterations`
+    refinement rounds, stopping when a round leaves both the layout and wire
+    cursors unchanged. Final scoring starts from the original wire roots; zero
+    scores the initial layouts directly.
     The defaults are at least eight trials and two refinement rounds. The trial
     count uses the number of available logical CPUs reported by LLVM, taking CPU
     affinity into account, with a minimum of eight. Disabling multithreading
@@ -457,7 +477,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
        Option<"lambda", "lambda", "float", "0.5F",
               "The lambda factor in the cost function.">,
        Option<"niterations", "niterations", "std::size_t", "2",
-              "The number of forwards and backwards traversal to "
+              "The maximum number of forwards and backwards traversals to "
               "improve the initial layout. Must be >= 0.">,
        Option<
            "ntrials", "ntrials", "std::size_t",
@@ -709,7 +729,8 @@ def DecomposeMultiControlled
     Decomposes multi-qubit controlled operations that act on at least
     `min-qubits` qubits (default 3: everything wider than a two-qubit gate).
     Supported shapes: `qco.ctrl` with a sole `qco.x`, `qco.y`, `qco.z`,
-    `qco.rx`, `qco.ry`, `qco.rz`, `qco.swap`, or `qco.p` body, and
+    `qco.rx`, `qco.ry`, `qco.rz`, `qco.rxx`, `qco.ryy`, `qco.rzx`, `qco.rzz`,
+    `qco.swap`, or `qco.p` body, and
     `qco.rccx`. Rotation and phase angles may be constants or runtime SSA values,
     including classical expressions inside the control region.
     Controls over composite bodies are distributed across their operations
@@ -718,7 +739,7 @@ def DecomposeMultiControlled
     exponent and operations on disjoint wires.
 
     With `use-target=true`, retain target-native operations on all-to-all
-    targets or already placed programs. Dynamic qubits on an explicit topology
+    targets or already placed programs. Allocated program qubits on an explicit topology
     still use target-independent decomposition before routing. The default
     ignores attached target metadata.
 
@@ -731,6 +752,7 @@ def DecomposeMultiControlled
     | X/Z | ≥24 | Huang-Palsberg (HP24) phase ladder with relative-phase partitioned incrementers |
     | Y | ≥3 | X decomposition with `S†` before and `S` after on the target |
     | RX/RY/RZ | ≥3 | Relative-phase control halves with quarter-angle RZ rotations; basis changes give RX/RY |
+    | RXX/RYY/RZX/RZZ | ≥3 | Pauli basis changes and two CX gates around a controlled RZ on the second target |
     | Phase | 3 | Optimized `C^2(P)` |
     | Phase | 4–9 | Relative-phase RZ construction with recursive scalar-phase correction |
     | Phase | ≥10 | da Silva-Park SP22 linear-depth |

@@ -8,38 +8,39 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/SingleQubitFusion.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Visitors.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <numbers>
+#include <optional>
 #include <utility>
+#include <variant>
 
 namespace mlir::qco::decomposition {
 
 using mqt::FloatExpression;
 
-static bool isZero(Value value) {
-  const auto constant = mqt::valueToConstantDouble(value);
+static bool isZero(const RotationParameter& value) {
+  const auto constant = mqt::parameterToConstantDouble(value);
   return constant && std::abs(*constant) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
 
@@ -47,11 +48,11 @@ namespace {
 
 /// Binary accumulation keeps exported expression depth logarithmic.
 struct ZFrame {
-  // Keep per-wire map entries compact.
-  SmallVector<Value, 4> sums;
+  SmallVector<std::optional<RotationParameter>, 4> sums;
   size_t order = 0;
 
-  void append(OpBuilder& builder, Location loc, Value angle) {
+  void append(OpBuilder& builder, Location loc, RotationParameter angle) {
+    angle = mqt::foldParameter(angle);
     if (isZero(angle)) {
       return;
     }
@@ -60,22 +61,21 @@ struct ZFrame {
         partial = angle;
         return;
       }
-      angle = builder.createOrFold<arith::AddFOp>(loc, partial, angle);
-      partial = {};
+      angle = addRotationParameters(builder, loc, *partial, angle);
+      partial.reset();
     }
     sums.push_back(angle);
   }
 
-  Value value(OpBuilder& builder, Location loc) const {
-    Value result;
-    for (auto partial : llvm::reverse(sums)) {
+  RotationParameter value(OpBuilder& builder, Location loc) const {
+    std::optional<RotationParameter> result;
+    for (const auto& partial : llvm::reverse(sums)) {
       if (partial) {
-        result = result
-                     ? builder.createOrFold<arith::AddFOp>(loc, result, partial)
-                     : partial;
+        result = result ? addRotationParameters(builder, loc, *result, *partial)
+                        : *partial;
       }
     }
-    return result ? result : mqt::constantFromScalar(builder, loc, 0.);
+    return result.value_or(RotationParameter{0.});
   }
 };
 
@@ -91,30 +91,23 @@ static bool commutesWithZFrames(UnitaryOpInterface gate) {
 }
 
 LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
-                               const CompilerTarget& target,
-                               const GreedyRewriteConfig& config) {
+                               const CompilerTarget& target) {
   const bool equatorial =
       target.synthesisBasis() &&
       target.synthesisBasis()->singleQubit == SingleQubitBasis::R;
+  // Reuse cached coverage before checking heterogeneous site capabilities.
   const bool nativeRZ =
-      target.hasDeviceConstraints()
-          ? llvm::all_of(target.siteIds(),
-                         [&](auto site) {
-                           return target.supports(CompilerTarget::GateKind::RZ,
-                                                  ArrayRef(&site, 1));
-                         })
-          : target.supports(CompilerTarget::GateKind::RZ);
+      target.findOperation("rz", 1, {std::nullopt}, std::nullopt).capability !=
+          nullptr ||
+      (target.hasDeviceConstraints()
+           ? llvm::all_of(target.siteIds(),
+                          [&](auto site) {
+                            return target.supports(CompilerTarget::GateKind::RZ,
+                                                   ArrayRef(&site, 1));
+                          })
+           : target.supports(CompilerTarget::GateKind::RZ));
   if (!equatorial && !nativeRZ) {
     return success();
-  }
-  if (equatorial) {
-    // Fuse local factors before converting them to equatorial gates.
-    RewritePatternSet patterns(rewriter.getContext());
-    populateFuseSingleQubitUnitaryRunsPatterns(
-        patterns, {.singleQubit = SingleQubitBasis::U}, &target);
-    if (failed(applyPatternsGreedily(moduleOp, std::move(patterns), config))) {
-      return failure();
-    }
   }
   DominanceInfo dominance;
   const WalkResult result = moduleOp->walk<
@@ -155,31 +148,28 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
             if (last && last->getBlock() == &block && wire == anchor) {
               // The adjacent R can be replaced at the current boundary.
             } else if (last && last->getBlock() == &block &&
-                       llvm::all_of(found->second.sums, [&](Value angle) {
-                         return !angle ||
-                                dominance.properlyDominates(angle, last) ||
-                                mqt::valueToConstantDouble(angle);
+                       llvm::all_of(found->second.sums, [&](const auto& angle) {
+                         if (!angle) {
+                           return true;
+                         }
+                         const auto* value = std::get_if<Value>(&*angle);
+                         return value == nullptr ||
+                                dominance.properlyDominates(*value, last);
                        })) {
-              // Absorb before a diagonal segment when its scalar inputs
-              // are already available at the preceding equatorial gate.
+              // Numeric bins can be materialized at the preceding gate.
               wire = anchor;
               rewriter.setInsertionPoint(last);
-              for (auto& partial : found->second.sums) {
-                if (partial && !dominance.properlyDominates(partial, last)) {
-                  partial = mqt::constantFromScalar(
-                      rewriter, loc, *mqt::valueToConstantDouble(partial));
-                }
-              }
             } else {
               last = {};
             }
           }
-          Value angle = found->second.value(rewriter, loc);
+          const auto angle = found->second.value(rewriter, loc);
           if (!isZero(angle)) {
             auto& use = *wire.use_begin();
             Value output;
             if (nativeRZ) {
-              output = RZOp::create(rewriter, loc, wire, angle);
+              output = RZOp::create(rewriter, loc, wire,
+                                    mqt::variantToValue(rewriter, loc, angle));
             } else {
               const auto zero = FloatExpression::constant(rewriter, loc, 0.);
               const auto pi =
@@ -207,7 +197,8 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
           }
           frames.erase(found);
         };
-        for (auto& operation : llvm::make_early_inc_range(block)) {
+        for (auto iterator = block.begin(); iterator != block.end();) {
+          auto& operation = *iterator++;
           rewriter.setInsertionPoint(&operation);
           auto loc = operation.getLoc();
           if (isa<MeasureOp, ResetOp>(operation)) {
@@ -217,9 +208,7 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
             continue;
           }
           const auto normalized = [&](Value angle) {
-            return mqt::variantToValue(
-                rewriter, loc,
-                normalizeRotationParameter(rewriter, loc, angle));
+            return normalizeRotationParameter(rewriter, loc, angle);
           };
           auto gate = dyn_cast<UnitaryOpInterface>(operation);
           if (gate && commutesWithZFrames(gate)) {
@@ -242,40 +231,92 @@ LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
                 continue;
               }
             }
-            if (isa<ROp>(operation) && !frames.contains(wire)) {
+            auto tail = gate;
+            std::optional<std::array<RotationParameter, 4>> fusedAngles;
+            if (equatorial) {
+              if (auto composed = gate.getUnitaryMatrix<Matrix2x2>()) {
+                auto next = dyn_cast<UnitaryOpInterface>(
+                    *tail.getOutputQubit(0).user_begin());
+                while (next && next->getBlock() == &block &&
+                       next.isSingleQubit() && !isa<BarrierOp>(next)) {
+                  const auto matrix = next.getUnitaryMatrix<Matrix2x2>();
+                  if (!matrix) {
+                    break;
+                  }
+                  composed->premultiplyBy(*matrix);
+                  tail = next;
+                  next = dyn_cast<UnitaryOpInterface>(
+                      *tail.getOutputQubit(0).user_begin());
+                }
+                if (tail != gate) {
+                  const auto angles =
+                      anglesFromUnitary(*composed, SingleQubitBasis::ZYZ);
+                  // Matrix resynthesis uses the same tolerance as Euler
+                  // emission.
+                  fusedAngles = {
+                      std::abs(angles.theta) <= MATRIX_TOLERANCE ? 0.
+                                                                 : angles.theta,
+                      angles.phi,
+                      angles.lambda,
+                      angles.phase,
+                  };
+                }
+              }
+            }
+            if (!fusedAngles && isa<ROp>(operation) && !frames.contains(wire)) {
               continue;
             }
             auto frame = take(wire);
-            if (auto rotation = dyn_cast<RZOp>(operation)) {
+            if (auto rotation = dyn_cast<RZOp>(operation);
+                rotation && !fusedAngles) {
               frame.append(rewriter, loc, normalized(rotation.getTheta()));
-            } else if (auto rotation = dyn_cast<ROp>(operation)) {
-              auto phi = rewriter.createOrFold<arith::SubFOp>(
-                  loc, normalized(rotation.getPhi()),
-                  frame.value(rewriter, loc));
-              wire = ROp::create(rewriter, loc, wire, rotation.getTheta(), phi);
+            } else if (auto rotation = dyn_cast<ROp>(operation);
+                       rotation && !fusedAngles) {
+              const auto phi = addRotationParameters(
+                  rewriter, loc, normalized(rotation.getPhi()),
+                  mqt::scaleParameter(rewriter, loc, frame.value(rewriter, loc),
+                                      -1.));
+              wire = ROp::create(rewriter, loc, wire, rotation.getTheta(),
+                                 mqt::variantToValue(rewriter, loc, phi));
             } else {
-              auto angles = zyzAnglesFromOperation(rewriter, loc, gate);
+              auto angles = fusedAngles
+                                ? fusedAngles
+                                : zyzAnglesFromOperation(rewriter, loc, gate);
               if (!angles) {
                 operation.emitError("equatorial synthesis requires a known "
                                     "single-qubit unitary");
                 return WalkResult::interrupt();
               }
               auto [theta, phi, lambda, phase] = *angles;
-              Value polar = mqt::variantToValue(rewriter, loc, theta);
-              const FloatExpression azimuth(rewriter, loc, phi);
-              const FloatExpression outer(rewriter, loc, lambda);
-              if (!isZero(polar)) {
-                const auto halfPi = FloatExpression::constant(
-                    rewriter, loc, std::numbers::pi / 2.);
-                const FloatExpression frameAngle(rewriter, loc,
-                                                 frame.value(rewriter, loc));
-                const auto axis = halfPi - (outer + frameAngle);
-                wire = ROp::create(rewriter, loc, wire, polar, axis.getValue());
+              if (!isZero(theta)) {
+                const auto outer = addRotationParameters(
+                    rewriter, loc, lambda, frame.value(rewriter, loc));
+                const auto axis = addRotationParameters(
+                    rewriter, loc, std::numbers::pi / 2.,
+                    mqt::scaleParameter(rewriter, loc, outer, -1.));
+                wire = ROp::create(rewriter, loc, wire,
+                                   mqt::variantToValue(rewriter, loc, theta),
+                                   mqt::variantToValue(rewriter, loc, axis));
               }
-              frame.append(rewriter, loc, (azimuth + outer).getValue());
-              auto phaseValue = mqt::variantToValue(rewriter, loc, phase);
-              if (!isZero(phaseValue)) {
-                GPhaseOp::create(rewriter, loc, phaseValue);
+              frame.append(rewriter, loc,
+                           addRotationParameters(rewriter, loc, phi, lambda));
+              if (!isZero(phase)) {
+                GPhaseOp::create(rewriter, loc,
+                                 mqt::variantToValue(rewriter, loc, phase));
+              }
+            }
+            if (tail != gate) {
+              rewriter.replaceAllUsesWith(tail.getOutputQubit(0), wire);
+              while (tail != gate) {
+                auto previous =
+                    tail.getInputQubit(0).getDefiningOp<UnitaryOpInterface>();
+                // The next block operation can be a member of this wire's run.
+                if (iterator != block.end() &&
+                    &*iterator == tail.getOperation()) {
+                  ++iterator;
+                }
+                rewriter.eraseOp(tail);
+                tail = previous;
               }
             }
             rewriter.replaceOp(&operation, wire);

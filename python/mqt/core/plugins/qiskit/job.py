@@ -14,27 +14,23 @@ Provides a Qiskit JobV1-compatible wrapper for QDMI job execution and results.
 from __future__ import annotations
 
 __lazy_modules__ = {
-    "collections",
     "datetime",
-    "mqt.core.mlir",
+    "mqt.core.mlir._qiskit",
     "mqt.core.plugins.qdmi_batch",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.qdmi",
-    "numbers",
     "qiskit.result",
     "qiskit.result.models",
 }
 
 import datetime as dt
-from collections import Counter
-from numbers import Integral
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
-from mqt.core.mlir import TargetEnvironment
+from mqt.core.mlir._qiskit import ResultDecodingError, readout
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
 from mqt.core.plugins.qiskit.exceptions import JobExecutionError, JobSubmissionError
 from mqt.core.qdmi import Job as QDMIJobHandle
@@ -42,7 +38,7 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from mqt.core.mlir import CompiledProgram, ResultLayout
+    from mqt.core.mlir import CompiledProgram
     from mqt.core.plugins.qiskit.backend import QDMIBackend
     from mqt.core.typing import QDMIJobParameters
 
@@ -51,23 +47,6 @@ __all__ = ["QDMIJob"]
 
 def __dir__() -> list[str]:
     return __all__
-
-
-def _encode_bits(bits: str, width: int, layout: ResultLayout | None = None) -> str:
-    """Validate a QDMI bitstring and encode it as Qiskit result data.
-
-    Returns:
-        The hexadecimal Qiskit memory value.
-
-    Raises:
-        JobError: If the bitstring has the wrong width or contains nonbinary digits.
-    """
-    if layout is not None:
-        bits = layout.decode_bits(bits)
-    if len(bits) != width or bits.strip("01"):
-        msg = f"Invalid QDMI bitstring {bits!r}: expected {width} binary digits in classical-bit order."
-        raise JobError(msg)
-    return hex(int(bits, 2)) if bits else "0x0"
 
 
 class QDMIJob(JobV1):
@@ -79,7 +58,7 @@ class QDMIJob(JobV1):
 
     Args:
         backend: The backend this job runs on.
-        programs: Compiled payloads and their logical result contracts.
+        programs: Compiled programs and their output-bit mappings.
         shots: Requested shots per circuit.
         memory: Whether to collect individual shots.
         max_retries: Lifetime replacement limit per confirmed failed entry;
@@ -109,12 +88,7 @@ class QDMIJob(JobV1):
         super().__init__(backend=backend, job_id="")
         self._backend: QDMIBackend = backend
         self._programs = tuple(programs)
-        environment = backend._environment  # ruff:ignore[private-member-access] Shared immutable backend snapshot.
-        environments = {
-            program.program_format: environment
-            for program in self._programs
-            if getattr(program, "_environment", None) is environment
-        }
+        self._context = backend._context  # ruff:ignore[private-member-access] Shared native execution context.
         for program in self._programs:
             if getattr(program, "_qiskit_header", {}) is None:
                 msg = "Classical registers must partition circuit.clbits in register order for Qiskit results."
@@ -122,12 +96,6 @@ class QDMIJob(JobV1):
             if program.result_width is None:
                 msg = "Qiskit results require Boolean or classical-bit outputs."
                 raise JobError(msg)
-            if getattr(program, "_environment", None) is not environment:
-                if program.program_format not in environments:
-                    environments[program.program_format] = TargetEnvironment.from_device(
-                        backend.device, program_format=program.program_format
-                    )
-                program._validate_environment(environments[program.program_format])  # ruff:ignore[private-member-access] Preflight the entire batch.
         self._headers: list[dict[str, Any]] = [
             getattr(
                 program,
@@ -144,22 +112,24 @@ class QDMIJob(JobV1):
         self._shots = shots
         self._memory = memory
         self._job_parameters = job_parameters.copy() if job_parameters is not None else {}
+        self._submit_group = backend._batch_submitter(self._job_parameters, len(self._programs))  # ruff:ignore[private-member-access] Backend-specific submission policy.
         self._result: Result | None = None
         self._result_layouts = tuple(program.result_layout for program in self._programs)
         for header, layout in zip(self._headers, self._result_layouts, strict=True):
             if layout is not None and len(layout.bits) != header["memory_slots"]:
                 msg = "Serialized result layout does not match the circuit's classical width."
                 raise JobError(msg)
-        self._batch: Batch[ExperimentResult] = Batch(
+        self._destinations = self._context.prepare(self._programs)
+        self._batch: Batch[QDMIJob, ExperimentResult] = Batch(
+            self,
             [BatchEntry(i) for i in range(len(programs))],
-            submit=self._submit_entry,
-            decode=lambda index, handle, program_index: self._collect_result(
-                handle, self._headers[index], program_index, self._result_layouts[index]
-            ),
-            submit_programs=self._submit_programs,
+            submit=QDMIJob._submit_entry,
+            decode=QDMIJob._collect_result,
+            submit_programs=QDMIJob._submit_programs,
+            supports_programs=QDMIJob._supports_programs,
             group_by=[program.program_format for program in self._programs],
-            submission_error=lambda msg: JobSubmissionError(msg, job=self),
-            execution_error=lambda msg: JobExecutionError(msg, job=self),
+            submission_error=lambda job, msg: JobSubmissionError(msg, job=job),
+            execution_error=lambda job, msg: JobExecutionError(msg, job=job),
             max_retries=max_retries,
         )
 
@@ -169,19 +139,19 @@ class QDMIJob(JobV1):
         return self._batch.entries
 
     def _submit_entry(self, index: int) -> QDMIJobHandle:
-        program = self._programs[index]
-        return self._backend.device.submit_job(
-            program.payload, program.program_format, self._shots, **self._job_parameters
-        )
+        job = self._submit_programs([index])
+        if job is None:
+            msg = "Provider declined a single-program job."
+            raise RuntimeError(msg)
+        return job
 
     def _submit_programs(self, indices: Sequence[int]) -> QDMIJobHandle | None:
-        return self._backend.device.try_submit_job(
-            # A format fixes the payload type for the whole group.
-            cast("Sequence[str] | Sequence[bytes]", [self._programs[index].payload for index in indices]),
-            self._programs[indices[0]].program_format,
-            self._shots,
-            **self._job_parameters,
-        )
+        programs = [self._programs[index] for index in indices]
+        return self._submit_group(indices, programs, self._shots, self._destinations[programs[0].program_format])
+
+    def _supports_programs(self, indices: Sequence[int]) -> bool:
+        program_format = self._programs[indices[0]].program_format
+        return self._context.supports(program_format, len(indices), self._shots, **self._job_parameters)
 
     def collect(self) -> tuple[BatchEntry[ExperimentResult], ...]:
         """Read existing jobs without replacement executions or aggregate errors.
@@ -261,48 +231,31 @@ class QDMIJob(JobV1):
             raise JobExecutionError(msg, job=self) from exc
         return self._result
 
-    def _collect_result(
-        self,
-        job: QDMIJobHandle,
-        header: dict[str, Any],
-        program_index: int = 0,
-        layout: ResultLayout | None = None,
-    ) -> ExperimentResult:
+    def _collect_result(self, index: int, job: QDMIJobHandle, program_index: int) -> ExperimentResult:
         """Collect and validate one circuit's result.
 
         Returns:
             A Qiskit experiment with counts and, if requested, per-shot memory.
 
         Raises:
-            JobError: If execution failed or the result violates the circuit's output contract.
+            JobError: If execution failed or the result cannot be decoded as the circuit's output.
         """
-        width = header["memory_slots"]
-        if self._memory:
-            try:
-                shots = job.get_shots(program_index)
-            except Exception as exc:
+        header = self._headers[index]
+        try:
+            data = readout(
+                job,
+                header["memory_slots"],
+                self._shots,
+                program_index,
+                self._result_layouts[index],
+                memory=self._memory,
+            )
+        except ResultDecodingError as exc:
+            raise JobError(str(exc)) from exc
+        except Exception as exc:
+            if self._memory:
                 exc.add_note("memory=True and BackendSamplerV2 require valid QDMI SHOTS results.")
-                raise
-            if len(shots) != self._shots:
-                msg = f"Invalid QDMI SHOTS result: expected {self._shots} shots, got {len(shots)}."
-                raise JobError(msg)
-            encoded = {bits: _encode_bits(bits, width, layout) for bits in set(shots)}
-            memory = [encoded[bits] for bits in shots]
-            data = {"memory": memory, "counts": dict(Counter(memory))}
-        elif not width:
-            data = {"counts": {}}
-        else:
-            counts = job.get_counts(program_index)
-            if any(not isinstance(count, Integral) or count < 0 for count in counts.values()):
-                msg = "Invalid QDMI histogram: counts must be nonnegative integers."
-                raise JobError(msg)
-            if sum(counts.values()) != self._shots:
-                msg = f"Invalid QDMI histogram: expected {self._shots} total shots."
-                raise JobError(msg)
-            encoded: Counter[str] = Counter()
-            for bits, count in counts.items():
-                encoded[_encode_bits(bits, width, layout)] += count
-            data = {"counts": dict(encoded)}
+            raise
         return ExperimentResult.from_dict({
             "success": True,
             "shots": self._shots,

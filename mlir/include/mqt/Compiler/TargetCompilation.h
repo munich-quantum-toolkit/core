@@ -29,13 +29,14 @@ class OpPassManager;
 createTargetCompilationEnvironment(ModuleOp moduleOp,
                                    const TargetEnvironment& environment);
 
-/// Register target preparation and finalization for textual pass pipelines.
+/// Register target compilation passes for textual pipelines.
 ///
 /// Preparation uses the attached target environment, records source wire order,
 /// and performs structural cleanup. Finalization synthesizes and verifies
 /// native operations, then restores the execution environment saved by
 /// preparation. Explicitly attaching another environment abandons that
-/// restoration.
+/// restoration. Resonator CZ lowering uses the attached execution environment
+/// after conversion to QC.
 void registerTargetCompilationPasses();
 
 /// Populate the canonical compiler-target pipeline.
@@ -60,10 +61,10 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 
 /// Populate target-native block synthesis without routing.
 ///
-/// Device targets require all-to-all connectivity for dynamic qubits; static
-/// qubits keep their site IDs and may use an explicit topology. Inlines calls,
-/// decomposes
-/// non-native controlled gates, places qubits for device targets, resynthesizes
+/// Device targets require all-to-all connectivity for allocated program qubits.
+/// Static device-site references keep their IDs and may use an explicit
+/// topology. Inlines calls and decomposes non-native controlled gates, places
+/// qubits for device targets, resynthesizes
 /// constant two-qubit runs in the native basis, and verifies target
 /// conformance. Input must use structured QCO/SCF control flow. The supplied
 /// environment is authoritative and must remain unchanged during pipeline

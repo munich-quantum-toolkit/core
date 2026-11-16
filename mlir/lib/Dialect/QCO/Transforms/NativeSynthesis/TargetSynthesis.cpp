@@ -554,7 +554,10 @@ NativeCostAnalysis::entanglerOrientation(const CompilerTarget& target,
   }
   if (sites &&
       target.supports(entangler, std::array{(*sites)[1], (*sites)[0]})) {
-    return true;
+    // Symmetric recipes retain program order; legalization orders native gates.
+    return entangler.gate == CompilerTarget::GateKind::CX ||
+           entangler.gate == CompilerTarget::GateKind::ECR ||
+           entangler.gate == CompilerTarget::GateKind::RZX;
   }
   return std::nullopt;
 }
@@ -596,32 +599,33 @@ NativeCostTable::precompute(Operation* root, uint64_t seed) {
   constexpr size_t capacity = 1024;
   auto result = std::make_unique<NativeCostTable>();
   result->seed_ = seed;
-  const auto add = [&](const Matrix4x4& matrix) {
+  const auto add = [&](const Matrix4x4& key, const Matrix4x4& equivalent) {
     if (result->entries_.size() == capacity) {
       return;
     }
-    const auto hash = matrixHash(matrix);
+    const auto hash = matrixHash(key);
     // Keep one entry per fingerprint; collisions remain cache misses.
     if (result->index_.contains(hash)) {
       return;
     }
+    const auto* cached = result->lookup(equivalent, matrixHash(equivalent));
+    const auto coordinates = cached ? *cached : weylCoordinates(key, seed);
     result->index_.try_emplace(hash, result->entries_.size());
-    result->entries_.push_back({
-        .matrix = matrix,
-        .coordinates = weylCoordinates(matrix, seed),
-    });
+    result->entries_.push_back({.matrix = key, .coordinates = coordinates});
   };
   const auto swap = SWAPOp::getUnitaryMatrix();
   const auto addOrientations = [&](const Matrix4x4& matrix) {
+    const auto swapped = swap * matrix;
+    // SWAP conjugation preserves Weyl coordinates, including for SWAP * M.
     for (const bool reverse : {false, true}) {
       const auto ordered = reverse ? matrix.reorderForQubits(1, 0) : matrix;
-      add(ordered);
-      add(swap * ordered);
-      add(ordered * swap);
+      add(ordered, matrix);
+      add(swap * ordered, swapped);
+      add(ordered * swap, swapped);
     }
   };
-  add(Matrix4x4::identity());
-  add(swap);
+  add(Matrix4x4::identity(), Matrix4x4::identity());
+  add(swap, swap);
   root->walk([&](Operation* op) {
     if (result->entries_.size() == capacity) {
       return WalkResult::interrupt();
@@ -1620,6 +1624,39 @@ protected:
       signalPassFailure();
       return;
     }
+    if (llvm::any_of(target.operations(), [](const auto& operation) {
+          return llvm::any_of(operation.siteTuples(), [](const auto& tuple) {
+            return tuple.sites().size() == 2;
+          });
+        })) {
+      // Synthesis can introduce branches with new placed block arguments.
+      sites = collectStaticSites(moduleOp, indexed);
+      if (failed(sites)) {
+        signalPassFailure();
+        return;
+      }
+      const auto oriented = moduleOp.walk([&](UnitaryOpInterface gate) {
+        if (!gate.isTwoQubit() ||
+            !isWalkableUnitaryShell(gate.getOperation())) {
+          return WalkResult::advance();
+        }
+        const auto placement = getOperationSites(gate, *sites);
+        const auto reverse = NativeCostAnalysis::nativeOrientation(
+            gate, target, knownSites(placement));
+        if (!reverse) {
+          gate.emitError("generated operation has no supported native locus");
+          return WalkResult::interrupt();
+        }
+        if (*reverse) {
+          reorderTwoQubitOperation(rewriter, gate);
+        }
+        return WalkResult::advance();
+      });
+      if (oriented.wasInterrupted()) {
+        signalPassFailure();
+        return;
+      }
+    }
     if (targetBasis && !equatorial) {
       RewritePatternSet patterns(&getContext());
       decomposition::populateRotationCompositionPatterns(patterns, &target);
@@ -1636,9 +1673,7 @@ protected:
     // Propagate frames after local fusion: resynthesizing the shifted runs
     // can trade virtual Z gates for additional physical rotations.
     if (targetBasis) {
-      if (failed(decomposition::propagateZFrames(
-              rewriter, moduleOp, target,
-              GreedyRewriteConfig{}.setListener(&listener)))) {
+      if (failed(decomposition::propagateZFrames(rewriter, moduleOp, target))) {
         signalPassFailure();
         return;
       }
@@ -1774,9 +1809,7 @@ std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
 }
 
 void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
-  // Device placement consumes allocations; gate-set targets retain them.
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+  pm.addPass(createCanonicalizerPass());
   // Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
   pm.addPass(std::make_unique<TargetDeadValueCleanupPass>());

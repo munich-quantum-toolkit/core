@@ -18,10 +18,9 @@ MQT Core imports and exports jeff through
 dialect and serialization implementation. The Python wheels include this
 integration; using the APIs below requires no separate jeff installation.
 
-For a guided experiment with a compiler handoff, full-unitary comparison, and a
-measurement-dependent loop, use the
-{doc}`jeff tutorial <tutorials/jeff_exchange>`. This page describes the
-interfaces and supported boundary.
+To exchange a program and check that its behavior survives the round trip, use
+the {doc}`jeff tutorial <tutorials/jeff_exchange>`. This page describes the
+interfaces and the program features they support.
 
 ## Where jeff fits
 
@@ -31,7 +30,7 @@ interfaces and supported boundary.
 | QC and QCO                 | Translate and optimize within the MQT Compiler Collection.                 |
 | jeff                       | Exchange a structured program with another compatible compiler or process. |
 | QIR                        | Express a program for a compatible execution runtime.                      |
-| QDMI job payload           | Submit the format accepted by a selected device.                           |
+| QDMI program               | Submit the format accepted by a selected device.                           |
 
 The serialized jeff format uses
 [Cap'n Proto](https://github.com/unitaryfoundation/jeff/blob/main/impl/capnp/jeff.capnp).
@@ -131,8 +130,8 @@ program can then enter the compiler pipeline.
 
 ## Continue to a device or another output format
 
-A received jeff program is a compiler input. Select a device to obtain a
-compatible payload, then submit it:
+A received jeff program is a compiler input. Select a device to obtain a program
+in a supported format, then submit it:
 
 ```{code-cell} ipython3
 from mqt.core.mlir import submit_program
@@ -185,18 +184,18 @@ The following limits affect interchange:
   classical-register arguments in helpers, are unsupported.
 - Native `scf.index_switch` and `qco.index_switch` require lowering before
   export. Target compilation lowers them to forward branches when the selected
-  payload supports forward branching but not native multiway branching.
-  `to_jeff` and target-independent `compile_program` with `OutputFormat.JEFF` do
-  not perform this target legalization.
+  format supports forward branching but not native multiway branching. `to_jeff`
+  and target-independent `compile_program` with `OutputFormat.JEFF` do not
+  perform this target legalization.
 - Export converts physical static qubits to allocations, so static site IDs do
-  not survive the round trip. Exchange logical programs before device mapping.
+  not survive the round trip. Exchange programs before device mapping.
 - Only selected custom operations and Pauli-product rotations are supported.
 - Unitary calls inside quantum modifiers need expansion before export. The
-  coordinated compiler pipeline performs modifier preparation. A direct pass
+  default compiler pipeline performs modifier preparation. A direct pass
   requires each remaining modifier to contain one unitary using all body
   arguments in order.
 
-See the {doc}`conversion reference <mlir/Conversions>` for the pass contracts
+See the {doc}`conversion reference <mlir/Conversions>` for the pass requirements
 and
 [upstream jeff documentation](https://github.com/unitaryfoundation/jeff/tree/main/docs)
 for the format. SSA names and textual IR can change during conversion; compare

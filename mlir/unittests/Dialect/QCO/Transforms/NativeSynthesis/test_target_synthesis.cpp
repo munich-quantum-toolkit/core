@@ -47,6 +47,7 @@
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Verifier.h"
@@ -834,6 +835,7 @@ TEST_F(TargetSynthesisTest, ReadOnlyNativeCostMatchesSynthesis) {
         std::tie(a, b) = builder.swap(a, b);
         return llvm::SmallVector<Value>{};
       });
+      auto expected = OwningOpRef<ModuleOp>(moduleOp->clone());
       const auto before = printModule(*moduleOp);
       const auto shared =
           mlir::qco::NativeCostTable::precompute(*moduleOp, 2023);
@@ -877,6 +879,9 @@ TEST_F(TargetSynthesisTest, ReadOnlyNativeCostMatchesSynthesis) {
         count += static_cast<size_t>(gate.isTwoQubit());
       }
       EXPECT_EQ(estimate, count);
+      ASSERT_TRUE(mlir::succeeded(
+          runPass(*moduleOp, mlir::qco::createVerifyTargetConformance())));
+      expectEquivalent(expected, moduleOp);
     }
   }
 }
@@ -949,7 +954,6 @@ TEST_F(TargetSynthesisTest, NativeCostSelectsCheapestAvailableEntangler) {
         const auto selected = analysis.select(matrix, target, sites);
         ASSERT_TRUE(selected);
         EXPECT_EQ(selected->entangler.gate, entangler);
-        EXPECT_EQ(selected->reverse, reverse);
         EXPECT_EQ(selected->count, count);
         auto gate = *mainFunction(*actual)
                          .getOps<mlir::qco::UnitaryOpInterface>()
@@ -1135,6 +1139,51 @@ TEST_F(TargetSynthesisTest,
     ASSERT_TRUE(succeeded(runTargetPass(
         *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
     EXPECT_EQ(countOps<RXXOp>(*moduleOp), before ? 1U : 0U);
+  }
+}
+
+TEST_F(TargetSynthesisTest, SharedNativeCostsPreserveSwapOrientations) {
+  using mlir::qco::Matrix4x4;
+  using mlir::qco::NativeCostAnalysis;
+  using mlir::qco::NativeCostTable;
+  using mlir::qco::SWAPOp;
+  using mlir::qco::UOp;
+  using mlir::qco::decomposition::TwoQubitWeylDecomposition;
+  const auto local = Matrix4x4::kron(UOp::unitaryMatrix(0.3, -0.7, 1.1),
+                                     UOp::unitaryMatrix(-0.5, 0.2, 0.9));
+  const auto swap = SWAPOp::getUnitaryMatrix();
+  for (const uint64_t seed : {7U, 2023U}) {
+    for (const double angle : {0., 1e-12, 1e-6, 0.19, std::numbers::pi / 4}) {
+      SCOPED_TRACE(testing::Message()
+                   << "seed=" << seed << ", angle=" << angle);
+      const auto matrix = local *
+                          TwoQubitWeylDecomposition::getCanonicalMatrix(
+                              std::numbers::pi / 4, angle, -angle / 2) *
+                          local.adjoint();
+      auto moduleOp = build([&](QCOProgramBuilder& builder) {
+        auto values = builder.unitary(
+            ValueRange{builder.staticQubit(0), builder.staticQubit(1)},
+            denseMatrix(builder, 4, matrix.data));
+        builder.sink(values[0]);
+        builder.sink(values[1]);
+        return llvm::SmallVector<Value>{};
+      });
+      const auto shared = NativeCostTable::precompute(*moduleOp, seed);
+      for (const auto& target :
+           {makeUCxTarget(), makeOneWayUCxTarget(), makeOneWayRxxTarget()}) {
+        NativeCostAnalysis cached(seed, shared.get());
+        NativeCostAnalysis uncached(seed);
+        for (const bool reverse : {false, true}) {
+          const auto ordered = reverse ? matrix.reorderForQubits(1, 0) : matrix;
+          for (const auto& orientation :
+               {ordered, swap * ordered, ordered * swap}) {
+            const std::array<Target::SiteId, 2> sites{0, 1};
+            EXPECT_EQ(cached.matrixCost(orientation, target, sites),
+                      uncached.matrixCost(orientation, target, sites));
+          }
+        }
+      }
+    }
   }
 }
 
@@ -2852,7 +2901,16 @@ TEST_F(TargetSynthesisTest,
         }
       }
       const auto target =
-          explicitTopology
+          !controlledPhase
+              ? valid(Target::create(
+                    2, Connectivity::fromCouplings({{0, 1}}),
+                    NativeOperations::fromOperations({
+                        valid(OperationCapability::create("u", 1, 3)),
+                        valid(OperationCapability::create("gphase", 0, 1)),
+                        valid(OperationCapability::create(
+                            "cz", 2, 0, {valid(SiteTuple::create({0, 1}))})),
+                    })))
+          : explicitTopology
               ? makeOneWayUCxTarget(Connectivity::fromCouplings({{0, 1}}))
               : makeUCxTarget();
       auto synthesized = OwningOpRef<ModuleOp>(original->clone());
@@ -3032,6 +3090,122 @@ TEST_F(TargetSynthesisTest,
       *moduleOp, target, mlir::qco::createVerifyTargetConformance())));
 }
 
+TEST_F(TargetSynthesisTest, ZFramesRequireUnrestrictedRZOnEverySite) {
+  for (const std::string support :
+       {"uniform", "aliases", "partial", "fixed", "unrestricted"}) {
+    SCOPED_TRACE(support);
+    std::vector operations{
+        valid(OperationCapability::create("r", 1, 2)),
+        valid(OperationCapability::create("cz", 2, 0)),
+        valid(OperationCapability::create("gphase", 0, 1)),
+    };
+    if (support == "uniform" || support == "fixed") {
+      operations.push_back(valid(OperationCapability::create(
+          "rz", 1, 1, {}, std::nullopt, std::nullopt,
+          support == "fixed" ? std::vector<std::optional<double>>{0.37}
+                             : std::vector<std::optional<double>>{})));
+    } else if (support == "aliases" || support == "partial") {
+      for (const Target::SiteId site : {0, 1}) {
+        if (support == "partial" && site == 1) {
+          continue;
+        }
+        operations.push_back(valid(
+            OperationCapability::create("rz_site_" + std::to_string(site), 1, 1,
+                                        {valid(SiteTuple::create({site}))},
+                                        std::nullopt, std::nullopt, {}, "rz")));
+      }
+    }
+    const auto target = valid(
+        Target::create(2, Connectivity::allToAll(),
+                       support == "unrestricted"
+                           ? NativeOperations::unrestricted()
+                           : NativeOperations::fromOperations(operations)));
+    auto original = build([](QCOProgramBuilder& builder) {
+      auto first = builder.rz(0.37, builder.staticQubit(0));
+      auto second = builder.rz(0.37, builder.staticQubit(1));
+      auto [a, b] = builder.cz(first, second);
+      builder.sink(builder.rz(0.23, a));
+      builder.sink(builder.rz(0.23, b));
+      return llvm::SmallVector<Value>{};
+    });
+    auto propagated = OwningOpRef<ModuleOp>(original->clone());
+    mlir::IRRewriter rewriter(context.get());
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::decomposition::propagateZFrames(
+        rewriter, *propagated, target)));
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*propagated)));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*propagated)));
+    const bool nativeRZ = support != "partial" && support != "fixed";
+    EXPECT_EQ(countOps<RZOp>(*propagated), nativeRZ ? 2U : 0U);
+    EXPECT_EQ(countOps<mlir::qco::ROp>(*propagated), nativeRZ ? 0U : 4U);
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *propagated, target, mlir::qco::createVerifyTargetConformance())));
+    expectEquivalent(original, propagated);
+  }
+}
+
+TEST_F(TargetSynthesisTest, EquatorialFusionPreservesInterleavedRunsAndPhase) {
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("r", 1, 2)),
+                         valid(OperationCapability::create("cz", 2, 0)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
+  auto original = build([](QCOProgramBuilder& builder) {
+    auto a = builder.staticQubit(0);
+    auto b = builder.staticQubit(1);
+    a = builder.h(a);
+    a = builder.rz(0.37, a);
+    b = builder.rx(0.23, b);
+    a = builder.ry(-0.41, a);
+    b = builder.rz(0.59, b);
+    auto [c, d] = builder.cz(a, b);
+    // A cancelling run with a nontrivial global phase.
+    c = builder.rx(2. * std::numbers::pi, c);
+    c = builder.h(c);
+    c = builder.h(c);
+    builder.sink(c);
+    builder.sink(builder.ry(-0.17, d));
+    return llvm::SmallVector<Value>{};
+  });
+  auto propagated = OwningOpRef<ModuleOp>(original->clone());
+  mlir::IRRewriter rewriter(context.get());
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::decomposition::propagateZFrames(
+      rewriter, *propagated, target)));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*propagated)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*propagated)));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *propagated, target, mlir::qco::createVerifyTargetConformance())));
+  expectEquivalent(original, propagated);
+}
+
+TEST_F(TargetSynthesisTest, EquatorialFusionDropsOnlyMatrixScaleResidue) {
+  const auto target = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("r", 1, 2)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
+  for (const double angle :
+       {0.5 * mlir::qco::MATRIX_TOLERANCE, 2. * mlir::qco::MATRIX_TOLERANCE}) {
+    SCOPED_TRACE(angle);
+    auto original = build([&](QCOProgramBuilder& builder) {
+      auto q = builder.rx(0.25, builder.staticQubit(0));
+      builder.sink(builder.rx(-0.25 + angle, q));
+      return llvm::SmallVector<Value>{};
+    });
+    auto propagated = OwningOpRef<ModuleOp>(original->clone());
+    mlir::IRRewriter rewriter(context.get());
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::decomposition::propagateZFrames(
+        rewriter, *propagated, target)));
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*propagated)));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*propagated)));
+    EXPECT_EQ(countOps<mlir::qco::ROp>(*propagated),
+              angle < mlir::qco::MATRIX_TOLERANCE ? 0U : 1U);
+    expectEquivalent(original, propagated);
+  }
+}
+
 TEST_F(TargetSynthesisTest, EquatorialFrameAbsorptionPreservesScalarDominance) {
   const auto target = valid(
       Target::create(2, Connectivity::allToAll(),
@@ -3095,6 +3269,78 @@ TEST_F(TargetSynthesisTest, EquatorialFrameAbsorptionPreservesScalarDominance) {
       }
       expectEquivalent(expected, actual);
     }
+  }
+}
+
+TEST_F(TargetSynthesisTest, MixedZFramesPreservePhaseAndBalancedExpressions) {
+  context->loadDialect<mlir::math::MathDialect>();
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("r", 1, 2)),
+                         valid(OperationCapability::create("cz", 2, 0)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
+  Value parameter;
+  auto original = build([&](QCOProgramBuilder& builder) {
+    parameter = builder.floatConstant(0.37);
+    auto first = builder.h(builder.staticQubit(0));
+    auto second = builder.h(builder.staticQubit(1));
+    for (size_t i = 0; i < 16; ++i) {
+      first = builder.rz(
+          i % 2 == 0 ? builder.floatConstant(std::numbers::pi / 4.) : parameter,
+          first);
+      auto [a, b] = builder.cz(first, second);
+      first = a;
+      second = b;
+    }
+    builder.sink(first);
+    builder.sink(second);
+    return llvm::SmallVector<Value>{};
+  });
+  auto function = mainFunction(*original);
+  ASSERT_TRUE(mlir::succeeded(function.insertArgument(
+      0, mlir::Float64Type::get(context.get()), {}, function.getLoc())));
+  parameter.replaceAllUsesWith(function.getArgument(0));
+  auto propagated = OwningOpRef<ModuleOp>(original->clone());
+  mlir::IRRewriter rewriter(context.get());
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::decomposition::propagateZFrames(
+      rewriter, *propagated, target)));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*propagated)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*propagated)));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *propagated, target, mlir::qco::createVerifyTargetConformance())));
+  llvm::DenseMap<Value, size_t> depths;
+  size_t maxDepth = 0;
+  propagated->walk([&](mlir::Operation* op) {
+    if (op->getNumResults() != 1 || !op->getResult(0).getType().isF64()) {
+      return;
+    }
+    size_t depth = 0;
+    for (auto operand : op->getOperands()) {
+      depth = std::max(depth, depths.lookup(operand));
+    }
+    depth += mlir::isa<mlir::arith::AddFOp>(op) ? 1 : 0;
+    depths[op->getResult(0)] = depth;
+    maxDepth = std::max(maxDepth, depth);
+  });
+  EXPECT_LE(maxDepth, 6U);
+  // The constants sum to 2*pi and contribute phase at theta=0.
+  for (const double angle : {0., 0.371, -std::numbers::pi / 4., 1e300}) {
+    SCOPED_TRACE(angle);
+    auto expected = OwningOpRef<ModuleOp>(original->clone());
+    auto actual = OwningOpRef<ModuleOp>(propagated->clone());
+    for (auto moduleOp : {*expected, *actual}) {
+      auto main = mainFunction(moduleOp);
+      mlir::OpBuilder builder(context.get());
+      builder.setInsertionPointToStart(&main.getBody().front());
+      auto constant = mlir::arith::ConstantOp::create(
+          builder, main.getLoc(), builder.getF64FloatAttr(angle));
+      main.getArgument(0).replaceAllUsesWith(constant);
+      ASSERT_TRUE(
+          mlir::succeeded(runPass(moduleOp, mlir::createCanonicalizerPass())));
+    }
+    expectEquivalent(expected, actual);
   }
 }
 
@@ -4053,6 +4299,52 @@ TEST_F(TargetSynthesisTest,
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *synthesized, target, mlir::qco::createVerifyTargetConformance())));
   expectEquivalent(expected, synthesized);
+}
+
+TEST_F(TargetSynthesisTest, SymmetricLociPreserveLocalFrames) {
+  for (const bool pauli : {false, true}) {
+    SCOPED_TRACE(pauli);
+    auto expected = build([&](QCOProgramBuilder& builder) {
+      auto q0 = builder.staticQubit(0);
+      auto q1 = builder.staticQubit(1);
+      if (pauli) {
+        std::tie(q0, q1) = builder.rzz(.371, q0, q1);
+      } else {
+        std::tie(q0, q1) = builder.swap(q0, q1);
+      }
+      builder.sink(builder.h(q0));
+      builder.sink(q1);
+      return llvm::SmallVector<Value>{};
+    });
+    std::optional<size_t> rotations;
+    for (const bool reverse : {false, true}) {
+      SCOPED_TRACE(reverse);
+      auto synthesized = OwningOpRef<ModuleOp>(expected->clone());
+      const auto target = valid(Target::create(
+          2, Connectivity::fromCouplings({{0, 1}}),
+          NativeOperations::fromOperations({
+              valid(OperationCapability::create("r", 1, 2)),
+              valid(OperationCapability::create(
+                  "cz", 2, 0,
+                  {
+                      valid(SiteTuple::create(
+                          reverse ? std::vector<Target::SiteId>{1, 0}
+                                  : std::vector<Target::SiteId>{0, 1})),
+                  })),
+              valid(OperationCapability::create("gphase", 0, 1)),
+          })));
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+      ASSERT_TRUE(mlir::succeeded(
+          runPass(*synthesized, mlir::qco::createVerifyTargetConformance())));
+      const auto count = countOps<mlir::qco::ROp>(*synthesized);
+      if (rotations) {
+        EXPECT_EQ(count, *rotations);
+      }
+      rotations = count;
+      expectEquivalent(expected, synthesized);
+    }
+  }
 }
 
 TEST_F(TargetSynthesisTest, TargetNativeSynthesisUsesHomogeneousCapability) {

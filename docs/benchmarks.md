@@ -6,13 +6,19 @@ mystnb:
   number_source_lines: true
 ---
 
-# Structured quantum benchmarks
+# Quantum benchmarks
 
-MQT Core defines each structured quantum benchmark by benchmark-specific
-parameters and an analytic or verification reference. A benchmark instance can
-produce a structured QC program, a resolved manifest, and a stable case ID. The
-generated program returns one classical register named `result`. Outcome strings
-are big-endian: the highest-index result bit is the leftmost character.
+Use MQT Core's benchmarks to generate quantum programs and evaluate their
+results against a known reference. Each benchmark family describes an algorithm
+or circuit, such as quantum phase estimation or a QFT adder. Choosing its
+parameters creates an instance that you can compile, execute, and compare across
+backends.
+
+An instance provides both the program and a benchmark manifest: a JSON record of
+the parameters, expected output, and reference used to evaluate results. Its
+stable case ID identifies that benchmark configuration independently of the
+output format. Generated programs return one classical register named `result`.
+Outcome strings put the highest-index result bit on the left (big-endian order).
 
 For an end-to-end device example, start with {doc}`getting_started`, which
 factors 21 with Shor's algorithm. The
@@ -21,10 +27,9 @@ adaptive retry loop and a phase-sensitive readout.
 
 ## Discover the catalog
 
-The command-line registry is the current list of available families. Each family
-has its own instance specification schema. These cells execute the CLI and fail
-if it exits unsuccessfully; JSON formatting only makes its output easier to
-read.
+List the available benchmark families with the command-line interface. For each
+family, you can also request a JSON schema describing its parameters and allowed
+values:
 
 ```{code-cell} ipython3
 import json
@@ -62,14 +67,24 @@ print("Output:", benchmark.output.name)
 print("Width:", benchmark.output.width)
 ```
 
-Each family validates its instance when it creates one. Fixed families need no
-options.
+Each family validates its instance when it creates one and resolves omitted
+options to their defaults. Fixed families need no options. The resulting object
+provides the output definition and evaluation reference as well as program
+generation.
 
 ## Inspect the canonical instance specification and manifest
 
-A canonical instance specification records every resolved default. A manifest
-also binds the logical output, reference descriptor, family-definition version,
-and case ID.
+An **instance specification** is Core's JSON input for selecting a benchmark
+family and its parameters. It may omit documented defaults; the canonical form
+shown below includes every resolved default. Reading a specification creates a
+benchmark instance without generating or executing its program.
+
+A **benchmark manifest** adds the output description, evaluation reference,
+benchmark-definition version, and case ID. It describes the configuration, not
+the generated program's filename, format, or bytes. Save it with the generated
+program so you can identify the configuration and evaluate results later.
+Benchmark manifests use a different schema and purpose from the
+[device manifests](qdmi/driver.md) used for QDMI discovery.
 
 ```{code-cell} ipython3
 import json
@@ -128,16 +143,6 @@ Generation returns a {py:class}`~mqt.core.mlir.QCProgram`, the program type used
 by the [MQT Compiler Collection](mlir/mqt_compiler_collection.md). The program
 can enter the normal compiler pipeline.
 
-QPE keeps phase residues as exact unsigned integers and converts them to `f64`
-angles after modular reduction. Constant QFT addition and modular multiplication
-consume bits from least to most significant using
-$\theta \gets \theta/2 \pm \pi b$, with angles in $[-2\pi, 2\pi]$. Constant
-addition stores the input bits; Shor stores modular powers and their inverses.
-Iterative QPE, semiclassical QFT, and Shor carry one measurement correction:
-$c \gets c/2 \pm \pi b/2$. The correction stays in $[-\pi, \pi]$ and needs
-constant work per measurement. This scalar arithmetic executes with the quantum
-operations, so measure compilation and sampling costs separately.
-
 ```{code-cell} ipython3
 program = benchmark.generate()
 assert program.is_valid
@@ -145,6 +150,22 @@ structured_ir = program.ir
 assert program.copy().to_qco().is_valid
 print(structured_ir)
 ```
+
+### Arithmetic during execution
+
+Some generated programs compute rotation angles while they run. This keeps large
+arithmetic circuits compact, but contributes to execution time as well as
+compilation time.
+
+QPE keeps phase residues as exact unsigned integers and converts them to `f64`
+angles after modular reduction. Constant QFT addition and modular multiplication
+consume bits from least to most significant using
+$\theta \gets \theta/2 \pm \pi b$, with angles in $[-2\pi, 2\pi]$. Constant
+addition stores the input bits; Shor stores modular powers and their inverses.
+Iterative QPE, semiclassical QFT, and Shor carry one measurement correction:
+$c \gets c/2 \pm \pi b/2$. The correction stays in $[-\pi, \pi]$ and needs
+constant work per measurement. Measure compilation and sampling costs separately
+when comparing these programs.
 
 ## Run the command-line workflow
 
@@ -190,7 +211,7 @@ print("Program:", program_path.name)
 print("Manifest:", manifest_path.name)
 ```
 
-Compile the generated program for DDSIM, then simulate its Adaptive QIR payload.
+Compile the generated program for DDSIM, then simulate its Adaptive QIR program.
 Simulation prints counts JSON that the evaluator accepts directly.
 
 ```{code-cell} ipython3
@@ -283,10 +304,10 @@ Adding a family requires five extension points:
 5. Test the reference, instance specification validation, emitter structure,
    `jeff` conversion, and Python generation.
 
-`BenchmarkFamilies.inc` is the sole family catalog. Do not add a private family
-list, a generic option map, or a public base class.
+`BenchmarkFamilies.inc` supplies the shared catalog used by these interfaces, so
+a family needs only one catalog entry.
 
-## Reproducibility contract
+## Reproducibility
 
 Instance specifications reject unknown fields and invalid values. The case ID
 does not depend on a path or output format. Parsing a manifest checks its
@@ -378,7 +399,8 @@ distillation with the five-qubit circuit in
 Each block starts in $|+\rangle^{\otimes 5}$ and applies the figure's 15 Pauli
 rotations $P_{\pi/8}=e^{-i\pi P/8}$ in order. It measures the last four qubits
 in the X basis and accepts only when all four outcomes are $+1$. The first qubit
-retains $T^\dagger|+\rangle$ in the ideal case.
+retains $T^\dagger|+\rangle$ in the ideal case, which is Clifford-equivalent to
+$T|+\rangle$.
 
 Set `levels` to a positive integer (default 1). The first level uses ideal
 rotations; higher levels consume lower-level output states through Clifford
@@ -441,10 +463,9 @@ assert benchmark.expected_result == "11110001"  # control=1, input=7, product=1
 assert benchmark.evaluate({"11110001": 100}).success_probability == 1.0
 ```
 
-Basis inputs have one exact `expected_result`, so TVD and success probability
-provide a direct check independent of width. An all-zero output fails for this
-nonzero example. Test different inputs and both control values to exercise
-wraparound and the inactive path.
+For computational-basis inputs, `expected_result` gives the unique correct
+output. TVD and success probability then compare the samples with that outcome,
+regardless of the circuit width.
 
 For superposed inputs, `expected_result` is `None`. The reference assigns
 probability $2^{-k}$ to each allowed input and its correct product, where $k$ is
@@ -454,10 +475,9 @@ arithmetic relation. With $S$ shots, empirical TVD is at least
 $\max(0,1-S/2^k)$, even for ideal execution. Keep $k$ small for sampling-based
 distribution checks at large widths.
 
-Computational-basis measurements cannot detect arbitrary relative-phase errors.
-Native tests therefore also compare complete coherent states and require clean
-work-qubit recovery. A single correct basis result does not certify a unitary on
-every input.
+These scores check the arithmetic relation in the measured basis. They cannot
+detect arbitrary relative-phase errors or certify the circuit's action on every
+possible input.
 
 ### QAOA
 
@@ -476,9 +496,9 @@ Set `qubits` to at least three and `depth` to the number of layers, which
 defaults to one. For depth $d$, the generated program takes two arrays of $d$
 angles in radians: `gammas` and `betas`. The manifest and case ID identify this
 circuit template. Record the bound angles separately to reproduce a run. The
-benchmark does not run an optimizer. Store reusable named templates as QC. Bind
-angles before binary `jeff` serialization, which does not preserve input names.
-For Qiskit export, first call
+benchmark does not run an optimizer. QC and binary `jeff` both preserve the
+named inputs, so either can store a reusable template. Bind the angles before
+execution. For Qiskit export, first call
 {py:meth}`~mqt.core.mlir.QCOProgram.unroll_quantum_loops` to resolve
 loop-indexed qubits.
 
@@ -537,12 +557,31 @@ observable. Constant results contain only the sum. `expected_result` is the
 unique logical outcome for basis inputs and `None` for a superposed addend. The
 total sum width, including an optional carry bit, is limited to 1024.
 
+### Quantum Fourier transform
+
+The `qft` family applies a QFT to a uniform superposition of multiples of $2^k$,
+where `period_exponent` selects $k$. The opening example uses
+`Method.SEMICLASSICAL`; `Method.STANDARD` prepares the full input register
+before the transform and measurement.
+
+A {term}`semiclassical QFT` replaces controlled gates before measurement with
+single-qubit gates and classical feedback. This does not by itself require qubit
+reuse. Core's benchmark also prepares its input one bit at a time, so its
+semiclassical implementation can measure, reset, and reuse a single qubit. Both
+methods produce `qubits` output bits and use the same reference distribution;
+`qubits` is the transform width, not necessarily the number of qubits needed by
+the implementation.
+
 ### Quantum phase estimation
 
 The `qpe` family estimates a supplied phase using a phase gate and a known
 eigenstate. Standard QPE uses a query register and inverse QFT; iterative QPE
-measures, resets, and reuses one query qubit with measurement feedback. At
-eight-bit precision they use nine and two qubits, respectively.
+measures, resets, and reuses one query qubit with measurement feedback,
+following the
+[iterative phase-estimation construction](https://arxiv.org/abs/quant-ph/0610214).
+The controlled unitary powers extract information about the eigenphase, while
+the feedback implements a semiclassical inverse QFT. At eight-bit precision
+Core's two methods use nine and two qubits, respectively.
 
 ```{code-cell} ipython3
 from fractions import Fraction
@@ -661,8 +700,8 @@ relative phase without an exponentially large output distribution. Structured
 loops keep the program compact; execution still takes linear work per attempt.
 The input width limit does not guarantee that a device or compiler supports that
 many qubits. See {doc}`mlir/target_compilation` for device and control-flow
-limits. The benchmark simulates an ideal adaptive circuit; it does not model
-error correction, magic-state distillation, or cultivation.
+limits. The benchmark models an ideal adaptive circuit without physical noise or
+error correction.
 
 ### Shor order finding
 
@@ -671,7 +710,9 @@ The `shor` family implements the semiclassical circuit in Sections 2.3–2.4 of
 `number` from $3$ through $2^{31}-1$ and a coprime `base` with
 $1 < \mathtt{base} < \mathtt{number}$ (default 2) define an instance. Prime
 moduli are valid. For an $n$-bit modulus, the circuit uses $2n+3$ qubits and
-returns $2n$ phase bits.
+returns $2n$ phase bits. One query qubit is measured, reset, and reused across
+those bits; the remaining qubits hold the modular-arithmetic registers and
+workspace.
 
 ```{code-cell} ipython3
 from mqt.core.bench import shor

@@ -38,8 +38,8 @@ uv pip install "mqt-core[pennylane,catalyst]"
 Catalyst is optional for ordinary QNodes. The extra installs a stable Catalyst
 release from 0.15 and below 1.0 on supported Python versions and platforms. MQT
 Core tests the 0.15.0 device interface and warns once when loading a newer minor
-version; an ABI change can crash the process. The upstream canary checks for
-header drift. See the
+version. Because Catalyst uses a native device interface, an incompatible ABI
+can crash the process. See the
 [Catalyst installation guide](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/installation.html)
 for platform requirements.
 
@@ -51,8 +51,24 @@ reproducible.
 ```{code-cell} ipython3
 import pennylane as qp
 
-device = qp.device("mqt.ddsim.default", wires=2, job_parameters={"custom1": 7})
+device = qp.device("mqt.ddsim.default", wires=2, seed=7)
 ```
+
+The device gives every program its own random stream. Program `i` uses seed
+`7 + i`, where `i` counts programs across all earlier executions of this device
+instance. Each shot-vector copy of a preprocessed tape counts as one program.
+Thus, one execution of five programs gives the same samples as several smaller
+executions of the same programs in the same order, and repeated executions do
+not restart the same random stream. Seeds range from 1 to 2,147,483,647. A batch
+whose program seeds would exceed this limit fails before submission. The `seed`
+argument replaces DDSIM's job parameter `custom1`, which applies one fixed seed
+to every submission; do not combine them. Catalyst-compiled QNodes do not use
+`seed`.
+
+DDSIM scopes the session to the number of declared wires. An explicit
+`session_parameters={"custom1": "12"}` sets the session width instead. With
+`wires=None`, the default session exposes all 65,535 sites. See
+[session width](ddsim_device.md#session-width) for the parameter requirements.
 
 ## Run a QNode
 
@@ -117,10 +133,11 @@ of physical placement. If the provider returns only counts, samples are
 reconstructed without temporal shot order. Terminal measurements of a compiled
 circuit share one provider readout.
 
-Ordinary QNodes compile only the tape's wires, unless a measurement requests all
-device wires. Both paths omit readout of untouched wires and supply their known
-zero values locally; entirely untouched tapes need no provider job. Both paths
-retain the compiler's result layout before selecting PennyLane wires. See
+An ordinary QNode compiles the wires used by its tape, unless a measurement
+requests all device wires. Wires that no operation touches have a known zero
+value, so MQT Core supplies those values without device readout. A tape
+containing only untouched wires needs no provider job. The compiler's result
+mapping keeps the returned values in PennyLane wire order. See
 [terminal readout](../mlir/target_compilation.md#terminal-readout-and-results).
 
 Hardware parameter constraints come from the provider's QDMI operation metadata.
@@ -130,6 +147,47 @@ bounded parameters when the provider advertises them.
 Catalyst compiles the host control flow ahead of time. MQT Core records and
 compiles the quantum program at execution time using the current parameter
 values. Include this device compilation cost when measuring repeated calls.
+
+### Compiler options and compiled programs
+
+To control compilation, pass {py:class}`~mqt.core.mlir.CompilationOptions` as
+`compile_options` when you create the device. The options apply to every program
+that the device compiles, in ordinary and Catalyst-compiled QNodes. For example,
+a seed makes compiler randomness reproducible, and `enable_timing` writes an
+MLIR pass timing report to standard error. The compiler seed is separate from
+the DDSIM sampling `seed`:
+
+```python
+from mqt.core.mlir import CompilationOptions
+
+device = qp.device(
+    "mqt.ddsim.default",
+    wires=2,
+    compile_options=CompilationOptions(seed=11, enable_timing=True),
+)
+```
+
+Ordinary QNodes compile each preprocessed tape with
+{py:meth}`~mqt.core.plugins.pennylane.device.QDMIDevice.prepare_program`. It
+returns a {py:class}`~mqt.core.mlir.CompiledProgram`, or `None` when MQT Core
+knows the results without a device job. The device compiles all tapes of a batch
+in order before it submits a job. To record the payload, program format, and
+result layout of each program, override the method in a subclass:
+
+```python
+from mqt.core.plugins.pennylane import QDMIDevice
+
+
+class RecordingDevice(QDMIDevice):
+    def prepare_program(self, tape):
+        program = super().prepare_program(tape)
+        if program is not None:
+            record(program.program_format, program.payload, program.result_layout)
+        return program
+```
+
+Catalyst-compiled QNodes compile their programs in native code and do not call
+this method.
 
 To inspect or transform a circuit without opening a device session, import a
 preprocessed tape with {py:meth}`~mqt.core.mlir.QCProgram.from_pennylane`:
@@ -209,10 +267,13 @@ shots: set them on the QNode or override them with `qp.set_shots`. Devices do
 not accept a `shots` argument or provide a default shot count.
 
 Ordinary QNode execution groups tapes and shot partitions with the same program
-format and shot count into native QDMI jobs. Providers that decline a program
-list receive independent submissions. All jobs are submitted before waiting for
-results, which retain the input tape and shot-partition order. `submitted_jobs`
-counts QDMI jobs.
+format and shot count into native QDMI jobs. A provider may decline a list, for
+example because it exceeds a program-count or total-shot limit. The device then
+asks the provider for the largest accepted program count without submitting
+anything, and submits the fewest consecutive lists of nearly equal size. It
+halves any list that the provider still declines, down to single programs. All
+jobs are submitted before waiting for results, which retain the input tape and
+shot-partition order. `submitted_jobs` counts QDMI jobs.
 
 Use `with qp.Tracker(device) as tracker:` to record accepted program executions
 (`executions`), requested shots, batches, and the number of tapes in each batch
@@ -225,8 +286,8 @@ another process. Compiled calls are synchronous and do not use the Python
 tracker. Catalyst's `async_qnodes=True` schedules separate QNodes without
 combining them into one QDMI job. Concurrent calls require a provider that
 supports them on the shared session; see the
-[QDMI thread-safety contract](driver.md#python-bindings). QDMI waits and result
-retrieval release the Python GIL.
+[QDMI thread-safety requirements](driver.md#python-bindings). QDMI waits and
+result retrieval release the Python GIL.
 
 ## Supported gate-level scope
 
@@ -252,8 +313,8 @@ do not require a native method in `supported_mcm_methods`.
 
 Catalyst's measurement callback requires an immediate result for host control
 flow, whereas this backend submits a complete program to QDMI. MQT Core's
-support for measurement and feedback within a compiled program does not provide
-that callback contract. Catalyst mid-circuit measurements and
+support for measurement and feedback within a compiled program does not
+implement those callbacks. Catalyst mid-circuit measurements and
 `mcm_method="deferred"` are therefore unsupported.
 
 With Catalyst, `BasisState` accepts runtime bit arrays and reordered wire
@@ -304,7 +365,8 @@ differentiation. Native device gradients and variance gradients are unsupported.
 Parameter broadcasting requires an explicit supported transform. Compiled counts
 and probabilities allocate $2^{n}$ entries for $n$ measured wires; use samples
 for large registers. Catalyst-level random seeds are unsupported; use
-provider-specific job parameters where available. See
+provider-specific job parameters where available, such as DDSIM's job parameter
+`custom1`. See
 [Catalyst's limitations](https://docs.pennylane.ai/projects/catalyst/en/stable/dev/sharp_bits.html).
 
 ## Recovering results after a failure
@@ -348,9 +410,15 @@ counts = postprocess(job.result())[0]
 ```
 
 `collect()` reads accepted work without starting new executions; its entries
-retain attempts, results, and errors. If needed, use `job.submit()` for
-untouched inputs or `job.resubmit([i])` to replace a failed or cancelled
-attempt, then retrieve the result again. Successful results are reused. See
+retain attempts, results, and errors. Each successful entry caches the completed
+measurement result for one preprocessed tape and shot partition. A tape with
+multiple measurements retains their tuple; a single measurement retains its
+scalar, array, or counts dictionary. Aggregate readout computes wire marginals
+natively from provider histograms, falling back to shots when histograms are
+unavailable. Mixed sample tapes and custom measurements use ordered samples. If
+needed, use `job.submit()` for untouched inputs or `job.resubmit([i])` to
+replace a failed or cancelled attempt, then retrieve the result again.
+Successful results are reused. See
 {py:class}`~mqt.core.plugins.pennylane.job.PennyLaneJob` for uncertain
 submissions and explicit cancellation.
 

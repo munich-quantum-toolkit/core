@@ -89,6 +89,7 @@ add_mlir_library(
   MLIRQCDialect
   MLIRQCOpenQASMTranslation
   MLIRQCToQCO
+  MQT::MLIRSupport
   MLIRQCODialect
   MLIRQCOUtils
   MLIRQTensorDialect
@@ -111,6 +112,7 @@ add_mlir_library(
   MQTCompilerPipeline
   PARTIAL_SOURCES_INTENDED
   Pipeline.cpp
+  ResonatorRouting.cpp
   TerminalReadout.cpp
   TargetCompilation.cpp
   ADDITIONAL_HEADER_DIRS
@@ -118,6 +120,7 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   MLIRPass
+  MQTResultReadout
   MLIRTransforms
   MLIRIQMTarget
   MLIRTransformUtils
@@ -142,5 +145,4 @@ target_sources(
   PUBLIC
   FILE_SET HEADERS
     BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/ResultLayout.h
-          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetCompilation.h)
+    FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetCompilation.h)

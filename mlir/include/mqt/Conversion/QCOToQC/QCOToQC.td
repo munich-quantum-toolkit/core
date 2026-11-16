@@ -29,7 +29,7 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
     insertion indices must be the same value, equal constants, or expressions
     whose equality MLIR value-bounds analysis can prove. Unproved equalities
     are rejected before rewriting. See the shared
-    [quantum resource contract](index.md#quantum-resource-contract).
+    [quantum resource rules](index.md#quantum-resource-rules).
 
     Determine the module's allocation mode before converting any function.
     Dynamic qubit sinks become deallocations; static qubit sinks are removed.

@@ -16,6 +16,8 @@ __lazy_modules__ = {
     "mqt.core.plugins.qdmi_batch",
     "mqt.core.qdmi",
     "numpy",
+    "pennylane",
+    "pennylane.measurements",
 }
 
 from contextlib import contextmanager
@@ -23,14 +25,16 @@ from time import monotonic
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
+from pennylane import math
+from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, VarianceMP
 
-from mqt.core.mlir._pennylane import samples
+from mqt.core.mlir._pennylane import aggregate, samples
 from mqt.core.plugins.pennylane.exceptions import PennyLaneExecutionError
 from mqt.core.plugins.qdmi_batch import Batch, BatchEntry, JobAttempt
 from mqt.core.qdmi import Job
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Callable, Generator, Sequence
 
     from pennylane.measurements import SampleMeasurement
     from pennylane.tape import QuantumScript
@@ -60,25 +64,31 @@ class PennyLaneJob:
         *,
         single: bool,
         max_retries: int,
+        submit_programs: Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None],
     ) -> None:
         """Snapshot prepared programs and shot partitions before the first submission."""
         self._device = device
+        self._submit_group = submit_programs
         self._tapes = tuple(tapes)
         self._wires = tuple(device._tape_wires(tape) for tape in tapes)  # ruff:ignore[private-member-access] Match the compiled tape wire order.
         self._single = single
         self._prepared = tuple(
-            (program, shots, len(wires))
-            for (program, copies), wires in zip(prepared, self._wires, strict=True)
+            (program, shots, len(wires), tape_index)
+            for tape_index, ((program, copies), wires) in enumerate(zip(prepared, self._wires, strict=True))
             for shots in copies
         )
-        self._batch: Batch[np.ndarray] = Batch(
+        self._batch: Batch[PennyLaneJob, object] = Batch(
+            self,
             [
                 BatchEntry(
                     index,
                     copy,
                     attempts=(
                         JobAttempt(
-                            status=Job.Status.DONE, result=np.zeros((shots, len(self._wires[index])), dtype=np.int8)
+                            status=Job.Status.DONE,
+                            result=self._process_samples(
+                                index, np.zeros((shots, len(self._wires[index])), dtype=np.int8)
+                            ),
                         ),
                     )
                     if program is None
@@ -87,19 +97,20 @@ class PennyLaneJob:
                 for index, (program, copies) in enumerate(prepared)
                 for copy, shots in enumerate(copies)
             ],
-            submit=self._submit,
-            decode=self._samples,
-            submit_programs=self._submit_programs,
-            group_by=[(program.program_format if program else None, shots) for program, shots, _ in self._prepared],
-            submission_error=lambda msg: PennyLaneExecutionError(msg, job=self),
-            execution_error=lambda msg: PennyLaneExecutionError(msg, job=self),
+            submit=PennyLaneJob._submit,
+            decode=PennyLaneJob._readout,
+            submit_programs=PennyLaneJob._submit_programs,
+            supports_programs=PennyLaneJob._supports_programs,
+            group_by=[(program.program_format if program else None, shots) for program, shots, _, _ in self._prepared],
+            submission_error=lambda job, msg: PennyLaneExecutionError(msg, job=job),
+            execution_error=lambda job, msg: PennyLaneExecutionError(msg, job=job),
             max_retries=max_retries,
-            on_submit=self._record_submission,
+            on_submit=PennyLaneJob._record_submission,
         )
 
     @property
-    def entries(self) -> tuple[BatchEntry[np.ndarray], ...]:
-        """Ordered snapshots of inputs, submission attempts, results, and failures."""
+    def entries(self) -> tuple[BatchEntry[object], ...]:
+        """Ordered attempts with completed per-tape measurement results."""
         return self._batch.entries
 
     def _program(self, index: int) -> CompiledProgram:
@@ -108,19 +119,69 @@ class PennyLaneJob:
         return program
 
     def _submit(self, index: int) -> Job:
-        _, shots, _ = self._prepared[index]
-        return self._device._context.submit(self._program(index), shots)  # ruff:ignore[private-member-access] Retained session and target snapshot.
+        job = self._submit_programs([index])
+        if job is None:
+            msg = "Device declined the compiled program before submission."
+            raise RuntimeError(msg)
+        return job
 
     def _submit_programs(self, indices: Sequence[int]) -> Job | None:
-        _, shots, _ = self._prepared[indices[0]]
-        return self._device._context.try_submit(  # ruff:ignore[private-member-access] Retained session and target snapshot.
-            [self._program(index) for index in indices], shots
-        )
+        _, shots, _, _ = self._prepared[indices[0]]
+        return self._submit_group(indices, [self._program(index) for index in indices], shots)
 
-    def _samples(self, index: int, job: Job, program_index: int) -> np.ndarray:
-        """Return a shot-by-wire sample array in the device's logical wire order."""
-        _, shots, width = self._prepared[index]
-        return samples(job, width, shots, program_index, self._program(index).result_layout)
+    def _supports_programs(self, indices: Sequence[int]) -> bool:
+        _, shots, _, _ = self._prepared[indices[0]]
+        context = self._device._context  # ruff:ignore[private-member-access] Check the device that submits the batch.
+        return context.supports(self._program(indices[0]).program_format, len(indices), shots)
+
+    def _process_samples(self, tape_index: int, values: np.ndarray) -> object:
+        measured = tuple(
+            cast("SampleMeasurement", measurement).process_samples(values, self._wires[tape_index])
+            for measurement in self._tapes[tape_index].measurements
+        )
+        return measured[0] if len(measured) == 1 else measured
+
+    def _readout(self, index: int, job: Job, program_index: int) -> object:
+        _, shots, width, tape_index = self._prepared[index]
+        tape = self._tapes[tape_index]
+        if not all(
+            type(m) in {CountsMP, ProbabilityMP} or (type(m) in {ExpectationMP, VarianceMP} and bool(m.wires))
+            for m in tape.measurements
+        ):
+            return self._process_samples(
+                tape_index, samples(job, width, shots, program_index, self._program(index).result_layout)
+            )
+        wires = self._wires[tape_index]
+        selected = [measurement.wires or wires for measurement in tape.measurements]
+        marginals = aggregate(
+            job,
+            width,
+            shots,
+            [
+                ([wires.index(wire) for wire in selection], type(measurement) is CountsMP)
+                for measurement, selection in zip(tape.measurements, selected, strict=True)
+            ],
+            program_index,
+            self._program(index).result_layout,
+        )
+        measured = []
+        for measurement, selection, value in zip(tape.measurements, selected, marginals, strict=True):
+            if type(measurement) is CountsMP:
+                processor = (
+                    measurement
+                    if measurement.wires
+                    else CountsMP(wires=selection, all_outcomes=measurement.all_outcomes)
+                )
+                measured.append(processor.process_counts(cast("dict[str, int]", value), selection))
+            elif type(measurement) is ProbabilityMP:
+                measured.append(value)
+            else:
+                eigvals = measurement.eigvals()
+                if type(measurement) is VarianceMP:
+                    eigvals = math.asarray(eigvals, dtype="float64")
+                mean = math.dot(value, eigvals)
+                measured.append(mean if type(measurement) is ExpectationMP else math.dot(value, eigvals**2) - mean**2)
+        return measured[0] if len(measured) == 1 else tuple(measured)
 
     def _record_submission(self, indices: Sequence[int]) -> None:
         self._device._submitted_jobs += 1  # ruff:ignore[private-member-access] Update the device's read-only total.
@@ -146,7 +207,7 @@ class PennyLaneJob:
         with self._record_time():
             self._batch.submit(indices)
 
-    def collect(self) -> tuple[BatchEntry[np.ndarray], ...]:
+    def collect(self) -> tuple[BatchEntry[object], ...]:
         """Read existing jobs without replacement executions or aggregate errors.
 
         Returns:
@@ -170,12 +231,7 @@ class PennyLaneJob:
             tape_results: list[list[object]] = [[] for _ in self._tapes]
             for entry in self.entries:
                 assert entry.result is not None
-                measurements = self._tapes[entry.input_index].measurements
-                measured = tuple(
-                    cast("SampleMeasurement", measurement).process_samples(entry.result, self._wires[entry.input_index])
-                    for measurement in measurements
-                )
-                tape_results[entry.input_index].append(measured[0] if len(measured) == 1 else measured)
+                tape_results[entry.input_index].append(entry.result)
             results = tuple(
                 tuple(samples) if tape.shots.has_partitioned_shots else samples[0]
                 for tape, samples in zip(self._tapes, tape_results, strict=True)

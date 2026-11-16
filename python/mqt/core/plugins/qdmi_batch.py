@@ -10,6 +10,9 @@
 
 from __future__ import annotations
 
+__lazy_modules__ = {"weakref"}
+
+import weakref
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Generic, TypeVar
 
@@ -20,6 +23,7 @@ if TYPE_CHECKING:
 
 __all__ = ["Batch", "BatchEntry", "JobAttempt", "JobFailure"]
 
+_Owner = TypeVar("_Owner")
 _Result = TypeVar("_Result")
 _TERMINAL = {Job.Status.DONE, Job.Status.FAILED, Job.Status.CANCELED}
 
@@ -58,29 +62,48 @@ class BatchEntry(Generic[_Result]):
         return self.attempts[-1].result if self.attempts else None
 
 
-class Batch(Generic[_Result]):
+class Batch(Generic[_Owner, _Result]):
     """Shared recovery engine for the QDMI adapters.
 
-    Adapters prepare every input before constructing a batch and own result
-    conversion; decoded results must not be None. Use adapter job handles to
-    submit or recover work. Operations on one batch are synchronous; concurrent
-    calls on the same batch are unsupported.
+    A batch retains submission attempts and completed results so that an adapter
+    can recover after a failure without repeating successful work. The adapter
+    prepares all inputs before constructing the batch and converts device results
+    to its own result type. A decoded result must not be None, which marks an
+    unavailable result.
+
+    Submit and recover work through the adapter's job handle. Operations on one
+    batch are synchronous, and concurrent calls on the same batch are unsupported.
+
+    Entries with the same group key share one multi-program job when the device
+    accepts it. If the device declines a group, the batch checks the largest
+    accepted program count and submits the fewest near-equal contiguous parts.
+    It halves a declined part down to single entries. Without a support check,
+    it halves the declined group.
+
+    The batch holds only a weak reference to its owner, the adapter job that
+    holds the batch, and passes the owner to every callback as the first
+    argument. Callbacks must not capture the owner. Reference counting then
+    releases the adapter job and its native QDMI jobs when the application drops
+    its last reference, without the cyclic garbage collector.
     """
 
     def __init__(
         self,
+        owner: _Owner,
         entries: Sequence[BatchEntry[_Result]],
         *,
-        submit: Callable[[int], Job] | None,
-        decode: Callable[[int, Job, int], _Result],
-        submission_error: Callable[[str], Exception],
-        execution_error: Callable[[str], Exception],
+        submit: Callable[[_Owner, int], Job] | None,
+        decode: Callable[[_Owner, int, Job, int], _Result],
+        submission_error: Callable[[_Owner, str], Exception],
+        execution_error: Callable[[_Owner, str], Exception],
         max_retries: int,
-        on_submit: Callable[[Sequence[int]], None] | None = None,
-        submit_programs: Callable[[Sequence[int]], Job | None] | None = None,
+        on_submit: Callable[[_Owner, Sequence[int]], None] | None = None,
+        submit_programs: Callable[[_Owner, Sequence[int]], Job | None] | None = None,
         group_by: Sequence[Hashable] | None = None,
+        supports_programs: Callable[[_Owner, Sequence[int]], bool] | None = None,
     ) -> None:
         """Capture prepared entries, adapter callbacks, and a lifetime retry limit."""
+        self._owner_ref = weakref.ref(owner)
         self._entries = list(entries)
         self._submit = submit
         self._decode = decode
@@ -91,6 +114,15 @@ class Batch(Generic[_Result]):
         self._on_submit = on_submit
         self._submit_programs = submit_programs
         self._group_by = tuple(group_by) if group_by is not None else None
+        self._supports_programs = supports_programs
+        self._group_limits: dict[Hashable, int] = {}
+
+    @property
+    def _owner(self) -> _Owner:
+        owner = self._owner_ref()
+        # The owner holds the batch, so it outlives every call on the batch.
+        assert owner is not None
+        return owner
 
     @property
     def entries(self) -> tuple[BatchEntry[_Result], ...]:
@@ -148,11 +180,55 @@ class Batch(Generic[_Result]):
         for index in indices:
             key = self._group_by[index] if self._group_by is not None else index
             groups.setdefault(key, []).append(index)
-        for group in groups.values():
-            if len(group) > 1 and self._submit_programs is not None and self._admit(group, automatic=automatic):
+        for key, group in groups.items():
+            if self._submit_programs is None:
+                self._admit_parts(group, len(group), automatic=automatic)
                 continue
-            for index in group:
-                self._admit([index], automatic=automatic)
+            limit = self._group_limits.get(key)
+            if limit is None or len(group) <= limit:
+                if self._admit(group, automatic=automatic):
+                    continue
+                limit = self._supported_count(group)
+                if not 0 < limit < len(group):
+                    # The device declined the group for another reason or cannot check support.
+                    self._admit_parts(group, 2, automatic=automatic)
+                    continue
+                self._group_limits[key] = limit
+            self._admit_parts(group, (len(group) + limit - 1) // limit, automatic=automatic)
+
+    def _supported_count(self, group: Sequence[int]) -> int:
+        """Return the largest accepted leading program count, or 0 without a support check.
+
+        A failed check raises the adapter's submission error before any part is admitted.
+        """
+        # shortcut: bisection assumes one upper count limit; a lower count limit above half of
+        # it (for example, a minimum total shot count) can hide that limit, and halving takes over.
+        if self._supports_programs is None:
+            return 0
+        low, high = 0, len(group) + 1
+        while high - low > 1:
+            middle = (low + high) // 2
+            try:
+                supported = self._supports_programs(self._owner, group[:middle])
+            except Exception as exc:
+                msg = f"Failed to check device support for batch entries {list(group)}: {exc}"
+                raise self._submission_error(self._owner, msg) from exc
+            if supported:
+                low = middle
+            else:
+                high = middle
+        return low
+
+    def _admit_parts(self, group: Sequence[int], parts: int, *, automatic: bool) -> None:
+        """Admit near-equal contiguous parts in order, halving each declined part."""
+        size, larger = divmod(len(group), parts)
+        start = 0
+        for part in range(parts):
+            end = start + size + (part < larger)
+            chunk = group[start:end]
+            start = end
+            if not self._admit(chunk, automatic=automatic) and len(chunk) > 1:
+                self._admit_parts(chunk, 2, automatic=automatic)
 
     def _admit(self, indices: Sequence[int], *, automatic: bool) -> bool:
         previous = [self._entries[index] for index in indices]
@@ -166,10 +242,10 @@ class Batch(Generic[_Result]):
         try:  # ruff:ignore[too-many-statements-in-try-clause] Retain every accepted handle before tracking.
             if len(indices) > 1:
                 assert self._submit_programs is not None
-                handle = self._submit_programs(indices)
+                handle = self._submit_programs(self._owner, indices)
             else:
                 assert self._submit is not None
-                handle = self._submit(indices[0])
+                handle = self._submit(self._owner, indices[0])
             if handle is None:
                 # NOTSUPPORTED before submission consumes neither an attempt nor a retry.
                 for index, entry in zip(indices, previous, strict=True):
@@ -179,14 +255,14 @@ class Batch(Generic[_Result]):
                 self._set_attempt(index, JobAttempt(handle=handle, program_index=program_index))
             stage = "tracking"
             if self._on_submit is not None:
-                self._on_submit(indices)
+                self._on_submit(self._owner, indices)
         except BaseException as exc:
             for index in indices:
                 self.record_failure(index, stage, exc)
             if not isinstance(exc, Exception):
                 raise
             msg = f"Failed to submit batch entries {list(indices)}: {exc}"
-            raise self._submission_error(msg) from exc
+            raise self._submission_error(self._owner, msg) from exc
         return True
 
     def _refresh(self, indices: Sequence[int], *, wait: bool = False) -> Iterator[list[int]]:
@@ -268,7 +344,7 @@ class Batch(Generic[_Result]):
                     continue
                 assert attempt.handle is not None
                 try:
-                    result = self._decode(index, attempt.handle, attempt.program_index)
+                    result = self._decode(self._owner, index, attempt.handle, attempt.program_index)
                     self._set_attempt(index, replace(attempt, result=result))
                 except BaseException as exc:
                     self.record_failure(index, "result", exc)
@@ -319,7 +395,7 @@ class Batch(Generic[_Result]):
             msg = f"{len(missing)} batch entries have no result: {details}."
             if first is not None:
                 msg += f" First failure: {first}"
-            raise self._execution_error(msg) from first
+            raise self._execution_error(self._owner, msg) from first
 
     def resubmit(self, indices: Sequence[int], *, allow_unknown: bool = False) -> None:
         """Validate all selected entries before explicitly submitting replacements.

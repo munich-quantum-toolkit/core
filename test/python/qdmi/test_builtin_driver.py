@@ -11,14 +11,15 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from mqt.core.mlir import CompilerTarget
-from mqt.core.qdmi import builtin_driver
+from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+from mqt.core.qdmi import ProgramFormat, builtin_driver
 
 
 def test_manifest_registration_and_offline_enumeration(tmp_path: Path) -> None:
@@ -132,3 +133,63 @@ def test_ddsim_session_width_scopes_fresh_devices() -> None:
     assert builtin_driver.open_device("mqt.ddsim.default").qubits_num() == 65535
     with pytest.raises(ValueError, match="Invalid argument"):
         builtin_driver.open_device("mqt.ddsim.default", custom1="65536")
+
+
+@pytest.mark.parametrize("workers", [0, 4])
+def test_seeded_adaptive_qir_ignores_worker_budget(workers: int) -> None:
+    """The process-wide slot budget does not change logical sampling streams."""
+    script = """
+import json
+import sys
+from mqt.core.mlir import OutputFormat, compile_program
+from mqt.core.qdmi import ProgramFormat, builtin_driver
+source = 'OPENQASM 3; include "stdgates.inc"; qubit q; bit[2] c; h q; c[0] = measure q; reset q; h q; c[1] = measure q;'
+program = compile_program(source, output=OutputFormat.QIR_ADAPTIVE).to_llvm_ir()
+device = builtin_driver.open_device("mqt.ddsim.default")
+job = device.submit_job(program, ProgramFormat.QIR_ADAPTIVE_STRING, 1024,
+                        custom1=17, custom2=True, custom3=int(sys.argv[1]))
+assert job.wait()
+print(json.dumps([job.get_counts(), job.get_shots()]))
+"""
+    results = []
+    for budget in (1, 2, 4):
+        # Each process initializes its own worker budget once.
+        result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+            [sys.executable, "-c", script, str(workers)],
+            env={**os.environ, "MQT_CORE_DD_WORKER_BUDGET": str(budget)},
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        counts, shots = json.loads(result.stdout)
+        assert len(counts) == 4
+        assert sum(counts.values()) == len(shots) == 1024
+        results.append((counts, shots))
+    assert results[0] == results[1] == results[2]
+
+
+def test_adaptive_qir_histogram_preserves_bit_order() -> None:
+    """Per-shot classical effects keep count-only sampling on the dynamic path."""
+    source = 'OPENQASM 3; include "stdgates.inc"; qubit[2] q; h q[0]; x q[1]; bit[2] c = measure q;'
+    program = compile_program(source, output=OutputFormat.QIR_ADAPTIVE).to_llvm_ir()
+    program += "\n@counter = internal global i64 0\n"
+    initialize = "  call void @__quantum__rt__initialize(ptr null)"
+    assert initialize in program
+    program = program.replace(
+        initialize,
+        initialize + "\n  %old = load volatile i64, ptr @counter\n"
+        "  %next = add i64 %old, 1\n  store volatile i64 %next, ptr @counter",
+        1,
+    )
+    device = builtin_driver.open_device("mqt.ddsim.default")
+    results = []
+    for capture in (False, True):
+        job = device.submit_job(
+            program, ProgramFormat.QIR_ADAPTIVE_STRING, 1024, custom1=17, custom2=capture, custom3=4
+        )
+        assert job.wait()
+        counts = job.get_counts()
+        assert set(counts) == {"10", "11"}
+        assert sum(counts.values()) == 1024
+        results.append(counts)
+    assert results[0] == results[1]

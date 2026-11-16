@@ -160,8 +160,9 @@ void walkProgramGraph(MutableArrayRef<WireIterator> wires,
         next.emplace_back(i);
       }
 
-      frontier.erase(op);
+      mapIt->second.clear();
     }
+    frontier.remove_if([](const auto& entry) { return entry.second.empty(); });
 
     curr.swap(next);
     next.clear();

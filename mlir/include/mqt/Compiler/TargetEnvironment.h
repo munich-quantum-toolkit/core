@@ -36,10 +36,10 @@ class PayloadSpecAttr;
 class TargetEnvAttr;
 } // namespace mqt
 
-/// Payload representation encoding.
+/// Text or binary program encoding.
 enum class PayloadEncoding : uint8_t { Text, Binary };
 
-/// Selected payload family, accepted versions, profile, and encoding.
+/// Selected program format, accepted versions, profile, and encoding.
 struct PayloadFormat {
   std::string id;
   std::string version;
@@ -49,7 +49,7 @@ struct PayloadFormat {
   friend bool operator==(const PayloadFormat&, const PayloadFormat&) = default;
 };
 
-/// One typed constraint on a payload capability.
+/// One limit on a supported program feature.
 struct ProgramConstraint {
   /// IDs of control-flow constraints understood by the compiler.
   static constexpr llvm::StringLiteral MAX_NESTING_DEPTH =
@@ -71,7 +71,7 @@ struct ProgramConstraint {
                          const ProgramConstraint&) = default;
 };
 
-/// One extensible payload execution capability.
+/// One program feature supported for execution.
 struct ProgramCapability {
   /// IDs of structural control-flow capabilities understood by the compiler.
   static constexpr llvm::StringLiteral FORWARD_BRANCHING = "forward-branching";
@@ -94,11 +94,12 @@ struct ProgramCapability {
 /// Whether a capability describes classical control flow or assignment.
 [[nodiscard]] bool isControlFlowCapability(llvm::StringRef id);
 
-/// Context-free selected execution payload contract.
+/// The format and program features selected for execution.
 ///
-/// Producers must include every effective capability, including
-/// payload-format baselines. The knowledge bit states whether the list also
-/// contains all optional device capabilities.
+/// This value is independent of an MLIR context. It describes one format and
+/// the features a program may use, such as branches or loops. The capability
+/// list must include the format's baseline features. optionalCapabilitiesKnown
+/// states whether the list also contains all optional device capabilities.
 class PayloadSpecification {
 public:
   /// Return compiler-supported capabilities for OpenQASM 3 or a QIR profile.
@@ -108,7 +109,7 @@ public:
   forProgramFormat(ProgramFormat format,
                    PayloadEncoding encoding = PayloadEncoding::Text);
 
-  /// Create and validate a selected payload specification.
+  /// Create and validate an execution format and its supported features.
   ///
   /// Versions accept numeric ceilings or comma-conjoined >=, <, <= bounds.
   /// Bare versions retain a same-major ceiling; omitted components are zero.
@@ -121,7 +122,7 @@ public:
   [[nodiscard]] static llvm::Expected<PayloadSpecification>
   create(mqt::PayloadSpecAttr attribute);
 
-  /// Return the selected payload format and receiver-version constraint.
+  /// Return the selected program format and accepted receiver versions.
   [[nodiscard]] const PayloadFormat& format() const noexcept;
 
   /// Return the parsed receiver interval, or no interval for unversioned
@@ -129,16 +130,16 @@ public:
   [[nodiscard]] const std::optional<mqt::PayloadVersionRange>&
   versionRange() const noexcept;
 
-  /// Return the compiler output selected by the payload format.
+  /// Return the compiler output selected by the program format.
   [[nodiscard]] llvm::Expected<ProgramFormat> compilerOutput() const;
 
-  /// Return effective payload capabilities in reported order.
+  /// Return the supported program features in reported order.
   [[nodiscard]] llvm::ArrayRef<ProgramCapability> capabilities() const noexcept;
 
   /// Return whether optional capability metadata is complete.
   [[nodiscard]] bool optionalCapabilitiesKnown() const noexcept;
 
-  /// Restrict capabilities to those supported by both payloads.
+  /// Restrict program features to those supported by both specifications.
   ///
   /// Keep this format. Across different formats, only structural control-flow
   /// capabilities are comparable; format-specific capabilities remain
@@ -149,7 +150,8 @@ public:
   /// Whether generated switches may have arbitrary nesting and case counts.
   [[nodiscard]] bool supportsUnrestrictedMultiwayBranching() const noexcept;
 
-  /// Materialize the selected contract as a typed MLIR attribute.
+  /// Store the selected format and supported features in a typed MLIR
+  /// attribute.
   [[nodiscard]] mqt::PayloadSpecAttr materialize(MLIRContext& context) const;
 
 private:
@@ -164,7 +166,7 @@ private:
   bool optionalCapabilitiesKnown_;
 };
 
-/// Context-free hardware target and selected payload specification.
+/// Hardware target and execution format, independent of an MLIR context.
 class TargetEnvironment {
 public:
   TargetEnvironment(const CompilerTarget& target, PayloadSpecification payload);
@@ -176,7 +178,7 @@ public:
   /// Return the compiler target.
   [[nodiscard]] const CompilerTarget& target() const noexcept;
 
-  /// Return the selected payload specification.
+  /// Return the selected execution format and supported program features.
   [[nodiscard]] const PayloadSpecification&
   payloadSpecification() const noexcept;
 
@@ -184,8 +186,8 @@ public:
   ///
   /// Requires Adaptive QIR and an all-to-all target. Site-restricted extras
   /// require a selected synthesis basis usable at unknown sites; advertised
-  /// measurement/reset operations must also support unknown sites. Other
-  /// payload control-flow limits still apply.
+  /// measurement/reset operations must also support unknown sites. The
+  /// execution format's other control-flow limits still apply.
   [[nodiscard]] bool supportsIndexedQubits() const noexcept;
 
   /// Materialize the pair as a typed MLIR attribute.

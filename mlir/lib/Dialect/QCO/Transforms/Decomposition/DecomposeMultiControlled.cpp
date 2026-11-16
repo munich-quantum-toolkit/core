@@ -16,10 +16,12 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/Pauli.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -44,10 +46,12 @@
 #include "llvm/Support/ErrorHandling.h"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <list>
 #include <numbers>
 #include <optional>
 #include <tuple>
@@ -305,6 +309,60 @@ struct BorrowedAncilla {
   Value value;
   std::optional<int64_t> slot;
   bool clean;
+};
+
+// The input-gate sweep only erases its current gate. Keep a surviving
+// predecessor so the next search includes the emitted replacement operations.
+class AncillaSearch {
+public:
+  const std::list<Value>& availableBefore(CtrlOp op) {
+    auto* block = op->getBlock();
+    const auto append = [&](Value value) {
+      auto tensor = dyn_cast<RankedTensorType>(value.getType());
+      if ((isa<QubitType>(value.getType()) ||
+           (tensor && tensor.getRank() == 1 && tensor.hasStaticShape() &&
+            isa<QubitType>(tensor.getElementType()))) &&
+          (*value.getUsers().begin())->getBlock() == block) {
+        positions_.try_emplace(value, values_.insert(values_.end(), value));
+      }
+    };
+    if (block != block_) {
+      block_ = block;
+      previous_ = nullptr;
+      values_.clear();
+      positions_.clear();
+      for (auto argument : block->getArguments()) {
+        append(argument);
+      }
+    }
+    const auto consume = [&](Operation* operation) {
+      for (auto operand : operation->getOperands()) {
+        const auto position = positions_.find(operand);
+        if (position != positions_.end()) {
+          values_.erase(position->second);
+          positions_.erase(position);
+        }
+      }
+    };
+    auto* next =
+        previous_ != nullptr ? previous_->getNextNode() : &block->front();
+    while (next != op.getOperation()) {
+      consume(next);
+      for (auto result : next->getResults()) {
+        append(result);
+      }
+      previous_ = next;
+      next = next->getNextNode();
+    }
+    consume(op);
+    return values_;
+  }
+
+private:
+  Block* block_ = nullptr;
+  Operation* previous_ = nullptr;
+  std::list<Value> values_;
+  DenseMap<Value, std::list<Value>::iterator> positions_;
 };
 
 } // namespace
@@ -866,7 +924,7 @@ static CircuitPlan planMcpForWidth(OpBuilder& builder, Location loc,
   return plan;
 }
 
-/// Exact MCZ core, shared by Pauli/SWAP lowering and ancilla cost comparison.
+/// Exact MCZ core for Pauli/SWAP lowering.
 static CircuitPlan mczCoreForWidth(OpBuilder& builder, Location loc,
                                    size_t numControls) {
   // For k >= 9, SP22 costs 4k²−4k+2 CX equivalents; HP24 costs 88k−54
@@ -1097,11 +1155,21 @@ static std::optional<bool> ancillaState(Value value,
 
 /// Find occupied candidates without scanning a potentially huge declared
 /// extent.
-static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
-                                         const DenseSet<Value>& restoredZeros) {
-  SmallVector<int64_t> slots;
+static SmallVector<BorrowedAncilla>
+ancillaSlots(Value tensor, size_t limit, const DenseSet<Value>& restoredZeros) {
+  SmallVector<BorrowedAncilla> slots;
+  auto original = tensor;
+  const auto remember = [&](int64_t slot, std::optional<bool> clean) {
+    if (clean) {
+      slots.push_back({.value = original, .slot = slot, .clean = *clean});
+    }
+  };
+  const auto extent = cast<RankedTensorType>(tensor.getType()).getDimSize(0);
   DenseSet<int64_t> touched;
   while (auto* definition = tensor.getDefiningOp()) {
+    if (std::cmp_equal(touched.size(), extent)) {
+      break;
+    }
     if (auto extract = dyn_cast<qtensor::ExtractOp>(definition)) {
       auto index = getConstantIntValue(extract.getIndex());
       if (!index) {
@@ -1115,7 +1183,8 @@ static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
         break;
       }
       if (touched.insert(*index).second) {
-        slots.push_back(*index);
+        remember(*index,
+                 ancillaState(insert.getScalar(), std::nullopt, restoredZeros));
       }
       tensor = insert.getDest();
     } else {
@@ -1125,7 +1194,7 @@ static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
         size_t clean = 0;
         for (int64_t index = 0; index < size && clean < limit; ++index) {
           if (!touched.contains(index)) {
-            slots.push_back(index);
+            remember(index, true);
             ++clean;
           }
         }
@@ -1140,12 +1209,11 @@ static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
           if (touched.contains(index)) {
             continue;
           }
-          const bool zero = ancillaState(elements.getElements()[index],
-                                         std::nullopt, restoredZeros)
-                                .value_or(false);
-          auto& count = zero ? clean : dirty;
+          const auto zero = ancillaState(elements.getElements()[index],
+                                         std::nullopt, restoredZeros);
+          auto& count = zero.value_or(false) ? clean : dirty;
           if (count < limit) {
-            slots.push_back(index);
+            remember(index, zero);
             ++count;
           }
         }
@@ -1153,12 +1221,15 @@ static SmallVector<int64_t> ancillaSlots(Value tensor, size_t limit,
       break;
     }
   }
-  llvm::sort(slots);
+  llvm::sort(slots, [](const auto& lhs, const auto& rhs) {
+    return *lhs.slot < *rhs.slot;
+  });
   return slots;
 }
 
 static SmallVector<BorrowedAncilla>
-findAncillas(CtrlOp op, size_t limit, const DenseSet<Value>& restoredZeros) {
+findAncillas(CtrlOp op, size_t limit, const DenseSet<Value>& restoredZeros,
+             AncillaSearch& search) {
   SmallVector<BorrowedAncilla> ancillas, dirty;
   const auto remember = [&](BorrowedAncilla ancilla) {
     auto& candidates = ancilla.clean ? ancillas : dirty;
@@ -1166,23 +1237,8 @@ findAncillas(CtrlOp op, size_t limit, const DenseSet<Value>& restoredZeros) {
       candidates.push_back(ancilla);
     }
   };
-  auto* block = op->getBlock();
   const auto inspect = [&](Value value) {
-    if (ancillas.size() == limit) {
-      return;
-    }
     auto tensorType = dyn_cast<RankedTensorType>(value.getType());
-    if (!isa<QubitType>(value.getType()) &&
-        !(tensorType && tensorType.getRank() == 1 &&
-          tensorType.hasStaticShape() &&
-          isa<QubitType>(tensorType.getElementType()))) {
-      return;
-    }
-    auto* user = *value.getUsers().begin();
-    // No captures, future definitions, consumed wires, or gate operands.
-    if (user->getBlock() != block || !op->isBeforeInBlock(user)) {
-      return;
-    }
     if (!tensorType) {
       remember({
           .value = value,
@@ -1192,25 +1248,18 @@ findAncillas(CtrlOp op, size_t limit, const DenseSet<Value>& restoredZeros) {
       });
       return;
     }
-    for (int64_t slot : ancillaSlots(value, limit, restoredZeros)) {
+    for (const auto& ancilla : ancillaSlots(value, limit, restoredZeros)) {
       if (ancillas.size() == limit) {
         break;
       }
-      if (auto clean = ancillaState(value, slot, restoredZeros)) {
-        remember({.value = value, .slot = slot, .clean = *clean});
-      }
+      remember(ancilla);
     }
   };
-  for (auto argument : block->getArguments()) {
-    inspect(argument);
-  }
-  for (auto& previous : *block) {
-    if (&previous == op.getOperation() || ancillas.size() == limit) {
+  for (auto value : search.availableBefore(op)) {
+    if (ancillas.size() == limit) {
       break;
     }
-    for (auto result : previous.getResults()) {
-      inspect(result);
-    }
+    inspect(value);
   }
   // Keep clean-first, source-order selection without storing unused slots.
   ancillas.append(dirty.begin(),
@@ -1249,45 +1298,28 @@ static CircuitPlan planOneAncillaMcx(size_t k, bool clean) {
   return plan;
 }
 
-/// Pre-routing CX-equivalent estimate, not a promise about final mapped cost.
-static size_t entanglingCost(const CircuitPlan& plan) {
-  size_t count = 0;
-  for (const auto& operation : plan.ops) {
-    switch (operation.kind) {
-    case PlanOpKind::CX:
-      count += 1;
-      break;
-    case PlanOpKind::CP:
-    case PlanOpKind::CRX:
-    case PlanOpKind::CRZ:
-      count += 2;
-      break;
-    case PlanOpKind::CCX:
-      count += 6;
-      break;
-    case PlanOpKind::CCCX:
-      count += 14;
-      break;
-    case PlanOpKind::RCCX:
-      count += 3;
-      break;
-    case PlanOpKind::CCP:
-      count += 6;
-      break;
-    case PlanOpKind::H:
-    case PlanOpKind::X:
-    case PlanOpKind::P:
-    case PlanOpKind::RZ:
-    case PlanOpKind::RY:
-      break;
-    }
+/// CX-equivalent cost of the borrowed-MCX construction.
+static size_t borrowedMcxCost(size_t k) {
+  return k == 1 ? 1 : k == 2 ? 6 : k == 3 ? 14 : 8 * k - 6;
+}
+
+/// CX-equivalent cost of the ancilla-free parameterized construction.
+static size_t parameterizedFallbackCost(size_t k, bool rotation) {
+  assert(k >= 2);
+  if (rotation) {
+    return k == 2 ? 4 : (k == 3 ? 10 : 12 * k - 32);
   }
-  return count;
+  if (k == 2) {
+    return 6;
+  }
+  // Recursive RZ below nine controls; SP22 otherwise.
+  return k < 9 ? 6 * k * k - 26 * k + 40 : 4 * k * k - 4 * k + 2;
 }
 
 static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
                                             PatternRewriter& rewriter,
-                                            DenseSet<Value>& restoredZeros) {
+                                            DenseSet<Value>& restoredZeros,
+                                            AncillaSearch& search) {
   const bool swap = isa<SWAPOp>(inner.getOperation());
   const bool y = isa<YOp>(inner.getOperation());
   auto phase = dyn_cast<POp>(inner.getOperation());
@@ -1300,7 +1332,7 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
   const bool parameterized = generalPhase || rotation;
   // SWAP's second target becomes one more control of the central MCX.
   const size_t k = op.getNumControls() + (swap ? 1 : 0);
-  auto ancillas = findAncillas(op, k - 2, restoredZeros);
+  auto ancillas = findAncillas(op, k - 2, restoredZeros, search);
   if (ancillas.empty()) {
     return failure();
   }
@@ -1309,8 +1341,8 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
   if (parameterized && cleanCount == 0 && k < 5) {
     return failure();
   }
-  // Plan with a constant placeholder until acceptance: symbolic angle planning
-  // emits arithmetic and a failed match must not mutate the IR.
+  // Select before planning: symbolic angles emit arithmetic, and a failed
+  // match must not mutate the IR.
   const auto parameterizedPlan = [&](const mqt::FloatParameter& angle,
                                      size_t controls) {
     return rotation ? planMultiControlledRotation(rewriter, op.getLoc(), angle,
@@ -1324,39 +1356,50 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
     return changeRotationBasis(
         planWithDirtyRzAncillas(rewriter, op.getLoc(), angle, k), k, inner);
   };
-  auto best = parameterized ? parameterizedPlan(0.0, k)
-                            : planOneAncillaMcx(k, ancillas.front().clean);
-  const auto fallbackCost =
-      parameterized
-          ? entanglingCost(best)
-          : (k == 3
-                 ? 14
-                 : entanglingCost(mczCoreForWidth(rewriter, op.getLoc(), k)));
+  CircuitPlan best;
+  bool fullAncillaPlan = false;
+  // Count the fallback without constructing a plan that will not be emitted.
+  const auto fallbackCost = [&]() -> size_t {
+    if (parameterized) {
+      return parameterizedFallbackCost(k, rotation);
+    }
+    if (k == 3) {
+      return 14;
+    }
+    return k < 23 ? parameterizedFallbackCost(k, false)
+                  : (k % 2 == 1 ? 88 * k - 54 : 96 * k - 154);
+  }();
+  const size_t split = (k + 1) / 2;
+  auto bestCost = parameterized ? fallbackCost
+                                : 2 * borrowedMcxCost(split) +
+                                      (ancillas.front().clean ? 1 : 2) *
+                                          borrowedMcxCost(k - split + 1);
   size_t used = parameterized ? 0 : 1;
   bool dirtyParameterized = false;
   if (parameterized && cleanCount != 0) {
-    best = planWithCleanAncillas(parameterizedPlan(0.0, k - cleanCount), k,
-                                 cleanCount);
+    bestCost =
+        6 * cleanCount + parameterizedFallbackCost(k - cleanCount, rotation);
     used = cleanCount;
   }
   if (parameterized && k >= 5 && ancillas.size() == k - 2) {
-    auto dirty = dirtyPlan(0.0);
-    if (entanglingCost(dirty) < entanglingCost(best)) {
-      best = std::move(dirty);
+    // Four RCCX toggles and two carries; phase sums widths five through k
+    // above its four-control core.
+    const auto cost = rotation ? 8 * k - 6 : 4 * k * k - 2 * k - 24;
+    if (cost < bestCost) {
+      bestCost = cost;
       used = k - 2;
       dirtyParameterized = true;
     }
   }
   if (!parameterized && ancillas.size() == k - 2) {
-    auto many = ancillas.back().clean
-                    ? planWithCleanAncillas(planBorrowedMcx(2), k, k - 2)
-                    : planBorrowedMcx(k);
-    if (entanglingCost(many) < entanglingCost(best)) {
-      best = std::move(many);
+    const auto cost = ancillas.back().clean ? 6 * k - 6 : borrowedMcxCost(k);
+    if (cost < bestCost) {
+      bestCost = cost;
+      fullAncillaPlan = true;
       used = ancillas.size();
     }
   }
-  if (entanglingCost(best) >= fallbackCost) {
+  if (bestCost >= fallbackCost) {
     return failure();
   }
   if (parameterized) {
@@ -1367,6 +1410,12 @@ static LogicalResult synthesizeWithAncillas(CtrlOp op, UnitaryOpInterface inner,
                ? dirtyPlan(theta)
                : planWithCleanAncillas(parameterizedPlan(theta, k - used), k,
                                        used);
+  } else if (fullAncillaPlan) {
+    best = ancillas.back().clean
+               ? planWithCleanAncillas(planBorrowedMcx(2), k, k - 2)
+               : planBorrowedMcx(k);
+  } else {
+    best = planOneAncillaMcx(k, ancillas.front().clean);
   }
   ancillas.resize(used);
   SmallVector<Value> wires(op.getControlsIn());
@@ -1631,6 +1680,56 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
       return success();
     }
 
+    if (op.getNumTargets() == 2 &&
+        isa<RXXOp, RYYOp, RZXOp, RZZOp>(inner.getOperation())) {
+      const auto axes = decomposition::getPauliRotations(inner.getOperation())
+                            ->rotations.front()
+                            .axes;
+      const std::array targets{
+          numControls +
+              cast<BlockArgument>(inner.getInputQubit(0)).getArgNumber(),
+          numControls +
+              cast<BlockArgument>(inner.getInputQubit(1)).getArgNumber(),
+      };
+      mqt::hoistSupportingOpsBefore(*op.getBody(), inner.getOperation(), op,
+                                    rewriter);
+      rewriter.setInsertionPoint(op);
+      const auto theta = mqt::foldParameter(inner.getParameters()[0]);
+      SmallVector<Value> wires(op.getInputQubits());
+      GateEmitter emitter(rewriter, op.getLoc(), wires);
+      // Map both Pauli axes to Z, then compute parity on the second target.
+      for (const auto [target, axis] : llvm::zip_equal(targets, axes)) {
+        if (axis == mqt::PauliAxis::Y) {
+          wires[target] = SdgOp::create(rewriter, op.getLoc(), wires[target])
+                              .getOutputQubit(0);
+        }
+        if (axis != mqt::PauliAxis::Z) {
+          emitter.h(target);
+        }
+      }
+      emitter.cx(targets[0], targets[1]);
+      auto rotation = CtrlOp::create(
+          rewriter, op.getLoc(), ValueRange(wires).take_front(numControls),
+          wires[targets[1]], [&](Value target) {
+            return RZOp::create(rewriter, op.getLoc(), target, theta)
+                .getOutputQubit(0);
+          });
+      std::ranges::copy(rotation.getOutputControls(), wires.begin());
+      wires[targets[1]] = rotation.getOutputTarget(0);
+      emitter.cx(targets[0], targets[1]);
+      for (const auto [target, axis] : llvm::zip_equal(targets, axes)) {
+        if (axis != mqt::PauliAxis::Z) {
+          emitter.h(target);
+        }
+        if (axis == mqt::PauliAxis::Y) {
+          wires[target] = SOp::create(rewriter, op.getLoc(), wires[target])
+                              .getOutputQubit(0);
+        }
+      }
+      rewriter.replaceOp(op, wires);
+      return success();
+    }
+
     if (op.getNumTargets() != 1) {
       return failure();
     }
@@ -1797,11 +1896,12 @@ protected:
       // These proofs remain valid only during this input-gate sweep. Discard
       // them before greedy rewriting can erase or recycle the SSA values.
       DenseSet<Value> restoredZeros;
+      AncillaSearch search;
       for (auto op : candidates) {
         rewriter.setInsertionPoint(op);
         auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
         std::ignore =
-            synthesizeWithAncillas(op, inner, rewriter, restoredZeros);
+            synthesizeWithAncillas(op, inner, rewriter, restoredZeros, search);
       }
     }
     StaticSites staticSites;
@@ -1811,7 +1911,7 @@ protected:
              UnrollControlledModifier<InvOp>, UnrollControlledModifier<PowOp>>(
             &getContext(), minQubits, nativeTarget,
             traceStaticSites ? &staticSites : nullptr);
-    CtrlOp::getOptimizationPatterns(patterns, &getContext());
+    CtrlOp::getLoweringPatterns(patterns, &getContext());
     InvOp::getLoweringPatterns(patterns, &getContext());
     PowOp::getLoweringPatterns(patterns, &getContext());
     // Borrowing can introduce inserts before later extracts. Restore the

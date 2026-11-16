@@ -24,22 +24,36 @@ uv pip install "mqt-core[qiskit]"
 
 ```{code-cell} ipython3
 from qiskit import QuantumCircuit
-from mqt.core.plugins.qiskit import QDMIBackend
+from mqt.core.plugins.qiskit import DDSIMBackend
 
-backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+backend = DDSIMBackend(num_qubits=2)
 qc = QuantumCircuit(2)
 qc.h(0)
 qc.cx(0, 1)
 qc.measure_all()
 native = backend.compile(qc)
-job = backend.run(native, shots=1024, memory=True)
+job = backend.run(native, shots=1024, memory=True, seed_simulator=71, max_workers=1)
 result = job.result()
 print(f"Bell counts: {result.get_counts()}")
 ```
 
-`run` validates, serializes, and submits; it does not synthesize or route. Bind
-parameters before compilation when their values affect native legality. Use a
-provider's specialized backend when its service requires one.
+`DDSIMBackend` opens the built-in DD simulator. `seed_simulator` accepts `None`
+for randomness or a positive signed 32-bit integer. `max_workers=0` selects
+automatic concurrency; `1` runs serially. Circuit `i` of a run uses the DDSIM
+seed `seed_simulator + i`, including when it is retried, so the seed of the last
+circuit must not exceed 2,147,483,647. Each run starts again at
+`seed_simulator`. Fixed seeds reproduce samples with the same program, build,
+execution path, shot count, and worker configuration. Use `backend.sampler()`
+and `backend.estimator()` for Qiskit V2 primitives.
+
+Choose `num_qubits` to cover the circuit width. It limits target construction
+and the idle qubits added by Qiskit for an explicit layout. Omitting it selects
+all 65,535 sites. See {doc}`ddsim_device` for session configuration.
+
+`run` expects gates and qubit placements that the device can execute. It checks
+the circuit and submits it, so compile first with Qiskit's `transpile` or
+`backend.compile`. Bind parameters before compilation when the device restricts
+their values. Some services require a provider-specific backend.
 
 ## Provider and Device Discovery
 
@@ -71,7 +85,7 @@ snapshot's timing unit and scale factor.
 
 MQT Core resolves device aliases. Fixed parameter variants retain separate
 Target names, and unrecognized native operations become opaque Qiskit gates.
-Control flow and classical assignment follow the selected payload's
+Control flow and classical assignment follow the selected execution format's
 capabilities. All-to-all devices do not materialize a coupling map.
 
 Devices with computational resonators expose single-qubit gates and measurement
@@ -90,9 +104,11 @@ generic backend rejects other options, including non-`None` `seed_simulator`,
 because QDMI has no standard seed parameter.
 
 Pass a list of circuits to submit a batch. Equal-format, equal-shot circuits use
-a native program list when the device supports it; otherwise they use separate
-jobs. The backend validates the whole batch before submitting any circuit and
-returns results in input order.
+a native program list when the device supports it. If the device declines the
+list, for example because of a program-count or total-shot limit, the backend
+submits the fewest consecutive lists of nearly equal size that the device
+accepts, and separate jobs when it accepts no list. The backend validates the
+whole batch before submitting any circuit and returns results in input order.
 
 ### Optional retries
 
@@ -105,9 +121,9 @@ and primitives.
 
 `job.status()` returns Qiskit's job status. `job.result()` waits and returns
 counts, optional shot memory, and the original circuit/register metadata. The
-adapter checks widths, binary digits, and shot totals. It never fabricates
-samples from a histogram; when memory is requested, counts come from those same
-shots.
+adapter checks widths, binary digits, and shot totals. When shot memory is
+requested, the device must return individual samples; the adapter derives counts
+from those same samples.
 
 Results use Qiskit's classical-bit order (`clbits[0]` on the right), preserving
 leading zeros and correlations across registers. Classical registers must
@@ -201,13 +217,13 @@ returns an ordered list of programs. The lower-level
 
 `run()` also accepts native `QuantumCircuit` inputs. It validates their gates,
 parameters and placements, then uses {py:func}`~mqt.core.mlir.serialize_program`
-without synthesis or routing. Compiled programs retain their exact payload and
-result layout. Programs from another environment are checked for compatibility
-before any job in the batch is submitted.
+without synthesis or routing. Compiled programs retain their exact serialized
+program and result layout. Programs from another environment are checked for
+compatibility before any job in the batch is submitted.
 
-Payloads, result layouts and copied circuit headers survive retries without
-reserialization. Persist all three for cross-process recovery; a remote job ID
-alone cannot recover frontend outputs.
+Serialized programs, result layouts, and copied circuit headers survive retries
+without reserialization. Persist all three for cross-process recovery; a remote
+job ID alone cannot recover frontend outputs.
 
 ### Device-specific execution options
 

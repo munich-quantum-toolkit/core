@@ -16,7 +16,7 @@ import pytest
 
 from mqt.core.plugins.qiskit import QDMIBackend, QDMIProvider
 from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
-from mqt.core.qdmi import open_device
+from mqt.core.qdmi import Device, open_device
 
 
 def test_provider_backends_filter_by_name() -> None:
@@ -79,17 +79,18 @@ def test_provider_get_backend_stops_after_exact_match(monkeypatch: pytest.Monkey
         staticmethod(lambda: ["unavailable.device", "matching.device", "later.device"]),
     )
 
-    def lookup(device_id: str, **_session_parameters: object) -> QDMIBackend:
+    def lookup(device_id: str, **_session_parameters: object) -> Device:
         opened_ids.append(device_id)
         if device_id == "unavailable.device":
             msg = "credential=do-not-disclose"
             raise RuntimeError(msg)
         if device_id == "later.device":
             pytest.fail("exact-name lookup continued after finding its backend")
-        return expected
+        return expected.device
 
     provider = QDMIProvider()
-    monkeypatch.setattr(provider, "get_backend_by_device_id", lookup)
+    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.open_device", lookup)
+    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.QDMIBackend", lambda _device, **_kwargs: expected)
 
     expected_name = expected.name
     assert expected_name is not None
@@ -196,14 +197,15 @@ def test_provider_warns_with_only_id_and_skips_unavailable_device(monkeypatch: p
         staticmethod(lambda: ["available.device", "unavailable.device"]),
     )
 
-    def lookup(device_id: str, **_session_parameters: object) -> QDMIBackend:
+    def lookup(device_id: str, **_session_parameters: object) -> Device:
         if device_id == "unavailable.device":
             msg = "credential=do-not-disclose"
             raise RuntimeError(msg)
-        return available
+        return available.device
 
     provider = QDMIProvider()
-    monkeypatch.setattr(provider, "get_backend_by_device_id", lookup)
+    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.open_device", lookup)
+    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.QDMIBackend", lambda _device, **_kwargs: available)
 
     with pytest.warns(RuntimeWarning) as warnings:
         assert provider.backends() == [available]
@@ -224,15 +226,29 @@ def test_provider_silently_skips_incompatible_device(monkeypatch: pytest.MonkeyP
         staticmethod(lambda: ["incompatible.device", "available.device"]),
     )
 
-    def lookup(device_id: str, **_session_parameters: object) -> QDMIBackend:
+    def lookup(device_id: str, **_session_parameters: object) -> Device:
         if device_id == "incompatible.device":
             msg = "device cannot be represented by a Qiskit target"
             raise UnsupportedDeviceError(msg)
-        return available
+        return available.device
 
     provider = QDMIProvider()
-    monkeypatch.setattr(provider, "get_backend_by_device_id", lookup)
+    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.open_device", lookup)
+    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.QDMIBackend", lambda _device, **_kwargs: available)
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert provider.backends() == [available]
+
+
+def test_provider_skips_snapshot_for_nonmatching_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Filtered discovery never snapshots an unrelated device, even if it would fail."""
+    monkeypatch.setattr(QDMIProvider, "device_ids", staticmethod(lambda: ["mqt.ddsim.default"]))
+
+    def fail_snapshot(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("nonmatching device was snapshotted")
+
+    monkeypatch.setattr(QDMIBackend, "_build_target", fail_snapshot)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert QDMIProvider().backends("unrelated") == []

@@ -266,6 +266,37 @@ TEST_F(ClassicalSimplificationTest,
   check();
 }
 
+TEST_F(ClassicalSimplificationTest, PromotesIndexFromConstantBranch) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%value: i1) -> i1 {
+        %true = arith.constant true
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %index = scf.if %true -> index {
+          scf.yield %zero : index
+        } else {
+          scf.yield %one : index
+        }
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        cbit.store %value, %reg[%index] : !cbit.reg<2>
+        %result = cbit.load %reg[%index] : !cbit.reg<2>
+        return %result : i1
+      }
+    }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  PassManager manager(&context_);
+  manager.addPass(mqt::createPromoteClassicalMemory());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto returned = cast<func::ReturnOp>(function.front().getTerminator());
+  EXPECT_EQ(returned.getOperand(0), function.getArgument(0));
+  EXPECT_TRUE(function.getOps<cbit::AllocOp>().empty());
+}
+
 TEST_F(ClassicalSimplificationTest, PromotesWideSnapshotComparisons) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {

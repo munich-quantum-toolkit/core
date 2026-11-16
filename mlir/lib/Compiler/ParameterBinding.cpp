@@ -141,6 +141,7 @@ static LogicalResult bind(ModuleOp moduleOp,
     return failure();
   }
   auto pm = PassManager::on<func::FuncOp>(moduleOp.getContext());
+  // Eliminate dead branches before verifying folded gate parameters.
   pm.addPass(createCanonicalizerPass());
   return pm.run(entry);
 }

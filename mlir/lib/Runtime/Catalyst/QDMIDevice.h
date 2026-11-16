@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mqt/Compiler/CompilationOptions.h"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/ResultLayout.h"
@@ -17,12 +18,13 @@
 #include "qdmi/QDMI.hpp"
 
 #include "CircuitRecorder.h"
+#include "QDMIContext.h"
+#include "QDMIReadout.h"
 #include "QuantumDevice.hpp"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
-#include <array>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
@@ -30,45 +32,30 @@
 #include <optional>
 #include <random>
 #include <string>
-#include <utility>
-#include <variant>
 #include <vector>
 
 namespace mqt::catalyst {
 
-using JobParameter =
-    std::variant<std::string, bool, int, double, std::vector<std::byte>>;
-using JobParameters = std::array<std::optional<JobParameter>, 5>;
-
-/// Own one provider session and its retained submission configuration.
-class Context {
+/// Retain an execution context under an ID used by Catalyst's device factory.
+class Context : public runtime::Context {
 public:
   static std::shared_ptr<Context>
-  create(qdmi::Device device, JobParameters parameters = {},
-         std::optional<QDMI_Program_Format> programFormat = std::nullopt);
-  Context(const Context&) = delete;
-  Context& operator=(const Context&) = delete;
+  create(const qdmi::Device& device, runtime::JobParameters parameters = {},
+         std::optional<QDMI_Program_Format> programFormat = std::nullopt,
+         mlir::CompilationOptions options = {});
   ~Context();
   [[nodiscard]] uint64_t id() const noexcept;
   [[nodiscard]] size_t qubits() const noexcept;
-  [[nodiscard]] std::optional<qdmi::Job>
-  trySubmit(llvm::ArrayRef<const mlir::CompiledProgram*> programs,
-            int64_t shots) const;
-  [[nodiscard]] qdmi::Job submit(const mlir::CompiledProgram& program,
-                                 int64_t shots) const;
-  [[nodiscard]] const mlir::TargetEnvironment& environment() const noexcept {
-    return environment_;
-  }
+  [[nodiscard]] const mlir::CompilationOptions& options() const noexcept;
 
 private:
-  explicit Context(qdmi::Device device, JobParameters parameters,
-                   std::optional<QDMI_Program_Format> programFormat);
-  qdmi::Device device_;
-  JobParameters parameters_;
-  mlir::TargetEnvironment environment_;
+  explicit Context(const qdmi::Device& device,
+                   runtime::JobParameters parameters,
+                   std::optional<QDMI_Program_Format> programFormat,
+                   mlir::CompilationOptions options);
   size_t qubits_;
+  mlir::CompilationOptions options_;
   uint64_t id_ = 0;
-  friend class QDMIDevice;
 };
 
 /// Record one terminal-measurement circuit through Catalyst's device API.
@@ -116,13 +103,12 @@ public:
   double Var(ObsIdType observable) override;
 
 private:
-  using Readout = llvm::SmallVector<std::pair<std::string, size_t>>;
   using ObservableWires = llvm::SmallVector<size_t>;
   [[nodiscard]] llvm::SmallVector<size_t>
   wireIndices(llvm::ArrayRef<QubitIdType> wires) const;
   [[nodiscard]] const ObservableWires& getObservable(ObsIdType id) const;
   ObsIdType addObservable(ObservableWires value);
-  const Readout& read();
+  const runtime::Readout& read(bool samples = false);
 
   std::shared_ptr<Context> context_;
   pennylane::CircuitRecorder recorder_;
@@ -131,14 +117,10 @@ private:
   ObsIdType nextObservable_ = 0;
   size_t shots_ = 0;
   std::optional<mlir::CompiledProgram> compiled_;
-  std::optional<Readout> result_;
+  std::optional<runtime::Readout> result_;
+  std::optional<qdmi::Job> job_;
+  bool sampleReadout_ = false;
 };
-
-/// Decode all logical wires into a row-major shot-by-wire array.
-[[nodiscard]] std::vector<int8_t>
-decodeSamples(const qdmi::Job& job, size_t width, size_t shots,
-              size_t programIndex = 0,
-              const std::optional<mlir::ResultLayout>& layout = std::nullopt);
 
 /// Resolve a retained configuration for Catalyst's device factory.
 [[nodiscard]] Catalyst::Runtime::QuantumDevice*

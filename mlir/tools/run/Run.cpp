@@ -39,7 +39,8 @@
 static llvm::Expected<qdmi::Job>
 submit(const qdmi::Device& device, const std::string& path, int64_t shots,
        const std::optional<qdmi::CustomJobParameter>& seed,
-       std::optional<mlir::ResultLayout>& layout) {
+       std::optional<mlir::ResultLayout>& layout,
+       std::optional<size_t>& width) {
   const auto submitSource = [&](auto program) -> llvm::Expected<qdmi::Job> {
     if (!program) {
       return program.takeError();
@@ -49,6 +50,7 @@ submit(const qdmi::Device& device, const std::string& path, int64_t shots,
       return compiled.takeError();
     }
     layout = compiled->resultLayout();
+    width = compiled->resultWidth();
     return mlir::submitProgram(device, *compiled, shots, seed);
   };
   const auto extension = llvm::sys::path::extension(path);
@@ -162,14 +164,15 @@ int mqtCoreRunProgram(int argc, char** argv) {
           ? std::optional<qdmi::CustomJobParameter>(seed.getValue())
           : std::nullopt;
   std::optional<mlir::ResultLayout> layout;
+  std::optional<size_t> width;
   const auto job =
-      exitOnError(submit(device, input, shots, randomSeed, layout));
+      exitOnError(submit(device, input, shots, randomSeed, layout, width));
   exitOnError(job.wait());
   llvm::json::Object counts;
-  for (const auto& [bits, count] : exitOnError(job.getCounts())) {
-    const auto logical = layout ? exitOnError(layout->decodeBits(bits)) : bits;
-    const auto previous = counts.getInteger(logical).value_or(0);
-    counts[logical] = previous + static_cast<int64_t>(count);
+  const auto decoded = exitOnError(mlir::decodeCounts(
+      exitOnError(job.getCounts()), width, static_cast<size_t>(shots), layout));
+  for (const auto& [bits, count] : decoded) {
+    counts[bits] = static_cast<int64_t>(count);
   }
   llvm::outs() << llvm::json::Value(llvm::json::Object{
                       {"schema_version", 1},

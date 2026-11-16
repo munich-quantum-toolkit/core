@@ -50,7 +50,7 @@ namespace {
 /// Composed unitary and metadata for a fusable run.
 struct FusableRunScan {
   Matrix2x2 composed = Matrix2x2::identity();
-  std::size_t gateCount = 0;
+  size_t gateCount = 0;
   bool hasNonBasisGate = false;
   UnitaryOpInterface tail;
 };
@@ -108,7 +108,7 @@ scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
 /// @param rewriter The pattern rewriter.
 /// @param head First gate of the run.
 /// @param tail Last gate of the run.
-static void eraseFusableRun(PatternRewriter& rewriter, UnitaryOpInterface head,
+static void eraseFusableRun(RewriterBase& rewriter, UnitaryOpInterface head,
                             UnitaryOpInterface tail) {
   // Tail-first: each erased op is dead once its successor is gone.
   while (tail != head) {
@@ -118,6 +118,23 @@ static void eraseFusableRun(PatternRewriter& rewriter, UnitaryOpInterface head,
     tail = previous;
   }
   rewriter.eraseOp(head);
+}
+
+static LogicalResult fuseRun(RewriterBase& rewriter, UnitaryOpInterface head,
+                             FusableRunScan& run,
+                             const CompilerTarget::SynthesisBasis& basis) {
+  rewriter.setInsertionPoint(head);
+  const auto synthesized = decomposition::synthesizeUnitary1QEuler(
+      rewriter, head.getLoc(), head.getInputQubit(0), run.composed,
+      run.gateCount, run.hasNonBasisGate, basis);
+  if (!synthesized) {
+    return failure();
+  }
+  decomposition::emitGPhaseIfNeeded(rewriter, head.getLoc(),
+                                    synthesized->globalPhase);
+  rewriter.replaceAllUsesWith(run.tail.getOutputQubit(0), synthesized->qubit);
+  eraseFusableRun(rewriter, head, run.tail);
+  return success();
 }
 
 namespace {
@@ -170,18 +187,7 @@ struct FuseSingleQubitUnitaryRunsPattern final
     if (target != nullptr && run.gateCount == 1) {
       return failure();
     }
-    const auto synthesized = decomposition::synthesizeUnitary1QEuler(
-        rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
-        run.hasNonBasisGate, basis);
-    if (!synthesized) {
-      return failure();
-    }
-    decomposition::emitGPhaseIfNeeded(rewriter, op.getLoc(),
-                                      synthesized->globalPhase);
-
-    rewriter.replaceAllUsesWith(run.tail.getOutputQubit(0), synthesized->qubit);
-    eraseFusableRun(rewriter, op, run.tail);
-    return success();
+    return fuseRun(rewriter, op, run, basis);
   }
 };
 
@@ -285,39 +291,15 @@ LogicalResult SingleQubitRunFusion::apply(Operation* operation) {
   }
   bool hasRuntimeParameters = false;
   SmallVector<Operation*> members;
-  SmallVector<Operation*> candidates;
-  const auto collectCandidates = [&] {
-    candidates.clear();
-    auto start = dyn_cast<UnitaryOpInterface>(*input.user_begin());
-    if (!isRunMemberCandidate(start)) {
-      return;
-    }
-    bool predecessorHasMatrix = false;
-    for (auto op = start; op; op = dyn_cast<UnitaryOpInterface>(
-                                  *op.getOutputQubit(0).user_begin())) {
-      if (!isRunMemberCandidate(op)) {
-        break;
-      }
-      auto* current = op.getOperation();
-      members.push_back(current);
-      hasRuntimeParameters =
-          hasRuntimeParameters ||
-          (canSynthesizeParameterizedUnitary1Q(op.getOperation()) &&
-           llvm::any_of(op.getParameters(), [](Value parameter) {
-             return !mqt::valueToConstantDouble(parameter);
-           }));
-      if ((target_ == nullptr ||
-           isRunMemberCandidate(dyn_cast<UnitaryOpInterface>(
-               *op.getOutputQubit(0).user_begin()))) &&
-          !predecessorHasMatrix) {
-        candidates.push_back(current);
-      }
-      predecessorHasMatrix = getRunMemberMatrix(op).has_value();
-    }
-  };
-  collectCandidates();
-  if (candidates.empty()) {
-    return success();
+  for (auto op = head; isRunMemberCandidate(op);
+       op = dyn_cast<UnitaryOpInterface>(*op.getOutputQubit(0).user_begin())) {
+    members.push_back(op.getOperation());
+    hasRuntimeParameters =
+        hasRuntimeParameters ||
+        (canSynthesizeParameterizedUnitary1Q(op.getOperation()) &&
+         llvm::any_of(op.getParameters(), [](Value parameter) {
+           return !mqt::valueToConstantDouble(parameter);
+         }));
   }
   if (hasRuntimeParameters) {
     if (!runtimePatterns_) {
@@ -329,19 +311,24 @@ LogicalResult SingleQubitRunFusion::apply(Operation* operation) {
     if (failed(applyOpPatternsGreedily(members, *runtimePatterns_, config_))) {
       return failure();
     }
-    // Runtime rewrites can replace the collected operations.
-    members.clear();
-    collectCandidates();
   }
-  if (candidates.empty()) {
-    return success();
+  IRRewriter rewriter(input.getContext(), config_.getListener());
+  auto op = dyn_cast<UnitaryOpInterface>(*input.user_begin());
+  while (isRunMemberCandidate(op)) {
+    const auto matrix = getRunMemberMatrix(op);
+    if (!matrix) {
+      op = dyn_cast<UnitaryOpInterface>(*op.getOutputQubit(0).user_begin());
+      continue;
+    }
+    auto run = scanFusableRun(op, *matrix, basis_.singleQubit, target_);
+    auto next =
+        dyn_cast<UnitaryOpInterface>(*run.tail.getOutputQubit(0).user_begin());
+    if (target_ == nullptr || run.gateCount > 1) {
+      static_cast<void>(fuseRun(rewriter, op, run, basis_));
+    }
+    op = next;
   }
-  if (!matrixPatterns_) {
-    RewritePatternSet patterns(input.getContext());
-    populateFuseSingleQubitUnitaryRunsPatterns(patterns, basis_, target_);
-    matrixPatterns_.emplace(std::move(patterns));
-  }
-  return applyOpPatternsGreedily(candidates, *matrixPatterns_, config_);
+  return success();
 }
 
 void populateFuseSingleQubitUnitaryRunsPatterns(

@@ -10,10 +10,12 @@
 
 from __future__ import annotations
 
+import gc
 import json
 import os
 import re
 import struct
+import weakref
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, get_type_hints
 from unittest.mock import MagicMock
@@ -37,6 +39,7 @@ from mqt.core.mlir import (
 )
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
+    DDSIMBackend,
     QDMIBackend,
     TranslationError,
     UnsupportedOperationError,
@@ -57,6 +60,19 @@ def ddsim_backend() -> QDMIBackend:
         A QDMIBackend instance wrapping the DDSIM device.
     """
     return QDMIBackend.from_device_id("mqt.ddsim.default")
+
+
+@pytest.mark.parametrize("memory", [False, True])
+def test_native_readout_preserves_wide_classical_outputs(*, memory: bool) -> None:
+    """Native hex conversion retains projected bits above the machine word size."""
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default", custom1="1")
+    circuit = QuantumCircuit(1, 81)
+    circuit.x(0)
+    circuit.measure(0, 80)
+    result = backend.run(circuit, shots=8, memory=memory).result()
+    assert result.data()["counts"] == {hex(1 << 80): 8}
+    if memory:
+        assert result.data()["memory"] == [hex(1 << 80)] * 8
 
 
 def test_backend_from_device_id_forwards_session_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -169,6 +185,23 @@ def test_backend_runs_circuit_lists(ddsim_backend: QDMIBackend, widths: tuple[in
         assert experiment.shots == 100
         expected = "0" * (circuit.num_qubits - min(index, circuit.num_qubits)) + "1" * min(index, circuit.num_qubits)
         assert result.get_counts(index) == {expected: 100}
+
+
+def test_completed_job_is_released_without_cycle_collection(ddsim_backend: QDMIBackend) -> None:
+    """Reference counting releases a completed job and its native jobs once ``last_job`` moves on."""
+    circuit = QuantumCircuit(1)
+    circuit.x(0)
+    circuit.measure_all()
+    gc.disable()
+    try:
+        job = ddsim_backend.run(circuit, shots=4)
+        job.result()
+        released = weakref.ref(job)
+        del job
+        ddsim_backend.run(circuit, shots=4).result()
+        assert released() is None
+    finally:
+        gc.enable()
 
 
 def test_unsupported_operation(ddsim_backend: QDMIBackend) -> None:
@@ -693,6 +726,7 @@ def test_native_submission_preserves_folded_unitary_sequence(
         assert "@__quantum__qis__x__body(ptr inttoptr (i64 1 to ptr))" in payloads[0]
 
 
+@pytest.mark.usefixtures("mock_device_snapshot")
 def test_resonator_compilation_uses_native_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     """A native star snapshot compiles and submits with permuted result decoding."""
     config = {
@@ -745,3 +779,84 @@ def test_resonator_compilation_uses_native_device_snapshot(monkeypatch: pytest.M
     assert result.get_counts() == {"10": 3}
     instructions = json.loads(submitted[0])["instructions"]
     assert sum(instruction["name"] == "move" for instruction in instructions) == 2
+
+
+@pytest.mark.parametrize("seed", [0, 2**31])
+def test_invalid_sampling_seeds(seed: object) -> None:
+    """Reject seeds outside the device integer range."""
+    with pytest.raises(ValueError, match="seed"):
+        DDSIMBackend(num_qubits=1).run(QuantumCircuit(1), seed_simulator=seed)
+
+
+@pytest.mark.parametrize("max_retries", [0, 1])
+def test_seeded_retries_keep_circuit_streams(monkeypatch: pytest.MonkeyPatch, max_retries: int) -> None:
+    """Retry nonconsecutive circuits of a seeded run without changing their samples."""
+    circuit = QuantumCircuit(3, 3)
+    circuit.h(range(3))
+    circuit.measure(range(3), range(3))
+    backend = DDSIMBackend(num_qubits=3)
+    reference = backend.run([circuit] * 3, shots=64, memory=True, seed_simulator=17).result()
+    expected = [reference.get_memory(index) for index in range(3)]
+    assert len({tuple(memory) for memory in expected}) == 3
+    job = backend.run([circuit] * 3, shots=64, memory=True, seed_simulator=17, max_retries=max_retries)
+    failed = job.entries[0].attempts[0].handle
+    assert failed is not None
+    assert failed.wait()
+    original_check = Job.check
+    original_status = Job.get_program_status
+
+    def check(handle: Job) -> Job.Status:
+        return Job.Status.FAILED if handle is failed else original_check(handle)
+
+    def status(handle: Job, program_index: int = 0) -> Job.Status | None:
+        if handle is failed and program_index in {0, 2}:
+            return Job.Status.FAILED
+        return original_status(handle, program_index)
+
+    monkeypatch.setattr(Job, "check", check)
+    monkeypatch.setattr(Job, "get_program_status", status)
+    if not max_retries:
+        job.collect()
+        job.resubmit([2, 0])
+    result = job.result()
+    assert [len(entry.attempts) for entry in job.entries] == [2, 1, 2]
+    assert [result.get_memory(index) for index in range(3)] == expected
+
+
+def test_seed_range_covers_every_circuit() -> None:
+    """Reject a run whose last circuit needs a seed above the device integer range."""
+    backend = DDSIMBackend(num_qubits=1)
+    circuit = QuantumCircuit(1, 1)
+    circuit.measure(0, 0)
+    with pytest.raises(ValueError, match="seed_simulator"):
+        backend.run([circuit, circuit], seed_simulator=2**31 - 1)
+    assert backend.run(circuit, shots=1, seed_simulator=2**31 - 1).result().get_counts() == {"0": 1}
+
+
+def test_serial_seed_reproducibility_and_statistics() -> None:
+    """Reproduce serial samples and check their binomial distribution."""
+    circuit = QuantumCircuit(1, 1)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    backend = DDSIMBackend(num_qubits=1)
+    assert backend.num_qubits == 1
+    circuit = transpile(circuit, backend, initial_layout=[0], optimization_level=0)
+    assert circuit.num_qubits == 1
+    first = backend.run(circuit, shots=4096, seed_simulator=73, max_workers=1, memory=True).result()
+    second = backend.run(circuit, shots=4096, seed_simulator=73, max_workers=1, memory=True).result()
+    assert first.get_memory() == second.get_memory()
+    # Six binomial standard deviations; either tail has probability below 2e-9.
+    assert abs(first.get_counts()["1"] - 2048) < 6 * np.sqrt(4096 / 4)
+
+
+def test_invalid_worker_limit() -> None:
+    """Reject negative worker limits before submission."""
+    with pytest.raises(ValueError, match="max_workers"):
+        DDSIMBackend(num_qubits=1).run(QuantumCircuit(1), max_workers=-1)
+
+
+@pytest.mark.parametrize("num_qubits", [0, 65536])
+def test_ddsim_invalid_width(num_qubits: int) -> None:
+    """Reject widths outside the device range at construction."""
+    with pytest.raises(ValueError, match="Invalid argument"):
+        DDSIMBackend(num_qubits=num_qubits)

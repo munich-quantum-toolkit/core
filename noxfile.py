@@ -32,6 +32,10 @@ if TYPE_CHECKING:
 
 nox.needs_version = ">=2025.10.16"
 nox.options.default_venv_backend = "uv"
+# uv copies files into environments on macOS, and macOS validates every new native library on its
+# first load. Hard links let later session environments reuse files that were already validated.
+# Linux and Windows already use hard links by default.
+os.environ.setdefault("UV_LINK_MODE", "hardlink")
 
 if os.environ.get("CI", None):
     nox.options.error_on_missing_interpreters = True
@@ -185,7 +189,7 @@ def _run_tests(
 @nox.session(python=PYTHON_ALL_VERSIONS, reuse_venv=True, default=True)
 def tests(session: nox.Session) -> None:
     """Run the test suite."""
-    _run_tests(session, pytest_run_args=["-m", "not slurm"])
+    _run_tests(session)
 
 
 @nox.session(name="catalyst", python="3.14", reuse_venv=True)
@@ -287,8 +291,6 @@ def qiskit(session: nox.Session) -> None:
         "run",
         "--no-sync",
         "pytest",
-        "-m",
-        "not (linkcheck or slurm)",
         *session.posargs,
         "--cov-config=pyproject.toml",
         env=env,

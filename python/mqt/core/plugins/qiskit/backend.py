@@ -14,8 +14,8 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices.
 from __future__ import annotations
 
 __lazy_modules__ = {
-    "math",
     "mqt.core.mlir",
+    "mqt.core.mlir._qdmi",
     "mqt.core.plugins.qiskit.exceptions",
     "mqt.core.plugins.qiskit.job",
     "mqt.core.qdmi.builtin_driver",
@@ -26,7 +26,6 @@ __lazy_modules__ = {
     "qiskit.transpiler",
 }
 
-from math import pi
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, cast
 
@@ -58,10 +57,11 @@ from mqt.core.mlir import (
     CompiledProgram,
     CompilerTarget,
     ProgramCapability,
-    TargetEnvironment,
+    _native_r_gate,
     compile_program,
     serialize_program,
 )
+from mqt.core.mlir._qdmi import Context
 from mqt.core.plugins.qiskit.exceptions import (
     CircuitValidationError,
     TranslationError,
@@ -72,21 +72,26 @@ from mqt.core.plugins.qiskit.job import QDMIJob
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
     from typing import Unpack
 
     from qiskit.circuit import Instruction
     from qiskit.circuit.parameterexpression import ParameterValueType
     from qiskit.transpiler import CouplingMap
 
-    from mqt.core.mlir import CompilationOptions
+    from mqt.core.mlir import CompilationOptions, TargetEnvironment
     from mqt.core.plugins.qiskit.provider import QDMIProvider
     from mqt.core.qdmi import Device as QDMIDevice
+    from mqt.core.qdmi import Job as QDMIJobHandle
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
 
     ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
+    SubmitPrograms = Callable[[Sequence[int], Sequence[CompiledProgram], int, TargetEnvironment], QDMIJobHandle | None]
 
-__all__ = ["QDMIBackend"]
+__all__ = ["DDSIMBackend", "QDMIBackend"]
+
+# DDSIM reads its job seed as a positive native int.
+_MAX_SEED = 2**31 - 1
 
 
 def __dir__() -> list[str]:
@@ -96,13 +101,15 @@ def __dir__() -> list[str]:
 class QDMIBackend(BackendV2):
     """A Qiskit BackendV2 adapter for QDMI devices.
 
-    This backend provides program submission to QDMI devices.
-    It automatically introspects device capabilities and constructs a
-    :class:`~qiskit.transpiler.Target` object with supported operations.
+    The backend queries the device's supported gates and qubit placements to
+    construct a :class:`~qiskit.transpiler.Target`. Compile a circuit for that
+    target with Qiskit's transpiler, or use :meth:`compile`, before calling
+    :meth:`run`. Running a circuit validates and submits it without further
+    synthesis or routing.
 
-    Use :meth:`from_device_id` to open one client-visible device. Use
-    :class:`~mqt.core.plugins.qiskit.provider.QDMIProvider` to enumerate
-    client-visible devices.
+    Use :meth:`from_device_id` to open a configured device, or
+    :class:`~mqt.core.plugins.qiskit.provider.QDMIProvider` to discover devices
+    available through the driver.
 
     Args:
         device: QDMI device wrapper.
@@ -135,10 +142,10 @@ class QDMIBackend(BackendV2):
         self._device = device
         self._device_id = device_id
         try:
-            self._environment = TargetEnvironment.from_device(device)
+            self._context = Context(device)
+            self._environment = self._context.environment
         except ValueError as exc:
             raise UnsupportedDeviceError(str(exc)) from exc
-        self._native_width = max((site.id for site in self._environment.target.sites), default=-1) + 1
         self.last_job: QDMIJob | None = None
         self._target = self._build_target()
 
@@ -246,6 +253,18 @@ class QDMIBackend(BackendV2):
             raise CircuitValidationError(msg)
         return {}
 
+    def _batch_submitter(self, job_parameters: QDMIJobParameters, count: int) -> SubmitPrograms:
+        """Capture submission state for the programs of one run and their later retries.
+
+        Returns:
+            Callable that submits selected programs, returning None if the provider declines the group.
+        """
+        del count
+        context = self._context
+        return lambda _indices, programs, shots, destination: context.try_submit(
+            programs, shots, destination=destination, **job_parameters
+        )
+
     def _build_target(self) -> Target:
         """Project the shared device snapshot into Qiskit's physical positions.
 
@@ -257,6 +276,8 @@ class QDMIBackend(BackendV2):
             UnsupportedOperationError: If Qiskit cannot represent a capability.
         """
         snapshot = self._environment.target
+        sites = snapshot.sites
+        self._native_width = max((site.id for site in sites), default=-1) + 1
         self._placeable_sites = set(snapshot.placeable_sites)
         if not self._placeable_sites:
             msg = "The device has no sites with single-qubit gates and measurement."
@@ -292,11 +313,8 @@ class QDMIBackend(BackendV2):
                 gate = Gate(
                     name, capability.arity.value, [Parameter(f"p{i}") for i in range(capability.num_parameters)]
                 )
-            if capability.name in {"gpi", "gpi2"} and capability.canonical_name == "r":
-                gate = Gate(capability.name, 1, [Parameter("phi")])
-                definition = QuantumCircuit(1, global_phase=pi / 2 if capability.name == "gpi" else 0)
-                definition.r(capability.fixed_parameters[0], gate.params[0], 0)
-                gate.definition = definition
+            if (native_gate := _native_r_gate(capability)) is not None:
+                gate = native_gate
             name = ("mcphase" if name == "mcp" else name) if isinstance(gate, type) else gate.name
             self._operation_names[capability.name] = name
             projections.append((capability, gate, name))
@@ -324,9 +342,10 @@ class QDMIBackend(BackendV2):
             gate = projected_gate
             fixed = capability.fixed_parameters
             bounds = capability.parameter_bounds
-            if name in {"gpi", "gpi2"} and capability.canonical_name == "r":
-                fixed = fixed[1:]
-                bounds = bounds[1:]
+            if not isinstance(gate, type):
+                offset = capability.num_parameters - len(gate.params)
+                fixed = fixed[offset:]
+                bounds = bounds[offset:]
             key = (
                 name,
                 None if isinstance(gate, type) else gate.num_qubits,
@@ -397,9 +416,9 @@ class QDMIBackend(BackendV2):
         if ProgramCapability.CLASSICAL_ASSIGNMENT in capabilities:
             target.add_instruction(Store, name="store")
         target.add_instruction(Barrier, name="barrier")
-        if any(site.t1 is not None or site.t2 is not None for site in snapshot.sites):
+        if any(site.t1 is not None or site.t2 is not None for site in sites):
             properties = [QubitProperties() for _ in range(width)]
-            for site in snapshot.sites:
+            for site in sites:
                 if site.id in self._placeable_sites:
                     properties[site.id] = QubitProperties(
                         t1=self._duration_seconds(site.t1), t2=self._duration_seconds(site.t2)
@@ -445,7 +464,7 @@ class QDMIBackend(BackendV2):
         """Check operations and native placements against the snapshot target.
 
         Args:
-            circuit: Native or logical circuit to check.
+            circuit: Native or unmapped circuit to check.
             native: Also check physical sites and parameter values.
 
         Raises:
@@ -512,7 +531,7 @@ class QDMIBackend(BackendV2):
         *,
         options: CompilationOptions | None = None,
     ) -> CompiledProgram | list[CompiledProgram]:
-        """Compile circuits for this backend's native payload and result layout.
+        """Compile circuits to the backend's native gates and execution format.
 
         Returns:
             One compiled program, or an ordered list for a sequence.
@@ -538,7 +557,7 @@ class QDMIBackend(BackendV2):
         """Submit native circuits without running compilation or routing.
 
         Use ``backend.run(backend.compile(circuit))`` when compilation is needed.
-        Compiled payloads are submitted unchanged. Serialization
+        Compiled programs are submitted unchanged. Serialization
         can normalize terminal measurements and retain their output mapping;
         it does not change the compiled quantum operations or placement.
 
@@ -559,7 +578,7 @@ class QDMIBackend(BackendV2):
                 parameter_values length mismatch).
             UnsupportedOperationError: If a circuit contains unsupported operations.
             JobSubmissionError: If job submission to the device fails.
-            TranslationError: If native payload serialization fails.
+            TranslationError: If serialization of the native program fails.
 
         Examples:
             Run a single circuit with parameter values:
@@ -674,3 +693,74 @@ class QDMIBackend(BackendV2):
         self.last_job = job
         job.submit()
         return job
+
+
+class DDSIMBackend(QDMIBackend):
+    """Sample circuits with explicit measurements on the MQT Core DD simulator.
+
+    Use ``sampler()`` for Sampler V2 and ``estimator()`` for sampled
+    Estimator V2. ``seed_simulator`` accepts ``None`` or a positive signed
+    32-bit integer. ``max_workers=0`` selects automatic concurrency; use 1
+    for serial sampling.
+
+    Args:
+        num_qubits: Maximum circuit width, from 1 to 65,535. None selects
+            the full simulator capacity. Set this to the required width
+            to limit target construction and transpiler circuit expansion.
+    """
+
+    def __init__(self, num_qubits: int | None = None) -> None:
+        """Create a sampling backend with its own QDMI session."""
+        super().__init__(
+            open_device("mqt.ddsim.default", custom1=None if num_qubits is None else str(num_qubits)),
+            device_id="mqt.ddsim.default",
+        )
+
+    @classmethod
+    def _default_options(cls) -> Options:
+        options = super()._default_options()
+        options.update_options(seed_simulator=None, max_workers=0)
+        return options
+
+    @staticmethod
+    def _job_parameters(options: Mapping[str, object]) -> QDMIJobParameters:
+        seed = options["seed_simulator"]
+        if seed is not None:
+            if isinstance(seed, bool) or not isinstance(seed, Integral) or seed not in range(1, _MAX_SEED + 1):
+                msg = "seed_simulator must be None or an integer from 1 to 2147483647"
+                raise ValueError(msg)
+            seed = int(seed)
+        workers = options["max_workers"]
+        if isinstance(workers, bool) or not isinstance(workers, Integral) or int(workers) not in range(2**31):
+            msg = "max_workers must be an integer from 0 to 2147483647 (0 selects automatic concurrency)"
+            raise ValueError(msg)
+        return {"custom1": seed, "custom3": int(workers)}
+
+    def _batch_submitter(self, job_parameters: QDMIJobParameters, count: int) -> SubmitPrograms:
+        """Give circuit ``i`` of a run the DDSIM seed ``seed_simulator + i`` in every job.
+
+        Returns:
+            Callable that submits consecutive programs with their seeds and declines other groups.
+
+        Raises:
+            ValueError: If the run needs a seed above the signed 32-bit range.
+        """
+        seed = job_parameters.get("custom1")
+        if seed is None:
+            return super()._batch_submitter(job_parameters, count)
+        assert isinstance(seed, int)
+        if seed + count - 1 > _MAX_SEED:
+            msg = f"seed_simulator + number of circuits - 1 must not exceed {_MAX_SEED}, got {seed + count - 1}"
+            raise ValueError(msg)
+        context = self._context
+
+        def submit(
+            indices: Sequence[int], programs: Sequence[CompiledProgram], shots: int, destination: TargetEnvironment
+        ) -> QDMIJobHandle | None:
+            # DDSIM seeds program j of a job with custom1 + j.
+            if any(index != indices[0] + offset for offset, index in enumerate(indices)):
+                return None
+            parameters: QDMIJobParameters = {**job_parameters, "custom1": seed + indices[0]}
+            return context.try_submit(programs, shots, destination=destination, **parameters)
+
+        return submit

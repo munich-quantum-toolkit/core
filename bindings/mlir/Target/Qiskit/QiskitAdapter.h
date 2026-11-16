@@ -17,6 +17,7 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
+#include "Qiskit.h"
 #include "QiskitTranslation.h"
 #include "Result.hpp"
 
@@ -748,6 +749,7 @@ struct VersionGate {
 [[nodiscard]] static const auto& gateMap() {
   using Gate = mlir::qc::StandardGate;
   static const std::array GATES{
+      VersionGate{"global_phase", QkGate_GlobalPhase, {Gate::GPhase, 0}},
       VersionGate{"h", QkGate_H, {Gate::H, 0}},
       VersionGate{"id", QkGate_I, {Gate::Id, 0}},
       VersionGate{"x", QkGate_X, {Gate::X, 0}},
@@ -831,7 +833,8 @@ standardGateMapping(const std::string_view name) {
 /// GPI and GPI2 are target names for fixed-angle R gates with one phase.
 [[nodiscard]] static std::optional<double>
 nativeRAngle(nb::handle operation, const std::string_view name) {
-  if ((name != "gpi" && name != "gpi2") ||
+  const auto alias = mlir::nativeRAlias(name);
+  if (!alias ||
       !nb::isinstance(operation,
                       nb::module_::import_("qiskit.circuit").attr("Gate"))) {
     return std::nullopt;
@@ -841,14 +844,10 @@ nativeRAngle(nb::handle operation, const std::string_view name) {
       nb::cast<size_t>(operation.attr("num_qubits")) != 1) {
     return std::nullopt;
   }
-  const auto angle = name == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+  const auto angle = alias->angle;
   try {
-    auto expected = nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
-    expected.attr("r")(angle, parameters[nb::int_(0)], 0);
-    if (name == "gpi") {
-      expected.attr("global_phase") = std::numbers::pi / 2.;
-    }
-    if (operation.attr("definition").equal(expected)) {
+    auto expected = nativeRGate(name, parameters[nb::int_(0)]);
+    if (operation.attr("definition").equal(expected.attr("definition"))) {
       return angle;
     }
   } catch (const nb::python_error&) {
@@ -2409,37 +2408,64 @@ public:
                const std::vector<Parameter>& parameters) override {
     const auto* gate = versionGate(mapping);
     std::string nativeName;
-    if (target_ != nullptr && gate != nullptr) {
-      for (const auto& operation : target_->operations()) {
+    bool fixedExchange = false;
+    if (target_ != nullptr &&
+        target_->nativeOperationsKind() ==
+            mlir::CompilerTarget::NativeOperations::Kind::Explicit) {
+      llvm::SmallVector<mlir::CompilerTarget::SiteId, 4> sites(qubits.begin(),
+                                                               qubits.end());
+      llvm::SmallVector<std::optional<double>, 4> values;
+      values.reserve(parameters.size());
+      for (const auto& parameter : parameters) {
+        const auto* number = parameter.getNumber();
+        values.push_back(number != nullptr ? std::optional{number->value}
+                                           : std::nullopt);
+      }
+      const auto compatible = [&](const auto& operation) {
         const auto* candidate = versionGate(operation.canonicalName());
-        if (candidate == nullptr || candidate->translation != mapping ||
-            !operation.arity().accepts(qubits.size()) ||
-            operation.numParameters() != parameters.size() ||
-            !std::ranges::all_of(
-                std::views::iota(size_t{0}, operation.numParameters()),
-                [&](size_t index) {
-                  const auto* actual = parameters[index].getNumber();
-                  return operation.acceptsParameter(
-                      index, actual != nullptr ? std::optional{actual->value}
-                                               : std::nullopt);
-                })) {
-          continue;
+        return candidate != nullptr &&
+               (candidate->translation == mapping ||
+                (operation.arity().kind() ==
+                     mlir::CompilerTarget::OperationCapability::Arity::Kind::
+                         Variadic &&
+                 candidate->translation ==
+                     StandardGateMapping{mapping.gate, 0}));
+      };
+      const auto& descriptor =
+          mlir::qc::getStandardGateDescriptor(mapping.gate);
+      auto selected =
+          target_->findOperation(descriptor.operationSymbol, qubits.size(),
+                                 values, sites, mapping.controls, compatible);
+      if (selected.capability == nullptr && gate != nullptr &&
+          (mapping.controls != 0 ||
+           llvm::StringRef(gate->name) != descriptor.operationSymbol)) {
+        selected = target_->findOperation(gate->name, qubits.size(), values,
+                                          sites, 0, compatible);
+      }
+      if (selected.capability == nullptr &&
+          mapping == StandardGateMapping{mlir::qc::StandardGate::XXPlusYY, 0} &&
+          values.size() == 2 && values[0] && values[1] &&
+          std::abs(*values[0] + std::numbers::pi / 2.) <=
+              mlir::mqt::PARAMETER_COMPARISON_TOLERANCE &&
+          std::abs(*values[1]) <= mlir::mqt::PARAMETER_COMPARISON_TOLERANCE) {
+        selected =
+            target_->findOperation("sqrt_iswap", qubits.size(), {}, sites);
+        fixedExchange = selected.capability != nullptr;
+      }
+      if (selected.capability != nullptr && !selected.genericControls) {
+        const auto& operation = *selected.capability;
+        if (!fixedExchange) {
+          gate = versionGate(operation.canonicalName());
         }
         if (const auto* named = versionGate(operation.name());
             named != nullptr && named->translation == mapping) {
-          candidate = named;
+          gate = named;
         }
-        if (operation.siteTuples().empty() ||
-            std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
-              return std::ranges::equal(
-                  tuple.sites(), qubits, {}, {}, [&](uint32_t qubit) {
-                    return static_cast<mlir::CompilerTarget::SiteId>(qubit);
-                  });
-            })) {
-          gate = candidate;
-          nativeName = operation.name().str();
-          break;
-        }
+        nativeName = operation.name().str();
+      } else if (selected.capability == nullptr &&
+                 target_->hasDeviceConstraints()) {
+        throw std::runtime_error(
+            "target operation cannot be emitted as native Qiskit");
       }
     }
     const auto extraControls = gate == nullptr ? mapping.controls : 0;
@@ -2459,9 +2485,8 @@ public:
       throw std::runtime_error("Qiskit gate '" + std::string(gate->name) +
                                "' has incompatible arity");
     }
-    if (nativeName == "gpi" || nativeName == "gpi2") {
-      const auto angle =
-          nativeName == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+    if (const auto alias = mlir::nativeRAlias(nativeName)) {
+      const auto angle = alias->angle;
       if (mapping != StandardGateMapping{mlir::qc::StandardGate::R, 0} ||
           parameters[0].getNumber() == nullptr ||
           !(std::abs(parameters[0].getNumber()->value - angle) <=
@@ -2469,20 +2494,12 @@ public:
         throw std::runtime_error("Qiskit native gate '" + nativeName +
                                  "' requires its fixed-angle R definition");
       }
-      nb::list values;
-      values.append(pythonParameter(parameters[1]));
-      auto operation = nb::module_::import_("qiskit.circuit")
-                           .attr("Gate")(nativeName, 1, values);
-      auto definition =
-          nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
-      definition.attr("r")(angle, values[0], 0);
-      if (nativeName == "gpi") {
-        definition.attr("global_phase") = std::numbers::pi / 2.;
+      auto operation = nativeRGate(nativeName, pythonParameter(parameters[1]));
+      if (alias->globalPhase != 0.) {
         pythonCircuit_.attr("global_phase") =
             pythonCircuit_.attr("global_phase")
-                .attr("__sub__")(std::numbers::pi / 2.);
+                .attr("__sub__")(alias->globalPhase);
       }
-      operation.attr("definition") = definition;
       pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
       return;
     }
@@ -2509,8 +2526,8 @@ public:
         auto definition = circuitModule.attr("QuantumCircuit")(qubits.size());
         definition.attr("append")(operation, definition.attr("qubits"),
                                   nb::arg("copy") = false);
-        auto alias =
-            circuitModule.attr("Gate")(nativeName, qubits.size(), values);
+        auto alias = circuitModule.attr("Gate")(
+            nativeName, qubits.size(), fixedExchange ? nb::list() : values);
         alias.attr("definition") = definition;
         operation = std::move(alias);
       }
@@ -2570,9 +2587,9 @@ public:
         throw std::runtime_error(
             "Qiskit native gates require an explicit target and no modifiers");
       }
-      std::vector<mlir::CompilerTarget::SiteId> sites(qubits.begin(),
-                                                      qubits.end());
-      std::vector<std::optional<double>> values;
+      llvm::SmallVector<mlir::CompilerTarget::SiteId, 4> sites(qubits.begin(),
+                                                               qubits.end());
+      llvm::SmallVector<std::optional<double>, 4> values;
       values.reserve(parameters.size());
       for (const auto& parameter : parameters) {
         const auto* number = parameter.getNumber();
@@ -2793,7 +2810,8 @@ private:
     return result;
   }
 
-  /// Export preflight checks the expanded node/depth budgets before conversion.
+  /// Before export, check node-count and depth limits after expanding
+  /// definitions.
   ///
   /// Retain shared children so cached identities remain valid across gates.
   [[nodiscard]] nb::object
@@ -3212,8 +3230,7 @@ public:
                   nb::cast<uint64_t>(instruction.attr("num_ctrl_qubits")))) {
         reason = "open controls";
       } else if (!nativeName ||
-                 ((operationName == "gpi" || operationName == "gpi2") &&
-                  !rAngle)) {
+                 (mlir::nativeRAlias(operationName) && !rAngle)) {
         reason = "custom or unsupported operation";
       } else if (operationName != *nativeName &&
                  (*nativeName == "measure" || *nativeName == "reset")) {
@@ -3417,15 +3434,6 @@ public:
   [[nodiscard]] std::unique_ptr<CircuitWriter>
   createCircuit(const uint32_t looseQubits, const uint32_t looseClbits,
                 const mlir::CompilerTarget* target) const override {
-    if (target != nullptr &&
-        std::ranges::none_of(
-            *gates_,
-            [](const auto& gate) { return !gate.second.nativeName.empty(); }) &&
-        std::ranges::none_of(target->operations(), [](const auto& operation) {
-          return operation.name() != operation.canonicalName();
-        })) {
-      target = nullptr;
-    }
     return std::make_unique<NativeCircuitWriter>(looseQubits, looseClbits,
                                                  parameters_, gates_, target);
   }

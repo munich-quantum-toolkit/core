@@ -26,47 +26,15 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
-#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <map>
 #include <optional>
-#include <string>
-#include <system_error>
 #include <utility>
-#include <vector>
 
 namespace mlir {
-
-bool ResultLayout::isIdentity() const noexcept {
-  return bits.size() == rawWidth &&
-         llvm::all_of(llvm::enumerate(bits), [](auto entry) {
-           return entry.value() == entry.index();
-         });
-}
-
-llvm::Expected<std::string>
-ResultLayout::decodeBits(llvm::StringRef raw) const {
-  if (raw.size() != rawWidth ||
-      raw.find_first_not_of("01") != StringRef::npos) {
-    return llvm::createStringError(std::errc::invalid_argument,
-                                   "raw sample has an invalid width or digit");
-  }
-  std::string result(bits.size(), '0');
-  for (auto [index, slot] : llvm::enumerate(bits)) {
-    if (slot) {
-      if (*slot >= rawWidth) {
-        return llvm::createStringError(
-            std::errc::invalid_argument,
-            "result layout selects an invalid raw bit");
-      }
-      result[bits.size() - index - 1] = raw[rawWidth - *slot - 1];
-    }
-  }
-  return result;
-}
 
 namespace {
 

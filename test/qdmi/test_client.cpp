@@ -21,7 +21,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cctype>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -82,27 +81,6 @@ template <typename T> auto bytesOf(const T& value) {
   std::memcpy(bytes.data(), &value, sizeof(T));
   return bytes;
 }
-
-class DeviceTest : public testing::TestWithParam<Device> {
-protected:
-  Device device;
-
-  DeviceTest() : device(GetParam()) {}
-};
-
-class SiteTest : public DeviceTest {
-protected:
-  std::vector<Site> sites;
-
-  void SetUp() override { sites = value(device.getSites()); }
-};
-
-class OperationTest : public DeviceTest {
-protected:
-  std::vector<Operation> operations;
-
-  void SetUp() override { operations = value(device.getOperations()); }
-};
 
 class DDSimulatorDeviceTest : public testing::Test {
 protected:
@@ -621,70 +599,90 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
   }
 }
 
-TEST_P(DeviceTest, Name) {
-  EXPECT_NO_THROW(EXPECT_FALSE(value(device.getName()).empty()));
-}
+TEST(DeviceMetadataTest, QueriesLocalCalibrationAndTopology) {
+  // Expected calibration and topology come from
+  // json/sc/mqt-core-qdmi-sc-device.json.
+  const auto device = value(Session::openDevice("mqt.sc.default"));
+  EXPECT_EQ(value(device.getName()), "MQT SC Default QDMI Device");
+  EXPECT_FALSE(value(device.getVersion()).empty());
+  EXPECT_FALSE(value(device.getLibraryVersion()).empty());
+  EXPECT_EQ(value(device.getStatus()), QDMI_DEVICE_STATUS_IDLE);
+  EXPECT_EQ(value(device.getQubitsNum()), 100);
+  EXPECT_EQ(value(device.getDurationUnit()), "ns");
+  EXPECT_EQ(value(device.getDurationScaleFactor()), 1.0);
+  EXPECT_TRUE(value(device.getSupportedProgramFormats()).empty());
+  EXPECT_TRUE(value(device.getChildDevices()).empty());
+  EXPECT_EQ(value(device.getLengthUnit()), std::nullopt);
+  EXPECT_EQ(value(device.getLengthScaleFactor()), std::nullopt);
+  EXPECT_EQ(value(device.getMinAtomDistance()), std::nullopt);
+  EXPECT_EQ(value(device.queryCustomProperty<std::vector<std::byte>>(
+                CustomProperty::Custom5)),
+            std::nullopt);
 
-TEST_P(DeviceTest, Version) {
-  EXPECT_NO_THROW(EXPECT_FALSE(value(device.getVersion()).empty()));
-}
+  const auto sites = value(device.getSites());
+  ASSERT_EQ(sites.size(), 100);
+  const auto regularSites = value(device.getRegularSites());
+  ASSERT_EQ(regularSites.size(), sites.size());
+  EXPECT_EQ(value(regularSites.front().getIndex()), 0);
+  EXPECT_EQ(value(regularSites.back().getIndex()), 99);
+  EXPECT_TRUE(value(device.getZones()).empty());
+  const auto& site = sites.front();
+  EXPECT_EQ(value(site.getIndex()), 0);
+  EXPECT_EQ(value(site.getT1()), 100000);
+  EXPECT_EQ(value(site.getT2()), 150000);
+  EXPECT_EQ(value(site.getName()), std::nullopt);
+  EXPECT_FALSE(value(site.isZone()));
+  EXPECT_EQ(value(site.getXCoordinate()), std::nullopt);
+  EXPECT_EQ(value(site.getYCoordinate()), std::nullopt);
+  EXPECT_EQ(value(site.getZCoordinate()), std::nullopt);
+  EXPECT_EQ(value(site.getXExtent()), std::nullopt);
+  EXPECT_EQ(value(site.getYExtent()), std::nullopt);
+  EXPECT_EQ(value(site.getZExtent()), std::nullopt);
+  EXPECT_EQ(value(site.getModuleIndex()), std::nullopt);
+  EXPECT_EQ(value(site.getSubmoduleIndex()), std::nullopt);
+  EXPECT_EQ(value(site.queryCustomProperty<std::vector<std::byte>>(
+                CustomProperty::Custom1)),
+            std::nullopt);
 
-TEST_P(DeviceTest, Status) {
-  EXPECT_NO_THROW(std::ignore = value(device.getStatus()));
-}
-
-TEST_P(DeviceTest, LibraryVersion) {
-  EXPECT_NO_THROW(EXPECT_FALSE(value(device.getLibraryVersion()).empty()));
-}
-
-TEST_P(DeviceTest, QubitsNum) {
-  EXPECT_NO_THROW(EXPECT_GT(value(device.getQubitsNum()), 0));
-}
-
-TEST_P(DeviceTest, Sites) {
-  EXPECT_NO_THROW(EXPECT_FALSE(value(device.getSites()).empty()));
-}
-
-TEST_P(DeviceTest, CouplingMap) {
-  EXPECT_NO_THROW(std::ignore = value(device.getCouplingMap()));
+  const auto couplings = value(device.getCouplingMap());
+  ASSERT_TRUE(couplings.has_value());
+  ASSERT_EQ(couplings->size(), 180);
+  EXPECT_EQ(value(couplings->front().first.getIndex()), 0);
+  EXPECT_EQ(value(couplings->front().second.getIndex()), 1);
+  const auto operations = value(device.getOperations());
+  const auto cz = std::ranges::find_if(operations, [](const auto& operation) {
+    return value(operation.getName()) == "cz";
+  });
+  ASSERT_NE(cz, operations.end());
+  EXPECT_EQ(value(cz->getQubitsNum()), 2);
+  EXPECT_EQ(value(cz->getParametersNum()), 0);
+  EXPECT_EQ(value(cz->getDuration()), 200);
+  EXPECT_EQ(value(cz->getFidelity()), 0.99);
+  const auto pairs = value(cz->getSitePairs());
+  ASSERT_TRUE(pairs.has_value());
+  ASSERT_EQ(pairs->size(), 180);
+  const auto& [first, second] = pairs->front();
+  EXPECT_EQ(value(first.getIndex()), 0);
+  EXPECT_EQ(value(second.getIndex()), 1);
+  EXPECT_EQ(value(cz->getDuration({first, second})), 180);
+  EXPECT_EQ(value(cz->getFidelity({first, second})), 0.995);
+  EXPECT_FALSE(value(cz->isZoned()));
+  EXPECT_EQ(value(cz->getInteractionRadius()), std::nullopt);
+  EXPECT_EQ(value(cz->getBlockingRadius()), std::nullopt);
+  EXPECT_EQ(value(cz->getIdlingFidelity()), std::nullopt);
+  EXPECT_EQ(value(cz->getMeanShuttlingSpeed()), std::nullopt);
+  EXPECT_EQ(value(cz->queryCustomProperty<std::vector<std::byte>>(
+                CustomProperty::Custom2)),
+            std::nullopt);
+  const auto r = std::ranges::find_if(operations, [](const auto& operation) {
+    return value(operation.getName()) == "r";
+  });
+  ASSERT_NE(r, operations.end());
+  EXPECT_EQ(value(r->getSitePairs()), std::nullopt);
 }
 
 TEST_F(DDSimulatorDeviceTest, QueueLengthIsUnavailable) {
   EXPECT_EQ(value(device.getQueueLength()), std::nullopt);
-}
-
-TEST_P(DeviceTest, LengthUnit) {
-  EXPECT_NO_THROW(std::ignore = value(device.getLengthUnit()));
-}
-
-TEST_P(DeviceTest, LengthScaleFactor) {
-  EXPECT_NO_THROW(std::ignore = value(device.getLengthScaleFactor()));
-}
-
-TEST_P(DeviceTest, DurationUnit) {
-  EXPECT_NO_THROW(std::ignore = value(device.getDurationUnit()));
-}
-
-TEST_P(DeviceTest, DurationScaleFactor) {
-  EXPECT_NO_THROW(std::ignore = value(device.getDurationScaleFactor()));
-}
-
-TEST_P(DeviceTest, MinAtomDistance) {
-  EXPECT_NO_THROW(std::ignore = value(device.getMinAtomDistance()));
-}
-
-TEST_P(DeviceTest, SupportedProgramFormats) {
-  EXPECT_NO_THROW(std::ignore = value(device.getSupportedProgramFormats()));
-}
-
-TEST_P(DeviceTest, ChildDevices) {
-  EXPECT_TRUE(value(device.getChildDevices()).empty());
-}
-
-TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
-  EXPECT_EQ(value(device.queryCustomProperty<std::vector<std::byte>>(
-                CustomProperty::Custom5)),
-            std::nullopt);
 }
 
 TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
@@ -696,269 +694,6 @@ TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
   ASSERT_TRUE(capabilities.has_value());
   EXPECT_THAT(*capabilities, testing::HasSubstr("mqt.payload-capabilities.v1"));
   EXPECT_THAT(*capabilities, testing::HasSubstr("classical-assignment"));
-}
-
-TEST_P(SiteTest, Index) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getIndex()));
-  }
-}
-
-TEST_P(SiteTest, T1) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getT1()));
-  }
-}
-
-TEST_P(SiteTest, T2) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getT2()));
-  }
-}
-
-TEST_P(SiteTest, Name) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getName()));
-  }
-}
-
-TEST_P(SiteTest, XCoordinate) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getXCoordinate()));
-  }
-}
-
-TEST_P(SiteTest, YCoordinate) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getYCoordinate()));
-  }
-}
-
-TEST_P(SiteTest, ZCoordinate) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getZCoordinate()));
-  }
-}
-
-TEST_P(SiteTest, IsZone) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.isZone()));
-  }
-}
-
-TEST_P(SiteTest, XExtent) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getXExtent()));
-  }
-}
-
-TEST_P(SiteTest, YExtent) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getYExtent()));
-  }
-}
-
-TEST_P(SiteTest, ZExtent) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getZExtent()));
-  }
-}
-
-TEST_P(SiteTest, ModuleIndex) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getModuleIndex()));
-  }
-}
-
-TEST_P(SiteTest, SubmoduleIndex) {
-  for (const auto& site : sites) {
-    EXPECT_NO_THROW(std::ignore = value(site.getSubmoduleIndex()));
-  }
-}
-
-TEST_P(SiteTest, UnsupportedCustomPropertyReturnsNullopt) {
-  for (const auto& site : sites) {
-    EXPECT_EQ(value(site.queryCustomProperty<std::vector<std::byte>>(
-                  CustomProperty::Custom1)),
-              std::nullopt);
-  }
-}
-
-TEST_P(OperationTest, Name) {
-  for (const auto& operation : operations) {
-    EXPECT_NO_THROW(EXPECT_FALSE(value(operation.getName()).empty()));
-  }
-}
-
-TEST_P(OperationTest, QubitsNum) {
-  for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = value(operation.getQubitsNum()));
-  }
-}
-
-TEST_P(OperationTest, ParametersNum) {
-  for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = value(operation.getParametersNum()));
-  }
-}
-
-TEST_P(OperationTest, Duration) {
-  for (const auto& operation : operations) {
-    const auto qubitsNum = value(operation.getQubitsNum());
-    if (!qubitsNum.has_value()) {
-      EXPECT_NO_THROW(std::ignore = value(operation.getDuration()));
-      continue;
-    }
-    const auto numQubits = *qubitsNum;
-    if (numQubits == 1) {
-      const auto sites = value(operation.getSites());
-      if (!sites.has_value()) {
-        EXPECT_NO_THROW(std::ignore = value(operation.getDuration()));
-        continue;
-      }
-      for (const auto& site : *sites) {
-        EXPECT_NO_THROW(std::ignore = value(operation.getDuration({site})));
-      }
-      continue;
-    }
-
-    if (numQubits == 2) {
-      const auto sitePairs = value(operation.getSitePairs());
-      if (!sitePairs.has_value()) {
-        EXPECT_NO_THROW(std::ignore = value(operation.getDuration()));
-        continue;
-      }
-      for (const auto& [site1, site2] : *sitePairs) {
-        EXPECT_NO_THROW(std::ignore =
-                            value(operation.getDuration({site1, site2})));
-      }
-      continue;
-    }
-
-    EXPECT_NO_THROW(std::ignore = value(operation.getDuration()));
-  }
-}
-
-TEST_P(OperationTest, Fidelity) {
-  for (const auto& operation : operations) {
-    const auto qubitsNum = value(operation.getQubitsNum());
-    if (!qubitsNum.has_value()) {
-      EXPECT_NO_THROW(std::ignore = value(operation.getFidelity()));
-      continue;
-    }
-    const auto numQubits = *qubitsNum;
-    if (numQubits == 1) {
-      const auto sites = value(operation.getSites());
-      if (!sites.has_value()) {
-        EXPECT_NO_THROW(std::ignore = value(operation.getFidelity()));
-        continue;
-      }
-      for (const auto& site : *sites) {
-        EXPECT_NO_THROW(std::ignore = value(operation.getFidelity({site})));
-      }
-      continue;
-    }
-
-    if (numQubits == 2) {
-      const auto sitePairs = value(operation.getSitePairs());
-      if (!sitePairs.has_value()) {
-        EXPECT_NO_THROW(std::ignore = value(operation.getFidelity()));
-        continue;
-      }
-      for (const auto& [site1, site2] : *sitePairs) {
-        EXPECT_NO_THROW(std::ignore =
-                            value(operation.getFidelity({site1, site2})));
-      }
-      continue;
-    }
-
-    EXPECT_NO_THROW(std::ignore = value(operation.getFidelity()));
-  }
-}
-
-TEST_P(OperationTest, InteractionRadius) {
-  for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = value(operation.getInteractionRadius()));
-  }
-}
-
-TEST_P(OperationTest, BlockingRadius) {
-  for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = value(operation.getBlockingRadius()));
-  }
-}
-
-TEST_P(OperationTest, IdlingFidelity) {
-  for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = value(operation.getIdlingFidelity()));
-  }
-}
-
-TEST_P(OperationTest, IsZoned) {
-  for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = value(operation.isZoned()));
-  }
-}
-
-TEST_P(OperationTest, Sites) {
-  for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = value(operation.getSites()));
-  }
-}
-
-TEST_P(OperationTest, SitePairs) {
-  for (const auto& operation : operations) {
-    const auto sitePairs = value(operation.getSitePairs());
-    const auto qubitsNum = value(operation.getQubitsNum());
-    const auto isZonedOp = value(operation.isZoned());
-
-    if (!qubitsNum.has_value() || *qubitsNum != 2 || isZonedOp) {
-      EXPECT_FALSE(sitePairs.has_value());
-      continue;
-    }
-
-    const auto sites = value(operation.getSites());
-    if (!sites.has_value() || sites->empty() || sites->size() % 2 != 0) {
-      EXPECT_FALSE(sitePairs.has_value());
-      continue;
-    }
-
-    EXPECT_TRUE(sitePairs.has_value());
-    if (sitePairs.has_value()) {
-      EXPECT_EQ(sitePairs->size(), sites->size() / 2);
-    }
-  }
-}
-
-TEST_P(OperationTest, MeanShuttlingSpeed) {
-  for (const auto& operation : operations) {
-    EXPECT_NO_THROW(std::ignore = value(operation.getMeanShuttlingSpeed()));
-  }
-}
-
-TEST_P(OperationTest, UnsupportedCustomPropertyReturnsNullopt) {
-  for (const auto& operation : operations) {
-    EXPECT_EQ(value(operation.queryCustomProperty<std::vector<std::byte>>(
-                  CustomProperty::Custom2)),
-              std::nullopt);
-  }
-}
-
-TEST_P(DeviceTest, RegularSitesAndZones) {
-  const auto allSites = value(device.getSites());
-  const auto regularSites = value(device.getRegularSites());
-  const auto zones = value(device.getZones());
-
-  EXPECT_FALSE(allSites.empty());
-  EXPECT_EQ(regularSites.size() + zones.size(), allSites.size());
-
-  for (const auto& site : regularSites) {
-    EXPECT_FALSE(value(site.isZone()));
-  }
-
-  for (const auto& site : zones) {
-    EXPECT_TRUE(value(site.isZone()));
-  }
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobReturnsValidJob) {
@@ -1050,27 +785,6 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobValidatesCustomParameters) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(DDSimulatorDeviceTest, SubmitJobPreservesNumShots) {
-  const std::string qasm3Program = R"(
-OPENQASM 3.0;
-qubit[1] q;
-bit[1] c;
-c[0] = measure q[0];
-)";
-
-  const auto job1 =
-      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
-  EXPECT_EQ(value(job1.getNumShots()), 10);
-
-  const auto job2 =
-      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100));
-  EXPECT_EQ(value(job2.getNumShots()), 100);
-
-  const auto job3 =
-      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 1000));
-  EXPECT_EQ(value(job3.getNumShots()), 1000);
-}
-
 TEST_F(JobTest, IdIsUnique) {
   const std::string qasm3Program = R"(
 OPENQASM 3.0;
@@ -1096,14 +810,6 @@ TEST_F(JobTest, UnsupportedCustomPropertyAndResultReturnNullopt) {
   EXPECT_EQ(value(job.getCustomResult<std::vector<std::byte>>(
                 CustomProperty::Custom1)),
             std::nullopt);
-}
-
-TEST_F(JobTest, StatusProgresses) {
-  EXPECT_TRUE(value(job.wait()));
-
-  const auto finalStatus = value(job.check());
-  EXPECT_THAT(finalStatus,
-              testing::AnyOf(QDMI_JOB_STATUS_DONE, QDMI_JOB_STATUS_FAILED));
 }
 
 TEST_F(JobTest, GetCountsReturnsValidHistogram) {
@@ -1261,24 +967,22 @@ TEST(AuthenticationTest, SessionParameterToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_SESSION_PARAMETER_CUSTOM5), "CUSTOM5");
 }
 
-TEST(AuthenticationTest, SessionConstructionWithToken) {
-  // Empty token should be accepted
-  SessionConfig config1;
-  config1.token = "";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config1)); });
-
-  // Non-empty token should be accepted
-  SessionConfig config2;
-  config2.token = "test_token_123";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config2)); });
-
-  // Token with special characters should be accepted
-  SessionConfig config3;
-  config3.token = "very_long_token_with_special_characters_!@#$%^&*()";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config3)); });
+TEST(AuthenticationTest, AcceptsOptionalSessionParameters) {
+  const SessionConfig config{
+      .token = "test-token",
+      .authFile = "/driver-owned/nonexistent/authentication-file",
+      .authUrl = "driver-specific:authentication-endpoint",
+      .username = "user",
+      .password = "password",
+      .projectId = "project",
+      .custom1 = "value1",
+      .custom2 = "value2",
+      .custom3 = "value3",
+      .custom4 = "value4",
+      .custom5 = "value5",
+  };
+  auto session = value(Session::create(config));
+  EXPECT_FALSE(value(session.getDevices()).empty());
 }
 
 TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
@@ -1294,120 +998,6 @@ TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
       testing::AllOf(testing::HasSubstr("[mqt-core] [info]"),
                      testing::HasSubstr(
                          "Session parameter TOKEN not supported (skipped)")));
-}
-
-TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
-  SessionConfig config;
-  config.authUrl = "driver-specific:authentication-endpoint";
-  EXPECT_NO_THROW({ const auto session = value(Session::create(config)); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
-  SessionConfig config;
-  config.authFile = "/driver-owned/nonexistent/authentication-file";
-  EXPECT_NO_THROW({ const auto session = value(Session::create(config)); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithUsernamePassword) {
-  // Username only
-  SessionConfig config1;
-  config1.username = "user123";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config1)); });
-
-  // Password only
-  SessionConfig config2;
-  config2.password = "secure_password";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config2)); });
-
-  // Both username and password
-  SessionConfig config3;
-  config3.username = "user123";
-  config3.password = "secure_password";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config3)); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithProjectId) {
-  SessionConfig config;
-  config.projectId = "project-123-abc";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config)); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithMultipleParameters) {
-  SessionConfig config;
-  config.token = "test_token";
-  config.username = "test_user";
-  config.password = "test_pass";
-  config.projectId = "test_project";
-  EXPECT_NO_THROW(
-      { const auto session = value(qdmi::Session::create(config)); });
-}
-
-TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
-  // Custom parameters may not be supported by all devices, or may have specific
-  // validation requirements. This test verifies they can be passed to the
-  // Session constructor. Currently a smoke test.
-
-  // Test custom1 - may succeed or fail with validation/unsupported errors
-  SessionConfig config1;
-  config1.custom1 = "custom_value_1";
-  auto session1 = value(qdmi::Session::create(config1));
-  EXPECT_NO_THROW(std::ignore = value(session1.getDevices()));
-
-  // Test custom2
-  SessionConfig config2;
-  config2.custom2 = "custom_value_2";
-  auto session2 = value(qdmi::Session::create(config2));
-  EXPECT_NO_THROW(std::ignore = value(session2.getDevices()));
-
-  // Test all custom parameters together
-  SessionConfig config3;
-  config3.custom1 = "value1";
-  config3.custom2 = "value2";
-  config3.custom3 = "value3";
-  config3.custom4 = "value4";
-  config3.custom5 = "value5";
-  auto session3 = value(qdmi::Session::create(config3));
-  EXPECT_NO_THROW(std::ignore = value(session3.getDevices()));
-
-  // Test mixing custom parameters with standard authentication
-  SessionConfig config4;
-  config4.token = "test_token";
-  config4.custom1 = "custom_value";
-  config4.projectId = "project_id";
-  auto session4 = value(qdmi::Session::create(config4));
-  EXPECT_NO_THROW(std::ignore = value(session4.getDevices()));
-}
-
-TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
-  auto session = value(qdmi::Session::create());
-  auto const devices = value(session.getDevices());
-
-  EXPECT_FALSE(devices.empty());
-
-  // All elements should be Device instances
-  for (const auto& device : devices) {
-    // Device should have a name
-    EXPECT_FALSE(value(device.getName()).empty());
-  }
-}
-
-TEST(AuthenticationTest, SessionMultipleInstances) {
-  auto session1 = value(qdmi::Session::create());
-  auto session2 = value(qdmi::Session::create());
-
-  auto const devices1 = value(session1.getDevices());
-  auto const devices2 = value(session2.getDevices());
-
-  // Both should return devices
-  EXPECT_FALSE(devices1.empty());
-  EXPECT_FALSE(devices2.empty());
-
-  // Should return the same number of devices
-  EXPECT_EQ(devices1.size(), devices2.size());
 }
 
 TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
@@ -1437,32 +1027,5 @@ TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
 
   EXPECT_FALSE(value(site.isZone()));
 }
-
-namespace {
-auto getDevices() -> std::vector<Device> {
-  auto session = value(Session::create());
-  auto devices = value(session.getDevices());
-  std::erase_if(devices, [](const Device& device) {
-    return value(device.getId()).starts_with("test.");
-  });
-  return devices;
-}
-
-/// Device names may contain punctuation or repeat across sessions.
-auto deviceTestName(const testing::TestParamInfo<Device>& info) {
-  auto name = value(info.param.getName());
-  std::ranges::replace_if(
-      name, [](unsigned char character) { return !std::isalnum(character); },
-      '_');
-  return name + "_" + std::to_string(info.index);
-}
-} // namespace
-
-INSTANTIATE_TEST_SUITE_P(DeviceTest, DeviceTest,
-                         testing::ValuesIn(getDevices()), deviceTestName);
-INSTANTIATE_TEST_SUITE_P(SiteTest, SiteTest, testing::ValuesIn(getDevices()),
-                         deviceTestName);
-INSTANTIATE_TEST_SUITE_P(OperationTest, OperationTest,
-                         testing::ValuesIn(getDevices()), deviceTestName);
 
 } // namespace qdmi

@@ -377,14 +377,14 @@ def _record_submissions(device: MockQDMIDevice) -> list[tuple[str | bytes, Progr
         submissions.append((program, program_format))
         return device.MockJob(num_clbits=2, shots=num_shots)
 
-    device.submit_job = submit_job  # ty: ignore[invalid-assignment]
+    device.submit_job = submit_job
     return submissions
 
 
 def test_backend_serialization_without_supported_formats() -> None:
     """Reject a device without a usable payload when taking its snapshot."""
     device = MockQDMIDevice(num_qubits=2, operations=["cz", "measure", "x"])
-    device.supported_program_formats = list  # ty: ignore[invalid-assignment]
+    device.supported_program_formats = list
     with pytest.raises(UnsupportedDeviceError, match="no supported program formats"):
         QDMIBackend(device)  # ty: ignore[invalid-argument-type]
 
@@ -403,7 +403,7 @@ def test_backend_qasm_serialization(formats: list[ProgramFormat], expected: Prog
     circuit.cx(0, 1)
     circuit.measure_all()
     device = MockQDMIDevice(num_qubits=2, operations=["h", "cx", "measure"])
-    device.supported_program_formats = lambda: formats  # ty: ignore[invalid-assignment]
+    device.supported_program_formats = lambda: formats
     submissions = _record_submissions(device)
     QDMIBackend(device).run(circuit, shots=100)  # ty: ignore[invalid-argument-type]
     assert len(submissions) == 1
@@ -421,7 +421,7 @@ def test_backend_qasm_serialization(formats: list[ProgramFormat], expected: Prog
 def test_qasm_preserves_float_parameters(angle: float, program_format: ProgramFormat) -> None:
     """Executable serialization must not replace nearby values by constants."""
     device = MockQDMIDevice(operations=["rx", "measure"])
-    device.supported_program_formats = lambda: [program_format]  # ty: ignore[invalid-assignment]
+    device.supported_program_formats = lambda: [program_format]
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
     circuit = QuantumCircuit(1)
     circuit.rx(angle, 0)

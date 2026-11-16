@@ -45,31 +45,12 @@ bool hasPotentialClassicalAliases(Block& block) {
   return false;
 }
 
-void reorderTopologically(Block& block, IRRewriter& rewriter) {
-  Operation* const terminator = block.getTerminator();
-
-  struct Dependencies {
-    size_t pending = 0;
-    // Keep per-operation storage compact.
-    SmallVector<Operation*, 2> successors;
-  };
-  const auto numOperations = llvm::range_size(block);
-  DenseMap<Operation*, Dependencies> dependencies;
-  dependencies.reserve(numOperations);
+void walkOperationDependencies(
+    Block& block, function_ref<void(Operation*, Operation*)> addDependency) {
   DenseMap<Value, Operation*> lastEffect;
   const bool mayAlias = hasPotentialClassicalAliases(block);
 
-  // Count repeated edges on both ends instead of maintaining deduplication
-  // sets.
-  const auto addDependency = [&](Operation* predecessor, Operation* successor) {
-    assert(predecessor != successor);
-    ++dependencies[successor].pending;
-    dependencies[predecessor].successors.push_back(successor);
-  };
-
   for (Operation& op : block) {
-    dependencies.try_emplace(&op);
-
     // Preserve the order of effects on each SSA value, including nested
     // effects.
     const auto effects = getEffectsRecursively(&op);
@@ -114,6 +95,32 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
       }
     }
   }
+}
+
+void reorderTopologically(Block& block, IRRewriter& rewriter) {
+  Operation* const terminator = block.getTerminator();
+
+  struct Dependencies {
+    size_t pending = 0;
+    // Keep per-operation storage compact.
+    SmallVector<Operation*, 2> successors;
+  };
+  const auto numOperations = llvm::range_size(block);
+  DenseMap<Operation*, Dependencies> dependencies;
+  dependencies.reserve(numOperations);
+  for (Operation& op : block) {
+    dependencies.try_emplace(&op);
+  }
+
+  // Count repeated edges on both ends instead of maintaining deduplication
+  // sets.
+  const auto addDependency = [&](Operation* predecessor, Operation* successor) {
+    assert(predecessor != successor);
+    ++dependencies[successor].pending;
+    dependencies[predecessor].successors.push_back(successor);
+  };
+
+  walkOperationDependencies(block, addDependency);
 
   assert(dependencies.size() == numOperations);
 

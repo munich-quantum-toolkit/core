@@ -25,7 +25,9 @@ if(NOT TARGET ${TARGET_NAME})
   target_sources(
     ${TARGET_NAME}
     PUBLIC
-    FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/include FILES ${QDMI_HDRS})
+    FILE_SET HEADERS
+      BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/include
+      FILES ${QDMI_HDRS})
 
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon LLVMSupport)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})

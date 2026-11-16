@@ -31,12 +31,14 @@
 #include <array>
 #include <atomic>
 #include <barrier>
+#include <cerrno>
 #include <charconv>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <iterator>
 #include <memory>
 #include <numbers>
@@ -45,6 +47,7 @@
 #include <string>
 #include <system_error>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -55,6 +58,19 @@
 #endif
 
 namespace {
+
+unsigned workerLimit() {
+  auto limit = llvm::heavyweight_hardware_concurrency().compute_thread_count();
+  if (const char* raw = std::getenv("MQT_CORE_DD_WORKER_BUDGET")) {
+    unsigned configured = 0;
+    const auto* last = std::next(raw, static_cast<ptrdiff_t>(std::strlen(raw)));
+    const auto [end, error] = std::from_chars(raw, last, configured);
+    if (error == std::errc{} && end == last && configured > 0) {
+      limit = std::min(limit, configured);
+    }
+  }
+  return limit;
+}
 
 std::vector<std::array<uint64_t, 5>> readProgramTrace(const std::string& path) {
   const auto buffer = llvm::MemoryBuffer::getFile(path);
@@ -83,15 +99,52 @@ std::vector<std::array<uint64_t, 5>> readProgramTrace(const std::string& path) {
 
 } // namespace
 
-using ColdVectorReads = testing::TestWithParam<QDMI_Job_Result>;
+#ifdef __linux__
+TEST(Concurrency, FinalizeReapsIdleWorkers) {
+  const auto count = std::min(2U, workerLimit());
+  const qdmi_test::SessionGuard session{};
+  {
+    const qdmi_test::JobGuard job{session.session};
+    // The barrier keeps programs active together before returning them idle.
+    qdmi_test::ControlledJob running{job.job, count};
+    running.release();
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(job.job, 0), QDMI_SUCCESS);
+  }
+  std::vector<int> children;
+  for (const auto& task :
+       std::filesystem::directory_iterator("/proc/self/task")) {
+    const auto buffer = llvm::MemoryBuffer::getFileAsStream(
+        (task.path() / "children").string());
+    ASSERT_TRUE(buffer);
+    llvm::SmallVector<llvm::StringRef> pids;
+    (*buffer)->getBuffer().split(pids, ' ', -1, false);
+    for (const auto pid : pids) {
+      int child = 0;
+      ASSERT_FALSE(pid.getAsInteger(10, child));
+      children.push_back(child);
+    }
+  }
+  ASSERT_GE(children.size(), count);
+  MQT_DDSIM_QDMI_device_finalize();
+  for (const auto child : children) {
+    EXPECT_EQ(kill(child, 0), -1);
+    EXPECT_EQ(errno, ESRCH);
+  }
+}
+#endif
+
+using ColdVectorReads =
+    testing::TestWithParam<std::tuple<QDMI_Job_Result, size_t>>;
 
 TEST_P(ColdVectorReads, ConcurrentProbabilityAndStatevectorReads) {
+  const auto [query, shots] = GetParam();
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_STATE),
+                                  shots == 0 ? qdmi_test::QASM3_BELL_STATE
+                                             : qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, shots), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
   std::barrier start{4};
@@ -116,18 +169,20 @@ TEST_P(ColdVectorReads, ConcurrentProbabilityAndStatevectorReads) {
     }
   };
 
-  const std::jthread t1(worker, GetParam());
-  const std::jthread t2(worker, GetParam());
+  const std::jthread t1(worker, query);
+  const std::jthread t2(worker, query);
   const std::jthread t3(worker, QDMI_JOB_RESULT_PROBABILITIES_DENSE);
   const std::jthread t4(worker, QDMI_JOB_RESULT_PROBABILITIES_DENSE);
 }
 
 INSTANTIATE_TEST_SUITE_P(
     Concurrency, ColdVectorReads,
-    testing::Values(QDMI_JOB_RESULT_STATEVECTOR_DENSE,
-                    QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-                    QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
-                    QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES));
+    testing::Combine(
+        testing::Values(QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+                        QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                        QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+                        QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES),
+        testing::Values(size_t{0}, size_t{128})));
 
 TEST(Concurrency, ConcurrentHistogramReads) {
   const qdmi_test::SessionGuard s{};
@@ -211,15 +266,7 @@ TEST(Concurrency, NativeProgramsRunConcurrentlyAndCancelQueuedWork) {
   const auto path = (directory.path() / "canceled.tsv").string();
   const mqt::test::ScopedEnvironmentVariable trace(
       "MQT_CORE_DDSIM_PROGRAM_TRACE", path);
-  auto limit = llvm::heavyweight_hardware_concurrency().compute_thread_count();
-  if (const char* raw = std::getenv("MQT_CORE_DD_WORKER_BUDGET")) {
-    unsigned configured = 0;
-    const auto* last = std::next(raw, static_cast<ptrdiff_t>(std::strlen(raw)));
-    const auto [end, error] = std::from_chars(raw, last, configured);
-    if (error == std::errc{} && end == last && configured > 0) {
-      limit = std::min(limit, configured);
-    }
-  }
+  const auto limit = workerLimit();
   const qdmi_test::SessionGuard session{};
   const qdmi_test::JobGuard job{session.session};
   const size_t count = static_cast<size_t>(limit) + 1;
