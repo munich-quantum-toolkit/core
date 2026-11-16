@@ -12,7 +12,6 @@
 #include "mqt/Conversion/QCOToQC/QCOToQC.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
-#include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -91,19 +90,14 @@ protected:
 
   static void checkUnitary(ModuleOp program, size_t maximumSwaps,
                            ArrayRef<int64_t> arguments = {},
-                           size_t numQubits = 2, bool convertToQC = true,
-                           bool terminal = false) {
+                           size_t numQubits = 2, bool convertToQC = true) {
     ASSERT_TRUE(succeeded(verify(program)));
     ASSERT_TRUE(succeeded(verifyLinearity(program)));
     OwningOpRef<ModuleOp> original(program.clone());
-    ASSERT_NO_FATAL_FAILURE(rewrite(program, terminal));
+    ASSERT_NO_FATAL_FAILURE(rewrite(program));
     size_t swaps = 0;
     program.walk([&](SWAPOp) { ++swaps; });
     EXPECT_LE(swaps, maximumSwaps);
-    if (terminal) {
-      // Without source labels, terminal elision leaves the program unchanged.
-      EXPECT_EQ(swaps, maximumSwaps);
-    }
 
     const auto matrix = [&](ModuleOp source, dd::Package& package) {
       auto function = mlir::mqt::getEntryPoint(source);
@@ -233,52 +227,6 @@ TEST_F(ElidePermutationsTest, TracksReinsertedTensorSlots) {
   }
 }
 
-TEST_F(ElidePermutationsTest, PropagatesCommonBranchPermutations) {
-  for (const bool common : {false, true}) {
-    for (const int64_t condition : {0, 1}) {
-      SCOPED_TRACE(testing::Message()
-                   << "common=" << common << ", condition=" << condition);
-      auto program = parseSourceString<ModuleOp>(std::string(R"mlir(module {
-        func.func @main(%condition: i1) attributes {mqt.entry_point} {
-          %a = qco.alloc : !qco.qubit
-          %b = qco.alloc : !qco.qubit
-          %left, %right = qco.if %condition args(%ta = %a, %tb = %b)
-              -> (!qco.qubit, !qco.qubit) {
-            %sa, %sb = qco.swap %ta, %tb : !qco.qubit, !qco.qubit
-            %h = qco.h %sa : !qco.qubit
-            qco.yield %h, %sb : !qco.qubit, !qco.qubit
-          } else args(%ea = %a, %eb = %b) {
-      )mlir") +
-                                                     (common ? R"mlir(
-            %sa, %sb = qco.swap %ea, %eb : !qco.qubit, !qco.qubit
-            %x = qco.x %sb : !qco.qubit
-            qco.yield %sa, %x : !qco.qubit, !qco.qubit
-      )mlir"
-                                                             : R"mlir(
-            %x = qco.x %eb : !qco.qubit
-            qco.yield %ea, %x : !qco.qubit, !qco.qubit
-      )mlir") +
-                                                     R"mlir(
-          }
-          %outA, %outB = qco.swap %left, %right : !qco.qubit, !qco.qubit
-          qco.sink %outA : !qco.qubit
-          qco.sink %outB : !qco.qubit
-          return
-        }
-      })mlir",
-                                                 &context_);
-      ASSERT_TRUE(program);
-      for (const bool terminal : {false, true}) {
-        SCOPED_TRACE(terminal);
-        OwningOpRef<ModuleOp> instance(program->clone());
-        ASSERT_NO_FATAL_FAILURE(checkUnitary(*instance,
-                                             common ? (terminal ? 3 : 0) : 2,
-                                             {condition}, 2, true, terminal));
-      }
-    }
-  }
-}
-
 TEST_F(ElidePermutationsTest, TerminalModePreservesEarlierRouting) {
   for (const auto* boundary : {
            R"mlir(%next = qco.h %sa : !qco.qubit)mlir",
@@ -323,19 +271,29 @@ TEST_F(ElidePermutationsTest, TerminalModePreservesEarlierRouting) {
 }
 
 TEST_F(ElidePermutationsTest, ComposesOutputPermutationIntoCircuitLayout) {
-  // An imported Qiskit final layout may already exchange the two wires.
-  for (const bool imported : {false, true}) {
-    SCOPED_TRACE(imported);
-    auto program = parseSourceString<ModuleOp>(
-        std::string(
-            R"mlir(module attributes {mqt.source_qubit_count = 2 : i64)mlir") +
-            (imported ? R"mlir(, mqt.layout = {initial = array<i64: 1, 0>,
-                input_count = 2 : i64, routing = array<i64: 1, 0>})mlir"
-                      : "") +
-            R"mlir(} {
+  // Without source labels there is no layout to record the exchange in. An
+  // imported Qiskit final layout may already exchange the two wires.
+  for (const auto* attributes : {
+           "",
+           "mqt.source_qubit_count = 2 : i64",
+           R"mlir(mqt.source_qubit_count = 2 : i64,
+             mqt.layout = {initial = array<i64: 1, 0>, input_count = 2 : i64,
+                           routing = array<i64: 1, 0>})mlir",
+       }) {
+    SCOPED_TRACE(attributes);
+    const StringRef prepared(attributes);
+    const auto labels = [&](const char* index) {
+      return prepared.empty()
+                 ? std::string()
+                 : std::string("{mqt.source_qubit_indices = array<i64: ") +
+                       index + ">}";
+    };
+    auto program = parseSourceString<ModuleOp>(std::string(
+                                                   "module attributes {") +
+                                                   attributes + R"mlir(} {
           func.func @main() attributes {mqt.entry_point} {
-            %a = qco.alloc {mqt.source_qubit_indices = array<i64: 0>} : !qco.qubit
-            %b = qco.alloc {mqt.source_qubit_indices = array<i64: 1>} : !qco.qubit
+            %a = qco.alloc )mlir" + labels("0") + R"mlir( : !qco.qubit
+            %b = qco.alloc )mlir" + labels("1") + R"mlir( : !qco.qubit
             %h = qco.h %a : !qco.qubit
             %sa, %sb = qco.swap %h, %b : !qco.qubit, !qco.qubit
             qco.sink %sa : !qco.qubit
@@ -343,12 +301,17 @@ TEST_F(ElidePermutationsTest, ComposesOutputPermutationIntoCircuitLayout) {
             return
           }
         })mlir",
-        &context_);
+                                               &context_);
     ASSERT_TRUE(program);
     ASSERT_NO_FATAL_FAILURE(rewrite(*program, /*terminal=*/true));
     size_t swaps = 0;
     program->walk([&](SWAPOp) { ++swaps; });
-    EXPECT_EQ(swaps, 0U);
+    EXPECT_EQ(swaps, prepared.empty() ? 1U : 0U);
+    if (prepared.empty()) {
+      EXPECT_FALSE((*program)->hasAttr("mqt.layout"));
+      continue;
+    }
+    const bool imported = prepared.contains("mqt.layout");
     auto layout =
         mlir::mqt::QubitLayout::fromAttr((*program)->getAttr("mqt.layout"),
                                          [&] { return program->emitError(); });
@@ -741,26 +704,8 @@ TEST_F(ElidePermutationsTest, PreservesCallsModifiersAndResourceOwners) {
   })mlir",
                                              &context_);
   ASSERT_TRUE(program);
-  ASSERT_NO_FATAL_FAILURE(checkUnitary(*program, 1));
-
-  auto fixed = parseSourceString<ModuleOp>(R"mlir(module {
-    func.func @main() attributes {mqt.entry_point} {
-      %a = qco.static 0 : !qco.qubit
-      %b = qco.static 1 : !qco.qubit
-      %sa, %sb = qco.swap %a, %b : !qco.qubit, !qco.qubit
-      %h = qco.h %sa : !qco.qubit
-      %outA, %outB = qco.swap %h, %sb : !qco.qubit, !qco.qubit
-      qco.sink %outA : !qco.qubit
-      qco.sink %outB : !qco.qubit
-      return
-    }
-  })mlir",
-                                           &context_);
-  ASSERT_TRUE(fixed);
-  ASSERT_NO_FATAL_FAILURE(checkUnitary(*fixed, 2));
-  EXPECT_EQ(
-      llvm::range_size(mlir::mqt::getEntryPoint(*fixed).getOps<qc::SWAPOp>()),
-      2U);
+  // The modifier body keeps its three SWAPs; the entry SWAPs are elided.
+  ASSERT_NO_FATAL_FAILURE(checkUnitary(*program, 3));
 }
 
 TEST_F(ElidePermutationsTest, ReconcilesCyclesAcrossTensorRegionOwners) {

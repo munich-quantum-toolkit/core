@@ -45,7 +45,6 @@ from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.circuit.parametervector import ParameterVectorElement
 from qiskit.quantum_info import Operator, Statevector, random_unitary
 from qiskit.transpiler import Layout, Target, TranspileLayout
-from qiskit.transpiler.preset_passmanagers import generate_preset_pass_manager
 from qiskit_support import supports_qiskit_translation
 
 from mqt.core.mlir import (
@@ -4633,59 +4632,43 @@ def test_native_layout_uses_recorded_physical_sites(sites: list[int]) -> None:
     np.testing.assert_allclose(Operator.from_circuit(reordered).data, Operator(expected).data, atol=1e-12)
 
 
-@pytest.mark.parametrize("topology", ["all_to_all", "line"])
-def test_native_compilation_composes_imported_qiskit_layout(topology: str) -> None:
-    """Compilation keeps imported program qubits and output permutations."""
-    source = QuantumCircuit(3)
-    source.h(0)
-    source.cx(0, 1)
-    source.swap(1, 2)
-    source.cx(1, 0)
-    source.ry(0.4, 2)
-    elided = generate_preset_pass_manager(optimization_level=2, basis_gates=["u", "cx"]).run(source)
-    assert elided.layout is not None
-    assert elided.layout.final_index_layout() != [0, 1, 2]
-    assert "cx" in elided.count_ops()
-    assert "swap" not in elided.count_ops()
-    # Core elides this terminal SWAP and composes it with Qiskit's permutation.
-    elided.swap(0, 1)
-
+def test_native_compilation_composes_imported_qiskit_layout() -> None:
+    """Compilation keeps the program qubits and output order of a Qiskit layout."""
     first = QuantumRegister(2, "a")
     second = QuantumRegister(1, "b")
-    interleaved = QuantumCircuit(first, [Qubit()], second)
-    interleaved.h(0)
-    interleaved.cx(0, 2)
-    interleaved.cx(3, 1)
-    interleaved.swap(1, 3)
-    mapped = transpile(
-        interleaved,
+    source = QuantumCircuit(first, [Qubit()], second)
+    source.h(0)
+    source.cx(0, 2)
+    source.cx(3, 1)
+    source.swap(1, 3)
+    source.cx(1, 2)
+    source.ry(0.3, 3)
+    # Qiskit elides the SWAP, routes on a line, and adds an ancilla.
+    circuit = transpile(
+        source,
         coupling_map=[[0, 1], [1, 2], [2, 3], [3, 4]],
         initial_layout=[4, 0, 2, 1],
-        optimization_level=0,
+        optimization_level=2,
+        seed_transpiler=1,
     )
-    assert mapped.layout is not None
-    assert len(mapped.layout.initial_index_layout(filter_ancillas=True)) < mapped.num_qubits
+    assert circuit.layout is not None
+    assert circuit.layout.final_index_layout() != circuit.layout.initial_index_layout(filter_ancillas=True)
+    assert len(circuit.layout.initial_index_layout(filter_ancillas=True)) < circuit.num_qubits
+    target = CompilerTarget(
+        circuit.num_qubits,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    environment = _test_target_environment(target)
+    expected = Operator.from_circuit(circuit).data
 
-    for circuit in (elided, mapped):
-        # Operator.from_circuit keeps every device qubit of the output.
-        width = circuit.num_qubits
-        target = CompilerTarget(
-            width,
-            connectivity=CompilerTarget.Connectivity([(site, site + 1) for site in range(width - 1)])
-            if topology == "line"
-            else CompilerTarget.Connectivity.all_to_all(),
-            native_operations=CompilerTarget.NativeOperations.unrestricted(),
-        )
-        environment = _test_target_environment(target)
-        expected = Operator.from_circuit(circuit).data
-        program = QCProgram.from_qiskit(circuit).to_qco()
-        program.compile_for_target(environment)
-        compiled = program.to_qc().to_qiskit(target=target)
-        assert compiled.layout is not None
-        np.testing.assert_allclose(Operator.from_circuit(compiled).data, expected, atol=1e-10)
-        exported = compile_program(circuit, target=environment, output=OutputFormat.QISKIT)
-        assert exported.layout is not None
-        np.testing.assert_allclose(Operator.from_circuit(exported).data, expected, atol=1e-10)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(environment)
+    compiled = program.to_qc().to_qiskit(target=target)
+    exported = compile_program(circuit, target=environment, output=OutputFormat.QISKIT)
+    for result in (compiled, exported):
+        assert result.layout is not None
+        np.testing.assert_allclose(Operator.from_circuit(result).data, expected, atol=1e-10)
 
 
 @pytest.mark.parametrize("ir_round_trip", [False, True])

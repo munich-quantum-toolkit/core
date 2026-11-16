@@ -240,10 +240,10 @@ def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
     Tracks wire permutations through QCO and structured control flow, removing
     unconditional SWAPs and retargeting later operations. Materializes
     permutations where resource identity or region interfaces require them.
-    Fixed physical qubits, regions with captured linear values or
-    nonpositional quantum yields, and unstructured function bodies retain their
-    wiring. Dynamic tensor accesses reconcile pending permutations on that
-    tensor. Programs without SWAPs that can be elided remain unchanged.
+    Fixed physical qubits, modifier bodies, regions that capture quantum values,
+    and unstructured function bodies retain their wiring. Dynamic tensor
+    accesses reconcile pending permutations on that tensor. Programs without
+    SWAPs that can be elided remain unchanged.
 
     Programs without source labels keep their physical output order:
     permutations are reconciled before measurements and function exits.

@@ -35,6 +35,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include <cassert>
 #include <cstddef>
@@ -59,7 +60,7 @@ using Permutation = DenseMap<Port, Port>;
 using RegionEffects = DenseMap<Operation*, unsigned>;
 constexpr unsigned HAS_SWAP = 1;
 constexpr unsigned OBSERVES = 2;
-constexpr unsigned NONPOSITIONAL = 4;
+constexpr unsigned CAPTURES = 4;
 
 static SmallVector<Value> quantumValues(ValueRange values) {
   return llvm::filter_to_vector(
@@ -108,19 +109,6 @@ static Operation* firstTerminalSwap(func::FuncOp entry) {
     }
   }
   return first;
-}
-
-static bool hasPositionalResults(func::CallOp call, ArrayRef<Value> inputs,
-                                 ArrayRef<Value> outputs) {
-  return inputs.size() == outputs.size() &&
-         (outputs.empty() ||
-          (cast<OpResult>(outputs.front()).getResultNumber() ==
-               call.getNumResults() - inputs.size() &&
-           succeeded(getCallArgumentForResult(
-               call, cast<OpResult>(outputs.front()).getResultNumber())) &&
-           llvm::all_of(llvm::zip(inputs, outputs), [](auto pair) {
-             return std::get<0>(pair).getType() == std::get<1>(pair).getType();
-           })));
 }
 
 namespace {
@@ -470,42 +458,18 @@ class PermutationTracker {
     }
   }
 
-  void visitOpaqueRegions(Operation* op) {
-    if (isa<UnitaryOpInterface>(op)) {
-      if ((effects_.lookup(op) & (HAS_SWAP | NONPOSITIONAL)) == HAS_SWAP) {
-        for (auto& region : op->getRegions()) {
-          PermutationTracker child(rewriter_, region.front(), effects_,
-                                   firstEligibleSwap_);
-          const bool fixed =
-              llvm::any_of(quantumValues(op->getOperands()), [&](Value value) {
-                return isa<QubitType>(value.getType())
-                           ? wires_[scalars_.lookup(value)].fixed
-                           : tensors_[owners_.lookup(value)].fixed;
-              });
-          for (auto& wire : child.wires_) {
-            wire.fixed = fixed;
-          }
-          for (auto& tensor : child.tensors_) {
-            tensor.fixed = fixed;
-          }
-          child.run();
-          child.finish(true);
-        }
+  void fenceCaptures(Operation* op) {
+    SmallVector<OpOperand*> captures;
+    visitUsedValuesDefinedAbove(op->getRegions(), [&](OpOperand* operand) {
+      if (isLinearQubitType(operand->get().getType())) {
+        captures.push_back(operand);
       }
-    } else {
-      SmallVector<OpOperand*> captures;
-      visitUsedValuesDefinedAbove(op->getRegions(), [&](OpOperand* operand) {
-        if (isLinearQubitType(operand->get().getType())) {
-          captures.push_back(operand);
-        }
-      });
-      for (auto* operand : captures) {
-        auto value = operand->get();
-        fence(value);
-        operand->set(current(value));
-      }
+    });
+    for (auto* operand : captures) {
+      auto value = operand->get();
+      fence(value);
+      operand->set(current(value));
     }
-    rewriter_.setInsertionPoint(op);
   }
 
   Permutation tensorEntry(ArrayRef<Value> inputs) {
@@ -661,29 +625,38 @@ class PermutationTracker {
   }
 
   void visit(Operation* op) {
-    if (auto alloc = dyn_cast<qtensor::AllocOp>(op)) {
-      addTensor(alloc.getResult());
+    const bool handled =
+        TypeSwitch<Operation*, bool>(op)
+            .Case([&](qtensor::AllocOp alloc) {
+              addTensor(alloc.getResult());
+              return true;
+            })
+            .Case([&](qtensor::ExtractOp extract) {
+              visitExtract(extract);
+              return true;
+            })
+            .Case([&](qtensor::InsertOp insert) {
+              visitInsert(insert);
+              return true;
+            })
+            .Case([&](qtensor::FromElementsOp elements) {
+              visitFromElements(elements);
+              return true;
+            })
+            .Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>([&](auto) {
+              if ((effects_.lookup(op) & CAPTURES) != 0) {
+                return false;
+              }
+              visitRegions(op);
+              return true;
+            })
+            .Default(false);
+    if (handled) {
       return;
     }
-    if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
-      visitExtract(extract);
-      return;
-    }
-    if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
-      visitInsert(insert);
-      return;
-    }
-    if (auto elements = dyn_cast<qtensor::FromElementsOp>(op)) {
-      visitFromElements(elements);
-      return;
-    }
-    if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op) &&
-        (effects_.lookup(op) & NONPOSITIONAL) == 0) {
-      visitRegions(op);
-      return;
-    }
+    // Other regions, including modifier bodies, keep their wiring.
     if (op->getNumRegions() != 0) {
-      visitOpaqueRegions(op);
+      fenceCaptures(op);
     }
     const auto inputs = quantumValues(op->getOperands());
     const auto outputs = quantumValues(op->getResults());
@@ -699,22 +672,12 @@ class PermutationTracker {
         return;
       }
     }
-    const bool scalarGate = isa<UnitaryOpInterface, ResetOp, MeasureOp>(op);
-    auto call = dyn_cast<func::CallOp>(op);
-    const bool positionalCall =
-        call && hasPositionalResults(call, inputs, outputs);
-    const bool disposal = isa<SinkOp, qtensor::DeallocOp>(op);
-    if ((!scalarGate || isa<MeasureOp>(op)) && !(terminal_ && disposal) &&
-        !(terminal_ && isa<MeasureOp>(op))) {
+    // Gates act on whichever resource holds their logical state. Terminal
+    // observations and disposal may too; the output permutation records it.
+    if (!isa<UnitaryOpInterface, ResetOp>(op) &&
+        !(terminal_ && isa<MeasureOp, SinkOp, qtensor::DeallocOp>(op))) {
       for (auto input : inputs) {
         fence(input);
-      }
-    }
-    if (scalarGate || positionalCall) {
-      for (auto input : inputs) {
-        if (!isa<QubitType>(input.getType())) {
-          fence(input);
-        }
       }
     }
     for (auto& operand : op->getOpOperands()) {
@@ -722,7 +685,9 @@ class PermutationTracker {
         operand.set(current(operand.get()));
       }
     }
-    if (scalarGate || positionalCall) {
+    // Valid QCO continues gate and call operands positionally.
+    if (isa<UnitaryOpInterface, ResetOp, MeasureOp, func::CallOp>(op) &&
+        inputs.size() == outputs.size()) {
       for (auto [input, output] : llvm::zip_equal(inputs, outputs)) {
         if (isa<QubitType>(output.getType())) {
           const auto logical = scalars_.lookup(input);
@@ -734,19 +699,19 @@ class PermutationTracker {
           tensors_[owner].value = output;
         }
       }
-    } else {
-      // Unknown outputs may refer to fixed physical resources.
-      for (auto output : outputs) {
-        if (isa<QubitType>(output.getType())) {
-          const auto id = addWire(output, {}, !isa<AllocOp>(op));
-          if (auto sources = op->getAttrOfType<DenseI64ArrayAttr>(
-                  mqt::kSourceQubitIndicesAttr);
-              sources && sources.size() == 1) {
-            wires_[id].source = sources[0];
-          }
-        } else {
-          addTensor(output, {}, true);
+      return;
+    }
+    // Unknown outputs may refer to fixed physical resources.
+    for (auto output : outputs) {
+      if (isa<QubitType>(output.getType())) {
+        const auto id = addWire(output, {}, !isa<AllocOp>(op));
+        if (auto sources = op->getAttrOfType<DenseI64ArrayAttr>(
+                mqt::kSourceQubitIndicesAttr);
+            sources && sources.size() == 1) {
+          wires_[id].source = sources[0];
         }
+      } else {
+        addTensor(output, {}, true);
       }
     }
   }
@@ -854,85 +819,38 @@ static LogicalResult elidePermutations(ModuleOp moduleOp, bool terminalOnly) {
       return success();
     }
   }
-  SmallVector<int64_t> output;
-  RegionEffects effects;
-  // Follow resource ownership once, without retracing SSA chains for every
-  // yield. Raw SCF may reorder handles; such regions keep their wiring.
-  DenseMap<Value, Value> origins;
-  const auto origin = [&](Value value) {
-    auto known = origins.lookup(value);
-    return known ? known : value;
-  };
-  for (auto function : moduleOp.getOps<func::FuncOp>()) {
-    if (!function.getBody().hasOneBlock() ||
-        !function.walk([](SWAPOp) { return WalkResult::interrupt(); })
-             .wasInterrupted()) {
-      continue;
-    }
-    function.walk([&](Operation* op) {
-      unsigned flags = isa<SWAPOp>(op)                    ? HAS_SWAP
-                       : isa<MeasureOp, func::CallOp>(op) ? OBSERVES
-                                                          : 0;
-      auto inputs = quantumValues(op->getOperands());
-      auto outputs = quantumValues(op->getResults());
-      // Captures have no corresponding region argument to track.
-      for (auto input : inputs) {
-        auto* scope = input.getParentRegion()->getParentOp();
-        for (auto* parent = op->getParentOp(); parent != scope;
-             parent = parent->getParentOp()) {
-          effects[parent] |= NONPOSITIONAL;
-        }
-      }
-      bool positional = isa<UnitaryOpInterface, MeasureOp, ResetOp>(op);
-      if (auto call = dyn_cast<func::CallOp>(op)) {
-        positional = hasPositionalResults(call, inputs, outputs);
-      } else if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op)) {
-        positional = inputs.size() == outputs.size();
-        for (auto& region : op->getRegions()) {
-          if (!region.hasOneBlock()) {
-            positional = false;
-            break;
-          }
-          auto args = quantumValues(region.front().getArguments());
-          auto yielded = quantumValues(getYieldedValues(region.front()));
-          positional &=
-              args.size() == inputs.size() && yielded.size() == args.size();
-          if (positional) {
-            for (auto [input, arg, yield, output] :
-                 llvm::zip_equal(inputs, args, yielded, outputs)) {
-              positional &= input.getType() == arg.getType() &&
-                            output.getType() == arg.getType() &&
-                            origin(yield) == arg;
-            }
-          }
-        }
-        if (!positional) {
-          flags |= NONPOSITIONAL;
-        }
-      } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
-        origins[extract.getOutTensor()] = origin(extract.getTensor());
-      } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
-        origins[insert.getResult()] = origin(insert.getDest());
-      }
-      if (positional) {
-        for (auto [input, output] : llvm::zip_equal(inputs, outputs)) {
-          origins[output] = origin(input);
-        }
-      }
-      for (auto* parent = op; flags != 0 && parent != nullptr;
-           parent = parent->getParentOp()) {
-        auto& known = effects[parent];
-        if ((known & flags) == flags) {
-          break;
-        }
-        known |= flags;
-      }
-      if (isa<func::FuncOp>(op)) {
-        origins.clear();
-      }
-    });
+  if (!moduleOp.walk([](SWAPOp) { return WalkResult::interrupt(); })
+           .wasInterrupted()) {
+    return success();
   }
-  origins.shrink_and_clear();
+  // Valid QCO continues region and call operands positionally, so a region
+  // needs special handling only when it contains a SWAP, observes its inputs,
+  // or captures quantum values that no region argument carries.
+  RegionEffects effects;
+  moduleOp.walk([&](Operation* op) {
+    for (auto input : op->getOperands()) {
+      if (!isLinearQubitType(input.getType())) {
+        continue;
+      }
+      auto* scope = input.getParentRegion()->getParentOp();
+      for (auto* parent = op->getParentOp(); parent != scope;
+           parent = parent->getParentOp()) {
+        effects[parent] |= CAPTURES;
+      }
+    }
+    const unsigned flags = isa<SWAPOp>(op)                    ? HAS_SWAP
+                           : isa<MeasureOp, func::CallOp>(op) ? OBSERVES
+                                                              : 0;
+    for (auto* parent = op; flags != 0 && parent != nullptr;
+         parent = parent->getParentOp()) {
+      auto& known = effects[parent];
+      if ((known & flags) == flags) {
+        break;
+      }
+      known |= flags;
+    }
+  });
+  SmallVector<int64_t> output;
   IRRewriter rewriter(moduleOp.getContext());
   for (auto function : moduleOp.getOps<func::FuncOp>()) {
     if (!function.getBody().hasOneBlock() ||
