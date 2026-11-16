@@ -519,11 +519,13 @@ static void populateDecompositionAndPlacement(OpPassManager& pm,
   // Drop unused slots before placement checks target capacity.
   pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
-  qco::ElidePermutationsOptions permutationOptions;
-  permutationOptions.trackOutputPermutation = true;
-  permutationOptions.terminalOnly =
-      target.connectivityKind() == CompilerTarget::Connectivity::Kind::Explicit;
-  pm.addPass(qco::createElidePermutations(permutationOptions));
+  // Source SWAPs before later interactions can already route explicit graphs.
+  if (target.connectivityKind() ==
+      CompilerTarget::Connectivity::Kind::Explicit) {
+    pm.addPass(qco::createElideTerminalSwapsPass());
+  } else {
+    pm.addPass(qco::createElidePermutations());
+  }
   if (target.connectivityKind() ==
       CompilerTarget::Connectivity::Kind::AllToAll) {
     pm.addPass(qco::createPlacementPass());

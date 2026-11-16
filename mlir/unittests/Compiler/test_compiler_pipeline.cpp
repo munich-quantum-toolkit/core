@@ -3616,10 +3616,7 @@ TEST_F(CompilerPipelineTest, TerminalSwapElisionLeavesStructuredPackingIntact) {
     MQT_ASSERT_SUCCESS(program);
     const auto before = program->str();
     PassManager pm(program->module().getContext());
-    qco::ElidePermutationsOptions options;
-    options.trackOutputPermutation = true;
-    options.terminalOnly = true;
-    pm.addPass(qco::createElidePermutations(options));
+    pm.addPass(qco::createElideTerminalSwapsPass());
     ASSERT_TRUE(succeeded(pm.run(program->module())));
     EXPECT_EQ(program->str(), before);
   }
@@ -3769,40 +3766,6 @@ TEST_F(CompilerPipelineTest, TargetLayoutRejectsInvalidInputRoots) {
         *program, makePayloadSpecification(), diagnostics));
     EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
     EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
-  }
-}
-
-TEST_F(CompilerPipelineTest, PlacementRejectsCompetingOutputPermutations) {
-  for (const bool route : {false, true}) {
-    SCOPED_TRACE(route);
-    auto program = QCOProgram::fromMLIRString(R"mlir(module attributes {
-      mqt.source_qubit_count = 2 : i64,
-      mqt.source_output_permutation = array<i64: 1, 0>,
-      mqt.layout = {initial = array<i64: 0, 1>, input_count = 2 : i64,
-                    routing = array<i64: 1, 0>}
-    } {
-      func.func @main() attributes {mqt.entry_point} {
-        %a = qco.alloc {mqt.source_qubit_indices = array<i64: 0>} : !qco.qubit
-        %b = qco.alloc {mqt.source_qubit_indices = array<i64: 1>} : !qco.qubit
-        qco.sink %a : !qco.qubit
-        qco.sink %b : !qco.qubit
-        return
-      }
-    })mlir");
-    MQT_ASSERT_SUCCESS(program);
-    const auto target = llvm::cantFail(CompilerTarget::create(
-        2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
-        CompilerTarget::NativeOperations::unrestricted()));
-    attachTargetEnvironment(
-        program->module(),
-        TargetEnvironment(target, makePayloadSpecification()));
-    PassManager pm(program->module().getContext());
-    if (route) {
-      pm.addPass(qco::createMappingPass());
-    } else {
-      pm.addPass(qco::createPlacementPass());
-    }
-    EXPECT_TRUE(failed(pm.run(program->module())));
   }
 }
 

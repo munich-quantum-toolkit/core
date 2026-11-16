@@ -364,13 +364,13 @@ for name, result in results.items():
 
 The `use-target=true` option selects the target-aware form of each optimization;
 omitting it keeps the target-independent behavior. For all-to-all device
-targets, use `place-qubits` instead of `place-and-route`. For gate-set targets,
-omit placement and terminal-SWAP elision to retain program wire order. Set
-custom routing controls in the textual pass options;
-`CompilationOptions.mapping` configures the default target compiler.
-`unroll-modifiers` distributes composite gates before placement and native
-synthesis. The runner executes only the requested passes, so each sequence must
-meet its passes' input requirements.
+targets, use `elide-permutations` and `place-qubits` instead of
+`elide-terminal-swaps` and `place-and-route`. For gate-set targets, omit
+placement and terminal-SWAP elision to retain program wire order. Set custom
+routing controls in the textual pass options; `CompilationOptions.mapping`
+configures the default target compiler. `unroll-modifiers` distributes composite
+gates before placement and native synthesis. The runner executes only the
+requested passes, so each sequence must meet its passes' input requirements.
 
 The default `preserve_layout=False` clears existing layout metadata. Set
 `preserve_layout=True` throughout the sequence above: terminal-SWAP elision and

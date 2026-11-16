@@ -478,23 +478,7 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
              << attribute.getName()
              << " requires a nonnegative i64 on a module";
     }
-    llvm::SmallDenseSet<int64_t> seen;
-    const auto result = operation->walk([&](Operation* nested) {
-      auto indices =
-          nested->getAttrOfType<DenseI64ArrayAttr>(kSourceQubitIndicesAttr);
-      if (indices) {
-        for (auto index : indices.asArrayRef()) {
-          if (index < 0 || index >= count.getInt() ||
-              !seen.insert(index).second) {
-            nested->emitError("source qubit indices must be distinct within "
-                              "the module and smaller than its source count");
-            return WalkResult::interrupt();
-          }
-        }
-      }
-      return WalkResult::advance();
-    });
-    return failure(result.wasInterrupted());
+    return success();
   }
   if (attribute.getName() == kSourceQubitIndicesAttr) {
     int64_t width = -1;
@@ -508,11 +492,17 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
       return operation->emitError("source qubit indices require one i64 entry "
                                   "per fixed allocation slot");
     }
+    auto moduleOp = operation->getParentOfType<ModuleOp>();
+    auto count =
+        moduleOp ? moduleOp->getAttrOfType<IntegerAttr>(kSourceQubitCountAttr)
+                 : IntegerAttr{};
     llvm::SmallDenseSet<int64_t> seen;
     for (auto index : indices.asArrayRef()) {
-      if (index < 0 || !seen.insert(index).second) {
+      if (index < 0 || (count && index >= count.getInt()) ||
+          !seen.insert(index).second) {
         return operation->emitError(
-            "source qubit indices must be distinct and nonnegative");
+            "source qubit indices must be distinct, nonnegative, and smaller "
+            "than the module's source count");
       }
     }
     return success();

@@ -78,10 +78,10 @@ protected:
         .getResult();
   }
 
-  static void rewrite(ModuleOp program,
-                      const ElidePermutationsOptions& options = {}) {
+  static void rewrite(ModuleOp program, bool terminal = false) {
     PassManager pm(program.getContext());
-    pm.addPass(createElidePermutations(options));
+    pm.addPass(terminal ? createElideTerminalSwapsPass()
+                        : createElidePermutations());
     ASSERT_TRUE(succeeded(pm.run(program)));
     EXPECT_TRUE(succeeded(verify(program)));
     EXPECT_TRUE(succeeded(verifyLinearity(program)));
@@ -90,16 +90,16 @@ protected:
   static void checkUnitary(ModuleOp program, size_t maximumSwaps,
                            ArrayRef<int64_t> arguments = {},
                            size_t numQubits = 2, bool convertToQC = true,
-                           const ElidePermutationsOptions& options = {}) {
+                           bool terminal = false) {
     ASSERT_TRUE(succeeded(verify(program)));
     ASSERT_TRUE(succeeded(verifyLinearity(program)));
     OwningOpRef<ModuleOp> original(program.clone());
-    ASSERT_NO_FATAL_FAILURE(rewrite(program, options));
+    ASSERT_NO_FATAL_FAILURE(rewrite(program, terminal));
     size_t swaps = 0;
     program.walk([&](SWAPOp) { ++swaps; });
     EXPECT_LE(swaps, maximumSwaps);
-    if (options.terminalOnly) {
-      // Without output tracking, the outer SWAP also retains physical order.
+    if (terminal) {
+      // Without source labels, terminal elision leaves the program unchanged.
       EXPECT_EQ(swaps, maximumSwaps);
     }
 
@@ -266,14 +266,12 @@ TEST_F(ElidePermutationsTest, PropagatesCommonBranchPermutations) {
       })mlir",
                                                  &context_);
       ASSERT_TRUE(program);
-      for (const bool terminalOnly : {false, true}) {
-        SCOPED_TRACE(terminalOnly);
+      for (const bool terminal : {false, true}) {
+        SCOPED_TRACE(terminal);
         OwningOpRef<ModuleOp> instance(program->clone());
-        ElidePermutationsOptions options;
-        options.terminalOnly = terminalOnly;
-        ASSERT_NO_FATAL_FAILURE(
-            checkUnitary(*instance, common ? (terminalOnly ? 3 : 0) : 2,
-                         {condition}, 2, true, options));
+        ASSERT_NO_FATAL_FAILURE(checkUnitary(*instance,
+                                             common ? (terminal ? 3 : 0) : 2,
+                                             {condition}, 2, true, terminal));
       }
     }
   }
@@ -312,10 +310,7 @@ TEST_F(ElidePermutationsTest, TerminalModePreservesEarlierRouting) {
         &context_);
     ASSERT_TRUE(program);
     ASSERT_TRUE(succeeded(verifyLinearity(*program)));
-    ElidePermutationsOptions options;
-    options.terminalOnly = true;
-    options.trackOutputPermutation = true;
-    ASSERT_NO_FATAL_FAILURE(rewrite(*program, options));
+    ASSERT_NO_FATAL_FAILURE(rewrite(*program, /*terminal=*/true));
     size_t swaps = 0;
     program->walk([&](SWAPOp) { ++swaps; });
     // A single-qubit gate may follow a virtual SWAP; the other boundaries

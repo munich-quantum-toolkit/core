@@ -129,28 +129,6 @@ public:
     layout_->sites.emplace(target.siteIds().begin(), target.siteIds().end());
     valid_ = count.getInt() >= 0 &&
              std::cmp_less_equal(count.getInt(), target.numSites());
-
-    auto circuit = module_->getAttrOfType<DictionaryAttr>("mqt.layout");
-    if (!circuit) {
-      return;
-    }
-    auto initial = circuit.getAs<DenseI64ArrayAttr>("initial");
-    circuitRouting_ = circuit.getAs<DenseI64ArrayAttr>("routing");
-    // Layout positions are compact; source labels can have gaps after cleanup.
-    for (Operation& operation : func.getBody().front()) {
-      if (auto indices = operation.getAttrOfType<DenseI64ArrayAttr>(
-              mqt::kSourceQubitIndicesAttr)) {
-        llvm::append_range(circuitSources_, indices.asArrayRef());
-      }
-    }
-    valid_ &= !module_->hasAttr(mqt::kSourceOutputPermutationAttr) &&
-              !circuit.contains("sites") && circuitRouting_ &&
-              llvm::equal(initial.asArrayRef(),
-                          llvm::seq<int64_t>(0, static_cast<int64_t>(
-                                                    circuitSources_.size()))) &&
-              llvm::all_of(circuitSources_, [&](int64_t source) {
-                return source >= 0 && source < layout_->inputCount;
-              });
   }
 
   void record(Operation* root, std::optional<int64_t> slot, size_t vertex) {
@@ -201,15 +179,6 @@ public:
         used[next] = true;
       }
     }
-    if (circuitRouting_) {
-      // Translate the circuit permutation into placed device positions.
-      auto& routing = layout_->routing.emplace(layout_->initial.size());
-      std::iota(routing.begin(), routing.end(), int64_t{0});
-      for (auto [wire, source] : llvm::enumerate(circuitSources_)) {
-        const auto destination = circuitSources_[circuitRouting_[wire]];
-        routing[layout_->initial[source]] = layout_->initial[destination];
-      }
-    }
     if (auto permutation = module_->getAttrOfType<DenseI64ArrayAttr>(
             mqt::kSourceOutputPermutationAttr)) {
       auto& routing = layout_->routing.emplace(layout_->initial.size());
@@ -226,8 +195,6 @@ public:
 private:
   ModuleOp module_;
   std::optional<mqt::QubitLayout> layout_;
-  SmallVector<int64_t> circuitSources_;
-  DenseI64ArrayAttr circuitRouting_;
   bool valid_ = true;
 };
 
@@ -521,6 +488,15 @@ static bool needsPlacement(func::FuncOp func) {
          !func.getOps<qtensor::AllocOp>().empty();
 }
 
+/// Fail when no placement can consume a recorded output permutation.
+static LogicalResult rejectPendingPermutation(ModuleOp moduleOp) {
+  if (moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
+    return moduleOp.emitError(
+        "source output permutation requires dynamic placement");
+  }
+  return success();
+}
+
 namespace {
 
 struct PlacementPass final : impl::PlacementPassBase<PlacementPass> {
@@ -541,9 +517,7 @@ protected:
     }
 
     if (!needsPlacement(func)) {
-      if (moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
-        moduleOp.emitError(
-            "source output permutation requires dynamic placement");
+      if (failed(rejectPendingPermutation(moduleOp))) {
         signalPassFailure();
       }
       return;
@@ -1100,9 +1074,7 @@ protected:
     }
 
     if (!needsPlacement(func)) {
-      if (moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
-        moduleOp.emitError(
-            "source output permutation requires dynamic placement");
+      if (failed(rejectPendingPermutation(moduleOp))) {
         signalPassFailure();
       }
       return;

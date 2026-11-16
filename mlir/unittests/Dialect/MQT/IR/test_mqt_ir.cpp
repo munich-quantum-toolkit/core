@@ -156,7 +156,6 @@ TEST_F(MQTIRTest, SourceQubitIndicesMatchAllocationSlots) {
     })mlir";
   };
   EXPECT_TRUE(parse(prepared("3")));
-  EXPECT_FALSE(parse(prepared("0")));
   EXPECT_FALSE(parse(prepared("4")));
 }
 

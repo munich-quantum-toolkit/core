@@ -47,6 +47,7 @@
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_ELIDEPERMUTATIONS
+#define GEN_PASS_DEF_ELIDETERMINALSWAPSPASS
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 using Resource = size_t;
@@ -388,8 +389,17 @@ class PermutationTracker {
     const auto physical = layout_.getHardwareIndex(logical);
     scalars_[op.getResult()] = logical;
     owners_[op.getOutTensor()] = owner;
-    unpack(physical);
-    erased_.push_back(op);
+    if (physical != logical) {
+      unpack(physical);
+      erased_.push_back(op);
+      return;
+    }
+    // The slot still holds its own state; keep the access.
+    auto& tensor = tensors_[owner];
+    assert(!wires_[logical].value && "a tensor slot cannot be extracted twice");
+    op.getTensorMutable().assign(tensor.value);
+    tensor.value = op.getOutTensor();
+    wires_[logical].value = op.getResult();
   }
 
   void visitInsert(qtensor::InsertOp op) {
@@ -413,9 +423,19 @@ class PermutationTracker {
       wires_[physical].fixed = wires_[original].fixed;
       tensors_[owner].slots[slotKey(op.getIndex())] = physical;
     }
-    pack(physical);
     owners_[op.getResult()] = owner;
-    erased_.push_back(op);
+    if (physical != logical) {
+      pack(physical);
+      erased_.push_back(op);
+      return;
+    }
+    // Insertion restores the qubit's own slot; keep the access.
+    auto& tensor = tensors_[owner];
+    auto& wire = wires_[physical];
+    op.getScalarMutable().assign(wire.value);
+    op.getDestMutable().assign(tensor.value);
+    tensor.value = op.getResult();
+    wire.value = {};
   }
 
   void visitFromElements(qtensor::FromElementsOp op) {
@@ -776,8 +796,11 @@ public:
         if (layout_.getHardwareIndex(id) == id) {
           continue;
         }
-        (*output)[*wires_[id].source] =
-            *wires_[layout_.getHardwareIndex(id)].source;
+        // The verifier bounds source labels by the module's source count.
+        const auto source = *wires_[id].source;
+        assert(std::cmp_less(source, output->size()) &&
+               "source label exceeds the source count");
+        (*output)[source] = *wires_[layout_.getHardwareIndex(id)].source;
       }
       finish(false);
     } else {
@@ -786,127 +809,147 @@ public:
   }
 };
 
-struct ElidePermutations final
-    : impl::ElidePermutationsBase<ElidePermutations> {
-  using ElidePermutationsBase::ElidePermutationsBase;
+} // namespace
 
-protected:
-  void runOnOperation() override {
-    auto moduleOp = getOperation();
-    auto entry = mqt::getEntryPoint(moduleOp);
-    auto* firstEligibleSwap = terminalOnly ? firstTerminalSwap(entry) : nullptr;
-    SmallVector<int64_t> output;
-    auto count =
-        moduleOp->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);
-    const bool record = trackOutputPermutation && count;
-    if (record && moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
-      moduleOp.emitError("output permutation tracking requires freshly "
-                         "prepared source qubit labels");
-      signalPassFailure();
-      return;
+/// Elide SWAPs, or only terminal SWAPs of prepared programs.
+static LogicalResult elidePermutations(ModuleOp moduleOp, bool terminalOnly) {
+  auto entry = mqt::getEntryPoint(moduleOp);
+  auto count = moduleOp->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);
+  if (count && moduleOp->hasAttr(mqt::kSourceOutputPermutationAttr)) {
+    return moduleOp.emitError("permutation elision requires freshly "
+                              "prepared source qubit labels");
+  }
+  Operation* firstEligibleSwap = nullptr;
+  if (terminalOnly) {
+    // Only a recorded output permutation can absorb terminal SWAPs.
+    firstEligibleSwap = count ? firstTerminalSwap(entry) : nullptr;
+    if (firstEligibleSwap == nullptr) {
+      return success();
     }
-    if (terminalOnly && firstEligibleSwap == nullptr) {
-      return;
+  }
+  SmallVector<int64_t> output;
+  RegionEffects effects;
+  // Follow resource ownership once, without retracing SSA chains for every
+  // yield. Raw SCF may reorder handles; such regions keep their wiring.
+  DenseMap<Value, Value> origins;
+  const auto origin = [&](Value value) {
+    auto known = origins.lookup(value);
+    return known ? known : value;
+  };
+  for (auto function : moduleOp.getOps<func::FuncOp>()) {
+    if (!function.getBody().hasOneBlock() ||
+        !function.walk([](SWAPOp) { return WalkResult::interrupt(); })
+             .wasInterrupted()) {
+      continue;
     }
-    RegionEffects effects;
-    // Follow resource ownership once, without retracing SSA chains for every
-    // yield. Raw SCF may reorder handles; such regions keep their wiring.
-    DenseMap<Value, Value> origins;
-    const auto origin = [&](Value value) {
-      auto known = origins.lookup(value);
-      return known ? known : value;
-    };
-    for (auto function : moduleOp.getOps<func::FuncOp>()) {
-      if (!function.getBody().hasOneBlock() ||
-          !function.walk([](SWAPOp) { return WalkResult::interrupt(); })
-               .wasInterrupted()) {
-        continue;
-      }
-      function.walk([&](Operation* op) {
-        unsigned flags = isa<SWAPOp>(op)                    ? HAS_SWAP
-                         : isa<MeasureOp, func::CallOp>(op) ? OBSERVES
-                                                            : 0;
-        auto inputs = quantumValues(op->getOperands());
-        auto outputs = quantumValues(op->getResults());
-        // Captures have no corresponding region argument to track.
-        for (auto input : inputs) {
-          auto* scope = input.getParentRegion()->getParentOp();
-          for (auto* parent = op->getParentOp(); parent != scope;
-               parent = parent->getParentOp()) {
-            effects[parent] |= NONPOSITIONAL;
-          }
-        }
-        bool positional = isa<UnitaryOpInterface, MeasureOp, ResetOp>(op);
-        if (auto call = dyn_cast<func::CallOp>(op)) {
-          positional = hasPositionalResults(call, inputs, outputs);
-        } else if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op)) {
-          positional = inputs.size() == outputs.size();
-          for (auto& region : op->getRegions()) {
-            if (!region.hasOneBlock()) {
-              positional = false;
-              break;
-            }
-            auto args = quantumValues(region.front().getArguments());
-            auto yielded = quantumValues(getYieldedValues(region.front()));
-            positional &=
-                args.size() == inputs.size() && yielded.size() == args.size();
-            if (positional) {
-              for (auto [input, arg, yield, output] :
-                   llvm::zip_equal(inputs, args, yielded, outputs)) {
-                positional &= input.getType() == arg.getType() &&
-                              output.getType() == arg.getType() &&
-                              origin(yield) == arg;
-              }
-            }
-          }
-          if (!positional) {
-            flags |= NONPOSITIONAL;
-          }
-        } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
-          origins[extract.getOutTensor()] = origin(extract.getTensor());
-        } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
-          origins[insert.getResult()] = origin(insert.getDest());
-        }
-        if (positional) {
-          for (auto [input, output] : llvm::zip_equal(inputs, outputs)) {
-            origins[output] = origin(input);
-          }
-        }
-        for (auto* parent = op; flags != 0 && parent != nullptr;
+    function.walk([&](Operation* op) {
+      unsigned flags = isa<SWAPOp>(op)                    ? HAS_SWAP
+                       : isa<MeasureOp, func::CallOp>(op) ? OBSERVES
+                                                          : 0;
+      auto inputs = quantumValues(op->getOperands());
+      auto outputs = quantumValues(op->getResults());
+      // Captures have no corresponding region argument to track.
+      for (auto input : inputs) {
+        auto* scope = input.getParentRegion()->getParentOp();
+        for (auto* parent = op->getParentOp(); parent != scope;
              parent = parent->getParentOp()) {
-          auto& known = effects[parent];
-          if ((known & flags) == flags) {
+          effects[parent] |= NONPOSITIONAL;
+        }
+      }
+      bool positional = isa<UnitaryOpInterface, MeasureOp, ResetOp>(op);
+      if (auto call = dyn_cast<func::CallOp>(op)) {
+        positional = hasPositionalResults(call, inputs, outputs);
+      } else if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op)) {
+        positional = inputs.size() == outputs.size();
+        for (auto& region : op->getRegions()) {
+          if (!region.hasOneBlock()) {
+            positional = false;
             break;
           }
-          known |= flags;
+          auto args = quantumValues(region.front().getArguments());
+          auto yielded = quantumValues(getYieldedValues(region.front()));
+          positional &=
+              args.size() == inputs.size() && yielded.size() == args.size();
+          if (positional) {
+            for (auto [input, arg, yield, output] :
+                 llvm::zip_equal(inputs, args, yielded, outputs)) {
+              positional &= input.getType() == arg.getType() &&
+                            output.getType() == arg.getType() &&
+                            origin(yield) == arg;
+            }
+          }
         }
-        if (isa<func::FuncOp>(op)) {
-          origins.clear();
+        if (!positional) {
+          flags |= NONPOSITIONAL;
         }
-      });
-    }
-    origins.shrink_and_clear();
-    IRRewriter rewriter(&getContext());
-    for (auto function : moduleOp.getOps<func::FuncOp>()) {
-      if (!function.getBody().hasOneBlock() ||
-          (effects.lookup(function) & HAS_SWAP) == 0) {
-        continue;
+      } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
+        origins[extract.getOutTensor()] = origin(extract.getTensor());
+      } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+        origins[insert.getResult()] = origin(insert.getDest());
       }
-      const bool track = record && function == entry;
-      if (track) {
-        output.resize(static_cast<size_t>(count.getInt()));
-        std::iota(output.begin(), output.end(), int64_t{0});
+      if (positional) {
+        for (auto [input, output] : llvm::zip_equal(inputs, outputs)) {
+          origins[output] = origin(input);
+        }
       }
-      PermutationTracker tracker(rewriter, function.getBody().front(), effects,
-                                 firstEligibleSwap, track);
-      tracker.run();
-      tracker.finishFunction(track ? &output : nullptr);
+      for (auto* parent = op; flags != 0 && parent != nullptr;
+           parent = parent->getParentOp()) {
+        auto& known = effects[parent];
+        if ((known & flags) == flags) {
+          break;
+        }
+        known |= flags;
+      }
+      if (isa<func::FuncOp>(op)) {
+        origins.clear();
+      }
+    });
+  }
+  origins.shrink_and_clear();
+  IRRewriter rewriter(moduleOp.getContext());
+  for (auto function : moduleOp.getOps<func::FuncOp>()) {
+    if (!function.getBody().hasOneBlock() ||
+        (effects.lookup(function) & HAS_SWAP) == 0 ||
+        (terminalOnly && function != entry)) {
+      continue;
     }
-    if (llvm::any_of(llvm::enumerate(output), [](auto entry) {
-          return static_cast<int64_t>(entry.index()) != entry.value();
-        })) {
-      moduleOp->setAttr(mqt::kSourceOutputPermutationAttr,
-                        rewriter.getDenseI64ArrayAttr(output));
+    const bool track = count && function == entry;
+    if (track) {
+      output.resize(static_cast<size_t>(count.getInt()));
+      std::iota(output.begin(), output.end(), int64_t{0});
+    }
+    PermutationTracker tracker(rewriter, function.getBody().front(), effects,
+                               firstEligibleSwap, track);
+    tracker.run();
+    tracker.finishFunction(track ? &output : nullptr);
+  }
+  if (llvm::any_of(llvm::enumerate(output), [](auto entry) {
+        return static_cast<int64_t>(entry.index()) != entry.value();
+      })) {
+    moduleOp->setAttr(mqt::kSourceOutputPermutationAttr,
+                      rewriter.getDenseI64ArrayAttr(output));
+  }
+  return success();
+}
+
+namespace {
+
+struct ElidePermutations final
+    : impl::ElidePermutationsBase<ElidePermutations> {
+protected:
+  void runOnOperation() override {
+    if (failed(elidePermutations(getOperation(), /*terminalOnly=*/false))) {
+      signalPassFailure();
+    }
+  }
+};
+
+struct ElideTerminalSwapsPass final
+    : impl::ElideTerminalSwapsPassBase<ElideTerminalSwapsPass> {
+protected:
+  void runOnOperation() override {
+    if (failed(elidePermutations(getOperation(), /*terminalOnly=*/true))) {
+      signalPassFailure();
     }
   }
 };
