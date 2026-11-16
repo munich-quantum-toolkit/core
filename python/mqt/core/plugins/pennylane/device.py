@@ -6,56 +6,61 @@
 #
 # Licensed under the MIT License
 
-"""A modern PennyLane device backed by a gate-based QDMI device."""
+"""PennyLane execution on gate-based QDMI devices."""
 
 from __future__ import annotations
 
 __lazy_modules__ = {
-    "mqt.core.plugins.pennylane.converter",
+    "importlib.metadata",
+    "mqt.core",
+    "mqt.core.mlir",
+    "mqt.core.mlir._pennylane",
     "mqt.core.plugins.pennylane.exceptions",
     "mqt.core.plugins.pennylane.job",
-    "mqt.core.qdmi",
     "mqt.core.qdmi.builtin_driver",
     "numbers",
     "operator",
-    "pennylane.devices.preprocess",
+    "packaging.specifiers",
+    "packaging.version",
     "pennylane.transforms",
     "pennylane.transforms.core",
+    "warnings",
 }
 
 import operator
+import warnings
+from importlib.metadata import version
 from numbers import Integral
-from typing import TYPE_CHECKING, Any, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import pennylane as qp
-from pennylane.devices import Device, DeviceCapabilities, ExecutionConfig
-from pennylane.devices.preprocess import (
-    decompose,
-    measurements_from_samples,
-    validate_device_wires,
-    validate_measurements,
-)
-from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, SampleMP, Shots, VarianceMP
-from pennylane.transforms import broadcast_expand, defer_measurements, split_non_commuting
+from packaging.specifiers import SpecifierSet
+from packaging.version import Version
+from pennylane.devices import Device, ExecutionConfig
+from pennylane.transforms import defer_measurements
 from pennylane.transforms.core import CompilePipeline
 
-from mqt.core.plugins.pennylane.converter import _ProgramConverter
+from mqt.core import UntestedVersionWarning, mlir
+from mqt.core.mlir import CompiledProgram, QCProgram, compile_program
+from mqt.core.mlir._pennylane import Context
 from mqt.core.plugins.pennylane.exceptions import PennyLaneConfigurationError as ConfigurationError
-from mqt.core.plugins.pennylane.exceptions import PennyLaneUnsupportedFormatError as UnsupportedFormatError
-from mqt.core.plugins.pennylane.exceptions import PennyLaneUnsupportedOperationError as UnsupportedOperationError
+from mqt.core.plugins.pennylane.exceptions import PennyLaneTranslationError as TranslationError
 from mqt.core.plugins.pennylane.exceptions import PennyLaneValidationError as ValidationError
 from mqt.core.plugins.pennylane.job import PennyLaneJob
-from mqt.core.qdmi import Device as QDMIDeviceHandle
-from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
-    from collections.abc import Hashable, Mapping, Sequence
+    from collections.abc import Callable, Hashable, Mapping, Sequence
 
+    from pennylane.measurements import Shots
     from pennylane.tape import QuantumScript, QuantumScriptOrBatch
     from pennylane.typing import Result, ResultBatch
     from pennylane.wires import Wires
 
+    from mqt.core.mlir import CompilationOptions
+    from mqt.core.qdmi import Device as QDMIDeviceHandle
+    from mqt.core.qdmi import Job, ProgramFormat
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters
 
 __all__ = ["DDSIMDevice", "QDMIDevice"]
@@ -77,7 +82,8 @@ _SESSION_PARAMETERS = frozenset({
     "custom5",
 })
 _JOB_PARAMETERS = frozenset({"custom1", "custom2", "custom3", "custom4", "custom5"})
-_SAMPLED_MEASUREMENTS = (SampleMP, CountsMP, ProbabilityMP, ExpectationMP, VarianceMP)
+# DDSIM reads its job seed as a positive native int.
+_MAX_DDSIM_SEED = 2**31 - 1
 
 
 def _validate_parameter_names(parameters: Mapping[str, object], allowed: frozenset[str], kind: str) -> None:
@@ -143,10 +149,35 @@ class QDMIDevice(Device):
         session_parameters: Device-session parameters for the MQT Core QDMI driver.
         job_parameters: QDMI custom job keyword arguments.
         max_retries: Maximum automatic replacements per failed entry; disabled by default.
+        program_format: Explicit QDMI execution format, or the device default.
+        compile_options: Compiler controls for every program, or the defaults.
     """
 
-    capabilities = DeviceCapabilities(supported_mcm_methods=[])
-    """Backend capabilities described by :class:`~pennylane.devices.capabilities.DeviceCapabilities`."""
+    config_filepath = str(Path(__file__).with_name("capabilities.toml"))
+    _warned_catalyst_version = False
+
+    @staticmethod
+    def get_c_interface() -> tuple[str, str]:
+        """Return the Catalyst device factory name and library path.
+
+        Raises:
+            PennyLaneConfigurationError: If Catalyst uses an unsupported device ABI.
+        """
+        installed = version("pennylane-catalyst")
+        supported = SpecifierSet(">=0.15,<1")
+        if not supported.contains(installed, prereleases=True):
+            msg = f"Catalyst {installed} has an unsupported device ABI; requires {supported}."
+            raise ConfigurationError(msg)
+        if Version(installed).release[:2] > (0, 15) and not QDMIDevice._warned_catalyst_version:
+            warnings.warn(
+                f"pennylane-catalyst {installed} is newer than the tested device interface 0.15.0. "
+                "MQT Core will try it, but an interface change can crash the process. "
+                "Report problems at https://github.com/munich-quantum-toolkit/core/issues.",
+                UntestedVersionWarning,
+                stacklevel=2,
+            )
+            QDMIDevice._warned_catalyst_version = True
+        return "MQTQDMI", mlir.__file__
 
     def __init__(
         self,
@@ -157,6 +188,8 @@ class QDMIDevice(Device):
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
         max_retries: int = 0,
+        program_format: ProgramFormat | None = None,
+        compile_options: CompilationOptions | None = None,
     ) -> None:
         """Initialize from a stable ID or an open QDMI device.
 
@@ -168,28 +201,28 @@ class QDMIDevice(Device):
             raise ConfigurationError(msg)
         self._max_retries = int(max_retries)
         self.last_job: PennyLaneJob | None = None
-        self._session_parameters: QDMISessionParameters = session_parameters.copy() if session_parameters else {}
-        self._job_parameters: QDMIJobParameters = job_parameters.copy() if job_parameters else {}
-        _validate_parameter_names(self._session_parameters, _SESSION_PARAMETERS, "session")
-        _validate_parameter_names(self._job_parameters, _JOB_PARAMETERS, "job")
+        session_parameters = session_parameters.copy() if session_parameters else {}
+        job_parameters = job_parameters.copy() if job_parameters else {}
+        _validate_parameter_names(session_parameters, _SESSION_PARAMETERS, "session")
+        _validate_parameter_names(job_parameters, _JOB_PARAMETERS, "job")
 
         if (device_id is None) == (device is None):
             msg = "Specify exactly one of device_id and device."
             raise ConfigurationError(msg)
         if device is not None:
-            if self._session_parameters:
+            if session_parameters:
                 msg = "session_parameters cannot be used with an already-open QDMI device."
                 raise ConfigurationError(msg)
             self._qdmi_device = device
         else:
             assert device_id is not None
             try:
-                self._qdmi_device = open_device(device_id, **self._session_parameters)
+                self._qdmi_device = open_device(device_id, **session_parameters)
             except (IndexError, RuntimeError, ValueError) as exc:
                 msg = f"Failed to open QDMI device '{device_id}': {exc}"
                 raise ConfigurationError(msg) from exc
         self._device_id = device_id
-        self._device_name = device_id or self._qdmi_device.name()
+        device_name = device_id or self._qdmi_device.name()
 
         num_qubits = self._qdmi_device.qubits_num()
         resolved_wires: int | Sequence[Hashable] = num_qubits if wires is None else wires
@@ -199,14 +232,22 @@ class QDMIDevice(Device):
             raise ConfigurationError(msg)
         if requested_wires > num_qubits:
             msg = (
-                f"QDMI device '{self._device_name}' exposes {num_qubits} qubits, "
-                f"but {requested_wires} wires were requested."
+                f"QDMI device '{device_name}' exposes {num_qubits} qubits, but {requested_wires} wires were requested."
             )
             raise ConfigurationError(msg)
 
         super().__init__(wires=resolved_wires)
-        self._program_format = self._select_program_format()
-        self._converter = _ProgramConverter(self._qdmi_device, self.wires, self._program_format)
+        try:
+            self._context = Context(
+                self._qdmi_device,
+                program_format=program_format,
+                options=compile_options,
+                **job_parameters,
+            )
+        except (RuntimeError, ValueError) as exc:
+            raise ConfigurationError(str(exc)) from exc
+        self._compile_options = compile_options
+        self.device_kwargs = {"context": self._context.id}
         self._submitted_jobs = 0
         self._execution_time = 0.0
 
@@ -230,60 +271,55 @@ class QDMIDevice(Device):
         """Cumulative wall-clock time spent submitting and waiting for QDMI jobs."""
         return self._execution_time
 
-    def _select_program_format(self) -> ProgramFormat:
-        """Select QASM3 before QASM2 and reject all other format sets.
-
-        Returns:
-            The selected QDMI program format.
-
-        Raises:
-            PennyLaneUnsupportedFormatError: If neither OpenQASM version is advertised.
-        """
-        formats = set(self._qdmi_device.supported_program_formats())
-        if ProgramFormat.QASM3 in formats:
-            return ProgramFormat.QASM3
-        if ProgramFormat.QASM2 in formats:
-            return ProgramFormat.QASM2
-        msg = f"QDMI device '{self._device_name}' advertises neither OpenQASM 3 nor OpenQASM 2."
-        raise UnsupportedFormatError(msg)
-
     def preprocess_transforms(self, execution_config: ExecutionConfig | None = None) -> CompilePipeline:
-        """Build the PennyLane preprocessing pipeline for sampled QDMI execution.
-
-        Returns:
-            The transforms applied before device execution.
-        """
-        del execution_config
+        """Return transforms for finite-shot execution and deferred measurements."""
         pipeline = CompilePipeline()
         pipeline.add_transform(_validate_finite_shots)
-        pipeline.add_transform(validate_device_wires, self.wires, name=self.name)
         pipeline.add_transform(_defer_on_device_wires, self.wires)
-        pipeline.add_transform(
-            validate_measurements,
-            analytic_measurements=lambda _measurement: False,
-            sample_measurements=lambda measurement: isinstance(measurement, _SAMPLED_MEASUREMENTS),
-            name=self.name,
-        )
-        pipeline.add_transform(split_non_commuting, grouping_strategy="qwc")
-        pipeline.add_transform(measurements_from_samples)
-        pipeline.add_transform(
-            decompose,
-            stopping_condition=self._converter.supports,
-            target_gates=self._converter.target_gates,
-            skip_initial_state_prep=False,
-            device_wires=self.wires,
-            name=self.name,
-            error=UnsupportedOperationError,
-        )
-        pipeline.add_transform(broadcast_expand)
+        pipeline += super().preprocess_transforms(execution_config)
         return pipeline
+
+    def _tape_wires(self, tape: QuantumScript) -> Wires:
+        """Select the program wires needed by this tape.
+
+        Returns:
+            All device wires for an unqualified measurement, otherwise tape wires.
+        """
+        return self.wires if any(not measurement.wires for measurement in tape.measurements) else tape.wires
+
+    def prepare_program(self, tape: QuantumScript) -> CompiledProgram | None:
+        """Compile one preprocessed tape for this device.
+
+        ``submit()`` calls this method once for each tape, in batch order, and
+        compiles all tapes before it submits a job. A subclass can call
+        ``super().prepare_program(tape)`` to record the payload, program
+        format, and result layout of each returned program.
+
+        Args:
+            tape: A tape after this device's preprocessing.
+
+        Returns:
+            The program to submit, or None if the results are known without
+            device execution.
+
+        Raises:
+            PennyLaneTranslationError: If an operation or target cannot be compiled.
+        """
+        if not tape.measurements:
+            return None
+        try:
+            program = QCProgram.from_pennylane(tape, wires=self._tape_wires(tape))
+            if not program.operation_counts().get("qc.measure", 0):
+                return None
+            compiled = compile_program(program, target=self._context.environment, options=self._compile_options)
+        except (KeyError, RuntimeError, TypeError, ValueError) as exc:
+            raise TranslationError(str(exc)) from exc
+        assert isinstance(compiled, CompiledProgram)
+        return compiled
 
     @staticmethod
     def _shot_copies(shots: Shots) -> tuple[int, ...]:
-        """Expand a PennyLane shot vector into individual QDMI job sizes.
-
-        Returns:
-            One positive shot count per required QDMI job.
+        """Return one shot count for each shot-vector copy.
 
         Raises:
             PennyLaneValidationError: If execution is analytic.
@@ -293,43 +329,89 @@ class QDMIDevice(Device):
             raise ValidationError(msg)
         return tuple(shot_copy.shots for shot_copy in shots.shot_vector for _ in range(shot_copy.copies))
 
-    def execute(
+    def _batch_submitter(self, count: int) -> Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None]:
+        """Capture submission state for a batch and its later retries.
+
+        Returns:
+            Callable that submits selected programs, returning None if the provider declines the group.
+        """
+        del count
+        context = self._context
+        return lambda _indices, programs, shots: context.try_submit(programs, shots)
+
+    def submit(
         self,
         circuits: QuantumScriptOrBatch,
         execution_config: ExecutionConfig | None = None,
-    ) -> Result | ResultBatch:
-        """Submit a batch to QDMI before collecting its ordered results.
+    ) -> PennyLaneJob:
+        """Submit preprocessed tapes without waiting for their results.
+
+        Accepted handles are available through the returned job's ``entries``.
+        Submission failures retain the job on ``last_job``; uncertain
+        submissions are never retried automatically.
 
         Returns:
-            One result for every preprocessed input tape.
+            The submitted batch, with the same result shape as ``execute()``.
         """
         self.last_job = None
         del execution_config
         single = isinstance(circuits, qp.tape.QuantumScript)
         tapes = (circuits,) if single else tuple(circuits)
-        prepared = tuple((self._converter.convert(tape), self._shot_copies(tape.shots)) for tape in tapes)
-        if not prepared:
-            return cast("ResultBatch", ())
+        shot_copies = tuple(self._shot_copies(tape.shots) for tape in tapes)
+        prepared = tuple(zip(map(self.prepare_program, tapes), shot_copies, strict=True))
 
-        if self.tracker.active:
+        if tapes and self.tracker.active:
             self.tracker.update(batches=1, batch_len=len(tapes))
             self.tracker.record()
 
         job = PennyLaneJob(
             self,
             prepared,
-            tuple(tape.shots.has_partitioned_shots for tape in tapes),
+            tapes,
             single=single,
-            parameters=self._job_parameters,
             max_retries=self._max_retries,
+            submit_programs=self._batch_submitter(sum(map(len, shot_copies))),
         )
         self.last_job = job
-        job.submit()
-        return job.result()
+        if tapes:
+            job.submit()
+        return job
+
+    def execute(
+        self,
+        circuits: QuantumScriptOrBatch,
+        execution_config: ExecutionConfig | None = None,
+    ) -> Result | ResultBatch:
+        """Submit preprocessed tapes and collect their ordered results.
+
+        Returns:
+            One result for every preprocessed input tape.
+        """
+        if not isinstance(circuits, qp.tape.QuantumScript) and not circuits:
+            self.last_job = None
+            return ()
+        return self.submit(circuits, execution_config).result()
 
 
 class DDSIMDevice(QDMIDevice):
-    """PennyLane entry point for MQT Core's local DDSIM QDMI device."""
+    """PennyLane entry point for MQT Core's local DDSIM QDMI device.
+
+    Args:
+        wires: PennyLane wire labels or number of wires. A positive width also
+            sets the simulator session width.
+        session_parameters: Device-session parameters for the MQT Core QDMI driver.
+        job_parameters: DDSIM custom job keyword arguments.
+        seed: Base sampling seed from 1 to 2147483647, or None for system
+            entropy. Program ``i`` of this device uses seed ``seed + i``, where
+            ``i`` counts the programs of all earlier ``submit()`` and
+            ``execute()`` calls on this instance. Each shot-vector copy of a
+            preprocessed tape is one program. Splitting the same ordered
+            programs into different batches gives the same samples. Do not
+            combine with job parameter ``custom1``. Catalyst-compiled QNodes do
+            not use this seed.
+        max_retries: Maximum automatic replacements per failed entry; disabled by default.
+        compile_options: Compiler controls for every program, or the defaults.
+    """
 
     def __init__(
         self,
@@ -337,13 +419,61 @@ class DDSIMDevice(QDMIDevice):
         *,
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
+        seed: int | None = None,
         max_retries: int = 0,
+        compile_options: CompilationOptions | None = None,
     ) -> None:
-        """Open the built-in DDSIM device by its stable QDMI ID."""
+        """Open the built-in DDSIM device by its stable QDMI ID.
+
+        Raises:
+            PennyLaneConfigurationError: If configuration, requested wires, or the seed are invalid.
+        """
+        if seed is not None:
+            if isinstance(seed, bool) or not isinstance(seed, Integral) or seed not in range(1, _MAX_DDSIM_SEED + 1):
+                msg = f"seed must be None or an integer from 1 to {_MAX_DDSIM_SEED}, got {seed!r}."
+                raise ConfigurationError(msg)
+            if job_parameters and job_parameters.get("custom1") is not None:
+                msg = "Specify the DDSIM seed with either seed or job parameter custom1, not both."
+                raise ConfigurationError(msg)
+        if wires is not None:
+            width = wires if isinstance(wires, int) else len(wires)
+            if width > 0:
+                session_parameters = {"custom1": str(int(width)), **(session_parameters or {})}
         super().__init__(
             "mqt.ddsim.default",
             wires=wires,
             session_parameters=session_parameters,
             job_parameters=job_parameters,
             max_retries=max_retries,
+            compile_options=compile_options,
         )
+        self._next_seed = None if seed is None else int(seed)
+        self._job_parameters: QDMIJobParameters = job_parameters.copy() if job_parameters else {}
+
+    def _batch_submitter(self, count: int) -> Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None]:
+        """Reserve streams and capture DDSIM submission state for a batch.
+
+        Returns:
+            Callable that submits programs with their reserved seeds, declining nonconsecutive groups.
+
+        Raises:
+            PennyLaneValidationError: If the batch needs a seed above the DDSIM limit.
+        """
+        if self._next_seed is None:
+            return super()._batch_submitter(count)
+        first = self._next_seed
+        if first + count - 1 > _MAX_DDSIM_SEED:
+            msg = f"The batch needs DDSIM seeds up to {first + count - 1}, but the limit is {_MAX_DDSIM_SEED}."
+            raise ValidationError(msg)
+        self._next_seed += count
+        context = self._context
+        parameters = self._job_parameters.copy()
+
+        def submit(indices: Sequence[int], programs: Sequence[CompiledProgram], shots: int) -> Job | None:
+            # DDSIM offsets each program's seed from the first seed in its job.
+            if any(index != indices[0] + offset for offset, index in enumerate(indices)):
+                return None
+            overrides: QDMIJobParameters = {**parameters, "custom1": first + indices[0]}
+            return context.try_submit(programs, shots, **overrides)
+
+        return submit

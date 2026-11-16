@@ -39,6 +39,7 @@
 #include <elf.h>
 #include <sys/auxv.h>
 #elif defined(__APPLE__)
+#include <cstdint>
 #include <mach-o/dyld.h>
 #include <vector>
 #endif
@@ -76,8 +77,8 @@ llvm::Expected<std::filesystem::path> moduleDirectory(const void* anchor) {
     return qdmi::makeError(QDMI_ERROR_FATAL, "Cannot locate the QDMI module");
   }
   auto path = std::filesystem::path(info.dli_fname);
-  if (!path.is_absolute()) {
 #ifdef __linux__
+  if (!path.is_absolute()) {
     Dl_info executable{};
     const auto* headers = reinterpret_cast<const void*>(getauxval(AT_PHDR));
     if (dladdr(headers, &executable) != 0 &&
@@ -89,19 +90,20 @@ llvm::Expected<std::filesystem::path> moduleDirectory(const void* anchor) {
                                "Cannot locate the QDMI module");
       }
     }
-#elif defined(__APPLE__)
-    if (info.dli_fbase == _dyld_get_image_header(0)) {
-      uint32_t size = 0;
-      static_cast<void>(_NSGetExecutablePath(nullptr, &size));
-      std::vector<char> buffer(size);
-      if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
-        return qdmi::makeError(QDMI_ERROR_FATAL,
-                               "Cannot locate the QDMI module");
-      }
-      path = buffer.data();
-    }
-#endif
   }
+#elif defined(__APPLE__)
+  // dyld can name the main executable by any of its hard links, so use the
+  // launched path instead.
+  if (info.dli_fbase == _dyld_get_image_header(0)) {
+    uint32_t size = 0;
+    static_cast<void>(_NSGetExecutablePath(nullptr, &size));
+    std::vector<char> buffer(size);
+    if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
+      return qdmi::makeError(QDMI_ERROR_FATAL, "Cannot locate the QDMI module");
+    }
+    path = buffer.data();
+  }
+#endif
   std::error_code error;
   const auto canonical = std::filesystem::weakly_canonical(path, error);
   if (error) {

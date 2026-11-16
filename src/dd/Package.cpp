@@ -1253,37 +1253,52 @@ Package::expectationValues(const vEdge& state,
       }
       auto [entry, inserted] = expectations.try_emplace(term.paulis, 1.);
       if (inserted && term.paulis.find_first_not_of('I') != std::string::npos) {
-        auto matrix = mCachedEdge::one();
-        for (size_t index = 0; index < numQubits; ++index) {
-          const auto pauli = term.paulis[numQubits - index - 1];
-          if (pauli == 'I') {
-            continue;
+        const auto lowest = static_cast<Qubit>(
+            numQubits - term.paulis.find_last_not_of('I') - 1);
+        llvm::DenseMap<std::tuple<vNode*, vNode*, size_t>, ComplexValue> memo;
+        const auto contract = [&](const auto& self, const vEdge& left,
+                                  const vEdge& right,
+                                  const size_t levels) -> ComplexValue {
+          if (levels <= lowest) {
+            return innerProduct(
+                {.p = left.p, .w = ComplexNumbers::conj(left.w)}, right,
+                static_cast<Qubit>(levels));
           }
-          std::array<mCachedEdge, NEDGE> edges{};
-          switch (pauli) {
-          case 'X':
-            edges[1] = matrix;
-            edges[2] = matrix;
-            break;
-          case 'Y':
-            edges[1] = {matrix.p, {matrix.w.i, -matrix.w.r}};
-            edges[2] = {matrix.p, {-matrix.w.i, matrix.w.r}};
-            break;
-          case 'Z':
-            edges[0] = matrix;
-            edges[3] = {matrix.p, {-matrix.w.r, -matrix.w.i}};
-            break;
-          default:
-            llvm_unreachable("Validated Pauli label");
+          const auto weight =
+              ComplexNumbers::conj(left.w) * static_cast<ComplexValue>(right.w);
+          if (left.w.approximatelyZero() || right.w.approximatelyZero()) {
+            return 0.;
           }
-          matrix = makeDDNode(static_cast<Qubit>(index), edges);
-        }
-        auto expectation = expectationValue(cn.lookup(matrix), state);
-        if (!expectation) {
-          return expectation.takeError();
-        }
-        entry->second = *expectation;
-        garbageCollect();
+          const auto key = std::tuple{left.p, right.p, levels};
+          if (const auto found = memo.find(key); found != memo.end()) {
+            return found->second * weight;
+          }
+          const auto qubit = static_cast<Qubit>(levels - 1);
+          const auto pauli = term.paulis[numQubits - levels];
+          ComplexValue sum = 0.;
+          for (size_t row = 0; row < RADIX; ++row) {
+            const auto column = (pauli == 'X' || pauli == 'Y') ? 1 - row : row;
+            const auto bra = !left.isTerminal() && left.p->v == qubit
+                                 ? left.p->e[row]
+                                 : vEdge{.p = left.p, .w = Complex::one()};
+            const auto ket = !right.isTerminal() && right.p->v == qubit
+                                 ? right.p->e[column]
+                                 : vEdge{.p = right.p, .w = Complex::one()};
+            auto contribution = self(self, bra, ket, qubit);
+            if (pauli == 'Y') {
+              contribution =
+                  contribution * ComplexValue{0., row == 0 ? -1. : 1.};
+            } else if (pauli == 'Z' && row == 1) {
+              contribution = contribution * ComplexValue{-1.};
+            }
+            sum += contribution;
+          }
+          if (memo.size() < config_.ctVecInnerProdNumBucket) {
+            memo.try_emplace(key, sum);
+          }
+          return sum * weight;
+        };
+        entry->second = contract(contract, state, state, numQubits).r;
       }
       value += term.coefficient * entry->second;
     }
@@ -1393,34 +1408,23 @@ bool Package::isCloseToIdentityRecursive(
 
   // check whether any of the middle successors is non-zero, i.e., m = [ x 0 0
   // y ]
-  const auto mag1 = dd::ComplexNumbers::mag2(m.p->e[1U].w);
-  const auto mag2 = dd::ComplexNumbers::mag2(m.p->e[2U].w);
+  const auto mag1 = dd::ComplexNumbers::mag(m.p->e[1U].w);
+  const auto mag2 = dd::ComplexNumbers::mag(m.p->e[2U].w);
   if (mag1 > tol || mag2 > tol) {
     return false;
   }
 
   if (checkCloseToOne) {
     // check whether  m = [ ~1 0 0 y ]
-    const auto mag0 = dd::ComplexNumbers::mag2(m.p->e[0U].w);
-    if (std::abs(mag0 - 1.0) > tol) {
-      return false;
-    }
-    const auto arg0 = dd::ComplexNumbers::arg(m.p->e[0U].w);
-    if (std::abs(arg0) > tol) {
+    const auto weight0 = static_cast<ComplexValue>(m.p->e[0U].w);
+    if (std::hypot(weight0.r - 1.0, weight0.i) > tol) {
       return false;
     }
 
-    // check whether m = [ x 0 0 ~1 ] or m = [ x 0 0 ~0 ] (the last case is
-    // true for an ancillary qubit)
-    const auto mag3 = dd::ComplexNumbers::mag2(m.p->e[3U].w);
-    if (mag3 > tol) {
-      if (std::abs(mag3 - 1.0) > tol) {
-        return false;
-      }
-      const auto arg3 = dd::ComplexNumbers::arg(m.p->e[3U].w);
-      if (std::abs(arg3) > tol) {
-        return false;
-      }
+    // Ancillary qubits also permit a zero lower diagonal weight.
+    const auto weight3 = static_cast<ComplexValue>(m.p->e[3U].w);
+    if (weight3.mag() > tol && std::hypot(weight3.r - 1.0, weight3.i) > tol) {
+      return false;
     }
   }
   // m either has the form [ ~1 0 0 ~1 ] or [ ~1 0 0 ~0 ]

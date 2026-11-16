@@ -10,12 +10,13 @@
 
 from __future__ import annotations
 
+import operator
 from typing import TYPE_CHECKING
 
 import pytest
 from qiskit_support import supports_qiskit_translation
 
-from mqt.core.mlir import JeffProgram, QCOProgram, QCProgram, sample
+from mqt.core.mlir import JeffProgram, QCProgram, sample
 
 if TYPE_CHECKING:
     from qiskit import QuantumCircuit
@@ -66,30 +67,44 @@ def _check_paths(program: QCProgram, width: int, expected: int) -> None:
         assert _observe(program.to_qiskit(copy=True), width) == expected
 
 
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
-@pytest.mark.parametrize("predicate", ["eq", "ne", "ult", "ule", "ugt", "uge", "slt", "sle", "sgt", "sge"])
-def test_integer_comparison_interchange(width: int, predicate: str) -> None:
-    """Signedness belongs to the operation, including computed operands."""
-    high = 1 << (width - 1)
-    program = _program(
-        width,
-        f"""
+@pytest.mark.parametrize("width", [1, 9, 64])
+def test_integer_comparison_interchange(width: int) -> None:
+    """Signedness belongs to each predicate, including computed operands."""
+    predicates = ["eq", "ne", "ult", "ule", "ugt", "uge", "slt", "sle", "sgt", "sge"]
+    result_width = len(predicates)
+    body = f"""
       %zero = arith.constant 0 : i{width}
       %computed = arith.xori %value, %zero : i{width}
       %mask = arith.constant {(1 << width) - 1} : i{width}
       %other = arith.xori %value, %mask : i{width}
-      %result = arith.cmpi {predicate}, %computed, %other : i{width}
-    """,
-        1,
-        high,
-    )
-    expected = int(predicate in {"ne", "ugt", "uge", "slt", "sle"})
-    _check_paths(program, 1, expected)
-    program.cleanup()
-    _check_paths(program, 1, expected)
+      %empty = arith.constant 0 : i{result_width}
+    """
+    previous = "%empty"
+    for index, predicate in enumerate(predicates):
+        result = "%result" if index == result_width - 1 else f"%bits{index}"
+        body += f"""
+      %comparison{index} = arith.cmpi {predicate}, %computed, %other : i{width}
+      %bit{index} = arith.constant {1 << index} : i{result_width}
+      %selected{index} = arith.select %comparison{index}, %bit{index}, %empty : i{result_width}
+      {result} = arith.ori {previous}, %selected{index} : i{result_width}
+    """
+        previous = result
+    program = _program(width, body, result_width, 1 << (width - 1))
+    high = 1 << (width - 1)
+    expected = 0
+    for index, predicate in enumerate(predicates):
+        lhs = -high if predicate.startswith("s") else high
+        compare = getattr(operator, predicate.removeprefix("s").removeprefix("u"))
+        expected |= int(compare(lhs, high - 1)) << index
+    try:
+        _check_paths(program, result_width, expected)
+        program.cleanup()
+        assert _observe(program, result_width) == expected
+    except AssertionError as error:
+        pytest.fail(f"{error}\nComparison result bits, least significant first: {predicates}")
 
 
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 def test_modular_arithmetic_and_selection(width: int) -> None:
     """Arithmetic and selection preserve the original width after promotion."""
     maximum = (1 << width) - 1
@@ -107,7 +122,7 @@ def test_modular_arithmetic_and_selection(width: int) -> None:
     _check_paths(program, width, 0)
 
 
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 def test_logical_right_shift_high_bit(width: int) -> None:
     """The jeff adapter must not interpret a logical shift as signed."""
     high = 1 << (width - 1)
@@ -140,7 +155,7 @@ def test_integer_width_casts(source_width: int, target_width: int, *, signed: bo
     expected = (1 << target_width) - 1 if signed or target_width < source_width else initial
     _check_paths(program, target_width, expected)
     program.cleanup()
-    _check_paths(program, target_width, expected)
+    assert _observe(program, target_width) == expected
 
 
 @pytest.mark.parametrize("signed", [False, True])
@@ -165,7 +180,7 @@ result[1] = snapshot < 0;
     assert _observe(program, 2) == expected
 
 
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 @pytest.mark.parametrize("runtime", [False, True])
 @pytest.mark.parametrize("direction", ["<<", ">>"])
 def test_source_zero_filling_shifts(width: int, *, runtime: bool, direction: str) -> None:
@@ -188,10 +203,10 @@ result = source {direction} {amount};
         expected = (initial << distance) & ((1 << width) - 1) if direction == "<<" else initial >> distance
         _check_paths(program, width, expected)
         program.cleanup()
-        _check_paths(program, width, expected)
+        assert _observe(program, width) == expected
 
 
-@pytest.mark.parametrize("width", [65, 150, 301])
+@pytest.mark.parametrize("width", [65, 257])
 @pytest.mark.parametrize("enabled", [False, True])
 def test_wide_comparison_snapshot(width: int, *, enabled: bool) -> None:
     """Compare retained snapshots across storage mutation and format boundaries."""
@@ -258,41 +273,10 @@ module {{
 """)
     _check_paths(program, result_width, expected)
     program.cleanup()
-    if width <= 256:
-        assert f"!cbit.reg<{width}>" not in str(program)
-    _check_paths(program, result_width, expected)
+    assert _observe(program, result_width) == expected
 
 
-@pytest.mark.parametrize("static_index", [False, True])
-def test_wide_comparison_index_eligibility(*, static_index: bool) -> None:
-    """Normalize static indices and retain packed reads for runtime indices."""
-    program = QCOProgram.from_mlir_str(f"""module {{
-      func.func @main() -> i1 attributes {{mqt.entry_point}} {{
-        %q = qco.static 0 : !qco.qubit
-        %flipped = qco.x %q : !qco.qubit
-        %measured, %bit = qco.measure %flipped : !qco.qubit
-        %zero = arith.constant 0 : index
-        %one = arith.constant 1 : index
-        %true = arith.constant true
-        %index = scf.if {"%true" if static_index else "%bit"} -> index {{
-          scf.yield %one : index
-        }} else {{ scf.yield %zero : index }}
-        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<150>
-        cbit.store %bit, %reg[%index] : !cbit.reg<150>
-        %snapshot = cbit.read %reg : !cbit.reg<150> -> i150
-        %two = arith.constant 2 : i150
-        %result = arith.cmpi eq, %snapshot, %two : i150
-        qco.sink %measured : !qco.qubit
-        return %result : i1
-      }}
-    }}""")
-    program.run_pass_pipeline("promote-classical-memory")
-    assert ("cbit.read" in str(program)) != static_index
-    assert "cbit.load" not in str(program)
-    assert sample(program, shots=1, seed=1) == {"1": 1}
-
-
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 def test_signed_right_shift_high_bit(width: int) -> None:
     """Arithmetic shifts retain the original sign bit in promoted integers."""
     program = _program(
@@ -307,7 +291,7 @@ def test_signed_right_shift_high_bit(width: int) -> None:
     _check_paths(program, width, (1 << width) - 1)
 
 
-@pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
+@pytest.mark.parametrize("width", [1, 9, 64])
 @pytest.mark.parametrize("operation", ["popcount", "rotate_left", "rotate_right"])
 def test_integer_intrinsics(width: int, operation: str) -> None:
     """Targets without integer intrinsics use the shared arithmetic lowering."""

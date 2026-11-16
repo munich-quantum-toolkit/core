@@ -72,7 +72,7 @@ void registerQPE(const nb::module_& m) {
 
   nb::enum_<bench::QPEMethod>(
       m, "Method",
-      "Full-register or iterative measurement-and-feed-forward method.")
+      "Full-register QPE or a reused query qubit with classical feedback.")
       .value("STANDARD", bench::QPEMethod::Standard)
       .value("ITERATIVE", bench::QPEMethod::Iterative);
 

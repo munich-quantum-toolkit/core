@@ -28,8 +28,12 @@ set(BENCH_SOURCES
 target_sources(${MQT_CORE_TARGET_NAME}-bindings PRIVATE ${BENCH_SOURCES})
 target_link_libraries(${MQT_CORE_TARGET_NAME}-bindings PRIVATE MQT::CoreBench)
 
-# install the Python stub files in editable mode for better IDE support
+# Install the Python stub package in editable mode for IDE support.
 if(MQT_CORE_INSTALL AND SKBUILD_STATE STREQUAL "editable")
-  file(GLOB_RECURSE BENCH_PYI_FILES ${PROJECT_SOURCE_DIR}/python/mqt/core/bench/*.pyi)
-  install(FILES ${BENCH_PYI_FILES} DESTINATION ./bench COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
+  install(
+    DIRECTORY ${PROJECT_SOURCE_DIR}/python/mqt/core/bench
+    DESTINATION .
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Python
+    FILES_MATCHING
+    PATTERN "*.pyi")
 endif()

@@ -9,7 +9,7 @@ The two family lists were later replaced by
 
 MQT Core needs structured quantum workloads whose inputs, expected outputs, and
 generated programs describe the same exact instance. After this work, C++,
-Python, and `mqt-core-bench` users can configure GHZ, Grover, QPE,
+Python, and `mqt-cc bench` users can configure GHZ, Grover, QPE,
 Bernstein--Vazirani (BV), and QFT with family-specific parameters. Each instance
 has an analytic reference, a canonical JSON instance specification, a
 self-checking manifest, a stable case ID, and a structured QC or `jeff` program.

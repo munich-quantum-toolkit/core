@@ -14,6 +14,7 @@
 #include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
+#include "dd/ShotStreams.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
@@ -358,6 +359,7 @@ struct WalkState {
   const DenseSet<Operation*>* deferredMeasurements = nullptr;
   DenseSet<dd::Qubit>* deferredMeasuredWires = nullptr;
   size_t remainingWhileIterations;
+  size_t maxQubits;
   DenseSet<Operation*> activeCalls;
   SymbolTableCollection symbols;
 };
@@ -1680,7 +1682,7 @@ static FailureOr<Block*> selectBranch(Operation* op, WalkState& walk) {
 static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
                                                  dd::VectorDD& state,
                                                  Operation* op) {
-  if (count > dd::Package::MAX_POSSIBLE_QUBITS - walk.qubits->numQubits) {
+  if (count > walk.maxQubits - walk.qubits->numQubits) {
     return op->emitError() << "QCO function exceeds the supported qubit range";
   }
   const size_t required = walk.qubits->numQubits + count;
@@ -2184,13 +2186,14 @@ struct PreparedState {
 
 static FailureOr<PreparedState>
 prepare(func::FuncOp func, dd::Package& dd,
-        const DDArgumentBindings& argumentBindings,
+        const DDArgumentBindings& argumentBindings, size_t maxQubits,
         bool bindEntryAllocations = false) {
   if (func.isDeclaration() || !func.getBody().hasOneBlock()) {
     return func.emitError()
            << "QCO DD execution requires a one-block function body";
   }
 
+  maxQubits = std::min(maxQubits, dd::Package::MAX_POSSIBLE_QUBITS);
   PreparedState prepared;
   if (failed(
           applyArgumentBindings(func, argumentBindings, prepared.classical))) {
@@ -2199,7 +2202,7 @@ prepare(func::FuncOp func, dd::Package& dd,
   QubitMap& qubits = prepared.qubits;
   for (StaticOp staticOp : func.getBody().front().getOps<StaticOp>()) {
     const auto index = static_cast<size_t>(staticOp.getIndex());
-    if (index >= dd::Package::MAX_POSSIBLE_QUBITS) {
+    if (index >= maxQubits) {
       return staticOp.emitError()
              << "static qubit index exceeds the supported qubit range";
     }
@@ -2211,7 +2214,7 @@ prepare(func::FuncOp func, dd::Package& dd,
     size_t next = 0;
     for (Value arg : func.getArguments()) {
       if (isa<QubitType>(arg.getType())) {
-        if (next >= dd::Package::MAX_POSSIBLE_QUBITS) {
+        if (next >= maxQubits) {
           return func.emitError()
                  << "QCO function exceeds the supported qubit range";
         }
@@ -2232,7 +2235,7 @@ prepare(func::FuncOp func, dd::Package& dd,
           }
         }
         const auto count = static_cast<size_t>(size);
-        if (count > dd::Package::MAX_POSSIBLE_QUBITS - next) {
+        if (count > maxQubits - next) {
           return func.emitError()
                  << "QCO function exceeds the supported qubit range";
         }
@@ -2250,7 +2253,7 @@ prepare(func::FuncOp func, dd::Package& dd,
   if (bindEntryAllocations) {
     for (Operation& operation : func.getBody().front()) {
       if (auto alloc = dyn_cast<AllocOp>(operation)) {
-        if (qubits.numQubits >= dd::Package::MAX_POSSIBLE_QUBITS) {
+        if (qubits.numQubits >= maxQubits) {
           return alloc.emitError()
                  << "QCO function exceeds the supported qubit range";
         }
@@ -2262,7 +2265,7 @@ prepare(func::FuncOp func, dd::Package& dd,
           continue;
         }
         const auto count = static_cast<size_t>(type.getDimSize(0));
-        if (count > dd::Package::MAX_POSSIBLE_QUBITS - qubits.numQubits) {
+        if (count > maxQubits - qubits.numQubits) {
           return tensorAlloc.emitError()
                  << "QCO function exceeds the supported qubit range";
         }
@@ -2288,8 +2291,8 @@ FailureOr<dd::MatrixDD>
 buildFunctionality(func::FuncOp func, dd::Package& dd,
                    const DDArgumentBindings& argumentBindings,
                    const DDExecutionOptions& options) {
-  auto prepared =
-      prepare(func, dd, argumentBindings, /*bindEntryAllocations=*/true);
+  auto prepared = prepare(func, dd, argumentBindings, options.maxQubits,
+                          /*bindEntryAllocations=*/true);
   if (failed(prepared)) {
     return failure();
   }
@@ -2303,6 +2306,8 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
       .dd = &dd,
       .rng = nullptr,
       .remainingWhileIterations = options.maxWhileIterations,
+      .maxQubits =
+          std::min(options.maxQubits, dd::Package::MAX_POSSIBLE_QUBITS),
   };
   walkState.activeCalls.insert(func.getOperation());
 
@@ -2326,6 +2331,10 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
              GateCache* gateCache = nullptr) {
   const size_t inputQubits =
       in.isTerminal() ? 0U : static_cast<size_t>(in.p->v) + 1U;
+  if (inputQubits > options.maxQubits) {
+    dd.decRef(in);
+    return func.emitError() << "input state exceeds the supported qubit range";
+  }
   if (inputQubits < prepared.qubits.numQubits) {
     dd.decRef(in);
     return func.emitError()
@@ -2347,6 +2356,8 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
       .deferredMeasurements = deferredMeasurements,
       .deferredMeasuredWires = deferredMeasuredWires,
       .remainingWhileIterations = options.maxWhileIterations,
+      .maxQubits =
+          std::min(options.maxQubits, dd::Package::MAX_POSSIBLE_QUBITS),
   };
   walkState.activeCalls.insert(func.getOperation());
 
@@ -2368,7 +2379,7 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
                                  dd::Package& dd, std::mt19937_64& rng,
                                  const DDArgumentBindings& argumentBindings,
                                  const DDExecutionOptions& options) {
-  auto prepared = prepare(func, dd, argumentBindings);
+  auto prepared = prepare(func, dd, argumentBindings, options.maxQubits);
   if (failed(prepared)) {
     dd.decRef(in);
     return failure();
@@ -2465,7 +2476,7 @@ FailureOr<dd::VectorDD>
 simulateStatevector(func::FuncOp func, dd::Package& dd,
                     const DDArgumentBindings& argumentBindings,
                     const DDExecutionOptions& options) {
-  auto prepared = prepare(func, dd, argumentBindings);
+  auto prepared = prepare(func, dd, argumentBindings, options.maxQubits);
   if (failed(prepared)) {
     return failure();
   }
@@ -2612,39 +2623,74 @@ sampleTerminalCounts(func::FuncOp func, const dd::VectorDD& state,
   return std::move(*counts);
 }
 
-static bool canBranchStructured(func::FuncOp func) {
-  bool found = false;
-  bool unsupported = false;
-  SymbolTableCollection symbols;
+static std::optional<DenseSet<Operation*>>
+collectBranchingOps(func::FuncOp func) {
+  DenseSet<Operation*> regions;
+  DenseSet<Operation*> active;
   DenseMap<Operation*, bool> cached;
-  func.getBody().walk([&](Operation* op) {
-    if (isa<MeasureOp, ResetOp>(op)) {
-      found = true;
-      for (Operation* parent = op->getParentOp(); parent != func.getOperation();
-           parent = parent->getParentOp()) {
-        if (!isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp, scf::IfOp,
-                 scf::IndexSwitchOp>(parent)) {
-          unsupported = true;
-          break;
+  SymbolTableCollection symbols;
+  const auto collect = [&](const auto& self,
+                           func::FuncOp current) -> FailureOr<bool> {
+    if (!current || current.isDeclaration() ||
+        !current.getBody().hasOneBlock()) {
+      return failure();
+    }
+    if (const auto it = cached.find(current); it != cached.end()) {
+      return it->second;
+    }
+    if (!active.insert(current).second) {
+      return failure();
+    }
+    const auto guard = llvm::scope_exit([&] { active.erase(current); });
+    bool found = false;
+    const auto result = current.getBody().walk([&](Operation* op) {
+      bool branches = isa<MeasureOp, ResetOp>(op);
+      if (auto call = dyn_cast<func::CallOp>(op)) {
+        auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
+            call, call.getCalleeAttr());
+        auto nested = self(self, callee);
+        if (failed(nested)) {
+          return WalkResult::interrupt();
+        }
+        branches = *nested;
+        if (branches) {
+          regions.insert(op);
         }
       }
-    } else if (auto call = dyn_cast<func::CallOp>(op)) {
-      auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
-          call, call.getCalleeAttr());
-      DenseSet<Operation*> active;
-      unsupported |= !callee || callee.isDeclaration() ||
-                     mayMeasureOrReset(callee, active, cached, symbols);
+      if (branches) {
+        found = true;
+        for (Operation* parent = op->getParentOp();
+             parent != current.getOperation(); parent = parent->getParentOp()) {
+          if (!isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp, scf::IfOp,
+                   scf::IndexSwitchOp>(parent)) {
+            return WalkResult::interrupt();
+          }
+          regions.insert(parent);
+        }
+      }
+      return WalkResult::advance();
+    });
+    if (result.wasInterrupted()) {
+      return failure();
     }
-  });
-  return found && !unsupported;
+    cached.try_emplace(current, found);
+    return found;
+  };
+  auto found = collect(collect, func);
+  if (failed(found) || !*found) {
+    return std::nullopt;
+  }
+  return regions;
 }
 
 static FailureOr<std::map<std::string, size_t>>
 sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
                std::mt19937_64& rng, const PreparedState& prepared,
-               const SamplingPlan& plan, std::vector<std::string>* shotResults,
+               const SamplingPlan& plan,
+               const DenseSet<Operation*>& branchingOps,
+               std::vector<std::string>* shotResults,
                const DDExecutionOptions& options, bool collectCounts) {
-  struct RegionFrame {
+  struct Frame {
     Operation* op;
     std::optional<LoopRange> range;
   };
@@ -2655,7 +2701,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
     ClassicalEnv classical;
     size_t remainingWhileIterations;
     size_t count;
-    SmallVector<RegionFrame, 2> frames;
+    SmallVector<Frame, 2> frames;
   };
   std::map<std::string, size_t> counts;
   auto initial = dd::makeZeroState(prepared.qubits.numQubits, dd);
@@ -2671,16 +2717,6 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
       .count = shots,
   };
   Block& entry = func.getBody().front();
-  DenseSet<Operation*> branchRegions;
-  func.getBody().walk([&](Operation* op) {
-    if (!isa<MeasureOp, ResetOp>(op)) {
-      return;
-    }
-    for (Operation* parent = op->getParentOp(); parent != func.getOperation();
-         parent = parent->getParentOp()) {
-      branchRegions.insert(parent);
-    }
-  });
   GateCache gateCache(dd);
   std::function<LogicalResult(Block::iterator, Group)> visit =
       [&](Block::iterator current, Group group) -> LogicalResult {
@@ -2693,6 +2729,8 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         .gates = &gateCache,
         .rng = &rng,
         .remainingWhileIterations = group.remainingWhileIterations,
+        .maxQubits =
+            std::min(options.maxQubits, dd::Package::MAX_POSSIBLE_QUBITS),
     };
     walk.activeCalls.insert(func.getOperation());
     while (!group.frames.empty() ||
@@ -2767,8 +2805,21 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         continue;
       }
       Operation& op = *current;
+      if (auto call = dyn_cast<func::CallOp>(op);
+          call && branchingOps.contains(&op)) {
+        auto callee = walk.symbols.lookupNearestSymbolFrom<func::FuncOp>(
+            call, call.getCalleeAttr());
+        if (failed(bindValuePairs(call.getArgOperands(), callee.getArguments(),
+                                  walk, call))) {
+          return failure();
+        }
+        group.frames.push_back({.op = call, .range = std::nullopt});
+        current = callee.getBody().front().begin();
+        continue;
+      }
+
       if (auto forOp = dyn_cast<scf::ForOp>(op);
-          forOp && branchRegions.contains(&op)) {
+          forOp && branchingOps.contains(&op)) {
         auto range = resolveLoop(forOp, group.classical);
         if (failed(range)) {
           return failure();
@@ -2797,7 +2848,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         continue;
       }
       if (auto whileOp = dyn_cast<scf::WhileOp>(op);
-          whileOp && branchRegions.contains(&op)) {
+          whileOp && branchingOps.contains(&op)) {
         if (failed(bindValuePairs(whileOp.getInits(),
                                   whileOp.getBeforeArguments(), walk,
                                   whileOp))) {
@@ -2811,7 +2862,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
         continue;
       }
       if (isa<IfOp, IndexSwitchOp, scf::IfOp, scf::IndexSwitchOp>(op) &&
-          branchRegions.contains(&op)) {
+          branchingOps.contains(&op)) {
         auto selected = selectBranch(&op, walk);
         if (failed(selected)) {
           return failure();
@@ -3097,7 +3148,7 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
   }
   auto dd = std::move(*packageResult);
   std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
-  auto prepared = prepare(func, *dd, argumentBindings);
+  auto prepared = prepare(func, *dd, argumentBindings, options.maxQubits);
   if (failed(prepared)) {
     return failure();
   }
@@ -3123,17 +3174,18 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
       return result;
     }
   }
-  if (canBranchStructured(func)) {
+  if (auto regions = collectBranchingOps(func)) {
     // shortcut: Shared structured-branch evaluation corrupts concurrent
     // shot groups; isolate its IR before enabling multiple workers.
-    return sampleBranches(func, *dd, shots, rng, *prepared, *plan, shotResults,
-                          options, collectCounts);
+    return sampleBranches(func, *dd, shots, rng, *prepared, *plan, *regions,
+                          shotResults, options, collectCounts);
   }
   if (workers == 0) {
     // Keep small jobs serial and bound repeated prefix work per package.
     workers = std::clamp(shots / 256, size_t{1}, size_t{8});
   }
   workers = std::min(workers, shots);
+  const size_t requested = workers;
   if (!func.getContext()->isMultithreadingEnabled()) {
     workers = 1;
   }
@@ -3148,21 +3200,20 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
     releaseSamplingWorkers(grant - workers);
     grant = workers;
   }
-  if (workers == 1) {
+  const size_t streamCount = seed != 0 ? requested : workers;
+  if (streamCount == 1) {
     return sampleImpl(func, *dd, shots, rng, *prepared, shotResults, nullptr,
                       *plan, options, collectCounts, /*forceDynamic=*/true);
   }
   struct Worker {
     std::unique_ptr<dd::Package> dd;
     PreparedState prepared;
-    std::vector<std::string> shots;
   };
   std::vector<Worker> work;
   work.reserve(workers);
   work.push_back({
       .dd = std::move(dd),
       .prepared = std::move(*prepared),
-      .shots = {},
   });
   for (size_t i = 1; i < workers; ++i) {
     auto created = dd::Package::create(0);
@@ -3170,55 +3221,60 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
       return func.emitError(llvm::toString(created.takeError()));
     }
     auto package = std::move(*created);
-    auto next = prepare(func, *package, argumentBindings);
+    auto next = prepare(func, *package, argumentBindings, options.maxQubits);
     if (failed(next)) {
       return failure();
     }
     work.push_back({
         .dd = std::move(package),
         .prepared = std::move(*next),
-        .shots = {},
     });
   }
-  std::vector<std::future<FailureOr<std::map<std::string, size_t>>>> tasks;
-  tasks.reserve(workers);
-  std::vector<uint64_t> workerSeeds(workers);
-  for (auto& workerSeed : workerSeeds) {
-    workerSeed = rng();
-  }
-  for (size_t i = 0; i < workers; ++i) {
-    tasks.push_back(std::async(std::launch::async, [&, i] {
-      auto& worker = work[i];
-      std::mt19937_64 workerRng(workerSeeds[i]);
-      const size_t count = (shots / workers) + (i < shots % workers);
+  const auto streams =
+      dd::makeShotStreams(shots, streamCount, seed != 0 ? seed : rng());
+  SmallVector<std::map<std::string, size_t>, 8> parts(streamCount);
+  SmallVector<std::vector<std::string>, 8> samples(
+      shotResults != nullptr ? streamCount : 0);
+  const auto run = [&](size_t index) {
+    auto& worker = work[index];
+    for (size_t i = index; i < streamCount; i += workers) {
+      std::mt19937_64 streamRng(streams[i].seed);
       if (shotResults != nullptr) {
-        worker.shots.reserve(count);
+        samples[i].reserve(streams[i].shots);
       }
-      return sampleImpl(func, *worker.dd, count, workerRng, worker.prepared,
-                        shotResults != nullptr ? &worker.shots : nullptr,
-                        nullptr, *plan, options, collectCounts,
-                        /*forceDynamic=*/true);
-    }));
+      auto part = sampleImpl(func, *worker.dd, streams[i].shots, streamRng,
+                             worker.prepared,
+                             shotResults != nullptr ? &samples[i] : nullptr,
+                             nullptr, *plan, options, collectCounts,
+                             /*forceDynamic=*/true);
+      if (failed(part)) {
+        return failure();
+      }
+      parts[i] = std::move(*part);
+    }
+    return success();
+  };
+  SmallVector<std::future<LogicalResult>, 8> tasks;
+  for (size_t i = 1; i < workers; ++i) {
+    tasks.push_back(std::async(std::launch::async, run, i));
+  }
+  bool allSucceeded = succeeded(run(0));
+  for (auto& task : tasks) {
+    allSucceeded &= succeeded(task.get());
+  }
+  if (!allSucceeded) {
+    return failure();
   }
   std::map<std::string, size_t> counts;
-  bool allSucceeded = true;
-  for (size_t i = 0; i < workers; ++i) {
-    auto part = tasks[i].get();
-    if (failed(part)) {
-      allSucceeded = false;
-      continue;
-    }
-    for (const auto& [outcome, count] : *part) {
+  for (size_t i = 0; i < streamCount; ++i) {
+    for (const auto& [outcome, count] : parts[i]) {
       counts[outcome] += count;
     }
     if (shotResults != nullptr) {
       shotResults->insert(shotResults->end(),
-                          std::make_move_iterator(work[i].shots.begin()),
-                          std::make_move_iterator(work[i].shots.end()));
+                          std::make_move_iterator(samples[i].begin()),
+                          std::make_move_iterator(samples[i].end()));
     }
-  }
-  if (!allSucceeded) {
-    return failure();
   }
   return counts;
 }

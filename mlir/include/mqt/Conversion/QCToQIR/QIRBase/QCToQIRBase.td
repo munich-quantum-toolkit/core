@@ -14,8 +14,8 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
 
   let description = [{
     Lower supported QC operations to QIR Base Profile runtime calls and
-    LLVM dialect operations. Run `set-qir-attributes-and-metadata` separately
-    to attach QIR attributes and module flags.
+    LLVM dialect operations. Attach QIR attributes and module flags, then
+    validate the emitted requirements against a matching attached target payload.
 
     Requirements:
 
@@ -26,7 +26,8 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
       limited to quantum resources or stores to distinct constant indices of the
       same register.
     - Input is a valid module in the QC dialect.
-    - The entry function must be marked with `mqt.entry_point`.
+    - The entry function must be marked with `mqt.entry_point` and have no arguments.
+      Bind program parameters before conversion.
     - Measurements and CBit allocations must be in the entry function.
       Returns may contain only direct measurements and direct CBit allocations.
       Other scalar program outputs are not supported.

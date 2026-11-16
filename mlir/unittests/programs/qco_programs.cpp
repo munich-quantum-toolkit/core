@@ -2462,13 +2462,6 @@ Value inverseMultipleControlledDcx(QCOProgramBuilder& b) {
   return measureAndReturn(b, q.qubits);
 }
 
-Value twoDcx(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
-  std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
-  return measureAndReturn(b, q.qubits);
-}
-
 Value twoDcxSwappedTargets(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.dcx(q[0], q[1]);
@@ -3119,13 +3112,6 @@ Value twoXxPlusYYOppositePhase(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   std::tie(q[0], q[1]) = b.xx_plus_yy(0.123, 0.456, q[0], q[1]);
   std::tie(q[0], q[1]) = b.xx_plus_yy(-0.123, 0.456, q[0], q[1]);
-  return measureAndReturn(b, q.qubits);
-}
-
-Value twoXxPlusYYSwappedTargets(QCOProgramBuilder& b) {
-  auto q = b.allocQubitRegister(2);
-  std::tie(q[0], q[1]) = b.xx_plus_yy(0.045, 0.456, q[0], q[1]);
-  std::tie(q[1], q[0]) = b.xx_plus_yy(0.078, 0.456, q[1], q[0]);
   return measureAndReturn(b, q.qubits);
 }
 

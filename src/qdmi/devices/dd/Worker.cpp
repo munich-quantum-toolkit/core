@@ -33,6 +33,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <tuple>
 #include <utility>
@@ -63,25 +64,34 @@ bool hasExited(const llvm::sys::ProcessInfo& process) {
 } // namespace
 Worker::~Worker() { terminate(); }
 void Worker::shutdown() {
+  requestShutdown();
+  awaitShutdown(std::chrono::steady_clock::now() + std::chrono::seconds(1));
+}
+void Worker::requestShutdown() {
+  const std::scoped_lock lock(mutex_);
+  terminated_ = true;
+  if (process_.Pid != 0 && stream_) {
+    std::ignore = writeFrame(*stream_, {});
+    stream_.reset();
+  }
+}
+void Worker::awaitShutdown(
+    const std::chrono::steady_clock::time_point deadline) {
   {
     const std::scoped_lock lock(mutex_);
-    terminated_ = true;
     if (process_.Pid == 0) {
       return;
     }
-    if (stream_) {
-      std::ignore = writeFrame(*stream_, {});
-      stream_.reset();
-    }
-    const auto deadline =
-        std::chrono::steady_clock::now() + std::chrono::seconds(1);
     do {
       if (hasExited(process_)) {
         process_ = {};
         return;
       }
+      if (std::chrono::steady_clock::now() >= deadline) {
+        break;
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
-    } while (std::chrono::steady_clock::now() < deadline);
+    } while (true);
   }
   terminate();
 }
@@ -107,10 +117,12 @@ bool Worker::start() {
                              error.message());
     return false;
   }
-  const llvm::scope_exit cleanup(
-      [&] { std::ignore = llvm::sys::fs::remove_directories(directory); });
   auto socketPath = directory;
   llvm::sys::path::append(socketPath, "socket");
+  const llvm::scope_exit cleanup([&] {
+    std::ignore = llvm::sys::fs::remove(socketPath);
+    std::ignore = llvm::sys::fs::remove(directory);
+  });
   auto listener = llvm::ListeningSocket::createUnix(socketPath);
   if (!listener) {
     qdmi::diagnostics::error("{0}", llvm::toString(listener.takeError()));
@@ -121,7 +133,12 @@ bool Worker::start() {
     qdmi::diagnostics::error("{0}", llvm::toString(modulePath.takeError()));
     return false;
   }
-  const auto executablePath = (*modulePath / MQT_DDSIM_WORKER_NAME).u8string();
+  auto executableFile = *modulePath / MQT_DDSIM_EXECUTABLE;
+  std::error_code errorCode;
+  if (!std::filesystem::exists(executableFile, errorCode)) {
+    executableFile = *modulePath / MQT_DDSIM_EXECUTABLE_RELATIVE;
+  }
+  const auto executablePath = executableFile.u8string();
   const std::string executable(executablePath.begin(), executablePath.end());
   {
     const std::scoped_lock lock(mutex_);
@@ -129,8 +146,9 @@ bool Worker::start() {
       return false;
     }
     std::string error;
-    process_ = llvm::sys::ExecuteNoWait(executable, {executable, socketPath},
-                                        std::nullopt, {}, 0, &error);
+    process_ = llvm::sys::ExecuteNoWait(
+        executable, {executable, "simulate", "--worker-socket", socketPath},
+        std::nullopt, {}, 0, &error);
     if (process_.Pid == 0) {
       qdmi::diagnostics::error("Cannot start DDSIM worker: {0}", error);
       return false;
@@ -234,7 +252,12 @@ void WorkerPool::shutdown() {
     worker->terminate();
   }
   for (const auto& worker : idle) {
-    worker->shutdown();
+    worker->requestShutdown();
+  }
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(1);
+  for (const auto& worker : idle) {
+    worker->awaitShutdown(deadline);
   }
 }
 } // namespace qdmi::dd

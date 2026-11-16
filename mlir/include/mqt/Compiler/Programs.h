@@ -309,13 +309,15 @@ public:
   /// Legalize classical memory and control flow for the source format without
   /// optimizing quantum operations. The program is consumed even when export
   /// fails; call copy() first to preserve it.
-  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM3() &&;
+  [[nodiscard]] FailureOr<OpenQASMProgram>
+  intoOpenQASM3(const TargetEnvironment* environment = nullptr) &&;
 
   /// Consume this program and emit OpenQASM 2.
   ///
   /// Normalize and discard program-wide phase. Keep device indices and gate
   /// calls; reject unsupported control flow, assignments, and modifiers.
-  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM2() &&;
+  [[nodiscard]] FailureOr<OpenQASMProgram>
+  intoOpenQASM2(const TargetEnvironment* environment = nullptr) &&;
 
   /// Consume this program and convert it to QCO.
   [[nodiscard]] FailureOr<QCOProgram> intoQCO() &&;
@@ -329,7 +331,9 @@ public:
   /// Adaptive conversion retains loops. Calls with quantum-register arguments
   /// must be inlined.
   /// Use runDefaultPipeline for compilation before export.
-  [[nodiscard]] FailureOr<QIRProgram> intoQIR(QIRProfile profile) &&;
+  [[nodiscard]] FailureOr<QIRProgram>
+  intoQIR(QIRProfile profile,
+          const TargetEnvironment* environment = nullptr) &&;
 
   /// Consume this program and serialize PRX/CZ gates and readout as IQM JSON.
   ///
@@ -339,12 +343,12 @@ public:
   [[nodiscard]] FailureOr<IQMJSONProgram>
   intoIQMJSON(const CompilerTarget& target) &&;
 
-  /// Return the static gate count of the entry-point IR.
+  /// Return Core's static gate count of the entry-point IR.
   ///
   /// Unitary operations, measurements, and resets each count once. Barriers
-  /// are excluded. Modifiers and calls count atomically. Gates in every
-  /// control-flow region count once, regardless of runtime paths or loop
-  /// iterations.
+  /// are excluded. Each modifier or call counts once without expanding its
+  /// body. Gates in every control-flow region count once, regardless of runtime
+  /// paths or loop iterations.
   [[nodiscard]] size_t numGates() const;
 
   /// Count gates acting on exactly one qubit.
@@ -433,9 +437,19 @@ public:
   [[nodiscard]] LogicalResult normalizeGlobalPhases();
 
   /// Run an MLIR textual QCO pass pipeline in place.
+  ///
+  /// A supplied environment replaces the module's target environment after
+  /// parsing succeeds and remains attached for subsequent passes. Otherwise,
+  /// retain the existing environment. Set preservesLayout only when the passes
+  /// keep wire and site identities or update the layout to reflect changes;
+  /// otherwise clear the layout.
+  /// Execution failure can leave partial changes; copy the program to preserve
+  /// the input.
   [[nodiscard]] LogicalResult
   runPassPipeline(std::string_view pipeline,
-                  const CompilationOptions& options = {});
+                  const CompilationOptions& options = {},
+                  const TargetEnvironment* environment = nullptr,
+                  bool preservesLayout = false);
 
   /// Merge consecutive single-qubit rotation gates.
   [[nodiscard]] LogicalResult mergeSingleQubitRotationGates();
@@ -458,9 +472,10 @@ public:
 
   /// Decompose gates that act on at least @p minQubits qubits.
   ///
-  /// Supports controlled X/Y/Z/SWAP and RX/RY/RZ gates, `qco.rccx`, and
-  /// constant-angle phase gates. @p minQubits must be at least 3; default 3
-  /// means wider than two-qubit.
+  /// Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and `qco.rccx`.
+  /// Phase and rotation angles may be constants or runtime values.
+  /// @p minQubits must be at least 3. The pass borrows and restores ancilla
+  /// qubits when this reduces the estimated entangling cost.
   [[nodiscard]] LogicalResult decomposeMultiControlled(uint64_t minQubits = 3);
 
   /// Compile for a target and attach layout metadata when possible.
@@ -473,20 +488,23 @@ public:
 
   /// Synthesize native operations without routing.
   ///
-  /// Dynamic qubits require all-to-all connectivity and receive layout metadata
-  /// when possible. Static qubits keep their device site IDs and must fit the
-  /// target topology. Do not rely on the program contents if synthesis fails.
+  /// For device targets, allocated program qubits require all-to-all
+  /// connectivity and receive layout metadata when possible. Static references
+  /// keep their device site IDs and must fit the target topology. Do not rely
+  /// on the program contents if synthesis fails.
   [[nodiscard]] LogicalResult
   synthesizeForTarget(const TargetEnvironment& environment,
                       const CompilationOptions& options = {});
 
   /// Consume this program and convert it to QC.
+  ///
+  /// Expand virtual resonator couplings using the attached execution target.
   [[nodiscard]] FailureOr<QCProgram> intoQC() &&;
 
   /// Consume this program and convert it to `jeff` MLIR.
   [[nodiscard]] FailureOr<JeffProgram> intoJeff() &&;
 
-  /// Return the static entry-point gate count.
+  /// Return Core's static entry-point gate count.
   ///
   /// Uses the rules of QCProgram::numGates().
   [[nodiscard]] size_t numGates() const;
@@ -611,7 +629,7 @@ using CompilerProgram =
     std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram,
                  QIRProgram, IQMJSONProgram>;
 
-/// Run the coordinated default compiler pipeline.
+/// Run the default compiler pipeline.
 ///
 /// The supplied program is consumed. Call `copy()` before this function
 /// when the source program must remain available for another pipeline branch.
@@ -629,7 +647,7 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
                    const TargetEnvironment& environment,
                    const CompilationOptions& options = {});
 
-/// Run the coordinated default compiler pipeline for a target.
+/// Run the default compiler pipeline for a target.
 ///
 /// The supplied program is consumed. Call `copy()` before this function
 /// when the source program must remain available for another pipeline branch.

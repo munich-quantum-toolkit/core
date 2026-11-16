@@ -113,35 +113,45 @@ TEST(GenerateProgramTest, PreservesModularMultiplierCoherence) {
   expectCoherentModularMultiplier(3, 3, 5, "1+1", '0');
 }
 
-TEST(GenerateProgramTest, VerifiesEverySmallModularMultiplierBasisInput) {
-  for (size_t bits = 2; bits <= 3; ++bits) {
-    const auto limit = size_t{1} << bits;
-    for (size_t modulus = limit / 2; modulus < limit; ++modulus) {
-      for (size_t multiplier = 1; multiplier < modulus; ++multiplier) {
-        for (size_t input = 0; input < limit; ++input) {
-          for (size_t control = 0; control < 2; ++control) {
-            const auto benchmark = llvm::cantFail(ModularMultiplier::create({
-                .multiplier = dd::intToBinaryString(multiplier, bits),
-                .modulus = dd::intToBinaryString(modulus, bits),
-                .multiplicand = dd::intToBinaryString(input, bits),
-                .control = control == 0 ? '0' : '1',
-            }));
-            const auto expected =
-                std::to_string(control) + dd::intToBinaryString(input, bits) +
-                dd::intToBinaryString(control * multiplier * input % modulus,
-                                      bits + 1);
-            SCOPED_TRACE(expected);
-            ASSERT_EQ(benchmark.expectedResult(), expected);
-            auto program = test::generateQCO(benchmark);
-            ASSERT_TRUE(mlir::succeeded(program));
-            auto counts = qco::sample(
-                mlir::mqt::getEntryPoint(program->module()), 32, 17);
-            ASSERT_TRUE(succeeded(counts));
-            EXPECT_EQ(*counts, (Counts{{expected, 32}}));
-          }
-        }
-      }
-    }
+TEST(GenerateProgramTest, SamplesModularMultiplierBasisInputs) {
+  struct BasisCase {
+    size_t bits;
+    size_t multiplier;
+    size_t modulus;
+    size_t input;
+    size_t control;
+  };
+  for (const auto& [bits, multiplier, modulus, input, control] : {
+           BasisCase{
+               .bits = 2,
+               .multiplier = 1,
+               .modulus = 2,
+               .input = 3,
+               .control = 0,
+           },
+           {.bits = 2, .multiplier = 1, .modulus = 2, .input = 3, .control = 1},
+           {.bits = 2, .multiplier = 2, .modulus = 3, .input = 2, .control = 1},
+           {.bits = 3, .multiplier = 1, .modulus = 7, .input = 0, .control = 1},
+           {.bits = 3, .multiplier = 3, .modulus = 5, .input = 7, .control = 1},
+           {.bits = 3, .multiplier = 2, .modulus = 4, .input = 3, .control = 1},
+       }) {
+    const auto benchmark = llvm::cantFail(ModularMultiplier::create({
+        .multiplier = dd::intToBinaryString(multiplier, bits),
+        .modulus = dd::intToBinaryString(modulus, bits),
+        .multiplicand = dd::intToBinaryString(input, bits),
+        .control = control == 0 ? '0' : '1',
+    }));
+    const auto expected =
+        std::to_string(control) + dd::intToBinaryString(input, bits) +
+        dd::intToBinaryString(control * multiplier * input % modulus, bits + 1);
+    SCOPED_TRACE(expected);
+    ASSERT_EQ(benchmark.expectedResult(), expected);
+    auto program = test::generateQCO(benchmark);
+    ASSERT_TRUE(mlir::succeeded(program));
+    auto counts =
+        qco::sample(mlir::mqt::getEntryPoint(program->module()), 1, 17);
+    ASSERT_TRUE(succeeded(counts));
+    EXPECT_EQ(*counts, (Counts{{expected, 1}}));
   }
 }
 

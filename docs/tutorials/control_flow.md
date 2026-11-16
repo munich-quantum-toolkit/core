@@ -179,7 +179,7 @@ The structured body still contains one controlled-X, but it executes once or
 three times. The histogram still has two outcomes, now with two or four bits.
 :::
 
-These checks execute both variants during the documentation build:
+Compare the two widths by generating and sampling each program:
 
 ```{code-cell} ipython3
 :tags: [hide-input]

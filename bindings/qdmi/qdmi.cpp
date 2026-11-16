@@ -12,6 +12,8 @@
 
 #include "qdmi/common/Common.hpp"
 
+#include "Array.hpp"
+#include "Parameters.hpp"
 #include "Result.hpp"
 
 #include "nanobind/nanobind.h"
@@ -45,13 +47,13 @@
 namespace mqt {
 using bindings::bindResult;
 using bindings::invoke;
+using bindings::PythonCustomJobParameter;
+using bindings::toCustomJobParameter;
 
 namespace nb = nanobind;
 using namespace nb::literals;
 
 namespace {
-using PythonCustomJobParameter =
-    std::variant<std::string, bool, int, double, nb::bytes>;
 using PythonProgram =
     std::variant<std::string, nb::bytes, std::vector<std::string>,
                  std::vector<nb::bytes>>;
@@ -77,23 +79,6 @@ auto withProgramPayload(const PythonProgram& program, Submit submit) {
         }
       },
       program);
-}
-
-[[nodiscard]] std::optional<qdmi::CustomJobParameter>
-toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
-  if (!parameter) {
-    return std::nullopt;
-  }
-  return std::visit(
-      [](const auto& value) -> qdmi::CustomJobParameter {
-        if constexpr (std::is_same_v<std::decay_t<decltype(value)>,
-                                     nb::bytes>) {
-          return std::as_bytes(std::span(value.c_str(), value.size()));
-        } else {
-          return value;
-        }
-      },
-      *parameter);
 }
 
 qdmi::SessionConfig makeDriverSessionConfig(
@@ -345,16 +330,33 @@ Returns:
           "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
           "Returns the measurement counts from the job.");
 
-  job.def("get_dense_statevector", bindResult(&qdmi::Job::getDenseStateVector),
-          "program_index"_a = 0, nb::call_guard<nb::gil_scoped_release>(),
-          "Returns the dense statevector from the job (typically only "
-          "available from simulator devices).");
+  job.def(
+      "get_dense_statevector",
+      [](const qdmi::Job& self, size_t programIndex) {
+        auto values = [&] {
+          const nb::gil_scoped_release release;
+          return bindings::invoke(&qdmi::Job::getDenseStateVector, self,
+                                  programIndex);
+        }();
+        return bindings::ownedArray(std::move(values));
+      },
+      "program_index"_a = 0,
+      "Return a one-dimensional complex128 NumPy array owning the retrieved "
+      "statevector.");
 
-  job.def("get_dense_probabilities",
-          bindResult(&qdmi::Job::getDenseProbabilities), "program_index"_a = 0,
-          nb::call_guard<nb::gil_scoped_release>(),
-          "Returns the dense probabilities from the job (typically only "
-          "available from simulator devices).");
+  job.def(
+      "get_dense_probabilities",
+      [](const qdmi::Job& self, size_t programIndex) {
+        auto values = [&] {
+          const nb::gil_scoped_release release;
+          return bindings::invoke(&qdmi::Job::getDenseProbabilities, self,
+                                  programIndex);
+        }();
+        return bindings::ownedArray(std::move(values));
+      },
+      "program_index"_a = 0,
+      "Return a one-dimensional float64 NumPy array owning the retrieved "
+      "probabilities.");
 
   job.def("get_sparse_statevector",
           bindResult(&qdmi::Job::getSparseStateVector), "program_index"_a = 0,
@@ -684,9 +686,11 @@ when the custom slot is unsupported.)pb");
         });
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
-      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(),
+      nb::kw_only(), "custom1"_a.noconvert() = nb::none(),
+      "custom2"_a.noconvert() = nb::none(),
+      "custom3"_a.noconvert() = nb::none(),
+      "custom4"_a.noconvert() = nb::none(),
+      "custom5"_a.noconvert() = nb::none(),
       "Submit one program or an ordered list with common parameters.");
 
   device.def(
@@ -713,9 +717,11 @@ when the custom slot is unsupported.)pb");
         });
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
-      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
-      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-      "custom5"_a = nb::none(),
+      nb::kw_only(), "custom1"_a.noconvert() = nb::none(),
+      "custom2"_a.noconvert() = nb::none(),
+      "custom3"_a.noconvert() = nb::none(),
+      "custom4"_a.noconvert() = nb::none(),
+      "custom5"_a.noconvert() = nb::none(),
       "Return no job only when the device rejects the program before "
       "submission.");
 

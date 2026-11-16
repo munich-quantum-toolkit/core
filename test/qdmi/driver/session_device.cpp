@@ -506,6 +506,10 @@ extern "C" int TEST_SESSION_QDMI_device_job_set_programs(
   if (job->retrieved || job->submitted) {
     return QDMI_ERROR_BADSTATE;
   }
+  // Like provider program sets, accept at most eight configured shots in total.
+  if (job->shots > 8U / count) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
   if (programs == nullptr) {
     return QDMI_SUCCESS;
   }
@@ -641,11 +645,11 @@ extern "C" int TEST_SESSION_QDMI_device_job_get_results(
     return queryValue(size_t{5}, size, value, sizeRet);
   }
   if (result == QDMI_JOB_RESULT_HIST_KEYS) {
-    return queryString(programIndex == 0U ? "10,01" : "11,00", size, value,
-                       sizeRet);
+    return queryString(programIndex == 0U ? "10,01,10" : "11,00,11", size,
+                       value, sizeRet);
   }
   if (result == QDMI_JOB_RESULT_HIST_VALUES) {
-    constexpr std::array<size_t, 2> VALUES{1U, 1U};
+    constexpr std::array<size_t, 3> VALUES{0U, 1U, 1U};
     return queryBytes(std::as_bytes(std::span{VALUES}), size, value, sizeRet);
   }
   return QDMI_ERROR_NOTSUPPORTED;

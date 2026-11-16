@@ -26,11 +26,11 @@ namespace mlir::qc {
 /// Find measurement destinations that can be stored immediately after
 /// their measurement without crossing conflicting classical accesses.
 ///
-/// By default the measurement result must have exactly one use. With
-/// `allowOtherUses`, consider the earliest static store in the same block;
-/// the caller must preserve all other uses. Nonadjacent stores require static
-/// indices. Apply every returned move in measurement order. The input IR is
-/// not modified.
+/// Additional uses may reuse the destination bit when it is not overwritten
+/// and derived values remain within the block. With `allowOtherUses`, skip this
+/// check; the caller must preserve all other uses. Nonadjacent stores require
+/// static indices. Apply every returned move in measurement order. The input IR
+/// is not modified.
 [[nodiscard]] llvm::DenseMap<Operation*, cbit::StoreOp>
 findMeasurementStores(func::FuncOp function, bool allowOtherUses = false);
 

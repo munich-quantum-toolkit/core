@@ -12,9 +12,14 @@
 
 #include "QiskitTranslation.h"
 
+#include "llvm/ADT/StringRef.h"
+
 #include <memory>
 
 namespace mqt::bindings::qiskit {
+
+/// Check installed package metadata without importing Qiskit.
+[[nodiscard]] bool supportsVersion(llvm::StringRef version);
 
 [[nodiscard]] std::unique_ptr<VersionedTranslation> selectTranslation();
 

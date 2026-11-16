@@ -89,13 +89,6 @@ inline bool checkDeadGate(Operation* op) {
   llvm_unreachable("expected corresponding quantum value");
 }
 
-/// Verify linear uses, static roots, and positional quantum state flow.
-///
-/// Requires ordinary MLIR verification first. Every linear QCO value has
-/// exactly one use, static indices are unique in the entry block, and function
-/// and structured-control-flow results continue quantum arguments in order.
-[[nodiscard]] LogicalResult verifyLinearity(Operation* root);
-
 /// Maximum dense modifier matrix width.
 ///
 /// Controlled matrices include controls in this bound; @ref composeBodyMatrix

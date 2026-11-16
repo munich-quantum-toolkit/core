@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/Transforms/Passes.h"
 
@@ -41,6 +42,10 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
 
   LogicalResult matchAndRewrite(memref::DeallocOp op,
                                 PatternRewriter& rewriter) const override {
+    if (mqt::preservesProgramQubits(op)) {
+      return failure();
+    }
+
     auto allocOp = op.getMemref().getDefiningOp<memref::AllocOp>();
     if (!allocOp) {
       return failure();

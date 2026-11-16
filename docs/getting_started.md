@@ -22,8 +22,9 @@ fractions yield candidate exponents from the measured phases. The driver checks
 each exponent by modular exponentiation, uses greatest common divisors to find
 possible factors, and verifies them by division.
 
-The factoring driver selects bases and recovers factors. Its `run` callback owns
-device selection, compilation, shot count, and execution seed.
+The factoring driver selects bases and recovers factors. You provide a `run`
+callback that executes each generated circuit and returns its counts. This lets
+you choose the device, compilation settings, shot count, and random seed:
 
 ```{code-cell} ipython3
 :load: _build/readme_example.py
@@ -52,7 +53,9 @@ $N=21$ and $a=2$, the circuit uses $2n+3=13$ qubits, where
 $n=\operatorname{bit\_width}(21)=5$. One query qubit is measured and reset for
 each of the $2n=10$ phase bits. The value register persists across rounds;
 modular arithmetic restores its temporary qubits after each multiplication.
-Earlier measurements control phase corrections on the query qubit.
+Earlier measurements control phase corrections on the query qubit. This combines
+a {term}`semiclassical QFT` with qubit recycling; the
+[benchmark reference](benchmarks.md#shor-order-finding) describes the circuit.
 
 ```{code-cell} ipython3
 benchmark = shor.Shor(shor.Options(number=21, base=2))
@@ -65,7 +68,7 @@ print(f"Successful shot fraction: {evaluation.success_probability:.3f}")
 ```
 
 Counts put the highest-index phase bit on the left, so each bitstring encodes an
-integer $y$ and an estimate $y/2^{10}$. Equivalent OpenQASM and QIR payloads use
+integer $y$ and an estimate $y/2^{10}$. Equivalent OpenQASM and QIR programs use
 the same bit order. The benchmark accepts `job.get_counts()` directly.
 
 Select an observed outcome that yields factors and inspect its rational

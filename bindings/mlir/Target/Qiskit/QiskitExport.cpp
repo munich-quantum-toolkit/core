@@ -23,6 +23,7 @@
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QC/Translation/MeasurementStores.h"
+#include "mqt/Dialect/QC/Translation/QubitReferences.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 #include "mqt/Support/IntegerExpressions.h"
 
@@ -106,6 +107,7 @@ struct ExportedInstruction {
   StandardGateMapping gate;
   std::string customGate;
   std::vector<uint32_t> qubits;
+  std::optional<std::string> barrierLabel = std::nullopt;
   uint32_t clbit = 0;
   std::vector<Parameter> parameters;
   std::vector<std::complex<double>> matrix;
@@ -354,6 +356,7 @@ struct ExportState {
   llvm::DenseMap<mlir::Value, uint32_t> qubits;
   llvm::DenseMap<mlir::Value, uint32_t> quantumBases;
   llvm::DenseMap<mlir::Value, uint32_t> quantumSizes;
+  llvm::DenseMap<mlir::Value, llvm::SmallVector<uint32_t>> qubitReferences;
   llvm::DenseMap<mlir::Value, ClassicalRegisterInfo> classicalRegisterInfo;
   llvm::DenseSet<mlir::Operation*> expressionOperations;
   llvm::DenseMap<mlir::Value, size_t> expressionDepths;
@@ -665,7 +668,8 @@ static void invertGate(ExportedInstruction& instruction) {
     break;
   }
 
-  if (instruction.gate.gate == Gate::P || instruction.gate.gate == Gate::RX ||
+  if (instruction.gate.gate == Gate::GPhase ||
+      instruction.gate.gate == Gate::P || instruction.gate.gate == Gate::RX ||
       instruction.gate.gate == Gate::RY || instruction.gate.gate == Gate::RZ ||
       instruction.gate.gate == Gate::RXX ||
       instruction.gate.gate == Gate::RYY ||
@@ -696,6 +700,26 @@ static void invertGate(ExportedInstruction& instruction) {
 collectUnitaryInstruction(mlir::Operation& operation,
                           const llvm::DenseMap<mlir::Value, uint32_t>& qubits,
                           ExportedParameters& parameters) {
+  if (auto call = llvm::dyn_cast<mlir::func::CallOp>(operation)) {
+    if (call.getNumResults() != 0) {
+      throw std::runtime_error("Qiskit gate calls cannot return values");
+    }
+    ExportedInstruction result{
+        .kind = ExportedInstruction::Kind::CustomGate,
+        .customGate = call.getCallee().str(),
+    };
+    for (auto operand : call.getOperands()) {
+      if (operand.getType().isF64()) {
+        result.parameters.push_back(exportParameter(operand, parameters));
+      } else if (mlir::isa<mlir::qc::QubitType>(operand.getType())) {
+        result.qubits.push_back(qubits.at(operand));
+      } else {
+        throw std::runtime_error(
+            "Qiskit gate calls require f64 parameters and qubits");
+      }
+    }
+    return result;
+  }
   if (auto call = llvm::dyn_cast<mlir::qc::CallOp>(operation)) {
     ExportedInstruction result{
         .kind = ExportedInstruction::Kind::CustomGate,
@@ -824,7 +848,7 @@ collectUnitaryInstruction(mlir::Operation& operation,
     };
   }
   auto gate = llvm::dyn_cast<mlir::qc::UnitaryOpInterface>(operation);
-  if (!gate || llvm::isa<mlir::qc::GPhaseOp, mlir::qc::BarrierOp>(operation)) {
+  if (!gate || llvm::isa<mlir::qc::BarrierOp>(operation)) {
     throw std::runtime_error(
         "QC modifier body is not a constructible standard Qiskit gate");
   }
@@ -835,7 +859,6 @@ collectUnitaryInstruction(mlir::Operation& operation,
   const auto* descriptor =
       mlir::qc::lookupStandardGateByOperationSymbol(gate.getBaseSymbol());
   if (descriptor == nullptr ||
-      descriptor->gate == mlir::qc::StandardGate::GPhase ||
       descriptor->gate == mlir::qc::StandardGate::BuiltinU ||
       descriptor->gate == mlir::qc::StandardGate::CU) {
     throw std::runtime_error(
@@ -873,10 +896,8 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
           throw std::runtime_error(
               "QC static qubit is not a site of the supplied compiler target");
         }
-        index = checkedIndex(static_cast<uint64_t>(*vertex), "qubit");
-      } else {
-        index = checkedIndex(staticQubit.getIndex(), "qubit");
       }
+      index = checkedIndex(staticQubit.getIndex(), "qubit");
       if (index == std::numeric_limits<uint32_t>::max()) {
         throw std::runtime_error("qubit count cannot be represented by Qiskit");
       }
@@ -940,6 +961,32 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
           "QC to Qiskit export encountered an unsupported memory allocation");
     }
   }
+  for (auto storage :
+       function.getBody().front().getOps<mlir::memref::AllocaOp>()) {
+    auto references = mlir::qc::collectQubitReferences(storage);
+    if (mlir::failed(references)) {
+      throw std::runtime_error(
+          "QC to Qiskit export encountered invalid qubit references");
+    }
+    auto& indices = state.qubitReferences[storage.getResult()];
+    for (auto qubit : *references) {
+      const auto index = state.qubits.find(qubit);
+      if (index == state.qubits.end()) {
+        throw std::runtime_error(
+            "QC to Qiskit export could not resolve a qubit reference");
+      }
+      indices.push_back(index->second);
+    }
+    if (const auto name = storage->getAttrOfType<mlir::StringAttr>(
+            mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
+      if (indices.empty()) {
+        throw std::runtime_error(
+            "Qiskit does not support empty quantum registers");
+      }
+      state.quantumRegisters.push_back(
+          {.name = name.str(), .bits = {indices.begin(), indices.end()}});
+    }
+  }
   function.walk([&](mlir::memref::LoadOp load) {
     if (!llvm::isa<mlir::qc::QubitType>(load.getResult().getType()) ||
         load.getIndices().size() != 1U) {
@@ -950,13 +997,22 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
       throw std::runtime_error(
           "QC to Qiskit export does not support dynamic qubit indices");
     }
+    const auto checked = checkedIndex(*index, "qubit");
+    if (const auto references = state.qubitReferences.find(load.getMemRef());
+        references != state.qubitReferences.end()) {
+      if (checked >= references->second.size()) {
+        throw std::runtime_error(
+            "QC to Qiskit export encountered an out-of-bounds qubit index");
+      }
+      state.qubits[load.getResult()] = references->second[checked];
+      return;
+    }
     const auto base = state.quantumBases.find(load.getMemRef());
     if (base == state.quantumBases.end()) {
       throw std::runtime_error(
           "QC to Qiskit export could not resolve a qubit-register allocation");
     }
     const auto size = state.quantumSizes.find(load.getMemRef());
-    const auto checked = checkedIndex(*index, "qubit");
     if (size == state.quantumSizes.end() || checked >= size->second) {
       throw std::runtime_error(
           "QC to Qiskit export encountered an out-of-bounds qubit index");
@@ -975,6 +1031,8 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
     }
   }
   if (!state.quantumRegisters.empty()) {
+    std::ranges::sort(state.quantumRegisters, {},
+                      [](const Register& reg) { return reg.bits.front(); });
     std::vector<Register> registers;
     uint32_t next = state.quantumRegisters.front().bits.front();
     size_t generated = 0;
@@ -2437,12 +2495,13 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
           !state.expressionOperations.contains(&operation) &&
           !state.parameters.contains(operation.getResult(0)) &&
           !(isParameterExpressionOperation(operation) &&
-            llvm::all_of(operation.getResult(0).getUsers(),
-                         [](mlir::Operation* user) {
-                           return isParameterExpressionOperation(*user) ||
-                                  llvm::isa<mlir::qc::UnitaryOpInterface,
-                                            mlir::qc::GPhaseOp>(user);
-                         }))) {
+            llvm::all_of(
+                operation.getResult(0).getUsers(), [](mlir::Operation* user) {
+                  return isParameterExpressionOperation(*user) ||
+                         llvm::isa<mlir::qc::UnitaryOpInterface,
+                                   mlir::qc::GPhaseOp, mlir::func::CallOp>(
+                             user);
+                }))) {
         materialize(operation.getResult(0), operation, circuit, state);
         state.expressionDepths[operation.getResult(0)] = 0U;
         continue;
@@ -2478,6 +2537,16 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
               "Qiskit control-flow blocks cannot allocate or release circuit "
               "resources; allocate them before the loop or conditional");
         }
+        continue;
+      }
+      if (auto storage = llvm::dyn_cast<mlir::memref::AllocaOp>(operation);
+          storage && topLevel &&
+          state.qubitReferences.contains(storage.getResult())) {
+        continue;
+      }
+      if (auto store = llvm::dyn_cast<mlir::memref::StoreOp>(operation);
+          store && topLevel &&
+          state.qubitReferences.contains(store.getMemRef())) {
         continue;
       }
       if (auto load = llvm::dyn_cast<mlir::memref::LoadOp>(operation)) {
@@ -2576,9 +2645,12 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         continue;
       }
       if (auto barrier = llvm::dyn_cast<mlir::qc::BarrierOp>(operation)) {
+        const auto label = barrier.getLabelAttr();
         circuit.instructions.push_back({
             .kind = ExportedInstruction::Kind::Barrier,
             .qubits = mapQubits(barrier.getQubits(), state.qubits),
+            .barrierLabel =
+                label ? std::optional(label.getValue().str()) : std::nullopt,
         });
         continue;
       }
@@ -2621,7 +2693,8 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         });
         continue;
       }
-      if (llvm::isa<mlir::qc::UnitaryOpInterface>(operation)) {
+      if (llvm::isa<mlir::qc::UnitaryOpInterface, mlir::func::CallOp>(
+              operation)) {
         circuit.instructions.push_back(collectUnitaryInstruction(
             operation, state.qubits, state.parameters));
         continue;
@@ -2734,7 +2807,7 @@ static void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer) {
       writer.addReset(instruction.qubits.at(0));
       break;
     case ExportedInstruction::Kind::Barrier:
-      writer.addBarrier(instruction.qubits);
+      writer.addBarrier(instruction.qubits, instruction.barrierLabel);
       break;
     case ExportedInstruction::Kind::Unitary:
       writer.addUnitary(instruction.matrix, instruction.qubits,
@@ -2797,7 +2870,10 @@ collectGateFunctions(mlir::ModuleOp moduleOp, mlir::func::FuncOp entryPoint) {
                begin(graph.lookupNode(&entryPoint.getBody()));
        !component.isAtEnd(); ++component) {
     auto* node = component->front();
-    if (node->isExternal() || component.hasCycle()) {
+    if (node->isExternal()) {
+      continue;
+    }
+    if (component.hasCycle()) {
       throw std::runtime_error(
           "Qiskit custom Gates require defined, non-recursive functions");
     }
@@ -2864,6 +2940,7 @@ collectGateDefinition(mlir::func::FuncOp function) {
 exportCircuitImpl(mlir::QCProgram program,
                   const mlir::CompilerTarget* const target,
                   const mlir::PayloadSpecification* const payload) {
+  const bool deviceTarget = target != nullptr && target->hasDeviceConstraints();
   auto moduleOp = program.module();
   auto function = mlir::mqt::getEntryPoint(moduleOp);
   if (!function) {
@@ -2894,6 +2971,16 @@ exportCircuitImpl(mlir::QCProgram program,
     throw std::runtime_error(
         "QC to Qiskit export requires a single-block entry function");
   }
+  if (payload == nullptr || payload->format().id != "qpy") {
+    bool externalCall = false;
+    moduleOp.walk([&](mlir::func::CallOp call) {
+      auto callee = moduleOp.lookupSymbol<mlir::func::FuncOp>(call.getCallee());
+      externalCall |= !callee || callee.isExternal();
+    });
+    if (externalCall) {
+      throw std::runtime_error("Opaque native calls require QPY serialization");
+    }
+  }
   const auto gateFunctions = collectGateFunctions(moduleOp, function);
   std::vector<ExportedGateDefinition> gateDefinitions;
   gateDefinitions.reserve(gateFunctions.size());
@@ -2902,18 +2989,19 @@ exportCircuitImpl(mlir::QCProgram program,
   }
   ExportState state;
   collectParameters(function, state, function.getNumArguments());
-  if (target != nullptr) {
-    state.numQubits = checkedIndex(static_cast<uint64_t>(target->numSites()),
-                                   "target qubit count");
+  if (deviceTarget) {
+    state.numQubits = checkedIndex(
+        static_cast<uint64_t>(*llvm::max_element(target->siteIds())) + 1,
+        "target address width");
   }
   materializeBooleanResults(function);
   prepareMeasurementStores(function);
-  collectResources(function, state, target);
+  collectResources(function, state, deviceTarget ? target : nullptr);
   indexWrites(function.getBody().front(), state.writes);
   auto circuit = collectBlock(function.getBody().front(), state, 0U);
   llvm::StringSet<> usedNames;
   validateExportParameters(circuit, usedNames);
-  if (target != nullptr) {
+  if (deviceTarget) {
     Register reg{.name = "q"};
     reg.bits.resize(state.numQubits);
     std::iota(reg.bits.begin(), reg.bits.end(), 0U);
@@ -2925,6 +3013,29 @@ exportCircuitImpl(mlir::QCProgram program,
                                                   state.numClbits, "classical");
 
   auto translation = selectTranslation();
+  for (auto external : moduleOp.getOps<mlir::func::FuncOp>()) {
+    if (!external.isExternal()) {
+      continue;
+    }
+    size_t numParameters = 0;
+    while (numParameters < external.getNumArguments() &&
+           external.getArgumentTypes()[numParameters].isF64()) {
+      ++numParameters;
+    }
+    if (external.getNumResults() != 0 ||
+        !llvm::all_of(external.getArgumentTypes().drop_front(numParameters),
+                      [](mlir::Type type) {
+                        return mlir::isa<mlir::qc::QubitType>(type);
+                      })) {
+      throw std::runtime_error(
+          "Qiskit external gates require f64 parameters followed by qubits");
+    }
+    auto sourceName = external->getAttrOfType<mlir::StringAttr>(
+        mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
+    translation->registerNativeGate(external.getName().str(),
+                                    sourceName ? sourceName.str()
+                                               : external.getName().str());
+  }
   for (const auto& definition : gateDefinitions) {
     validateCircuit(definition.circuit, *translation, payload);
   }
@@ -2947,11 +3058,32 @@ exportCircuitImpl(mlir::QCProgram program,
                                  static_cast<uint32_t>(reg.bits.size()));
   }
   emitCircuit(circuit, *writer);
-  // Compiler layouts use target positions; imported layouts use circuit wires.
-  if (layout && layout->initial.size() == state.numQubits &&
-      (layout->sites
-           ? target != nullptr && llvm::equal(*layout->sites, target->siteIds())
-           : target == nullptr)) {
+  if (layout && layout->sites && target != nullptr &&
+      llvm::all_of(*layout->sites, [&](auto site) {
+        return target->vertexForSite(site).has_value();
+      })) {
+    const auto& sites = *layout->sites;
+    for (auto& site : layout->initial) {
+      site = sites[static_cast<size_t>(site)];
+    }
+    for (uint32_t site = 0; site < state.numQubits; ++site) {
+      if (!llvm::is_contained(sites, site)) {
+        layout->initial.push_back(site);
+      }
+    }
+    if (layout->routing) {
+      auto positions = std::move(*layout->routing);
+      layout->routing->resize(state.numQubits);
+      std::iota(layout->routing->begin(), layout->routing->end(), int64_t{0});
+      for (auto [index, site] : llvm::enumerate(sites)) {
+        (*layout->routing)[static_cast<size_t>(site)] =
+            sites[static_cast<size_t>(positions[index])];
+      }
+    }
+    layout->sites.reset();
+    writer->setLayout(*layout);
+  } else if (layout && layout->initial.size() == state.numQubits &&
+             !layout->sites && target == nullptr) {
     writer->setLayout(*layout);
   }
   return writer->finish();

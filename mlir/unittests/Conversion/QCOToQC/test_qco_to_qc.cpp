@@ -17,10 +17,10 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Support/Passes.h"
 
-#include "Conversion/ConversionTestCases.h"
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "qc_programs.h"
@@ -49,10 +49,9 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/FormatVariadic.h"
 
-#include <array>
 #include <memory>
 #include <string>
-#include <tuple>
+#include <utility>
 
 using namespace mlir;
 
@@ -560,41 +559,74 @@ TEST(QCOToQCRegressionTest, PreservesFlatControlledGateWires) {
   EXPECT_EQ(flipped->getOperand(0), qubits[0].getResult());
 }
 
-TEST(QCOToQCRegressionTest, ChecksFlatTensorSlotCorrespondence) {
+TEST(QCOToQCRegressionTest, RejectsInvalidTensorSlotsBeforeRewriting) {
   MLIRContext context;
   context.loadDialect<qco::QCODialect, qtensor::QTensorDialect,
                       arith::ArithDialect, func::FuncDialect>();
-  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
-    func.func @main() attributes {mqt.entry_point} {
+  for (const auto& [body, diagnostic] : {
+           std::pair{R"mlir(
+      %rest, %qubit = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+      %full = qtensor.insert %qubit into %rest[%c1] : tensor<2x!qco.qubit>
+      qtensor.dealloc %full : tensor<2x!qco.qubit>
+    )mlir",
+                     "original register slot"},
+           std::pair{R"mlir(
+      %rest, %left_out = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+      %missing, %right_out = qtensor.extract %rest[%c0] : tensor<2x!qco.qubit>
+      qco.sink %left_out : !qco.qubit
+      qco.sink %right_out : !qco.qubit
+      qtensor.dealloc %missing : tensor<2x!qco.qubit>
+    )mlir",
+                     "already extracted"},
+           std::pair{R"mlir(
+      %rest, %left_out = qtensor.extract %tensor[%index] : tensor<2x!qco.qubit>
+      %missing, %right_out = qtensor.extract %rest[%index] : tensor<2x!qco.qubit>
+      qco.sink %left_out : !qco.qubit
+      qco.sink %right_out : !qco.qubit
+      qtensor.dealloc %missing : tensor<2x!qco.qubit>
+    )mlir",
+                     "already extracted"},
+       }) {
+    for (const bool graphRegion : {false, true}) {
+      // Duplicate-slot tracking requires SSA order; insertion preflight does
+      // not.
+      if (graphRegion && StringRef(diagnostic) == "already extracted") {
+        continue;
+      }
+      SCOPED_TRACE(diagnostic);
+      SCOPED_TRACE(graphRegion);
+      const auto source =
+          std::string("module {\n") +
+          (graphRegion ? ""
+                       : "func.func @main(%index: index) attributes "
+                         "{mqt.entry_point} {\n") +
+          R"mlir(
       %c0 = arith.constant 0 : index
       %c1 = arith.constant 1 : index
       %left = qco.static 0 : !qco.qubit
       %right = qco.static 1 : !qco.qubit
       %tensor = qtensor.from_elements %left, %right : tensor<2x!qco.qubit>
-      %rest, %qubit = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
-      %full = qtensor.insert %qubit into %rest[%c1] : tensor<2x!qco.qubit>
-      qtensor.dealloc %full : tensor<2x!qco.qubit>
-      return
+    )mlir" +
+          body + (graphRegion ? "" : "return\n}\n") + "}";
+      auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+      ASSERT_TRUE(moduleOp);
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      OwningOpRef<ModuleOp> original = moduleOp->clone();
+      std::string diagnostics;
+      ScopedDiagnosticHandler handler(&context, [&](Diagnostic& emitted) {
+        diagnostics += emitted.str();
+        return success();
+      });
+      EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+      EXPECT_NE(diagnostics.find(diagnostic), std::string::npos);
+      EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+          moduleOp->getOperation(), original->getOperation(),
+          OperationEquivalence::Flags::None));
     }
-  })mlir",
-                                              &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
-  OwningOpRef<ModuleOp> original = moduleOp->clone();
-  std::string diagnostics;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
-  EXPECT_NE(diagnostics.find("original register slot"), std::string::npos);
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      moduleOp->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
+  }
 }
 
-TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
+TEST(QCOToQCRegressionTest, ProvesDynamicRestorationBeforeRewriting) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
                   arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
@@ -602,7 +634,7 @@ TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
-  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+  constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main(%condition: i1) attributes {mqt.entry_point} {
       %c0 = arith.constant 0 : index
       %c1 = arith.constant 1 : index
@@ -619,22 +651,48 @@ TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
       %same = arith.addi %indices#0, %c0 : index
       %t3 = qtensor.insert %flipped into %t2[%same] : tensor<2x!qco.qubit>
       %t4 = qtensor.insert %right into %t3[%indices#1] : tensor<2x!qco.qubit>
-      qtensor.dealloc %t4 : tensor<2x!qco.qubit>
+      %t5, %again = qtensor.extract %t4[%indices#0] : tensor<2x!qco.qubit>
+      %t6 = qtensor.insert %again into %t5[%indices#0] : tensor<2x!qco.qubit>
+      qtensor.dealloc %t6 : tensor<2x!qco.qubit>
       return
     }
-  })mlir",
-                                              &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  auto loads = llvm::to_vector(function.getOps<memref::LoadOp>());
-  ASSERT_EQ(loads.size(), 2U);
-  auto indices = *function.getOps<scf::IfOp>().begin();
-  EXPECT_EQ(loads[0].getIndices().front(), indices.getResult(0));
-  EXPECT_EQ(loads[1].getIndices().front(), indices.getResult(1));
-  EXPECT_TRUE(function.getOps<memref::StoreOp>().empty());
+  })mlir";
+  for (const bool swapSlots : {false, true}) {
+    SCOPED_TRACE(swapSlots);
+    auto text = source.str();
+    if (swapSlots) {
+      text.replace(text.find("%indices#0, %c0"),
+                   std::string("%indices#0, %c0").size(), "%indices#1, %c0");
+    }
+    auto moduleOp = parseSourceString<ModuleOp>(text, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    if (swapSlots) {
+      OwningOpRef<ModuleOp> original = moduleOp->clone();
+      std::string diagnostics;
+      ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+        diagnostics += diagnostic.str();
+        return success();
+      });
+      EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+      EXPECT_NE(diagnostics.find("cannot prove restoration"),
+                std::string::npos);
+      EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+          moduleOp->getOperation(), original->getOperation(),
+          OperationEquivalence::Flags::None));
+      continue;
+    }
+    ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    auto function = *moduleOp->getOps<func::FuncOp>().begin();
+    auto loads = llvm::to_vector(function.getOps<memref::LoadOp>());
+    ASSERT_EQ(loads.size(), 3U);
+    auto indices = *function.getOps<scf::IfOp>().begin();
+    EXPECT_EQ(loads[0].getIndices().front(), indices.getResult(0));
+    EXPECT_EQ(loads[1].getIndices().front(), indices.getResult(1));
+    EXPECT_EQ(loads[2].getIndices().front(), indices.getResult(0));
+    EXPECT_TRUE(function.getOps<memref::StoreOp>().empty());
+  }
 }
 
 TEST(QCOToQCRegressionTest, RejectsQTensorSlotMovesBeforeRewriting) {
@@ -1082,21 +1140,6 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-static SmallVector<QCOToQCTestCase> commonConversionCases() {
-  SmallVector<QCOToQCTestCase> cases;
-  for (const auto& testCase : ::mqt::test::COMMON_QC_QCO_CONVERSION_CASES) {
-    cases.push_back({
-        .name = std::get<0>(testCase),
-        .programBuilder = std::get<2>(testCase),
-        .referenceBuilder = std::get<1>(testCase),
-    });
-  }
-  return cases;
-}
-
-INSTANTIATE_TEST_SUITE_P(CommonCases, QCOToQCTest,
-                         testing::ValuesIn(commonConversionCases()));
-
 INSTANTIATE_TEST_SUITE_P(
     SpecialCases, QCOToQCTest,
     testing::Values(
@@ -1139,3 +1182,43 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(
                 aliasSafeNestedForLoopCtrlOpWithExtractedQubit)}));
+
+TEST(QCOToQCRegressionTest, RetainsOwnedProgramTensorAfterCleanup) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                  qtensor::QTensorDialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  for (const auto* shape : {"4", "?"}) {
+    const auto source = llvm::formatv(R"mlir(
+module attributes {{mqt.target_env = #mqt.target_env<
+    compilation_target = #mqt.compilation_target<sites = [],
+        connectivity = all_to_all, couplings = [],
+        native_operations = unrestricted, operations = [], gate_set = unit>,
+    payload_specification = #mqt.payload_spec<
+        format = <id = "openqasm", version = "3.0", profile = "", encoding = text>,
+        capabilities = [], optional_capabilities_known = false>>} {{
+  func.func @main() attributes {{mqt.entry_point} {{
+    %size = arith.constant 4 : index
+    %reg = qtensor.alloc(%size) : tensor<{0}x!qco.qubit>
+    qtensor.dealloc %reg : tensor<{0}x!qco.qubit>
+    return
+  }
+}
+)mlir",
+                                      shape)
+                            .str();
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+    ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
+    size_t qubits = 0;
+    size_t releases = 0;
+    moduleOp->walk([&](qc::AllocOp) { ++qubits; });
+    moduleOp->walk([&](qc::DeallocOp) { ++releases; });
+    EXPECT_EQ(qubits, 4);
+    EXPECT_EQ(releases, 4);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}

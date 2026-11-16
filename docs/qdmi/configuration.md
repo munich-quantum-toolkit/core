@@ -66,7 +66,8 @@ child IDs.
 Every enabled definition requires a stable, unique `id`, a `library`, and a QDMI
 symbol `prefix`. The `session` object supports `base-url`, `token`, `auth-file`,
 `auth-url`, `username`, `password`, `device-config`, and `custom1` through
-`custom5`.
+`custom5`. Custom session parameters are strings; the device interprets their
+contents.
 
 `device-config` selects exactly one device configuration source:
 
@@ -221,12 +222,12 @@ manifest beside its device library when moving an installation. The MQT Core
 QDMI driver discovers manifests beside itself; an explicit
 `MQT_CORE_QDMI_CONFIG_FILE` can instead select devices installed elsewhere.
 
-Inside a Core build, omitting the device list copies all devices registered
+Inside a MQT Core build, omitting the device list copies all devices registered
 through `mqt_configure_qdmi_device`. An installed consumer selects the exported
 targets it needs, as above.
 
-An external device implementation needs no Core build dependency. QDMI's CMake
-helper exports the stable ID and symbol prefix as target metadata:
+An external device implementation needs no MQT Core build dependency. QDMI's
+CMake helper exports the stable ID and symbol prefix as target metadata:
 
 ```cmake
 configure_qdmi_device_target(TARGET example-device ID example.device PREFIX EXAMPLE)

@@ -35,6 +35,7 @@
       "displayName": "Coverage config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-g1",
         "ENABLE_COVERAGE": "ON"
       }
     },

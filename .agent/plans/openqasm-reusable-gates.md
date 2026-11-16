@@ -25,7 +25,6 @@ repeated gates then stay compact across QC, QCO, OpenQASM, and QIR pipelines.
       current classical-expression or structured-control support.
 - [x] Delete the obsolete recursive frontend graph walk and dependency-depth
       ceiling now that definitions and calls remain compact.
-- [x] Incorporate the post-rebase OpenQASM specialist review.
 - [x] Run focused tests, compiler tests, C++ lint, and repository lint.
 
 ## Surprises & Discoveries

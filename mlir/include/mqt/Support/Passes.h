@@ -14,12 +14,16 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/Support/Error.h"
+
 #include <cstdint>
 
 namespace mlir {
+class MLIRContext;
 class ModuleOp;
 class OpPassManager;
 class PassManager;
+class TargetEnvironment;
 namespace mqt {
 class PayloadSpecAttr;
 } // namespace mqt
@@ -28,18 +32,36 @@ class PayloadSpecAttr;
 /// Run a pass pipeline on valid IR and verify its output.
 ///
 /// Also verify after each pass when assertions are enabled.
-/// Clear layout metadata unless the pipeline preserves resource
-/// identity and order and the caller sets preservesLayout.
+/// Clear layout metadata unless the caller sets preservesLayout and the
+/// pipeline retains wire and site identities or updates the layout accordingly.
 mlir::LogicalResult runWithPassManager(
     mlir::ModuleOp moduleOp,
     mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
     mlir::StringRef errorMessage, const mlir::CompilationOptions& options = {},
     bool preservesLayout = false);
 
+/// Run a compilation step and trace its MLIR actions when requested.
+///
+/// If `options.traceFile` has no value, the function calls `run` with
+/// `options`. Otherwise, it writes the actions on `context` to that file and
+/// calls `run` with options that have no trace file, so nested steps do not
+/// open the file again. Each call overwrites the file. The function rejects a
+/// context that already has an action handler and removes its own handler
+/// before it returns.
+///
+/// @param context The context whose actions are recorded.
+/// @param options The requested compilation options.
+/// @param run The compilation step.
+/// @return The error from `run`, from opening or writing the file, or both.
+[[nodiscard]] llvm::Error withActionTrace(
+    mlir::MLIRContext& context, const mlir::CompilationOptions& options,
+    mlir::function_ref<llvm::Error(const mlir::CompilationOptions&)> run);
+
 /// Run passes with scoped compilation options and clear layout metadata.
 ///
-/// Set preservesLayout only when the pipeline preserves wire identity and
-/// order.
+/// Record an action trace of this pass-manager run when the options request
+/// one. Set preservesLayout only when the pipeline retains wire and site
+/// identities or updates the layout to reflect changes.
 mlir::LogicalResult
 runWithCompilationOptions(mlir::PassManager& pm, mlir::ModuleOp moduleOp,
                           const mlir::CompilationOptions& options,
@@ -70,13 +92,21 @@ void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
                                               uint64_t minQubits);
 
 /// Parse and run a module-level MLIR textual pass pipeline.
+///
+/// Attach a supplied environment after parsing succeeds. Retain it after
+/// execution, including on failure. Clear layout metadata unless
+/// preservesLayout is set and the pipeline keeps wire and site identities or
+/// updates the layout to reflect changes.
 [[nodiscard]] mlir::LogicalResult
 runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
-                const mlir::CompilationOptions& options = {});
+                const mlir::CompilationOptions& options = {},
+                const mlir::TargetEnvironment* environment = nullptr,
+                bool preservesLayout = false);
 
 /// Populate a QC-oriented cleanup pipeline on the given pass manager.
 ///
-/// Adds generic cleanup, QC qubit-register shrinking, and dead-value removal.
+/// Adds generic cleanup, unused-qubit removal, register shrinking, and
+/// dead-value removal.
 void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 
 /// Run QC cleanup that preserves defined values on every syntactic loop edge.
@@ -91,10 +121,12 @@ void populateOpenQASM2PreparationPipeline(mlir::OpPassManager& pm,
 
 /// Populate a QCO-oriented cleanup pipeline on the given pass manager.
 ///
-/// Adds generic cleanup and qtensor shrink-to-fit. Dead-value removal may be
-/// deferred when a later pipeline stage changes region or function signatures.
+/// Adds generic cleanup, unused-qubit removal, tensor shrinking, and
+/// dead-value removal. Set @p removeUnusedValues to false to retain unused
+/// tensor slots for potential ancillas and
+/// defer signature changes until after decomposition and placement.
 void populateQCOCleanupPipeline(mlir::OpPassManager& pm,
-                                bool removeDeadValues = true);
+                                bool removeUnusedValues = true);
 
 /// Populate a QIR-oriented cleanup pipeline on the given pass manager.
 ///

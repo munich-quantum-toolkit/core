@@ -59,6 +59,9 @@ enum class StandardGate : uint8_t {
   RZZ,
   XXPlusYY,
   XXMinusYY,
+  // Native pulses that frontends lower to a fixed-angle R and a global phase.
+  GPI,
+  GPI2,
 };
 
 struct StandardGateDescriptor {

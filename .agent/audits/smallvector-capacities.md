@@ -108,8 +108,8 @@ identified two fixed-size plans without reserves. `planMcpValeRelativeResidual`
 is called only for four controls and appends 8 shell operations plus 9 residual
 operations. `planMczRelativePhaseK4` appends 11 operations plus two 18-operation
 toggles. They now reserve 17 and 47 entries, respectively, to avoid repeated
-buffer growth while retaining default inline storage. The reviewer's timing
-measurements were not reproduced.
+buffer growth while retaining default inline storage. Timing measurements in the
+linked review were not reproduced.
 
 ### 3. Retained storage choices have reasons (applied)
 

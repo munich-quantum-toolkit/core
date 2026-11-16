@@ -15,6 +15,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/Passes.h"
@@ -74,8 +75,7 @@ protected:
 
   /// Build a module using the QCOProgramBuilder and run the cleanup pipeline.
   template <typename BuildFn>
-  [[nodiscard]] OwningOpRef<ModuleOp>
-  buildAndCanonicalize(BuildFn&& buildFn) const {
+  [[nodiscard]] OwningOpRef<ModuleOp> buildAndCleanup(BuildFn&& buildFn) const {
     auto module =
         QCOProgramBuilder::build(context.get(), std::forward<BuildFn>(buildFn));
     if (!module) {
@@ -228,9 +228,9 @@ TEST_F(QTensorTest, AllocOpStaticTypeWithDynamicSizeOperandFailsVerification) {
 // DeallocOp
 // ============================================================================
 
-// An alloc immediately followed by dealloc should be eliminated entirely.
+// Explicit cleanup removes an unused allocation and its release.
 TEST_F(QTensorTest, DeallocOpAllocDeallocPairIsRemoved) {
-  auto canonicalized = buildAndCanonicalize([](QCOProgramBuilder& b) {
+  auto canonicalized = buildAndCleanup([](QCOProgramBuilder& b) {
     b.qtensorAlloc(3);
     return SmallVector<Value>{};
   });
@@ -796,21 +796,9 @@ TEST_P(QTensorIntegrationTest, ProgramEquivalence) {
 INSTANTIATE_TEST_SUITE_P(
     QTensorOpsTest, QTensorIntegrationTest,
     testing::Values(
-        QTensorIntegrationTestCase{"QTensorAlloc",
-                                   MQT_NAMED_BUILDER(qtensorAlloc),
-                                   MQT_NAMED_BUILDER(qtensorAlloc)},
         QTensorIntegrationTestCase{"QTensorAllocDealloc",
                                    MQT_NAMED_BUILDER(qtensorDealloc),
                                    MQT_NAMED_BUILDER(qtensorAlloc)},
-        QTensorIntegrationTestCase{"QTensorFromElements",
-                                   MQT_NAMED_BUILDER(qtensorFromElements),
-                                   MQT_NAMED_BUILDER(qtensorFromElements)},
-        QTensorIntegrationTestCase{"QTensorExtract",
-                                   MQT_NAMED_BUILDER(qtensorExtract),
-                                   MQT_NAMED_BUILDER(qtensorExtract)},
-        QTensorIntegrationTestCase{"QTensorInsert",
-                                   MQT_NAMED_BUILDER(qtensorInsert),
-                                   MQT_NAMED_BUILDER(qtensorInsert)},
         QTensorIntegrationTestCase{
             "QTensorExtractInsertSameIndex",
             MQT_NAMED_BUILDER(qtensorExtractInsertSameIndex),

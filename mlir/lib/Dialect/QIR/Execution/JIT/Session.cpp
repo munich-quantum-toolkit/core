@@ -482,13 +482,17 @@ JitSession::JitSession(Execution execution, std::optional<uint64_t> randomSeed,
 Expected<std::unique_ptr<JitSession>>
 JitSession::create(llvm::StringRef irBytes, llvm::StringRef bufferName,
                    Execution execution, std::optional<uint64_t> randomSeed,
-                   llvm::raw_ostream* output) {
+                   llvm::raw_ostream* output, std::optional<size_t> maxQubits) {
   auto loadedModule = loadModuleFromMemory(irBytes, bufferName);
   if (!loadedModule) {
     return loadedModule.takeError();
   }
   auto session = std::unique_ptr<JitSession>(
       new JitSession(execution, randomSeed, output));
+  if (maxQubits) {
+    session->runtime_->maxQubits_ =
+        std::min(*maxQubits, dd::Package::MAX_POSSIBLE_QUBITS);
+  }
   if (auto error = session->initialize(std::move(*loadedModule), execution)) {
     // A failed construction must not run program destructors.
     session->jit_.reset();
@@ -740,6 +744,7 @@ JitSession::makeWorkerRuntime(uint64_t seed) const {
                              "QIR entry point cannot be shared across workers");
   }
   auto worker = std::make_unique<Runtime>(seed);
+  worker->maxQubits_ = runtime_->maxQubits_;
   worker->outputSchema = runtime_->outputSchema;
   worker->metadata = runtime_->metadata;
   if (auto error = worker->configureStaticResources(runtime_->staticQubits_,
@@ -799,8 +804,11 @@ static Error normalizeNativeQISNames(llvm::Module& module) {
     }
     auto [gate, specialization] = name.split("__");
     llvm::StringRef canonical;
-    if (gate == "r") {
+    // Native GPI pulses keep the R(θ, φ) arguments of their compiled gate.
+    if (gate == "r" || gate == "gpi" || gate == "gpi2") {
       canonical = "prx";
+    } else if (gate == "zz") {
+      canonical = "rzz";
     } else if (gate == "u") {
       canonical = "u3";
     } else if (gate == "measure") {
@@ -1088,8 +1096,8 @@ Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
       pipeline.addPass(
           llvm::createModuleToFunctionPassAdaptor(llvm::MemCpyOptPass()));
       if (execution == Execution::Sampling) {
-        pipeline.addPass(passBuilder.buildPerModuleDefaultPipeline(
-            llvm::OptimizationLevel::O1));
+        pipeline.addPass(passBuilder.buildModuleSimplificationPipeline(
+            llvm::OptimizationLevel::O1, llvm::ThinOrFullLTOPhase::None));
       }
       pipeline.run(module, moduleAnalyses);
       sampleBranches_ =
