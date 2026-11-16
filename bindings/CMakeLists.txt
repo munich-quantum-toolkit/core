@@ -25,6 +25,13 @@ if(UNIX AND NOT APPLE)
   target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
 endif()
 
+# LLVM's HandleLLVMOptions adds -flat_namespace to all module links. Flat lookups across this
+# module's many exported symbols make each dlopen take about one second; upstream MLIR Python
+# modules restore the two-level namespace in the same way.
+if(APPLE)
+  target_link_options(${TARGET_NAME} PRIVATE "LINKER:-twolevel_namespace")
+endif()
+
 if(MQT_CORE_INSTALL)
   install(TARGETS ${TARGET_NAME} DESTINATION . COMPONENT ${MQT_CORE_TARGET_NAME}_Python)
 endif()

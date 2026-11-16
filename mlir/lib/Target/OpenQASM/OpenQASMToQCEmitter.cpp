@@ -10,6 +10,7 @@
 
 #include "OpenQASMToQCEmitter.h"
 
+#include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
@@ -1284,6 +1285,20 @@ private:
 
     const auto emitCatalogLowering = [&](ValueRange primitiveQubits) {
       const auto emitBody = [&](ValueRange bodyQubits) {
+        // Native pulses share the compiler's fixed-angle R definition.
+        if (const auto alias = nativeRAlias(
+                qc::getStandardGateDescriptor(catalog->gate).operationSymbol)) {
+          const auto constant = [&](double value) -> Value {
+            return arith::ConstantFloatOp::create(
+                opBuilder, loc, opBuilder.getF64Type(), APFloat(value));
+          };
+          if (alias->globalPhase != 0.) {
+            qc::GPhaseOp::create(opBuilder, loc, constant(alias->globalPhase));
+          }
+          return qc::emitStandardGate(
+              opBuilder, loc, qc::StandardGate::R,
+              {constant(alias->angle), parameters.front()}, bodyQubits);
+        }
         if (catalog->gate == qc::StandardGate::BuiltinU ||
             catalog->gate == qc::StandardGate::U2 ||
             (catalog->gate == qc::StandardGate::U3 &&

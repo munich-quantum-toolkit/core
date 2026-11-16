@@ -330,6 +330,20 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   setInsertionPoint(entryBlock->getTerminator());
 
   if (profile == Profile::Adaptive) {
+    if (staticResults) {
+      auto array =
+          LLVM::AllocaOp::create(*this, ptrType, ptrType, intConstant(size))
+              .getResult();
+      for (int64_t i = 0; i < size; ++i) {
+        auto result = staticResult(static_cast<int64_t>(numResults), false);
+        auto element =
+            LLVM::GEPOp::create(*this, ptrType, ptrType, array, intConstant(i));
+        auto store = LLVM::StoreOp::create(*this, result, element);
+        store->setAttr(QIR_RESULT_STORE_ATTR, getUnitAttr());
+      }
+      reg.array = array;
+      return reg;
+    }
     // Adaptive Profile: Create a dynamic result array.
     ensureResultAllocationMode(AllocationMode::Dynamic);
     auto fnSig =
@@ -383,10 +397,10 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t index,
 
   InsertionGuard guard(*this);
   // Get or create result pointer
-  auto result =
-      getResult(index, record,
-                profile == Profile::Adaptive ? AllocationMode::Dynamic
-                                             : AllocationMode::Static);
+  auto result = getResult(index, record,
+                          profile == Profile::Adaptive && !staticResults
+                              ? AllocationMode::Dynamic
+                              : AllocationMode::Static);
 
   // Only set the insertion point if the Base Profile is used
   if (profile == Profile::Base) {
@@ -1053,9 +1067,11 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<Value(QIRProgramBuilder&)>& buildFunc, Profile profile) {
+    const function_ref<Value(QIRProgramBuilder&)>& buildFunc, Profile profile,
+    bool staticResults) {
   QIRProgramBuilder builder(context);
   builder.profile = profile;
+  builder.staticResults = staticResults;
   builder.initialize();
   auto result = buildFunc(builder);
   builder.retype(result.getType());

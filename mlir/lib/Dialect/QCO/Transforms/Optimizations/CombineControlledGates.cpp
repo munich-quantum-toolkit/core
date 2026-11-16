@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -88,8 +89,19 @@ struct CombineControlledGates final
 
 protected:
   void runOnOperation() override {
+    const auto* target = target_ ? &*target_ : nullptr;
+    if (useTarget) {
+      const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+      if (!environment) {
+        getOperation().emitError()
+            << "expected a valid mqt.target_env: " << environment.error();
+        signalPassFailure();
+        return;
+      }
+      target = &environment.environment().target();
+    }
     RewritePatternSet patterns(&getContext());
-    patterns.add<CombineControls>(&getContext(), target_ ? &*target_ : nullptr);
+    patterns.add<CombineControls>(&getContext(), target);
     if (failed(applyPatternsGreedily(
             getOperation(), std::move(patterns),
             GreedyRewriteConfig{}.setUseTopDownTraversal()))) {

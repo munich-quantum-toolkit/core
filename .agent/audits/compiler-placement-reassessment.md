@@ -32,9 +32,7 @@ The integration base is `a66a9b206` on 2026-09-10, using LLVM/MLIR 23.1.0.
 
    The previous test that required tensor-loop expansion now asserts the payload
    boundary. Semantic and structural tests cover successful scalarization,
-   runtime-index non-matches, and retained large loop bodies. The requested
-   ponytail review found no need for a generic control-flow framework or a
-   second ownership of the slot-access proof.
+   runtime-index non-matches, and retained large loop bodies.
 
 3. **Keep placed tensor references separate from dynamic ownership.** Placement
    assigns static qubits. QTensor buffers then need only local `memref.alloca`,
@@ -76,9 +74,8 @@ general lint pass. The stacked README and RtD execution checks belong to PR
 
 ## 2509
 
-The final ponytail review removed unused state in tensor-allocation patterns,
-mask-only memref legality and measurement/store exceptions, and unnecessary
-filtering in the register-store regression. The remaining diff needs no new QC
-operation, dependency, or generic control-flow abstraction. Durable regressions
-cover the compiler behavior; temporary benchmark artifacts are not part of the
-PR. Hosted CI monitoring is outside this task.
+Tensor-allocation patterns and memref legality track ownership without runtime
+masks. The register-store regression checks the unfiltered result. The remaining
+diff needs no new QC operation, dependency, or generic control-flow abstraction.
+Durable regressions cover the compiler behavior; temporary benchmark artifacts
+are not part of the PR. Hosted CI monitoring is outside this task.

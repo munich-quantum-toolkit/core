@@ -44,7 +44,7 @@ if(BUILD_MQT_CORE_BINDINGS)
 
   # top-level call to find Python
   find_package(
-    Python 3.11
+    Python 3.11.5
     REQUIRED
     COMPONENTS Interpreter Development.Module ${SKBUILD_SABI_COMPONENT})
 endif()
@@ -52,20 +52,18 @@ endif()
 option(MQT_CORE_INSTALL "Generate installation instructions for MQT Core" ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
-option(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE "Build the MQT Core DDSIM QDMI device"
-       ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_QDMI_SC_DEVICE "Build the MQT Core superconducting QDMI device"
        ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of the CMake build"
        OFF)
-if(BUILD_MQT_CORE_TESTS
-   AND (NOT BUILD_MQT_CORE_QDMI_SC_DEVICE OR NOT BUILD_MQT_CORE_QDMI_DDSIM_DEVICE))
-  message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires all bundled QDMI devices")
+if(BUILD_MQT_CORE_TESTS AND NOT BUILD_MQT_CORE_QDMI_SC_DEVICE)
+  message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires BUILD_MQT_CORE_QDMI_SC_DEVICE")
 endif()
 if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   message(
     FATAL_ERROR
-      "MQT Core cannot build MLIR with GCC on macOS because MLIR uses an incompatible C++ standard library")
+      "MQT Core cannot build MLIR with GCC on macOS because MLIR uses an incompatible C++ standard library"
+  )
 endif()
 if(APPLE
    AND CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang"
@@ -162,15 +160,7 @@ if(BUILD_MQT_CORE_DOCUMENTATION)
 endif()
 
 if(BUILD_MQT_CORE_BINDINGS)
-  set(MQT_CORE_WHEEL_TARGETS mqt-core-bindings mqt-cc mqt-core-bench)
-  if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
-    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device)
-  endif()
-  if(BUILD_MQT_CORE_QDMI_SC_DEVICE)
-    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-sc-device)
-  endif()
-  add_custom_target(mqt-core-wheel)
-  add_dependencies(mqt-core-wheel ${MQT_CORE_WHEEL_TARGETS})
+  add_custom_target(mqt-core-wheel DEPENDS mqt-core-bindings mqt-core)
 endif()
 
 if(PROJECT_IS_TOP_LEVEL)

@@ -112,6 +112,7 @@ def test_openqasm2_explicit_target_declares_native_calls() -> None:
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
             CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("cx", 2, 0),
         ]),
     )

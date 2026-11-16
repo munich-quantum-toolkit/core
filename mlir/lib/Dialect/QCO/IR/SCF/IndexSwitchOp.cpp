@@ -259,6 +259,17 @@ OpOperand* IndexSwitchOp::getTiedTarget(OpResult result) {
   return &getTargetsMutable()[result.getResultNumber() - numClassicalResults];
 }
 
+Value IndexSwitchOp::getInputForOutput(Value output) {
+  if (auto result = dyn_cast<OpResult>(output)) {
+    return getTiedTarget(result)->get();
+  }
+  return {};
+}
+
+Value IndexSwitchOp::getOutputForInput(Value input) {
+  return getTiedResult(&*input.use_begin());
+}
+
 BlockArgument IndexSwitchOp::getTiedCaseBlockArgument(OpOperand* target,
                                                       size_t i) {
   if (target->getOwner() != getOperation() || target->getOperandNumber() == 0 ||

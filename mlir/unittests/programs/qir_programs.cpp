@@ -11,8 +11,11 @@
 #include "qir_programs.h"
 
 #include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Value.h"
 
@@ -236,9 +239,26 @@ Value dynamicallyIndexedMeasurement(QIRProgramBuilder& b) {
   return b.intConstant(0);
 }
 
-Value measurementWithoutRegisters(QIRProgramBuilder& b) {
+Value measurementWithoutRegistersBase(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.measure(q, 0);
+  return b.intConstant(0);
+}
+
+static Value measureStaticScalar(QIRProgramBuilder& b, Value qubit,
+                                 const int64_t index) {
+  auto result = b.staticResult(index);
+  auto signature =
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(b.getContext()),
+                                  {qubit.getType(), result.getType()});
+  auto declaration = getOrCreateFunctionDeclaration(
+      b, b.getInsertionBlock()->getParentOp(), QIR_MEASURE, signature);
+  LLVM::CallOp::create(b, declaration, ValueRange{qubit, result});
+  return result;
+}
+
+Value measurementWithoutRegisters(QIRProgramBuilder& b) {
+  measureStaticScalar(b, b.allocQubit(), 0);
   return b.intConstant(0);
 }
 
@@ -438,10 +458,17 @@ template <bool IntoRegister> Value multipleControlledH(QIRProgramBuilder& b) {
   return measureAndRecord(b, q.qubits, IntoRegister);
 }
 
-Value hWithoutRegister(QIRProgramBuilder& b) {
+Value hWithoutRegisterBase(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
   return measureAndRecord(b, {q}, false);
+}
+
+Value hWithoutRegister(QIRProgramBuilder& b) {
+  auto q = b.allocQubit();
+  b.h(q);
+  measureStaticScalar(b, q, 0);
+  return b.intConstant(0);
 }
 
 template <bool IntoRegister> Value s(QIRProgramBuilder& b) {
@@ -1063,16 +1090,16 @@ template <bool IntoRegister> Value ctrlTwo(QIRProgramBuilder& b) {
 Value hGatesAndResetsOnOneQubit(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
-  b.measure(q, 0);
+  measureStaticScalar(b, q, 0);
   b.reset(q);
   b.h(q);
-  b.measure(q, 1);
+  measureStaticScalar(b, q, 1);
   return b.intConstant(0);
 }
 
 Value reusedCX(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
-  auto c1 = b.measure(q, 0);
+  auto c1 = measureStaticScalar(b, q, 0);
   auto* branchBlock = b.getInsertionBlock();
   b.scfIf(c1, [&] { b.x(q); });
   {
@@ -1081,7 +1108,7 @@ Value reusedCX(QIRProgramBuilder& b) {
     b.setInsertionPoint(branchBlock->getTerminator());
     b.reset(q);
   }
-  b.measure(q, 1);
+  measureStaticScalar(b, q, 1);
   return b.intConstant(0);
 }
 
@@ -1089,7 +1116,9 @@ Value singleControlledXOnIndividualQubits(QIRProgramBuilder& b) {
   auto q1 = b.allocQubit();
   auto q2 = b.allocQubit();
   b.cx(q1, q2);
-  return measureAndRecord(b, {q1, q2}, false);
+  measureStaticScalar(b, q1, 0);
+  measureStaticScalar(b, q2, 1);
+  return b.intConstant(0);
 }
 
 // Instantiate the templates for IntoRegister = false

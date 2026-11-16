@@ -11,6 +11,7 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "gtest/gtest.h"
@@ -252,6 +253,38 @@ result[1] = measure q[99];
   EXPECT_EQ(
       mlir::cast<mlir::RankedTensorType>(qcoAllocation.getType()).getDimSize(0),
       2);
+}
+
+TEST(Cleanup, SharesIndexExpressionsExposedByFolding) {
+  auto program = mlir::QCOProgram::fromMLIRString(R"(
+    module {
+      func.func @main(%i: index, %n: index) attributes {mqt.entry_point} {
+        %size = arith.constant 8 : index
+        %tensor = qtensor.alloc(%size) : tensor<8x!qco.qubit>
+        %zero = arith.constant 0 : index
+        %alias = arith.addi %i, %zero : index
+        %x = arith.remui %alias, %n : index
+        %rest, %qubit = qtensor.extract %tensor[%x] : tensor<8x!qco.qubit>
+        %h = qco.h %qubit : !qco.qubit
+        %y = arith.remui %i, %n : index
+        %out = qtensor.insert %h into %rest[%y] : tensor<8x!qco.qubit>
+        qtensor.dealloc %out : tensor<8x!qco.qubit>
+        return
+      }
+    }
+  )");
+  ASSERT_TRUE(static_cast<bool>(program))
+      << llvm::toString(program.takeError());
+  ASSERT_TRUE(mlir::succeeded(program->cleanup()));
+  mlir::qtensor::ExtractOp extract;
+  mlir::qtensor::InsertOp insert;
+  program->module().walk([&](mlir::qtensor::ExtractOp op) { extract = op; });
+  program->module().walk([&](mlir::qtensor::InsertOp op) { insert = op; });
+  ASSERT_TRUE(extract);
+  ASSERT_TRUE(insert);
+  EXPECT_EQ(extract.getIndex(), insert.getIndex());
+  EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(program->module())));
+  EXPECT_TRUE(mlir::succeeded(std::move(*program).intoQC()));
 }
 
 TEST(Cleanup, FoldsCommonExpressionsAndPreservesSymbolicPhase) {

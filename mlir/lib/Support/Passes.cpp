@@ -10,6 +10,7 @@
 
 #include "mqt/Support/Passes.h"
 
+#include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
@@ -19,27 +20,35 @@
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
 #include "mqt/Support/RandomSeed.h"
 
+#include "mlir/Debug/ExecutionContext.h"
+#include "mlir/Debug/Observers/ActionProfiler.h"
 #include "mlir/Dialect/MemRef/IR/MemRefMemorySlot.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Pass/PassRegistry.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/Timing.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <bit>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <system_error>
 
 using namespace mlir;
 
@@ -71,13 +80,16 @@ void registerMQTCompilerPasses() {
     registerConvertCBitToMemRef();
     qco::registerCombineControlledGates();
     qco::registerDecomposeMultiControlled();
+    qco::registerElideTerminalSwapsPass();
     qco::registerFuseSingleQubitUnitaryRuns();
+    qco::registerFuseTwoQubitGates();
     qco::registerHadamardLifting();
     qco::registerLegalizeControlFlow();
     qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerPauliTwirl2QGates();
     qco::registerMappingPass();
+    qco::registerPlacementPass();
     qco::registerQuantumLoopUnroll();
     qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();
@@ -85,10 +97,12 @@ void registerMQTCompilerPasses() {
     qco::registerTargetNativeSynthesis();
     qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();
+    mqt::registerRemoveUnusedQubits();
     mqt::registerSimplifyQuantum();
     mqt::registerLowerQuantumModifiers();
     mqt::registerDropGlobalPhases();
     mqt::registerNormalizeGlobalPhases();
+    mqt::registerLegalizeControlFlow();
     mqt::registerPromoteClassicalMemory();
     mqt::registerSimplifyClassicalControl();
     mqt::registerUnrollModifiers();
@@ -114,6 +128,7 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createCombineControlledGates());
   pm.addPass(mqt::createSimplifyQuantum());
   pm.addPass(createCanonicalizerPass());
+  pm.addPass(mqt::createRemoveUnusedQubits());
 }
 
 void populateOpenQASM2PreparationPipeline(OpPassManager& pm,
@@ -137,8 +152,6 @@ void populateQIRPreparationPipeline(OpPassManager& pm,
     llvm::raw_string_ostream stream(options.payloadSpec);
     stream << payload;
     pm.addPass(qco::createUnrollLoopsForPayload(options));
-  } else {
-    pm.addPass(mqt::createPromoteClassicalMemory());
   }
   pm.addPass(createCanonicalizerPass());
 }
@@ -162,21 +175,127 @@ void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
 }
 
 LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
-                              const CompilationOptions& options) {
+                              const CompilationOptions& options,
+                              const TargetEnvironment* environment,
+                              bool preservesLayout) {
   registerMQTCompilerPasses();
   PassManager pm(mod.getContext());
   std::string diagnostics;
   llvm::raw_string_ostream errorStream(diagnostics);
-  if (failed(parsePassPipeline(pipeline, pm, errorStream))) {
+  auto passes = pipeline.trim();
+  auto [anchor, body] = passes.split('(');
+  if (anchor.rtrim() == ModuleOp::getOperationName()) {
+    if (!body.consume_back(")")) {
+      return mod.emitError("unclosed builtin.module pass pipeline");
+    }
+    passes = body;
+  }
+  if (failed(parsePassPipeline(passes, pm, errorStream))) {
     return mod.emitError() << "failed to parse pass pipeline '" << pipeline
                            << "': " << diagnostics;
   }
-  return runWithCompilationOptions(pm, mod, options);
+  if (environment != nullptr) {
+    attachTargetEnvironment(mod, *environment);
+  }
+  return runWithCompilationOptions(pm, mod, options, preservesLayout);
+}
+
+namespace {
+
+/// Forward output to a buffered stream and ignore flushes.
+///
+/// tracing::ActionProfiler flushes its stream after each event. With a file,
+/// each flush is a system call. On large circuits, these calls make tracing
+/// several times slower and add their cost to the traced durations. Remove this
+/// class when the profiler no longer flushes after each event.
+class FlushIgnoringStream final : public llvm::raw_ostream {
+public:
+  explicit FlushIgnoringStream(llvm::raw_ostream& os)
+      : raw_ostream(/*unbuffered=*/true), os_(os) {}
+
+private:
+  void write_impl(const char* ptr, size_t size) override {
+    os_.write(ptr, size);
+  }
+  [[nodiscard]] uint64_t current_pos() const override { return os_.tell(); }
+
+  llvm::raw_ostream& os_;
+};
+
+} // namespace
+
+llvm::Error
+withActionTrace(MLIRContext& context, const CompilationOptions& options,
+                function_ref<llvm::Error(const CompilationOptions&)> run) {
+  if (!options.traceFile) {
+    return run(options);
+  }
+  if (context.hasActionHandler()) {
+    return llvm::createStringError(
+        std::errc::invalid_argument,
+        "tracing requires a context without an existing action handler");
+  }
+  const auto path = options.traceFile->string();
+  std::error_code error;
+  llvm::raw_fd_ostream stream(path, error);
+  if (error) {
+    return llvm::createStringError(error, "failed to open trace file '%s': %s",
+                                   path.c_str(), error.message().c_str());
+  }
+  auto stepOptions = options;
+  stepOptions.traceFile.reset();
+  FlushIgnoringStream traceStream(stream);
+  auto result = [&] {
+    tracing::ActionProfiler profiler(traceStream);
+    tracing::ExecutionContext executionContext;
+    executionContext.registerObserver(&profiler);
+    context.registerActionHandler(std::move(executionContext));
+    const llvm::scope_exit clearHandler(
+        [&] { context.registerActionHandler(nullptr); });
+    return run(stepOptions);
+  }();
+  // raw_fd_ostream must not close stdout.
+  if (path == "-") {
+    stream.flush();
+  } else {
+    stream.close();
+  }
+  if (!stream.has_error()) {
+    return result;
+  }
+  error = stream.error();
+  stream.clear_error();
+  return llvm::joinErrors(
+      std::move(result),
+      llvm::createStringError(error, "failed to write trace file '%s': %s",
+                              path.c_str(), error.message().c_str()));
 }
 
 LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
                                         const CompilationOptions& options,
                                         bool preservesLayout) {
+  if (options.traceFile) {
+    auto result = failure();
+    if (auto error =
+            withActionTrace(*moduleOp.getContext(), options,
+                            [&](const CompilationOptions& passOptions) {
+                              result = runWithCompilationOptions(
+                                  pm, moduleOp, passOptions, preservesLayout);
+                              return llvm::Error::success();
+                            })) {
+      moduleOp.emitError(llvm::toString(std::move(error)));
+      return failure();
+    }
+    return result;
+  }
+  // Embedders need not register command-line options.
+  if (llvm::cl::getRegisteredOptions().contains("mlir-print-ir-before-all") &&
+      failed(applyPassManagerCLOptions(pm))) {
+    return failure();
+  }
+  if (llvm::cl::getRegisteredOptions().contains("mlir-timing")) {
+    applyDefaultTimingPassManagerCLOptions(pm);
+  }
   if (!preservesLayout) {
     moduleOp->removeAttr("mqt.layout");
   }
@@ -213,6 +332,7 @@ void populateQCExportPipeline(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass(GreedyRewriteConfig{}
                                          .enableCSEBetweenIterations()
                                          .setUseTopDownTraversal()));
+  pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createSymbolDCEPass());
 }
@@ -222,22 +342,22 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(OpPassManager& pm, bool removeDeadValues) {
+void populateQCOCleanupPipeline(OpPassManager& pm, bool removeUnusedValues) {
   pm.addPass(mlir::mqt::createSimplifyClassicalControl());
   pm.addPass(mqt::createPromoteClassicalMemory());
-  if (removeDeadValues) {
+  if (removeUnusedValues) {
     // Fold promoted call operands before removing dead quantum yields.
     pm.addPass(createSCCPPass());
   }
   pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}
-          .enableCSEBetweenIterations()
-          .setUseTopDownTraversal()
-          .setMaxIterations(GreedyRewriteConfig::kNoLimit)));
-  pm.addPass(qtensor::createShrinkQTensorToFitPass());
+      CanonicalizerPassOptions{.cseBetweenIterations = true}));
+  pm.addPass(mqt::createRemoveUnusedQubits());
+  if (removeUnusedValues) {
+    pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  }
   pm.addPass(createSymbolDCEPass());
-  if (removeDeadValues) {
+  if (removeUnusedValues) {
     pm.addPass(createRemoveDeadValuesPass());
   }
 }

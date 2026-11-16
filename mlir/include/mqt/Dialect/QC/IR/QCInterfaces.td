@@ -26,6 +26,11 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
         Gate parameters must be finite, including values produced at runtime.
         Operation verification only checks direct constants as a sanity check.
+
+        Qubit operands must denote distinct resources.
+        Verification rejects repeated SSA values and equal static indices.
+        Distinctness of other references is a runtime precondition. References
+        may be reused by separate operations.
     }];
 
   let cppNamespace = "::mlir::qc";

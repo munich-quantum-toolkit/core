@@ -51,7 +51,6 @@ private:
   const CompilerTarget* target_;
   GreedyRewriteConfig config_;
   std::optional<FrozenRewritePatternSet> runtimePatterns_;
-  std::optional<FrozenRewritePatternSet> matrixPatterns_;
 };
 
 /// Populates @p patterns with the single-qubit run fusion rewrite for
@@ -66,8 +65,9 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
 /// Populates patterns that compose profitable parameterized single-qubit runs.
 ///
 /// The patterns emit @p basis directly. @p target supplies native gate support.
-/// Native fusion preserves supported parameterized runs and uses direct Euler
-/// identities. General quaternion composition is reserved for controlled U
+/// Native fusion uses direct Euler identities and forwards phase-only U factors
+/// when no angle addition is needed. Other supported parameterized runs are
+/// preserved. General quaternion composition is reserved for controlled U
 /// bodies and standalone fusion without a target.
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
@@ -75,10 +75,10 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
 
 /// Merge Z rotations through diagonal gates on native RZ or equatorial targets.
 ///
-/// Equatorial targets also lower single-qubit factors and absorb Z frames into
-/// R.
+/// Equatorial targets fuse constant single-qubit runs, lower the remaining
+/// single-qubit factors, and absorb Z frames into R. Symbolic gates and
+/// barriers bound constant runs.
 LogicalResult propagateZFrames(RewriterBase& rewriter, ModuleOp moduleOp,
-                               const CompilerTarget& target,
-                               const GreedyRewriteConfig& config);
+                               const CompilerTarget& target);
 
 } // namespace mlir::qco::decomposition

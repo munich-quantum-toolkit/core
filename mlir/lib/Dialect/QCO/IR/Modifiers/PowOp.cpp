@@ -152,8 +152,8 @@ struct FoldFixedGatePow final : OpRewritePattern<PowOp> {
         loc, exponent, constantFromScalar(rewriter, loc, scale));
     Value result;
     if (isa<XOp, YOp, HOp, SXOp, SXdgOp>(gate.getOperation())) {
-      Value phase = arith::MulFOp::create(
-          rewriter, loc, angle, constantFromScalar(rewriter, loc, 0.5));
+      Value phase = rewriter.createOrFold<arith::MulFOp>(
+          loc, angle, constantFromScalar(rewriter, loc, 0.5));
       GPhaseOp::create(rewriter, loc, phase);
       if (isa<HOp>(gate.getOperation())) {
         qubit = RYOp::create(rewriter, loc, qubit, -std::numbers::pi / 4.);
@@ -557,8 +557,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                     return mqt::getValueFromBlockArgument(input,
                                                           op.getQubitsIn());
                   });
-              auto replacement =
-                  BarrierOp::create(rewriter, op.getLoc(), inputs);
+              auto replacement = BarrierOp::create(rewriter, op.getLoc(),
+                                                   inputs, gate.getLabelAttr());
               replacePowResults(op, gate, replacement.getOutputQubits(),
                                 rewriter);
               return success();

@@ -26,7 +26,11 @@ namespace mlir::mqt {
 /// Absolute tolerance used when comparing static operation parameters.
 inline constexpr double PARAMETER_COMPARISON_TOLERANCE = 1e-15;
 
-/// A host double or an f64 SSA value.
+/// A host double or an f64 SSA value supplied to an MQT builder.
+///
+/// FloatParameter lets callers use either a known constant or a value computed
+/// by the program. It describes the builder's input representation, not a
+/// separate numeric type in the generated program.
 using FloatParameter = std::variant<double, Value>;
 
 /// Evaluate a host double or a constant SSA expression with the shared folder.
@@ -48,6 +52,9 @@ parameterToConstantDouble(const FloatParameter& parameter);
                                             double scale);
 
 /// Build f64 arithmetic with local MLIR folding.
+///
+/// FloatExpression combines SSA values using an MLIR builder and folds
+/// expressions when their operands are known constants.
 ///
 /// The builder must outlive the expressions. Operands must dominate its current
 /// insertion point; combined expressions must use the same builder.

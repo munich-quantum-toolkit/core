@@ -55,10 +55,8 @@ Python 3.14 passes all 2,035 tests. All ten QIRRunner cases pass after removing
 unused text exports. The failed-write regression detects restored implicit
 copying. C++ lint, regenerated stubs, repository lint, executable docs and
 internal documentation links pass. Rendered QIR, ownership and Qiskit examples
-were visually inspected, including console and network checks. A full Ponytail
-review removed unreachable visitor paths and redundant test work. String/stream
-equivalence and explicit inlining rejection still protect distinct contracts. No
-correctness finding remains.
+were visually inspected, including console and network checks. String/stream
+equivalence and explicit inlining rejection still protect distinct contracts.
 
 Fresh same-toolchain alternating comparisons verified checksums, sampled
 results, statevectors and export bytes. A 1,000-element full-copy checksum

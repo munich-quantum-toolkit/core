@@ -83,8 +83,8 @@ handle; provider thread-safety requirements still apply.
 - Keep eager child initialization and its construction-time errors. The delay
   fixture still initialized one, two, and nine sessions for zero, one, and eight
   children, respectively.
-- Keep IQM's timeout behavior as requested. No live provider requests or
-  hardware executions were made.
+- IQM timeout configuration was outside this audit's scope. No live provider
+  requests or hardware executions were made.
 - Braket PR #217 dispatches local and unsupported properties before GetDevice.
   Its refreshed baseline already caches architecture and refreshes status/queue;
   it does not fetch architecture for every warm property query.

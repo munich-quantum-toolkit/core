@@ -218,18 +218,7 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult CtrlOp::verify() {
-  if (failed(detail::verifyModifierBody(getOperation(), *getBody()))) {
-    return failure();
-  }
-
-  SmallPtrSet<Value, 4> uniqueQubits;
-  for (auto qubit : getQubits()) {
-    if (!uniqueQubits.insert(qubit).second) {
-      return emitOpError("duplicate qubit found");
-    }
-  }
-
-  return success();
+  return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
 void CtrlOp::getLoweringPatterns(RewritePatternSet& results,

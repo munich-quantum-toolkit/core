@@ -30,7 +30,7 @@ def QCOToJeff : Pass<"qco-to-jeff", "mlir::ModuleOp"> {
     that remain after inlining are rejected; jeff has no reference-array ABI.
 
     `qco.static` exports as `jeff.qubit_alloc`; static site indices are not
-    preserved. Exchange logical programs before device mapping.
+    preserved. Exchange programs before device mapping.
   }];
 
   let dependentDialects = ["mlir::func::FuncDialect", "mlir::jeff::JeffDialect",

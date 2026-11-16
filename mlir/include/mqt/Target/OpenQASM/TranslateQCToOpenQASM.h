@@ -21,33 +21,43 @@ class raw_ostream;
 
 namespace mlir {
 class ModuleOp;
+class TargetEnvironment;
 
 namespace qc {
 
 /// Consume a QC module and translate it to portable OpenQASM 3.
 ///
-/// Classical subroutines, gate definitions, and supported structured
-/// control flow are preserved. Other helpers are inlined and array views
-/// normalized in the supplied module. The module is consumed even on failure.
-/// Translation is buffered:
-/// the output stream is unchanged if the module cannot be translated.
-LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                     llvm::raw_ostream& output);
+/// Export preserves classical subroutines, gate definitions, and supported
+/// structured control flow. Other helpers are inlined and array views
+/// normalized. Static sites use physical references. Translation consumes the
+/// module even on failure and writes to the output stream only on success.
+LogicalResult
+translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
+                       llvm::raw_ostream& output,
+                       const TargetEnvironment* environment = nullptr);
 
 /// Consume a QC module and translate it to an owned OpenQASM source string.
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp);
+FailureOr<std::string>
+translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
+                       const TargetEnvironment* environment = nullptr);
 
 /// Consume a QC module and emit OpenQASM 2 with bound parameters.
 ///
 /// Measurements must write output registers. Register-equality conditions are
 /// supported; other control flow, classical assignments, and residual modifiers
 /// are rejected. Translation does not compile or change device qubit indices.
-FailureOr<std::string> translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp);
-FailureOr<std::string> translateQCToOpenQASM2(ModuleOp) = delete;
+FailureOr<std::string>
+translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp,
+                       const TargetEnvironment* environment = nullptr);
+FailureOr<std::string>
+translateQCToOpenQASM2(ModuleOp, const TargetEnvironment* = nullptr) = delete;
 
 // OwningOpRef implicitly accepts borrowed handles; reject accidental ownership.
-LogicalResult translateQCToOpenQASM3(ModuleOp, llvm::raw_ostream&) = delete;
-FailureOr<std::string> translateQCToOpenQASM3(ModuleOp) = delete;
+LogicalResult
+translateQCToOpenQASM3(ModuleOp, llvm::raw_ostream&,
+                       const TargetEnvironment* = nullptr) = delete;
+FailureOr<std::string>
+translateQCToOpenQASM3(ModuleOp, const TargetEnvironment* = nullptr) = delete;
 
 } // namespace qc
 } // namespace mlir

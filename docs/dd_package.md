@@ -44,12 +44,14 @@ print(counts)
 
 The {py:func}`~mqt.core.mlir.sample`, {py:func}`~mqt.core.mlir.simulate`, and
 {py:func}`~mqt.core.mlir.build_functionality` functions accept source text,
-paths, Qiskit circuits, and typed compiler programs. They lower each input
-directly to QCO. The corresponding {py:class}`~mqt.core.mlir.QCOProgram` methods
-provide the DD-native interface for reusable compiled programs, custom initial
-states, and dynamic simulation. The top-level `simulate` function starts a
-closed program in the all-zero state. It and `build_functionality` manage the DD
-package internally and materialize their results directly into NumPy arrays.
+paths, Qiskit circuits, and typed compiler programs. These inputs are converted
+to QCO for simulation. `sample` and `simulate` also accept QIR and execute it
+through DDSIM's QIR runtime. The corresponding
+{py:class}`~mqt.core.mlir.QCOProgram` methods provide the DD-native interface
+for reusable compiled programs, custom initial states, and dynamic simulation.
+The top-level `simulate` function starts a program with no unbound inputs in the
+all-zero state. It and `build_functionality` manage the DD package internally
+and materialize their results directly into NumPy arrays.
 
 The `QCOProgram` methods avoid constructing exponentially large dense arrays
 unless the result is explicitly converted with
@@ -120,12 +122,13 @@ See {py:class}`~mqt.core.dd.DDPackage` for the full API.
 
 ## Memory and Cache Growth
 
-Node unique tables start with 64 buckets per qubit level and grow independently
-as levels fill. This avoids reserving large tables for sparsely populated
-levels. The matrix-vector cache starts with 16,384 entries. After garbage
-collection, it can grow to accommodate surviving vector nodes when past cache
-hits indicate reuse. Automatic growth stops at 1,048,576 entries. Other compute
-caches keep their initial capacities.
+Decision diagrams share identical nodes through unique tables and reuse computed
+results through caches. Unique tables grow as needed, so sparsely populated
+levels can start small. Each qubit level starts with 64 unique-table buckets and
+grows independently. The matrix-vector cache starts with 16,384 entries. After
+garbage collection, it can grow to accommodate surviving vector nodes when past
+cache hits indicate reuse. Automatic growth stops at 1,048,576 entries. Other
+compute caches keep their initial capacities.
 
 This policy trades memory for less recomputation; it can slow workloads whose
 useful cache entries already fit. The cache ceiling does not bound total package
@@ -465,14 +468,17 @@ the highest magnitude, selecting the leftmost one in a tie. The normalized
 outgoing weights have magnitude at most $1$; the extracted factor moves to the
 incoming edge.
 
-The matrix root carries the global scale. Its real components use a separate
-exact index, retaining tolerance-based priority for nonzero special constants.
-This preserves roots below the ordinary absolute tolerance, such as the
-$2^{-64}$ root of $H^{\otimes 128}$. Internal normalized coefficients still use
-the ordinary tolerance. Matrix normalization removes a common power-of-two scale
-before squared magnitudes and division, then retains the original root weight.
-Small local matrix entries remain subject to zero tolerance, and intermediate
-and final values must still fit the floating-point representation.
+The matrix's overall scale is stored on its root edge. It can be much smaller
+than the internal normalized weights: for example, the root of $H^{\otimes 128}$
+has weight $2^{-64}$. MQT Core retains such small root values using an exact
+index for their real components, while still preferring nonzero special
+constants within tolerance. Internal coefficients use the ordinary numerical
+tolerance, so small local entries may still become zero.
+
+Normalization removes a common power-of-two scale before computing squared
+magnitudes and divisions, then retains the original root weight. This avoids
+losing the global scale during normalization, but intermediate and final values
+must still fit the floating-point representation.
 
 ````{admonition} Example _(Matrix Decision Diagrams)_
 :class: tip

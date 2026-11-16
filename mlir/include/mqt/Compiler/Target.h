@@ -31,8 +31,21 @@ namespace mlir {
 class MLIRContext;
 class Operation;
 
-/// Immutable description of an MQT compiler target.
+/// A native pulse alias for a fixed-angle R gate, including its global phase.
+struct NativeRAlias {
+  double angle;
+  double globalPhase;
+};
+
+/// Return the fixed-angle R definition of a recognized native pulse name.
+[[nodiscard]] std::optional<NativeRAlias> nativeRAlias(llvm::StringRef name);
+
+/// Immutable description of the operations and topology available to
+/// compilation.
 ///
+/// This is a snapshot of target properties, not a live device connection.
+///
+/// Gate-set targets have no device sites or placement constraints.
 /// Hardware sites retain their target-defined nonnegative i64
 /// identifiers. Routing algorithms use dense zero-based vertices in site order.
 /// Connectivity is either all-to-all or explicitly enumerated. Native-operation
@@ -329,7 +342,8 @@ public:
     XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
     ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
     ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
-    GPI,  ///< R(π, φ) and R(π/2, φ) with unrestricted φ.
+    GPI,  ///< R(π, φ) and R(π/2, φ) with unrestricted φ; GPi export corrects
+          ///< phase.
   };
 
   /// Native RX, RY, or R(theta, 0) quarter turns for the ZSXX Euler recipe.
@@ -364,10 +378,19 @@ public:
     std::optional<QuarterTurnGates> quarterTurnGates;
     /// Whether the Euler recipe can emit a half turn in one native gate.
     bool hasHalfTurn = true;
+    /// Emit Z rotations as phase gates with their compensating global phase.
+    bool phaseRotation = false;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;
   };
+
+  /// Create a gate-set target without device sites or placement constraints.
+  [[nodiscard]] static llvm::Expected<CompilerTarget>
+  forGateSet(NativeOperations nativeOperations);
+
+  /// Whether this target constrains placement on device sites.
+  [[nodiscard]] bool hasDeviceConstraints() const noexcept;
 
   /// Create an unnamed target with dense site IDs `0..numSites-1`.
   [[nodiscard]] static llvm::Expected<CompilerTarget>
@@ -415,6 +438,11 @@ public:
   /// Return detailed sites in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<Site> sites() const noexcept;
 
+  /// Return sites supporting a single-qubit gate.
+  ///
+  /// If the target supports measurement, require readout on these sites too.
+  [[nodiscard]] std::vector<SiteId> placeableSites() const;
+
   /// Return target site identifiers in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<SiteId> siteIds() const noexcept;
 
@@ -439,6 +467,15 @@ public:
   /// Explicit topologies cache breadth-first searches because every coupling
   /// has unit cost.
   [[nodiscard]] size_t distanceBetween(size_t source, size_t target) const;
+
+  /// Return the shared immutable row-major distance matrix for explicit
+  /// targets.
+  ///
+  /// Dense-vertex entry source * numSites() + target holds their shortest-path
+  /// distance; use vertexForSite() to convert site IDs.
+  /// All-to-all targets return an empty view without allocating a matrix.
+  /// The view remains valid while this target or a copy of it exists.
+  [[nodiscard]] llvm::ArrayRef<size_t> distanceMatrix() const;
 
   /// Return a shortest path of dense vertices, including both endpoints.
   ///
@@ -500,7 +537,7 @@ public:
                 llvm::function_ref<bool(const OperationCapability&)> filter =
                     nullptr) const;
 
-  /// Return whether a QCO operation is supported.
+  /// Return whether a QCO operation is supported without knowing its sites.
   [[nodiscard]] bool supports(::mlir::Operation* operation) const;
 
   /// Return whether a QCO operation is supported on ordered target sites.
@@ -517,6 +554,9 @@ public:
   [[nodiscard]] bool supports(GateKind gate,
                               llvm::ArrayRef<SiteId> sites) const;
 
+  /// Check the entangler's synthesis domain without knowing its sites.
+  [[nodiscard]] bool supports(Entangler entangler) const;
+
   /// Check the entangler's synthesis domain on ordered sites.
   [[nodiscard]] bool supports(Entangler entangler,
                               llvm::ArrayRef<SiteId> sites) const;
@@ -529,6 +569,9 @@ public:
   /// The cached basis remains valid while this target or a copy exists.
   [[nodiscard]] const std::optional<SynthesisBasis>&
   synthesisBasis() const noexcept;
+
+  /// Return whether native operations or a synthesis basis cover unknown sites.
+  [[nodiscard]] bool supportsIndexedSynthesis() const noexcept;
 
   /// Return globally usable entanglers in deterministic preference order.
   ///
@@ -549,7 +592,8 @@ private:
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   createImpl(std::optional<std::string> name, std::vector<Site> sites,
              Connectivity connectivity, NativeOperations nativeOperations,
-             std::optional<DurationUnit> durationUnit);
+             std::optional<DurationUnit> durationUnit,
+             bool deviceConstraints = true);
 
   [[nodiscard]] bool
   supportsImpl(::mlir::Operation* operation,

@@ -378,11 +378,8 @@ TEST(DeviceRegistry, DiscoversGeneratedBuildTreeManifests) {
 
   const auto registry = value(qdmi::detail::DeviceRegistry::discover());
   const std::vector<std::string> expectedIds{
-#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
-      "mqt.ddsim.default",
-#endif
-      "mqt.sc.default",     "mqt.sc.ibm.heron",  "mqt.sc.ibm.nighthawk",
-      "mqt.sc.iqm.emerald", "mqt.sc.iqm.garnet",
+      "mqt.ddsim.default",    "mqt.sc.default",     "mqt.sc.ibm.heron",
+      "mqt.sc.ibm.nighthawk", "mqt.sc.iqm.emerald", "mqt.sc.iqm.garnet",
   };
   std::vector<std::string> ids;
   for (const auto& definition : registry.definitions()) {

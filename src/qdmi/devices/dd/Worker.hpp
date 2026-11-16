@@ -15,6 +15,7 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/Program.h"
 
+#include <chrono>
 #include <cstddef>
 #include <memory>
 #include <mutex>
@@ -36,6 +37,10 @@ public:
   void terminate();
 
 private:
+  friend class WorkerPool;
+  void requestShutdown();
+  void awaitShutdown(std::chrono::steady_clock::time_point deadline);
+
   std::mutex mutex_;
   llvm::sys::ProcessInfo process_;
   bool terminated_ = false;

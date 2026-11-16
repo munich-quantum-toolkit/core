@@ -81,7 +81,7 @@ The operations represent allocation, gates, controls, and the global phase. The
 module metadata identifies its entry point, format version, and producing tool.
 This is a representation a compiler can work on before selecting a target.
 
-`exchange.ir` is useful for inspection. To produce the binary exchange payload,
+`exchange.ir` is useful for inspection. To produce the binary exchange file,
 serialize the program:
 
 ```{code-cell} ipython3
@@ -90,12 +90,13 @@ assert isinstance(payload, bytes)
 print(f"Serialized payload: {len(payload)} bytes")
 ```
 
-The payload is self-contained. Sending an in-memory MLIR object would require
-sharing its compiler context; serialized bytes or a file form the handoff.
+The serialized program is self-contained. Sending an in-memory MLIR object would
+require sharing its compiler context; serialized bytes or a file form the
+handoff.
 
 ## Receive, compile, and check semantics
 
-Deserialize the payload and enter the receiving compiler's optimization
+Deserialize the program and enter the receiving compiler's optimization
 pipeline. Predict whether the new MLIR text must look identical for the program
 to be equivalent.
 
@@ -109,7 +110,7 @@ print("Largest matrix-entry difference:", np.max(np.abs(received_unitary - origi
 
 :::{dropdown} Explain the result
 SSA names, operation order, and intermediate representations may change. The
-comparison checks the resulting unitary, including phase and logical wire order,
+comparison checks the resulting unitary, including phase and program wire order,
 rather than requiring a particular printed representation.
 :::
 
@@ -206,8 +207,9 @@ receiving only a predetermined gate sequence.
 
 ## Choose an execution format after exchange
 
-The received jeff program is still a compiler input. Compile it for DDSIM, which
-selects Adaptive QIR, then submit the resulting payload through QDMI:
+The received jeff program is still a compiler input. Compile it for DDSIM and
+let the compiler select a supported execution format, then submit it through
+QDMI:
 
 ```{code-cell} ipython3
 from mqt.core.qdmi import open_device
@@ -221,10 +223,10 @@ print("Execution format:", compiled.program_format.name)
 print("Counts:", job.get_counts())
 ```
 
-This completes the path from a structured exchange payload to a device result.
-Use jeff before physical mapping: MQT's conversion does not preserve static
-hardware site IDs. The {doc}`jeff guide <../jeff>` lists further constraints on
-arrays, helper functions, and custom operations.
+This completes the path from a serialized program to a device result. Use jeff
+before physical mapping: MQT's conversion does not preserve static hardware site
+IDs. The {doc}`jeff guide <../jeff>` lists further constraints on arrays, helper
+functions, and custom operations.
 
 For the next experiment, exchange one of the supported structured
 {doc}`benchmarks <../benchmarks>`, then compare its evaluated results before and

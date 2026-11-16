@@ -18,58 +18,70 @@ Use relevant sections of the [development policy](docs/development.md) and the
 
 ## Working principles
 
-- Inspect the working tree first and preserve user changes. Keep the diff
-  focused on the assigned task; avoid unrelated cleanup, formatting, and
-  upgrades.
-- Complete authorized work, including relevant validation and fixes, without
-  routine approval checkpoints. Ask only about consequential ambiguity or work
+- Inspect the working tree and preserve user changes. Complete authorized work,
+  including validation, without routine approval checkpoints. Keep reviews
+  read-only when requested. Ask only about consequential ambiguity or work
   outside scope; cite any instruction that blocks progress.
-- For behavioral changes, trace producers, shared helpers, and consumers. Fix
-  the owning layer and reuse existing code or dependency facilities. Do not
-  reconstruct a shared contract in each frontend, exporter, or caller.
-- State supported inputs, failure behavior, and ownership before expanding an
-  API. Prefer the smallest complete solution while preserving correctness and
-  runtime efficiency. Fewer lines alone do not prove a simpler design.
+- Challenge feature scope and design before polishing code. Preserve explicit
+  user commitments and supported contracts; tests, docs, and earlier agent
+  decisions do not make an incidental implementation choice a requirement.
+- Trace the complete public workflow through producers, transformations,
+  serialization/export, and consumers, including failures and resource lifetime.
+  Fix the owning boundary; do not document an accidental gap as a supported
+  limit.
+- Prefer deletion, existing dependency facilities, and direct data flow over
+  custom controls, copied state, and conversions. A shared helper can remove
+  complexity across callers. Judge the complete design, not the shortest diff.
+  Preserve deliberate support limits and avoid unrelated cleanup or expansion.
 - Existing code is evidence, not authority over current policy. Follow
   repository policy, enforcing configuration, and explicitly adopted upstream
-  guidance in that order.
-- Apply Orwell's six writing rules and the relevant ASD-STE100 principles in
-  every category of prose: choose short familiar words, remove needless words,
-  use active voice, keep each sentence direct, and prefer clarity over rigid
-  application of a style rule. Do not claim formal ASD-STE100 compliance.
-- Use established technical terms, one term per concept, and the spelling in
-  `docs/glossary.md`. Preserve project names such as `jeff` and `jeff-mlir`.
-  Update the glossary when introducing or changing public or ambiguous terms.
-- Document contracts, reasons, ownership, numerical limits, and useful examples.
-  Keep small additions brief; extend existing explanations and link to the
-  owning reference for details. Follow the
-  [prose policy](docs/development.md#prose-and-terminology). Remove repetition
-  of code, boilerplate parameters, change narration, and unsupported assurances.
-  Use symbol references instead of brittle line pointers. Keep prompts and
-  review history out of code and API docs.
-- Test changed behavior and concrete regressions, not implementation details.
-  Low-impact edits need no new tests. Before weakening a test, check history,
-  callers, invariants, and resource limits; equal line coverage or a shared
-  failure does not establish redundancy.
-- Put tests in the owning subsystem's test tree. Use direct unit tests for
-  semantic contracts and subprocesses only for irreducible CLI behavior. Do not
-  put MLIR tests under production tools or enable an optional production tool
-  solely to satisfy a subprocess test.
-- Diagnose failed checks before changing code or build policy. Distinguish
-  defects from stale output, dependency mismatches, and service failures. Use
-  supported presets and keep machine setup in local configuration.
-- Remove obsolete scaffolding and suppressions. Retain only necessary, narrowly
-  scoped workarounds with a technical reason, reproducer, and removal condition.
-- Follow the
-  [release documentation policy](docs/development.md#release-documentation).
-  Describe user-facing changes and required migrations in PR descriptions. Do
-  not change `CHANGELOG.md` or `UPGRADING.md` except in release-preparation PRs
-  or when explicitly asked. Document migrations from released APIs, not
-  intermediate unreleased designs.
-- Changelog entries name the PR and every contributing author, for example
-  `([#123]) ([**@username**])`, with link definitions at the bottom.
-- Never commit or print secrets or personal data. Use documented environment
-  variables and repository secrets.
+  guidance in that order. Retain workarounds only with a technical reason and
+  removal condition.
+- Passing tests establish neither feature value nor lean design. Resolve design
+  questions separately from validation; leaving code unchanged is valid when
+  credible alternatives offer no concrete benefit.
+- Never commit or print secrets or personal data. Keep machine setup and build
+  output local; use documented configuration and supported presets.
+
+## Documentation
+
+Follow the [prose policy](docs/development.md#prose-and-terminology) and
+Orwell's rules. Write for readers unfamiliar with the implementation and its
+history. Explain tasks and concepts first, integrate additions into existing
+explanations, and preserve useful examples, ownership, failures, and deliberate
+limits.
+
+Use natural prose in guides and detailed API explanations. Apply STE principles
+only to concise comments and reference fields; do not claim formal compliance.
+Check unfamiliar terms against primary sources and `docs/glossary.md`; flag
+disputed terminology before renaming APIs. Use “program qubits” for unmapped
+circuit qubits; distinguish placement, allocation, and fault-tolerant encoding.
+
+Keep conversation and iteration history out of docs, comments, and PR bodies.
+Follow the
+[release documentation policy](docs/development.md#release-documentation):
+describe user-facing changes and released-API migrations in PR descriptions.
+Edit `CHANGELOG.md` or `UPGRADING.md` only for release preparation or on
+request; changelog entries credit the PR and all contributing authors.
+
+## Testing
+
+Follow the [testing priorities](docs/development.md#testing-priorities). Extend
+small end-to-end workflows before adding tests. Assert observable semantics with
+independent oracles and required resource bounds, not private structure or a
+particular rewrite. A regression does not automatically need a new test.
+
+Cover native semantics in C++ once. Python owns SDK integration, binding
+conversions, ownership, and Python failures; avoid repeating native sweeps
+across the interpreter/dependency matrix. Keep inputs and parameter sets only as
+large as the contract requires.
+
+Before deleting tests, check history and surviving assertions. Preserve distinct
+phase, wire-order, numerical, ownership, failure, and complexity contracts;
+equal line coverage alone does not prove redundancy. Put tests in the owning
+subsystem. Use subprocesses only for irreducible CLI behavior or necessary
+process isolation, such as fatal native failures. Do not put MLIR tests under
+production tools or enable an optional tool solely for a subprocess test.
 
 ## C++ and MLIR
 
@@ -83,12 +95,8 @@ comment, data-structure, diagnostic, and debugging guidance.
   existing synchronized diagnostics for concurrent logging. Do not include STL
   stream headers, including in tests. Keep owned strings when ownership is
   required.
-- Use `//` for ordinary code comments. Never use `///` for them.
-- Use `///` for Doxygen documentation, including structural commands. Start
-  descriptions with a short summary paragraph, separated from further content by
-  a blank `///` line. Marker-only blocks need no summary. Follow the
-  [C++ documentation policy](docs/development.md#c-documentation-comments) for
-  exceptions.
+- Use `//` for implementation comments and `///` for Doxygen. Follow the
+  [C++ documentation policy](docs/development.md#c-documentation-comments).
 - Use `moduleOp` instead of the C++20 keyword `module` for an MLIR module
   handle. Generally give non-public data members a trailing underscore.
 - Never add `const` to MLIR `Value` forms, range views, `Operation`, `Block`,
@@ -113,22 +121,20 @@ comment, data-structure, diagnostic, and debugging guidance.
   requirement.
 - Preserve deterministic output; never expose pointer or unordered traversal
   order. Require evidence for performance rewrites.
-- Use GoogleTest/CTest, not `lit` or FileCheck. Assert semantics and required
-  normal forms. Exact trees, text, target choices, and operation counts need a
-  contract reason. Preserve phase, wire identity, numerical limits, and negative
-  cases when replacing an oracle.
+- Use GoogleTest/CTest, not `lit` or FileCheck. Exact trees, text, target
+  choices, and operation counts need a contract reason.
 - Review the MLIR policy and `mlir/.clang-tidy` on major LLVM/MLIR upgrades.
 
 ## Python and bindings
 
-- Use Google-style docstrings, including in nanobind binding strings. Start each
-  with a short summary on one line, then a blank line before any further
-  content. Follow the
+- Use Google-style docstrings, including in nanobind binding strings; follow the
   [Python docstring policy](docs/development.md#python-docstrings).
 - Fix `ruff` and `ty` diagnostics instead of suppressing them unless a
   documented exception is necessary.
-- Preserve supported Python APIs unless a breaking change is authorized. Keep
-  optional integration imports lazy where the binding already does so.
+- Preserve released Python APIs and explicit compatibility commitments unless a
+  breaking change is authorized. Unreleased PR designs can be simplified within
+  scope. Keep optional integration imports lazy where the binding already does
+  so.
 - Choose finite-shot tolerances with low false-failure probability; keep
   expected values away from tolerance boundaries.
 - Regenerate stubs after every binding change with `uvx nox -s stubs`. Never
@@ -136,8 +142,10 @@ comment, data-structure, diagnostic, and debugging guidance.
 
 ## Build and validation
 
-Run checks relevant to the change and required by repository policy. Local
-machine overrides may select another supported preset.
+Run checks relevant to the change and required by repository policy. Diagnose
+failures before changing code or build policy; separate defects from stale
+output, dependency mismatches, and infrastructure failures. Local machine
+overrides may select another supported preset.
 
 | Task                                            | Command                                                            |
 | ----------------------------------------------- | ------------------------------------------------------------------ |
@@ -168,12 +176,11 @@ Stage new files before all-files lint, or pass them explicitly. Rerun hooks
 after their fixes. Keep pass and option documentation aligned with actual scope,
 defaults, supported shapes, limitations, and failure modes.
 
-Inspect the final diff and status. Check changed comments and docstrings against
-the documentation policy. Exclude generated, secret, and unrelated files. Tie
-validation to the final code: rerun affected checks following edits and
-distinguish passes from skipped, blocked, or pending checks. Report checks run
-and their outcomes; stop after required gates pass unless a concrete remaining
-risk justifies more validation.
+Inspect the final diff, comments, and status; exclude unrelated files. Verify
+checks actually exercised changed files and paths. Rerun affected checks after
+edits, and distinguish final-code passes from skipped, blocked, pending, or
+older-revision results. Stop repeating validation once required gates pass
+unless a concrete risk remains; this does not replace the design review.
 
 ## Plans and audits
 
@@ -186,10 +193,13 @@ Use [audit guidance](.agent/AUDITS.md) for contract reviews. Save findings in
 
 ## Performance evidence
 
-Benchmark only when requested or needed for a concrete performance question;
-prefer existing tools. Keep ad hoc harnesses, data, and plots outside the
-repository unless explicitly requested. Support performance claims with the
-workload, baseline, environment, measurements, and limits.
+Measure when requested or needed for a concrete performance question. Trace
+costs through representative public workflows before tuning a helper; check
+whether work is removed or moved. Prefer existing tools and keep ad hoc
+harnesses and data outside the repository unless requested. Report revisions,
+workloads, conditions, variance, and limits. Microbenchmarks do not establish
+whole-workflow gains; inconclusive measurements justify neither a speedup claim
+nor rejection of an independently useful design improvement.
 
 ## Git and public contributions
 

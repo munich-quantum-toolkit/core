@@ -36,11 +36,14 @@ def test_partial_binding_preserves_identity_and_expression(*, qco: bool) -> None
     program = QCProgram.from_qiskit(circuit)
     if qco:
         program = program.to_qco()
-    original = program.copy()
-    program.bind_parameters({"a": 0.7})
+    original = program
+    original_ir = program.ir
+    program = original.bind_parameters({"a": 0.7}, copy=True)
+    assert program is not original
+    assert original.ir == original_ir
     assert program.parameters == ["b"]
     assert set(program.to_qiskit(copy=True).parameters) == {b}
-    program.bind_parameters({"b": -0.25})
+    assert program.bind_parameters({"b": -0.25}) is program
     assert program.parameters == []
     np.testing.assert_allclose(
         Operator(program.to_qiskit()).data,

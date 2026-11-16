@@ -1,0 +1,39 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#pragma once
+
+#include "mqt/Compiler/ResultLayout.h"
+
+#include "mlir/IR/BuiltinOps.h"
+
+#include "llvm/Support/Error.h"
+
+#include <optional>
+
+namespace mlir {
+
+/// Move static terminal measurements and stores after independent gates.
+/// Preserve classical destinations, results, and layout metadata. Leave
+/// programs unchanged when terminal-readout analysis fails.
+void scheduleTerminalReadout(ModuleOp moduleOp);
+
+/// Replace terminal measurements and classical stores with dense raw readout.
+///
+/// Requires static qubits and straight-line terminal CBit register outputs. Raw
+/// slots follow ascending site IDs. Unmeasured output bits must initialize to
+/// zero. Independent native calls precede readout after normalization. Native
+/// calls reusing measured qubits or lacking a terminal-readout schedule return
+/// an error. Other unsupported programs return no layout without diagnostics
+/// or mutation.
+[[nodiscard]] llvm::Expected<std::optional<ResultLayout>>
+normalizeTerminalReadout(ModuleOp moduleOp);
+
+} // namespace mlir

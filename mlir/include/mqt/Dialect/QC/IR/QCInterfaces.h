@@ -11,15 +11,21 @@
 #pragma once
 
 #include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 
 #include <cstddef>
 
 namespace mlir::qc {
 
+/// Reject identical qubit references or static indices within one operation.
+///
+/// Distinctness of other references is a runtime precondition.
+LogicalResult verifyDistinctQubitOperands(Operation* op, ValueRange operands);
+
 LogicalResult verifyUnitaryOpInterface(Operation* op);
 
-}
+} // namespace mlir::qc
 
 // clang-format:off
 #include "mqt/Dialect/QC/IR/QCInterfaces.h.inc" // IWYU pragma: export
