@@ -4,6 +4,19 @@ This document describes breaking changes and how to upgrade. For a complete list
 of changes including minor and patch releases, please refer to the
 [changelog](CHANGELOG.md).
 
+## [4.2.1]
+
+Python 3.11 users must upgrade to **3.11.5 or newer**. No migration is required
+for public APIs from 4.2.0.
+
+PennyLane integrations that overrode the private `QDMIDevice._prepare` method
+should override `prepare_program(tape)` instead. Call
+`super().prepare_program(tape)` to obtain the `CompiledProgram`, or `None` when
+no device job is needed. This hook runs once per preprocessed tape for ordinary
+QNodes; Catalyst-compiled QNodes compile in native code and do not call it. Use
+the public `compile_options` constructor argument to configure compilation for
+both paths.
+
 ## [4.2.0]
 
 ### Compilation and program ownership
@@ -769,7 +782,7 @@ reconstruction is available.
 `backend.run(memory=True)` preserves shot order. Results include classical
 register boundaries; failed jobs and invalid results raise on collection, and
 unsupported execution options are rejected. See the
-[backend requirements](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/qdmi_backend.html#backend-requirements).
+[circuit execution guide](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/qdmi_backend.html#circuit-execution).
 
 ### Private `nlohmann_json` dependency
 
@@ -1579,6 +1592,7 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
+[4.2.1]: https://github.com/munich-quantum-toolkit/core/compare/v4.2.0...v4.2.1
 [4.2.0]: https://github.com/munich-quantum-toolkit/core/compare/v4.1.1...v4.2.0
 [4.1.0]: https://github.com/munich-quantum-toolkit/core/compare/v4.0.0...v4.1.0
 [4.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...v4.0.0

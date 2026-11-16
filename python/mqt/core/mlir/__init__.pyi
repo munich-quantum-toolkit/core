@@ -10,6 +10,7 @@
 
 import enum
 import os
+import pathlib
 from collections.abc import Hashable, Iterable, Mapping, Sequence
 from typing import Annotated, Any, Generic, Literal, Self, SupportsFloat, TypeAlias, TypedDict, Unpack, overload
 
@@ -824,6 +825,7 @@ class CompilationOptions:
         enable_timing: bool = False,
         enable_statistics: bool = False,
         mapping: MappingOptions = ...,
+        trace_file: str | os.PathLike | None = None,
     ) -> None: ...
     @property
     def seed(self) -> int | None: ...
@@ -841,6 +843,16 @@ class CompilationOptions:
     def mapping(self) -> MappingOptions: ...
     @mapping.setter
     def mapping(self, arg: MappingOptions, /) -> None: ...
+    @property
+    def trace_file(self) -> pathlib.Path | None:
+        """File for a Chrome trace of the native compilation, or None to disable tracing.
+
+        The trace records MLIR actions, such as pass runs and pattern applications.
+        Each call overwrites the file. Program sequences reject this option.
+        """
+
+    @trace_file.setter
+    def trace_file(self, arg: str | os.PathLike | None, /) -> None: ...
 
 class QuantumProgramInfo:
     """Quantum resources and static IR statistics.

@@ -12,6 +12,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
 
@@ -47,6 +48,13 @@ struct CompilationOptions {
   bool enableTiming = false;
   bool enableStatistics = false;
   MappingOptions mapping;
+  /// Write a Chrome trace of the MLIR actions to this file.
+  ///
+  /// MLIR actions include pass runs and pattern applications. No value
+  /// disables tracing, and `-` selects stdout. runDefaultPipeline and
+  /// CompiledProgram::compile write one trace for the complete compilation.
+  /// Typed transformations write one trace for their pass-manager run.
+  std::optional<std::filesystem::path> traceFile;
 };
 
 } // namespace mlir

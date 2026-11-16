@@ -245,7 +245,7 @@ def test_openqasm2_execution(capfd: pytest.CaptureFixture[str], *, compiled: boo
         qp.PauliX(1)
         return qp.sample(wires=[1, 0])
 
-    execute = qp.qjit(circuit) if compiled else circuit
+    execute = qp.qjit(circuit, capture=False) if compiled else circuit
     capfd.readouterr()
     np.testing.assert_array_equal(execute(), np.tile([1, 0], (16, 1)))
     assert "Execution time report" in capfd.readouterr().err

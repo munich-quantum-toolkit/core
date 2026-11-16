@@ -44,7 +44,7 @@ if(BUILD_MQT_CORE_BINDINGS)
 
   # top-level call to find Python
   find_package(
-    Python 3.11
+    Python 3.11.5
     REQUIRED
     COMPONENTS Interpreter Development.Module ${SKBUILD_SABI_COMPONENT})
 endif()

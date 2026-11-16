@@ -38,8 +38,8 @@ should start with the [v3-to-v4 migration guide](UPGRADING.md#400).
 
 ## Start with your task
 
-Install [mqt.core](https://pypi.org/project/mqt.core/) in a Python 3.11 or newer
-virtual environment:
+Install [mqt.core](https://pypi.org/project/mqt.core/) in a Python 3.11.5 or
+newer virtual environment:
 
 ```console
 uv pip install mqt.core

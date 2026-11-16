@@ -8,6 +8,58 @@ The format is based on a mixture of [Keep a Changelog] and [Common Changelog].
 This project adheres to [Semantic Versioning], with the exception that minor
 releases may include breaking changes.
 
+## [4.2.1] - 2026-11-14
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#421)._
+
+### Added
+
+- ✨ Profile native compilation with CLI pass timing and action traces, or
+  `CompilationOptions(trace_file=...)` in Python. Traces cover native import,
+  compilation, and export; use a separate trace file for each program. ([#2791])
+  ([**@flowerthrower**], [**@burgholzer**])
+- ✨ Use the built-in DDSIM simulator through the public Qiskit `DDSIMBackend`,
+  with optional `num_qubits`, `seed_simulator`, and `max_workers` settings.
+  Seeded circuits retain their streams across split submissions and retries.
+  ([#2995], [#3008]) ([**@burgholzer**])
+- ✨ Reproduce PennyLane DDSIM samples across submission boundaries with
+  `DDSIMDevice(seed=...)`. Streams advance per program across calls on the
+  device and retain their original seeds on retries. This option does not apply
+  to Catalyst-compiled QNodes. ([#3003]) ([**@burgholzer**])
+- ✨ Configure ordinary and Catalyst-compiled PennyLane QNodes with
+  `compile_options`. Observe ordinary QNode compilation by overriding
+  `QDMIDevice.prepare_program`. ([#3005]) ([**@burgholzer**])
+- ✨ Check QDMI job support without submission through C++ `Device::supportsJob`
+  and Python `Context.supports`. ([#3015]) ([**@burgholzer**])
+
+### Fixed
+
+- 🐛 Keep symmetric entangler decompositions in program-qubit order before
+  adapting native operands to supported device loci, avoiding gate-count
+  differences between equivalent ordered loci. ([#2996]) ([**@burgholzer**])
+- 🐛 Import Qiskit's `GlobalPhaseGate` directly and preserve controlled and
+  inverse phase gates on round trips. ([#2999]) ([**@burgholzer**])
+- 🐛 Release completed Qiskit and PennyLane QDMI jobs and their native result
+  buffers when their last reference is dropped, without waiting for cyclic
+  garbage collection. Jobs retaining raised exceptions can still require cyclic
+  collection. ([#3004]) ([**@burgholzer**])
+- 🐛 Apply requested shots before QDMI program-list validation and split
+  declined batches into fewer accepted jobs while preserving program order and
+  results. Devices with an upper program-count limit can accept 128 programs as
+  two jobs of 64 instead of 128 individual jobs. ([#3015]) ([**@burgholzer**])
+- 🐛 Locate QDMI libraries relative to the launched executable on macOS when
+  hard-linked executables share the same file. ([#3014]) ([**@burgholzer**])
+- 🐛 Simulate target-native IonQ programs on DDSIM by accepting `gpi`, `gpi2`,
+  and `zz` in the default OpenQASM import mode and QIR runtime. OpenQASM gate
+  parameters use radians; strict import mode is unchanged. ([#3019])
+  ([**@burgholzer**])
+
+### Changed
+
+- 🐍 Require Python 3.11.5 or newer. ([#3018]) ([**@burgholzer**])
+- ⚡ Reduce Python extension loading overhead on macOS by using two-level symbol
+  lookup. ([#3009]) ([**@burgholzer**])
+
 ## [4.2.0] - 2026-11-10
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#420)._
@@ -1542,6 +1594,7 @@ for previous changelogs._
 
 <!-- Version links -->
 
+[4.2.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.2.1
 [4.2.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.2.0
 [4.1.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.1.1
 [4.1.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.1.0
@@ -1572,6 +1625,18 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#3019]: https://github.com/munich-quantum-toolkit/core/pull/3019
+[#3018]: https://github.com/munich-quantum-toolkit/core/pull/3018
+[#3015]: https://github.com/munich-quantum-toolkit/core/pull/3015
+[#3014]: https://github.com/munich-quantum-toolkit/core/pull/3014
+[#3009]: https://github.com/munich-quantum-toolkit/core/pull/3009
+[#3008]: https://github.com/munich-quantum-toolkit/core/pull/3008
+[#3005]: https://github.com/munich-quantum-toolkit/core/pull/3005
+[#3004]: https://github.com/munich-quantum-toolkit/core/pull/3004
+[#3003]: https://github.com/munich-quantum-toolkit/core/pull/3003
+[#2999]: https://github.com/munich-quantum-toolkit/core/pull/2999
+[#2996]: https://github.com/munich-quantum-toolkit/core/pull/2996
+[#2995]: https://github.com/munich-quantum-toolkit/core/pull/2995
 [#2993]: https://github.com/munich-quantum-toolkit/core/pull/2993
 [#2991]: https://github.com/munich-quantum-toolkit/core/pull/2991
 [#2990]: https://github.com/munich-quantum-toolkit/core/pull/2990
@@ -1705,6 +1770,7 @@ for previous changelogs._
 [#2800]: https://github.com/munich-quantum-toolkit/core/pull/2800
 [#2798]: https://github.com/munich-quantum-toolkit/core/pull/2798
 [#2797]: https://github.com/munich-quantum-toolkit/core/pull/2797
+[#2791]: https://github.com/munich-quantum-toolkit/core/pull/2791
 [#2789]: https://github.com/munich-quantum-toolkit/core/pull/2789
 [#2788]: https://github.com/munich-quantum-toolkit/core/pull/2788
 [#2787]: https://github.com/munich-quantum-toolkit/core/pull/2787

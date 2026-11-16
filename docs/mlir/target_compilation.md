@@ -163,10 +163,10 @@ compiled = compile_program(bell_qasm, target=device, options=options)
 ```
 
 {py:class}`~mqt.core.mlir.CompilationOptions` owns randomness, timing,
-statistics, and mapping controls. Repeatable mapping requires the same build,
-input, target, seed, and explicit trial count. Sampling uses a separate seed.
-For routing costs, search limits, and synthesis behavior, see the
-`place-and-route` pass in {doc}`QCO`.
+statistics, and mapping controls. See {ref}`compiler-profiling` for action
+traces. Repeatable mapping requires the same build, input, target, seed, and
+explicit trial count. Sampling uses a separate seed. For routing costs, search
+limits, and synthesis behavior, see the `place-and-route` pass in {doc}`QCO`.
 
 `MappingOptions(placement_ranking="patterns")` enables calibrated placement
 ranking after native synthesis. It uses cached patterns when the query and
@@ -313,6 +313,12 @@ with `gpi(φ)`; `gpi2` needs no phase correction. Core's OpenQASM angles are in
 radians. IonQ's API expresses the phase in turns, so the same axis angle there
 is `φ / (2π)`. Check the destination interface's units when exchanging these
 gates.
+
+Core's default OpenQASM import mode accepts `gpi(φ)`, `gpi2(φ)`, and the
+two-qubit `zz(θ)` alias of `rzz(θ)` with these radian definitions. Native QIR
+keeps both `R(θ, φ)` arguments in `gpi` and `gpi2` calls. The DDSIM device
+executes both payload kinds, so target-native IonQ programs can be simulated
+before submission.
 
 ### Placement and routing
 

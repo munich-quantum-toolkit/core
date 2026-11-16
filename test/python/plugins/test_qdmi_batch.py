@@ -324,7 +324,8 @@ def test_native_group_or_single_fallback_preserves_attempts(*, unsupported: bool
     fixture.native = not unsupported
     fixture.batch.submit()
     fixture.batch.complete()
-    assert fixture.native_calls == [[0, 1, 2]]
+    # Without a support check, a declined group is halved.
+    assert fixture.native_calls == ([[0, 1, 2], [0, 1]] if unsupported else [[0, 1, 2]])
     assert fixture.submitted == [0, 1, 2]
     assert [entry.result for entry in fixture.batch.entries] == ["0", "1", "2"]
     assert all(len(entry.attempts) == 1 and entry.automatic_retries == 0 for entry in fixture.batch.entries)
@@ -458,3 +459,131 @@ def test_running_native_job_does_not_require_final_outcomes() -> None:
         fixture.batch.resubmit([0, 1], allow_unknown=True)
     assert fixture.submitted == [0, 1, 2]
     outcomes.assert_not_called()
+
+
+class LimitedDevice:
+    """A device that accepts only jobs within a program-count window, like a total-shot window."""
+
+    def __init__(self, count: int, low: int, high: int, *, probe: bool = True) -> None:
+        """Build one group of entries and record probes, declines, and accepted jobs."""
+        self.low = low
+        self.high = high
+        self.probes: list[int] = []
+        self.declined: list[list[int]] = []
+        self.jobs: list[list[int]] = []
+        self.status = Job.Status.DONE
+        self.probe_error: Exception | None = None
+        self.batch: Batch[LimitedDevice, str] = Batch(
+            self,
+            [BatchEntry(i) for i in range(count)],
+            submit=LimitedDevice.submit,
+            submit_programs=LimitedDevice.submit_programs,
+            supports_programs=LimitedDevice.supports if probe else None,
+            group_by=[0] * count,
+            decode=lambda _owner, _i, job, program_index: job.get_shots(program_index)[0],
+            submission_error=lambda _owner, msg: RuntimeError(msg),
+            execution_error=lambda _owner, msg: RuntimeError(msg),
+            max_retries=0,
+        )
+
+    def supports(self, indices: Sequence[int]) -> bool:
+        """Check the program count without submitting.
+
+        Returns:
+            Whether the device accepts this many programs.
+        """
+        self.probes.append(len(indices))
+        if self.probe_error is not None:
+            raise self.probe_error
+        return self.low <= len(indices) <= self.high
+
+    def submit(self, index: int) -> Job:
+        """Submit one program, which the adapter requires to succeed.
+
+        Returns:
+            The accepted job.
+
+        Raises:
+            RuntimeError: If the device declines the program.
+        """
+        job = self.submit_programs([index])
+        if job is None:
+            msg = "declined"
+            raise RuntimeError(msg)
+        return job
+
+    def submit_programs(self, indices: Sequence[int]) -> Job | None:
+        """Accept a job within the window, or decline it before submission.
+
+        Returns:
+            The accepted job, or None if the device declines the count.
+        """
+        if not self.low <= len(indices) <= self.high:
+            self.declined.append(list(indices))
+            return None
+        self.jobs.append(list(indices))
+        job = Mock()
+        job.get_program_status.return_value = None
+        job.check.return_value = self.status
+        job.wait.return_value = True
+        job.get_shots.side_effect = lambda program_index=0: [str(indices[program_index])]
+        return cast("Job", job)
+
+
+@pytest.mark.parametrize(
+    ("count", "low", "high", "probe", "sizes"),
+    [
+        (128, 1, 100, True, [64, 64]),
+        (250, 1, 100, True, [84, 83, 83]),
+        (250, 1, 100, False, [63, 62, 63, 62]),
+        (70, 10, 30, True, [24, 23, 23]),
+    ],
+)
+def test_declined_group_uses_fewest_accepted_jobs(
+    count: int, low: int, high: int, *, probe: bool, sizes: list[int]
+) -> None:
+    """Split a declined group into the fewest near-equal ordered jobs, or halve it without a check."""
+    device = LimitedDevice(count, low, high, probe=probe)
+    device.batch.submit()
+    device.batch.complete()
+    assert [len(job) for job in device.jobs] == sizes
+    assert [index for job in device.jobs for index in job] == list(range(count))
+    assert device.declined[0] == list(range(count))
+    if probe:
+        assert len(device.declined) == 1
+        assert len(device.probes) <= count.bit_length()
+    entries = device.batch.entries
+    assert [entry.result for entry in entries] == [str(i) for i in range(count)]
+    assert [entry.attempts[0].program_index for entry in entries] == [i for size in sizes for i in range(size)]
+    assert all(len(entry.attempts) == 1 and entry.automatic_retries == 0 for entry in entries)
+
+
+def test_resubmission_reuses_the_accepted_count() -> None:
+    """Split a nonconsecutive replacement with the cached count and remap its program indices."""
+    device = LimitedDevice(10, 1, 4)
+    device.status = Job.Status.FAILED
+    device.batch.submit()
+    device.batch.collect()
+    assert device.jobs == [[0, 1, 2, 3], [4, 5, 6], [7, 8, 9]]
+    probes = len(device.probes)
+    device.status = Job.Status.DONE
+    device.batch.resubmit([0, 2, 3, 5, 7, 9])
+    assert device.jobs[3:] == [[0, 2, 3], [5, 7, 9]]
+    assert len(device.probes) == probes
+    assert len(device.declined) == 1
+    entries = device.batch.collect()
+    assert [entry.attempts[-1].program_index for entry in entries] == [0, 1, 1, 2, 0, 0, 2, 1, 1, 2]
+    assert [entry.result for entry in entries] == ["0", None, "2", "3", None, "5", None, "7", None, "9"]
+
+
+def test_failed_support_check_admits_nothing() -> None:
+    """A failed check raises the submission error and leaves the declined group resumable."""
+    device = LimitedDevice(3, 1, 2)
+    device.probe_error = RuntimeError("check unavailable")
+    with pytest.raises(RuntimeError, match="check unavailable") as caught:
+        device.batch.submit()
+    assert caught.value.__cause__ is device.probe_error
+    assert not any(entry.attempts for entry in device.batch.entries)
+    device.probe_error = None
+    device.batch.submit()
+    assert device.jobs == [[0, 1], [2]]

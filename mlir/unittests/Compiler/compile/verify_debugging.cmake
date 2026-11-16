@@ -26,14 +26,35 @@ function(reject_compiler expected_diagnostic)
   endif()
 endfunction()
 
+function(check_action_profile path expected_pass)
+  file(READ "${path}" profile)
+  string(JSON profile_type TYPE "${profile}")
+  string(JSON event_count LENGTH "${profile}")
+  if(NOT profile_type STREQUAL "ARRAY" OR event_count LESS 2)
+    message(FATAL_ERROR "Expected a nonempty action profile: ${profile}")
+  endif()
+  math(EXPR last_event "${event_count} - 1")
+  string(JSON first_phase GET "${profile}" 0 ph)
+  string(JSON last_phase GET "${profile}" ${last_event} ph)
+  if(NOT first_phase STREQUAL "B"
+     OR NOT last_phase STREQUAL "E"
+     OR NOT profile MATCHES "pass-execution" OR NOT profile MATCHES "${expected_pass}")
+    message(FATAL_ERROR "Action profile is missing ${expected_pass} or its events: ${profile}")
+  endif()
+endfunction()
+
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 
 # The default checkpoint is QC, including when the input format is explicit.
 run_compiler(0 "${QASM_INPUT}")
 set(default_output "${output}")
-run_compiler(0 "${QASM_INPUT}" --input-format=openqasm --emit=qc)
+run_compiler(0 "${QASM_INPUT}" --input-format=openqasm --emit=qc --mlir-timing
+             --mlir-pass-statistics)
 if(NOT output STREQUAL default_output OR NOT output MATCHES "qc.h")
   message(FATAL_ERROR "Default and explicit QC checkpoints disagree: ${output}")
+endif()
+if(NOT error MATCHES "Execution time report" OR NOT error MATCHES "Pass statistics report")
+  message(FATAL_ERROR "MLIR timing or statistics report missing: ${error}")
 endif()
 set(openqasm_text "${OUTPUT_DIR}/program.txt")
 configure_file("${QASM_INPUT}" "${openqasm_text}" COPYONLY)
@@ -43,6 +64,10 @@ if(NOT output STREQUAL default_output)
 endif()
 reject_compiler("Could not determine the input format" "${QASM_INPUT}" --input-format=qasm)
 reject_compiler("Unknown output format" "${QASM_INPUT}" --emit=mlir)
+
+foreach(option IN ITEMS profile-actions-to log-actions-to)
+  reject_compiler("Opening file for --${option} failed" "${QASM_INPUT}" "--${option}=${OUTPUT_DIR}")
+endforeach()
 
 set(reduced "${OUTPUT_DIR}/reduced.mlir")
 file(
@@ -147,7 +172,8 @@ module {
 }
 ]=])
 set(reproducer "${OUTPUT_DIR}/failure.mlir")
-file(REMOVE "${reproducer}")
+set(failure_profile "${OUTPUT_DIR}/failure-profile.json")
+file(REMOVE "${reproducer}" "${failure_profile}")
 run_compiler(
   1
   "${unsupported}"
@@ -156,7 +182,8 @@ run_compiler(
   --mlir-print-op-on-diagnostic
   --mlir-print-stacktrace-on-diagnostic
   --mlir-disable-threading
-  "--mlir-pass-pipeline-crash-reproducer=${reproducer}")
+  "--mlir-pass-pipeline-crash-reproducer=${reproducer}"
+  "--profile-actions-to=${failure_profile}")
 if(
   NOT
   EXISTS
@@ -188,6 +215,7 @@ if(
   "cf[.]br")
   message(FATAL_ERROR "Failure diagnostics, notes, or reproducer missing: ${error}")
 endif()
+check_action_profile("${failure_profile}" "QCToQCO")
 
 # Retain stdin locations and operation diagnostics through conversion failures.
 execute_process(
@@ -271,14 +299,23 @@ endforeach()
 
 # The initial jeff conversion is part of the requested instrumentation.
 set(jeff "${OUTPUT_DIR}/input.jeff")
+set(jeff_profile "${OUTPUT_DIR}/jeff-profile.json")
+file(REMOVE "${jeff_profile}")
 run_compiler(0 "${QASM_INPUT}" --emit=jeff -o "${jeff}")
 reject_compiler("without disabling multi-threading" "${jeff}" --emit=qco
                 --mlir-print-ir-module-scope --mlir-disable-threading=false)
-run_compiler(0 "${jeff}" --emit=qco --mlir-print-ir-before-all --mlir-print-ir-module-scope
-             --mlir-disable-threading)
+run_compiler(
+  0
+  "${jeff}"
+  --emit=qco
+  --mlir-print-ir-before-all
+  --mlir-print-ir-module-scope
+  --mlir-disable-threading
+  "--profile-actions-to=${jeff_profile}")
 if(NOT error MATCHES "Before JeffToQCO" OR NOT output MATCHES "qco[.]")
   message(FATAL_ERROR "Initial jeff conversion was not instrumented: ${error}")
 endif()
+check_action_profile("${jeff_profile}" "JeffToQCO")
 
 # Reusable calls must be inlined before a custom QCO pipeline on the QIR route.
 set(reusable "${OUTPUT_DIR}/reusable.mlir")

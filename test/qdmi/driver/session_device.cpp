@@ -506,6 +506,10 @@ extern "C" int TEST_SESSION_QDMI_device_job_set_programs(
   if (job->retrieved || job->submitted) {
     return QDMI_ERROR_BADSTATE;
   }
+  // Like provider program sets, accept at most eight configured shots in total.
+  if (job->shots > 8U / count) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
   if (programs == nullptr) {
     return QDMI_SUCCESS;
   }
