@@ -20,6 +20,7 @@
 #include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -92,7 +93,8 @@ static SmallVector<SearchStep> planSearch(const Graph& graph,
 static std::optional<SmallVector<size_t>>
 searchLayouts(ArrayRef<SearchStep> steps, const Adjacency& adjacency,
               ArrayRef<size_t> sites, bool allToAll, size_t begin, size_t end,
-              size_t maxCandidates) {
+              size_t maxCandidates,
+              function_ref<bool(ArrayRef<size_t>)> visit) {
   SmallVector<size_t> layout(steps.size());
   llvm::BitVector used(sites.size());
   SmallVector<SearchFrame> frames(steps.size());
@@ -124,7 +126,10 @@ searchLayouts(ArrayRef<SearchStep> steps, const Adjacency& adjacency,
     }
     layout[step.vertex] = candidate;
     if (depth + 1 == steps.size()) {
-      return layout;
+      if (!visit || visit(layout)) {
+        return layout;
+      }
+      continue;
     }
     used.set(candidate);
     const auto& next = steps[++depth];
@@ -141,15 +146,19 @@ searchLayouts(ArrayRef<SearchStep> steps, const Adjacency& adjacency,
   }
 }
 
-std::optional<SmallVector<size_t>>
-findTopologyLayout(const Graph& graph, const CompilerTarget& target,
-                   MLIRContext& context, size_t maxCandidates) {
+static std::optional<SmallVector<size_t>>
+findTopologyLayoutImpl(const Graph& graph, const CompilerTarget& target,
+                       MLIRContext& context, size_t maxCandidates,
+                       function_ref<bool(ArrayRef<size_t>)> visit = nullptr) {
   auto nodes = graph.getNodes();
   if (nodes.size() > target.numSites()) {
     return std::nullopt;
   }
   llvm::sort(nodes);
   if (nodes.empty()) {
+    if (visit) {
+      visit({});
+    }
     return SmallVector<size_t>{};
   }
   const auto steps = planSearch(graph, nodes);
@@ -173,7 +182,7 @@ findTopologyLayout(const Graph& graph, const CompilerTarget& target,
   const auto sites = llvm::to_vector(llvm::seq<size_t>(0, target.numSites()));
   // Scheduling dominates small searches; a single vertex has no join work.
   // Fixed ranges keep bounded-search results independent of thread count.
-  const auto tasks = sites.size() >= 64 && steps.size() > 1
+  const auto tasks = !visit && sites.size() >= 64 && steps.size() > 1
                          ? std::min(sites.size(), size_t{32})
                          : size_t{1};
   SmallVector<std::optional<SmallVector<size_t>>> results(tasks);
@@ -184,8 +193,8 @@ findTopologyLayout(const Graph& graph, const CompilerTarget& target,
         begin + sites.size() / tasks + (task < sites.size() % tasks ? 1 : 0);
     const auto budget =
         maxCandidates / tasks + (task < maxCandidates % tasks ? 1 : 0);
-    results[task] =
-        searchLayouts(steps, adjacency, sites, allToAll, begin, end, budget);
+    results[task] = searchLayouts(steps, adjacency, sites, allToAll, begin, end,
+                                  budget, visit);
   });
   for (auto& result : results) {
     if (result) {
@@ -193,6 +202,19 @@ findTopologyLayout(const Graph& graph, const CompilerTarget& target,
     }
   }
   return std::nullopt;
+}
+
+std::optional<SmallVector<size_t>>
+findTopologyLayout(const Graph& graph, const CompilerTarget& target,
+                   MLIRContext& context, size_t maxCandidates) {
+  return findTopologyLayoutImpl(graph, target, context, maxCandidates);
+}
+
+void enumerateTopologyLayouts(const Graph& graph, const CompilerTarget& target,
+                              MLIRContext& context, size_t maxCandidates,
+                              function_ref<bool(ArrayRef<size_t>)> visit) {
+  std::ignore =
+      findTopologyLayoutImpl(graph, target, context, maxCandidates, visit);
 }
 
 } // namespace mlir::qco

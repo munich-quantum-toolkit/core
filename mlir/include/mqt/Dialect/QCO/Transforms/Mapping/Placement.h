@@ -12,6 +12,8 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
@@ -40,6 +42,14 @@ class Graph;
 [[nodiscard]] std::optional<SmallVector<size_t>>
 findTopologyLayout(const Graph& graph, const CompilerTarget& target,
                    MLIRContext& context, size_t maxCandidates);
+
+/// Visit injective layouts serially within a candidate-assignment budget.
+///
+/// Uses findTopologyLayout's graph and layout contract. The borrowed layout is
+/// valid only during the callback. Returning true stops enumeration.
+void enumerateTopologyLayouts(const Graph& graph, const CompilerTarget& target,
+                              MLIRContext& context, size_t maxCandidates,
+                              function_ref<bool(ArrayRef<size_t>)> visit);
 
 } // namespace qco
 } // namespace mlir

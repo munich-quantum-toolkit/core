@@ -734,7 +734,8 @@ out = measure q;
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
     options = CompilationOptions(
-        seed=7, mapping=MappingOptions(trials=3, iterations=2, lookahead=5, search_memory_limit=1024)
+        seed=7,
+        mapping=MappingOptions(trials=3, iterations=2, lookahead=5, search_memory_limit=1024, rank_placements=True),
     )
     program = QCProgram.from_openqasm_str(source).to_qco()
     program.compile_for_target(_test_target_environment(target), options=options)
@@ -744,6 +745,7 @@ out = measure q;
     assert options.mapping.iterations == 2
     assert options.mapping.lookahead == 5
     assert options.mapping.search_memory_limit == 1024
+    assert options.mapping.rank_placements
 
 
 @pytest.mark.parametrize("output_kind", ["typed", "default", "device", "submit"])

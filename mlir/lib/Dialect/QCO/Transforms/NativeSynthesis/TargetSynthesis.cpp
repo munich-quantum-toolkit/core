@@ -11,18 +11,22 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Weyl.h"
+#include "mqt/Dialect/QCO/Transforms/Mapping/Placement.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/SingleQubitFusion.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/Graph.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/RandomSeed.h"
@@ -54,8 +58,10 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -64,11 +70,15 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <span>
 #include <utility>
 
@@ -81,6 +91,7 @@ using decomposition::emitUnitary2QWeyl;
 #define GEN_PASS_DEF_TARGETNATIVESYNTHESIS
 #define GEN_PASS_DEF_VERIFYTARGETCONFORMANCE
 #define GEN_PASS_DEF_FUSETWOQUBITGATES
+#define GEN_PASS_DEF_RANKPLACEMENTS
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
@@ -1804,17 +1815,302 @@ protected:
 
 } // namespace
 
+/// Resolve the same standard CZ capability used for native emission.
+static std::optional<SmallVector<double, 0>>
+calibratedCZLosses(const CompilerTarget& target) {
+  if (target.nativeOperationsKind() !=
+          CompilerTarget::NativeOperations::Kind::Explicit ||
+      llvm::any_of(target.operations(), [](const auto& operation) {
+        return operation.name() != operation.canonicalName();
+      })) {
+    return std::nullopt;
+  }
+  const auto size = target.numSites();
+  SmallVector<double, 0> losses(size * size,
+                                std::numeric_limits<double>::infinity());
+  bool complete = true;
+  for (size_t a = 0; a < size; ++a) {
+    target.forEachNeighbour(a, [&](size_t b) {
+      const std::array<SiteId, 2> sites{
+          target.siteForVertex(a),
+          target.siteForVertex(b),
+      };
+      const auto* capability =
+          target.findOperation("z", 2, {}, ArrayRef<SiteId>(sites), 1)
+              .capability;
+      if (capability == nullptr) {
+        return;
+      }
+      if (capability->name() != "cz") {
+        complete = false;
+        return;
+      }
+      auto fidelity = capability->fidelity();
+      for (const auto& tuple : capability->siteTuples()) {
+        if (tuple.sites() == ArrayRef<SiteId>(sites)) {
+          if (tuple.fidelity()) {
+            fidelity = tuple.fidelity();
+          }
+          break;
+        }
+      }
+      if (!fidelity) {
+        complete = false;
+        return;
+      }
+      losses[a * size + b] = *fidelity == 0
+                                 ? std::numeric_limits<double>::infinity()
+                                 : -std::log(*fidelity);
+    });
+  }
+  return complete ? std::optional{std::move(losses)} : std::nullopt;
+}
+
+static LogicalResult rankNativeCZPlacements(ModuleOp moduleOp,
+                                            const CompilerTarget& target,
+                                            size_t maxLayouts,
+                                            size_t maxCandidates) {
+  const auto attribute = moduleOp->getAttr("mqt.layout");
+  if (!attribute || maxLayouts == 0 || maxCandidates == 0 ||
+      !target.hasDeviceConstraints()) {
+    return success();
+  }
+  auto layout = mqt::QubitLayout::fromAttr(
+      attribute, [&] { return moduleOp.emitError(); });
+  if (failed(layout)) {
+    return failure();
+  }
+  const auto size = target.numSites();
+  if (!layout->sites || layout->initial.size() != size ||
+      llvm::any_of(llvm::seq<size_t>(0, size), [&](size_t vertex) {
+        return (*layout->sites)[vertex] != target.siteForVertex(vertex);
+      })) {
+    return success();
+  }
+  auto order =
+      moduleOp->getAttrOfType<DenseI64ArrayAttr>(mqt::kPlacementOrderAttr);
+  if (order && llvm::any_of(order.asArrayRef(), [&](int64_t vertex) {
+        return std::cmp_greater_equal(vertex, size);
+      })) {
+    return moduleOp.emitError(
+        "placement order contains a vertex outside the target");
+  }
+  auto entry = mqt::getEntryPoint(moduleOp);
+  if (!entry || !entry.getBody().hasOneBlock() ||
+      llvm::any_of(entry.getArgumentTypes(), isLinearQubitType)) {
+    return success();
+  }
+  SmallVector<Operation*> gates;
+  SmallVector<StaticOp> roots;
+  for (auto& operation : entry.getBody().front()) {
+    if (auto root = dyn_cast<StaticOp>(operation)) {
+      if (!target.vertexForSite(static_cast<SiteId>(root.getIndex()))) {
+        return success();
+      }
+      roots.push_back(root);
+      continue;
+    }
+    if (isa<SinkOp>(operation) || operation.hasTrait<OpTrait::IsTerminator>()) {
+      continue;
+    }
+    if (auto unitary = dyn_cast<UnitaryOpInterface>(operation)) {
+      if (llvm::any_of(unitary.getInputQubits().getTypes(),
+                       [](Type type) { return !isa<QubitType>(type); })) {
+        return success();
+      }
+      if (!isa<BarrierOp>(operation) &&
+          !singleControlledGate<ZOp>(&operation) &&
+          (unitary.getNumQubits() > 1 || !target.supports(&operation))) {
+        return success();
+      }
+      gates.push_back(&operation);
+      continue;
+    }
+    if (isa<MeasureOp, ResetOp>(operation)) {
+      if (!target.supports(&operation)) {
+        return success();
+      }
+      gates.push_back(&operation);
+      continue;
+    }
+    if (operation.getNumRegions() != 0 ||
+        llvm::any_of(operation.getOperandTypes(), isLinearQubitType) ||
+        llvm::any_of(operation.getResultTypes(), isLinearQubitType) ||
+        isa<CallOpInterface>(operation)) {
+      return success();
+    }
+  }
+  auto sites = collectStaticSites(entry, false);
+  if (failed(sites)) {
+    return failure();
+  }
+  std::map<std::pair<size_t, size_t>, size_t> interactions;
+  std::set<size_t> active;
+  for (auto* gate : gates) {
+    const auto operands = getOperationSites(gate, *sites);
+    if (!target.supports(gate, operands)) {
+      return success();
+    }
+    if (isa<BarrierOp>(gate)) {
+      continue;
+    }
+    SmallVector<size_t> vertices;
+    for (const auto site : operands) {
+      const auto vertex = target.vertexForSite(site);
+      if (!vertex) {
+        return success();
+      }
+      vertices.push_back(*vertex);
+      active.insert(*vertex);
+    }
+    if (singleControlledGate<ZOp>(gate)) {
+      ++interactions[{vertices[0], vertices[1]}];
+    }
+  }
+  if (interactions.empty()) {
+    return success();
+  }
+  const auto losses = calibratedCZLosses(target);
+  if (!losses) {
+    return success();
+  }
+  SmallVector<size_t> baseline(active.begin(), active.end());
+  SmallVector<size_t> positions(size);
+  for (const auto [position, vertex] : llvm::enumerate(baseline)) {
+    positions[vertex] = position;
+  }
+  Graph graph(llvm::to_vector(llvm::seq<size_t>(0, baseline.size())));
+  SmallVector<std::array<size_t, 3>> weights;
+  for (const auto& [edge, count] : interactions) {
+    const auto a = positions[edge.first];
+    const auto b = positions[edge.second];
+    if (!llvm::is_contained(graph.getNeighbours(a), b)) {
+      graph.addEdge(a, b);
+      graph.addEdge(b, a);
+    }
+    weights.push_back({a, b, count});
+  }
+  const auto score = [&](ArrayRef<size_t> candidate) {
+    double result = 0;
+    for (const auto [a, b, count] : weights) {
+      result += static_cast<double>(count) *
+                (*losses)[candidate[a] * size + candidate[b]];
+    }
+    return result;
+  };
+  auto best = baseline;
+  const auto baselineLoss = score(baseline);
+  auto bestLoss = baselineLoss;
+  size_t evaluated = 0;
+  enumerateTopologyLayouts(
+      graph, target, *moduleOp.getContext(), maxCandidates,
+      [&](ArrayRef<size_t> candidate) {
+        const auto loss = score(candidate);
+        if (loss < bestLoss ||
+            (loss == bestLoss &&
+             std::ranges::lexicographical_compare(candidate, best))) {
+          bestLoss = loss;
+          best.assign(candidate.begin(), candidate.end());
+        }
+        return ++evaluated == maxLayouts;
+      });
+  if (!(bestLoss < baselineLoss)) {
+    return success();
+  }
+  SmallVector<size_t> permutation(size, size);
+  llvm::BitVector used(size);
+  for (const auto [position, vertex] : llvm::enumerate(baseline)) {
+    permutation[vertex] = best[position];
+    used.set(best[position]);
+  }
+  size_t next = 0;
+  for (auto& vertex : permutation) {
+    if (vertex == size) {
+      while (used[next]) {
+        ++next;
+      }
+      vertex = next;
+      used.set(next);
+    }
+  }
+  for (auto* gate : gates) {
+    auto operands = getOperationSites(gate, *sites);
+    for (auto& site : operands) {
+      site = target.siteForVertex(permutation[*target.vertexForSite(site)]);
+    }
+    if (!target.supports(gate, operands)) {
+      return success();
+    }
+  }
+  // A global rename changes both the input positions and routing coordinates.
+  for (auto& vertex : layout->initial) {
+    vertex = static_cast<int64_t>(permutation[vertex]);
+  }
+  if (layout->routing) {
+    auto routing = *layout->routing;
+    for (size_t vertex = 0; vertex < size; ++vertex) {
+      routing[permutation[vertex]] =
+          static_cast<int64_t>(permutation[(*layout->routing)[vertex]]);
+    }
+    layout->routing = std::move(routing);
+  }
+  for (auto root : roots) {
+    root.setIndex(target.siteForVertex(permutation[*target.vertexForSite(
+        static_cast<SiteId>(root.getIndex()))]));
+  }
+  if (order) {
+    const auto rankedOrder =
+        llvm::map_to_vector(order.asArrayRef(), [&](int64_t vertex) -> int64_t {
+          return static_cast<int64_t>(permutation[vertex]);
+        });
+    moduleOp->setAttr(
+        mqt::kPlacementOrderAttr,
+        DenseI64ArrayAttr::get(moduleOp.getContext(), rankedOrder));
+  }
+  moduleOp->setAttr("mqt.layout", layout->toAttr(moduleOp.getContext()));
+  return success();
+}
+
+namespace {
+
+struct RankPlacements final : impl::RankPlacementsBase<RankPlacements> {
+  using RankPlacementsBase::RankPlacementsBase;
+
+protected:
+  void runOnOperation() override {
+    const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!environment) {
+      getOperation().emitError("placement ranking requires mqt.target_env");
+      signalPassFailure();
+      return;
+    }
+    if (failed(rankNativeCZPlacements(getOperation(),
+                                      environment.environment().target(),
+                                      maxLayouts, maxCandidates))) {
+      signalPassFailure();
+      return;
+    }
+    markAnalysesPreserved<TargetEnvironmentAnalysis>();
+  }
+};
+
+} // namespace
+
 std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
   return std::make_unique<FuseTwoQubitGatesPass>(target);
 }
 
-void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
+void populateTargetNativeSynthesisPipeline(OpPassManager& pm,
+                                           bool rankPlacements) {
   pm.addPass(createCanonicalizerPass());
   // Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
   pm.addPass(std::make_unique<TargetDeadValueCleanupPass>());
   pm.addPass(createTargetNativeSynthesis());
   pm.addPass(createCSEPass());
+  if (rankPlacements) {
+    pm.addPass(createRankPlacements());
+  }
   pm.addPass(createVerifyTargetConformance());
 }
 

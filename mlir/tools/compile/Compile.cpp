@@ -379,6 +379,10 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
       llvm::cl::desc("Estimated node and layout bytes per routing search, per "
                      "concurrent trial (zero disables node expansion)"),
       llvm::cl::init(MappingOptions{}.searchMemoryLimit));
+  llvm::cl::opt<bool> rankPlacements(
+      "rank-placements",
+      llvm::cl::desc("Rank native CZ placements by calibrated two-qubit loss"),
+      llvm::cl::init(MappingOptions{}.rankPlacements));
 
   llvm::cl::opt<std::string> qdmiConfig(
       "qdmi-config",
@@ -412,7 +416,8 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
   if ((mappingTrials.getNumOccurrences() != 0 ||
        mappingIterations.getNumOccurrences() != 0 ||
        mappingLookahead.getNumOccurrences() != 0 ||
-       mappingSearchMemoryLimit.getNumOccurrences() != 0) &&
+       mappingSearchMemoryLimit.getNumOccurrences() != 0 ||
+       rankPlacements.getNumOccurrences() != 0) &&
       !hasTarget) {
     llvm::errs() << "Mapping controls require --qdmi-device or --target.\n";
     return 1;
@@ -433,6 +438,7 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
               .iterations = mappingIterations,
               .lookahead = mappingLookahead,
               .searchMemoryLimit = mappingSearchMemoryLimit,
+              .rankPlacements = rankPlacements,
           },
   };
 

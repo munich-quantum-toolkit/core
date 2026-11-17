@@ -294,6 +294,24 @@ provenance must cover the target and list sites in target order. The default
 target-compilation pipeline runs both passes; input that already names physical
 sites retains those sites.
 
+Set `MappingOptions(rank_placements=True)` or pass `--rank-placements` to search
+for a better calibrated placement after native synthesis. The pass streams at
+most 4,096 complete placements within 10 million attempted vertex assignments
+and applies a global site permutation only when it strictly lowers the
+CZ-count-weighted sum of negative log fidelities. It updates input and routing
+provenance and preserves the native operations and classical outputs. Ranking is
+disabled by default and adds compilation work.
+
+Ranking requires a flat scalar program with physical layout metadata, standard
+native CZ gates, globally supported single-qubit gates and readout operations,
+and CZ fidelity calibration on supported edges. Site-tuple fidelity overrides
+the operation default; zero fidelity has infinite loss. Missing calibration,
+structured or indexed programs, other entanglers, and fixed-site input retain
+their placement. This score excludes single-qubit, readout, idle, and correlated
+errors, so it is a calibration proxy rather than a prediction of circuit
+fidelity. The standalone `rank-qubit-placements` pass exposes layout and
+assignment limits; run target-conformance verification afterward.
+
 ### Custom pass sequences
 
 Pass a `target_environment` to

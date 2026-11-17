@@ -771,6 +771,7 @@ class MappingOptions:
         iterations: int = 2,
         lookahead: int = 20,
         search_memory_limit: int = 268435456,
+        rank_placements: bool = False,
     ) -> None: ...
     @property
     def trials(self) -> int | None:
@@ -799,6 +800,17 @@ class MappingOptions:
 
     @search_memory_limit.setter
     def search_memory_limit(self, arg: int, /) -> None: ...
+    @property
+    def rank_placements(self) -> bool:
+        """Post-synthesis calibrated CZ placement ranking.
+
+        Disabled by default. Enumerate placements with bounded direct search and
+        apply only strict improvements. Unsupported programs or missing calibration
+        retain their placement. The score excludes single-qubit and readout errors.
+        """
+
+    @rank_placements.setter
+    def rank_placements(self, arg: bool, /) -> None: ...
 
 class CompilationOptions:
     """Shared compiler controls.
