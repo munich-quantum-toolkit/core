@@ -249,35 +249,6 @@ static void populateTargetPreparationCleanup(OpPassManager& pm) {
 
 namespace {
 
-class RoutePlacedQubitsPass
-    : public PassWrapper<RoutePlacedQubitsPass, OperationPass<ModuleOp>> {
-public:
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(RoutePlacedQubitsPass)
-
-  explicit RoutePlacedQubitsPass(qco::MappingPassOptions options)
-      : options_(options) {}
-
-  void getDependentDialects(DialectRegistry& registry) const override {
-    qco::createMappingPass(options_)->getDependentDialects(registry);
-  }
-
-protected:
-  void runOnOperation() override {
-    // Preplaced input keeps its sites and target-native higher-arity gates.
-    if (!getOperation()->hasAttr(mqt::kPlacementOrderAttr)) {
-      return;
-    }
-    OpPassManager pipeline(ModuleOp::getOperationName());
-    pipeline.addPass(qco::createMappingPass(options_));
-    if (failed(runPipeline(pipeline, getOperation()))) {
-      signalPassFailure();
-    }
-  }
-
-private:
-  qco::MappingPassOptions options_;
-};
-
 class PrepareTargetCompilationPass
     : public PassWrapper<PrepareTargetCompilationPass,
                          OperationPass<ModuleOp>> {
@@ -594,7 +565,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     placementOptions.nlookahead = mappingOptions.nlookahead;
     placementOptions.searchMemoryLimit = mappingOptions.searchMemoryLimit;
     pm.addPass(qco::createPlacementPass(placementOptions));
-    pm.addPass(std::make_unique<RoutePlacedQubitsPass>(mappingOptions));
+    pm.addPass(qco::createRoutePlacedQubitsPass(mappingOptions));
     break;
   }
   case CompilerTarget::Connectivity::Kind::AllToAll:
