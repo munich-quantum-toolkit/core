@@ -241,26 +241,16 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
 }
 
 /// Accept only a circuit-wire layout that placement can compose.
-///
-/// Its positions are the source labels of every allocated qubit.
 static LogicalResult verifyInputLayout(ModuleOp moduleOp) {
-  auto attribute = moduleOp->getAttr("mqt.layout");
-  if (!attribute) {
+  if (!moduleOp->hasAttr("mqt.layout")) {
     return success();
   }
-  auto layout = mqt::QubitLayout::fromAttr(
-      attribute, [&] { return moduleOp.emitError(); });
-  if (failed(layout)) {
-    return failure();
-  }
   auto count = moduleOp->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);
-  if (!count || layout->sites ||
-      std::cmp_not_equal(layout->initial.size(), count.getInt())) {
-    return moduleOp.emitError(
-        "target compilation composes only a circuit-wire layout of every "
-        "allocated qubit; discard existing layout metadata otherwise");
+  if (!count) {
+    return moduleOp.emitError("only programs with allocated qubits can compose "
+                              "an attached layout; discard it");
   }
-  return success();
+  return mqt::getCircuitLayout(moduleOp, count.getInt());
 }
 
 static void populateTargetPreparationCleanup(OpPassManager& pm) {

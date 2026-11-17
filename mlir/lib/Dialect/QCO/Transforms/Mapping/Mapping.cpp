@@ -181,28 +181,20 @@ public:
     }
     // Source wires now have sites. Compose the circuit-wire layout, whose
     // positions are those wires, including permutations of elided SWAPs.
-    if (auto attribute = module_->getAttr("mqt.layout")) {
-      auto circuit = mqt::QubitLayout::fromAttr(
-          attribute, [&] { return module_.emitError(); });
-      if (failed(circuit)) {
-        return failure();
-      }
-      if (circuit->sites ||
-          std::cmp_not_equal(circuit->initial.size(), layout_->inputCount)) {
-        return module_.emitError("placement requires a circuit-wire layout of "
-                                 "every source qubit");
-      }
-      const auto sites = layout_->initial;
-      for (auto [program, wire] : llvm::enumerate(circuit->initial)) {
-        layout_->initial[program] = sites[wire];
-      }
-      layout_->inputCount = circuit->inputCount;
-      if (circuit->routing) {
-        auto& routing = layout_->routing.emplace(sites.size());
-        std::iota(routing.begin(), routing.end(), int64_t{0});
-        for (auto [wire, destination] : llvm::enumerate(*circuit->routing)) {
-          routing[sites[wire]] = sites[destination];
-        }
+    auto circuit = mqt::getCircuitLayout(module_, layout_->inputCount);
+    if (failed(circuit)) {
+      return failure();
+    }
+    const auto sites = layout_->initial;
+    for (auto [program, wire] : llvm::enumerate(circuit->initial)) {
+      layout_->initial[program] = sites[wire];
+    }
+    layout_->inputCount = circuit->inputCount;
+    if (circuit->routing) {
+      auto& routing = layout_->routing.emplace(sites.size());
+      std::iota(routing.begin(), routing.end(), int64_t{0});
+      for (auto [wire, destination] : llvm::enumerate(*circuit->routing)) {
+        routing[sites[wire]] = sites[destination];
       }
     }
     module_->setAttr("mqt.layout", layout_->toAttr(module_.getContext()));

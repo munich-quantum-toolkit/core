@@ -781,29 +781,18 @@ public:
 /// Entry `j` of @p permutation is the source wire that holds output `j`.
 static LogicalResult recordOutputPermutation(ModuleOp moduleOp,
                                              ArrayRef<int64_t> permutation) {
-  mqt::QubitLayout layout;
-  if (auto attribute = moduleOp->getAttr("mqt.layout")) {
-    auto parsed = mqt::QubitLayout::fromAttr(
-        attribute, [&] { return moduleOp.emitError(); });
-    if (failed(parsed)) {
-      return failure();
-    }
-    layout = std::move(*parsed);
-  } else {
-    layout.initial.resize(permutation.size());
-    std::iota(layout.initial.begin(), layout.initial.end(), int64_t{0});
-    layout.inputCount = static_cast<int64_t>(permutation.size());
-  }
-  if (layout.sites || layout.initial.size() != permutation.size()) {
-    return moduleOp.emitError("permutation elision requires a circuit-wire "
-                              "layout of every source qubit");
+  auto layout =
+      mqt::getCircuitLayout(moduleOp, static_cast<int64_t>(permutation.size()));
+  if (failed(layout)) {
+    return failure();
   }
   std::vector<int64_t> routing(permutation.size());
   for (auto [wire, destination] : llvm::enumerate(routing)) {
-    destination = permutation[layout.routing ? (*layout.routing)[wire] : wire];
+    destination =
+        permutation[layout->routing ? (*layout->routing)[wire] : wire];
   }
-  layout.routing = std::move(routing);
-  moduleOp->setAttr("mqt.layout", layout.toAttr(moduleOp.getContext()));
+  layout->routing = std::move(routing);
+  moduleOp->setAttr("mqt.layout", layout->toAttr(moduleOp.getContext()));
   return success();
 }
 
@@ -818,9 +807,8 @@ static LogicalResult elidePermutations(ModuleOp moduleOp, bool terminalOnly) {
     if (firstEligibleSwap == nullptr) {
       return success();
     }
-  }
-  if (!moduleOp.walk([](SWAPOp) { return WalkResult::interrupt(); })
-           .wasInterrupted()) {
+  } else if (!moduleOp.walk([](SWAPOp) { return WalkResult::interrupt(); })
+                  .wasInterrupted()) {
     return success();
   }
   // Valid QCO continues region and call operands positionally, so a region
