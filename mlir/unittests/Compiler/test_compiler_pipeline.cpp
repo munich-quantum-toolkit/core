@@ -3831,9 +3831,9 @@ TEST_F(CompilerPipelineTest,
     EXPECT_TRUE(mlir::failed(program->compileForTarget(environment)));
     EXPECT_TRUE(mlir::failed(program->synthesizeForTarget(environment)));
     EXPECT_TRUE(program->module()->hasAttr(name));
-    const auto expected = name == mlir::mqt::kPlacementOrderAttr
-                              ? "discard existing placement order"
-                              : "expected a circuit-wire layout";
+    const StringRef expected = name == mlir::mqt::kPlacementOrderAttr
+                                   ? "discard existing placement order"
+                                   : "expected a circuit-wire layout";
     EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
   }
 }
