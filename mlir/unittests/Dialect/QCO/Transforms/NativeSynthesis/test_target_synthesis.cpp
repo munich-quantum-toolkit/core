@@ -497,6 +497,15 @@ TEST_F(TargetSynthesisTest, ExactCliffordTRotationsPreserveFullUnitary) {
 }
 
 TEST_F(TargetSynthesisTest, ExactCliffordTFixedGatesAndDirectedControls) {
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("h", 1, 0)),
+                         valid(OperationCapability::create("t", 1, 0)),
+                         valid(OperationCapability::create(
+                             "cx", 2, 0, {valid(SiteTuple::create({1, 0}))})),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
   for (const llvm::StringRef kind : {
            "x",
            "y",
@@ -511,15 +520,6 @@ TEST_F(TargetSynthesisTest, ExactCliffordTFixedGatesAndDirectedControls) {
            "csx",
            "csxdg",
        }) {
-    const auto target = valid(
-        Target::create(2, Connectivity::allToAll(),
-                       NativeOperations::fromOperations({
-                           valid(OperationCapability::create("h", 1, 0)),
-                           valid(OperationCapability::create("t", 1, 0)),
-                           valid(OperationCapability::create(
-                               "cx", 2, 0, {valid(SiteTuple::create({1, 0}))})),
-                           valid(OperationCapability::create("gphase", 0, 1)),
-                       })));
     auto original = build([&](QCOProgramBuilder& builder) {
       auto q0 = builder.staticQubit(0);
       auto q1 = builder.staticQubit(1);

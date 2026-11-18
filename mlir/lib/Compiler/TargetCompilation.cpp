@@ -240,6 +240,19 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
   return success();
 }
 
+/// Accept only a circuit-wire layout that placement can compose.
+static LogicalResult verifyInputLayout(ModuleOp moduleOp) {
+  if (!moduleOp->hasAttr("mqt.layout")) {
+    return success();
+  }
+  auto count = moduleOp->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);
+  if (!count) {
+    return moduleOp.emitError("only programs with allocated qubits can compose "
+                              "an attached layout; discard it");
+  }
+  return mqt::getCircuitLayout(moduleOp, count.getInt());
+}
+
 static void populateTargetPreparationCleanup(OpPassManager& pm) {
   // The module cleanup owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
@@ -263,12 +276,6 @@ public:
 
 protected:
   void runOnOperation() override {
-    if (getOperation()->hasAttr("mqt.layout")) {
-      getOperation().emitError("discard existing layout metadata before target "
-                               "compilation");
-      signalPassFailure();
-      return;
-    }
     if (mapping_.trials == 0) {
       getOperation().emitError("mapping trials must be greater than zero");
       signalPassFailure();
@@ -355,6 +362,10 @@ protected:
     } else if (hasStatic) {
       getOperation()->removeAttr(mqt::kSourceQubitCountAttr);
     } else if (failed(prepareLayout(getOperation(), environment_))) {
+      signalPassFailure();
+      return;
+    }
+    if (failed(verifyInputLayout(getOperation()))) {
       signalPassFailure();
       return;
     }
@@ -504,7 +515,13 @@ static void populateDecompositionAndPlacement(OpPassManager& pm,
   // Drop unused slots before placement checks target capacity.
   pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
-  pm.addPass(qco::createElideTerminalSwapsPass());
+  // Source SWAPs before later interactions can already route explicit graphs.
+  if (target.connectivityKind() ==
+      CompilerTarget::Connectivity::Kind::Explicit) {
+    pm.addPass(qco::createElideTerminalSwapsPass());
+  } else {
+    pm.addPass(qco::createElidePermutations());
+  }
   if (target.connectivityKind() ==
       CompilerTarget::Connectivity::Kind::AllToAll) {
     pm.addPass(qco::createPlacementPass());
@@ -523,7 +540,8 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateTargetPreparationCleanup(pm);
   pm.addPass(qco::createCombineControlledGates(target));
   // Discrete targets may not support the gates produced by composition.
-  if (target.synthesisBasis()) {
+  const auto& basis = target.synthesisBasis();
+  if (basis) {
     pm.addPass(mqt::createSimplifyQuantum());
   }
   // Eliminate identity loops before unrolling applies its clone budget.
@@ -538,8 +556,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createFuseTwoQubitGates(target));
   // U fusion shrinks runs before routing. Other bases can expand symbolic
   // runs, so emit them once during native synthesis, after cleanup.
-  if (const auto basis = target.synthesisBasis();
-      basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
+  if (basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   // Keep native controlled U bodies; distribute other composites for lowering.
@@ -570,7 +587,8 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   const auto& target = environment.target();
   populateTargetPreparationCleanup(pm);
   pm.addPass(qco::createCombineControlledGates(target));
-  if (target.synthesisBasis()) {
+  const auto& basis = target.synthesisBasis();
+  if (basis) {
     pm.addPass(mqt::createSimplifyQuantum());
   }
   // Remove identity branches before checking payload control-flow support.
@@ -578,8 +596,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(qco::createLegalizeControlFlow());
   populateDecompositionAndPlacement(pm, target);
   pm.addPass(qco::createFuseTwoQubitGates(target));
-  if (const auto basis = target.synthesisBasis();
-      basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
+  if (basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   pm.addPass(mqt::createUnrollModifiers());

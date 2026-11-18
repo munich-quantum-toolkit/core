@@ -1161,14 +1161,16 @@ lowerDiscreteRoutingOperation(IRRewriter& rewriter, UnitaryOpInterface op,
     return target.findOperation("x", 2, {}, knownSites(ordered), 1)
                .capability != nullptr;
   };
-  const std::array direct{supportsCX(0), supportsCX(1)};
-  const bool hadamards =
-      sites ? target.supportsOperation("h", 1, 0, std::array{(*sites)[0]}) &&
-                  target.supportsOperation("h", 1, 0, std::array{(*sites)[1]})
-            : target.supportsOperation("h", 1, 0);
-  // Check every direction before emitting any part of the replacement.
-  if ((!direct[0] && !(direct[1] && hadamards)) ||
-      (swap && !direct[1] && !(direct[0] && hadamards))) {
+  const bool forward = supportsCX(0);
+  const std::array direct{forward, sites ? supportsCX(1) : forward};
+  if (!direct[0] && !direct[1]) {
+    return failure();
+  }
+  // Reversing a CX needs H on both sites.
+  if (sites && (!direct[0] || (swap && !direct[1])) &&
+      !llvm::all_of(*sites, [&](SiteId site) {
+        return target.supportsOperation("h", 1, 0, std::array{site});
+      })) {
     return failure();
   }
   rewriter.setInsertionPoint(op);
@@ -1337,12 +1339,9 @@ synthesizeExactCliffordT(IRRewriter& rewriter, UnitaryOpInterface op,
     if (previous[power] < 0) {
       return false;
     }
-    SmallVector<CliffordGate, 4> gateSequence;
+    // These gates are powers of T on one wire, so they commute.
     for (int next = power; next != 0; next = previous[next]) {
-      gateSequence.push_back(gates[via[next]]);
-    }
-    for (auto gate : llvm::reverse(gateSequence)) {
-      plan.emplace_back(gate, wire);
+      plan.emplace_back(gates[via[next]], wire);
     }
     return true;
   };
