@@ -38,6 +38,8 @@ repos:
         priority: 0
       - id: check-github-workflows
         priority: 0
+      - id: check-mergify
+        priority: 0
       - id: check-readthedocs
         priority: 0
 

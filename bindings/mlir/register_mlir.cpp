@@ -794,7 +794,8 @@ qpyCircuit(mlir::QCProgram program,
                                 std::move(payload));
     }
   }
-  if (selected == OutputFormat::Qiskit) {
+  // Device compilation composes input layouts; other pipelines clear them.
+  if (selected == OutputFormat::Qiskit && !outputEnvironment) {
     std::visit(
         [](const auto& value) {
           if constexpr (std::is_base_of_v<
@@ -2494,7 +2495,9 @@ estimated entangling cost. It allocates no additional qubits.)pb")
           "options"_a = mlir::CompilationOptions{},
           R"pb(Compile for the target and attach layout metadata when possible.
 
-Reject existing layout metadata. Do not rely on program contents if compilation fails. Failures raise
+Compose an attached layout without sites, such as an imported Qiskit layout, with
+placement and routing when every qubit is allocated in the entry block. Reject other
+layout metadata. Do not rely on program contents if compilation fails. Failures raise
 RuntimeError with MLIR diagnostics.)pb")
       .def(
           "synthesize_for_target",

@@ -255,11 +255,11 @@ router's native-cost model. The `patterns` option selects the embedding search.
 | `extended`       | Also chains of four/six vertices, cycles of six/eight/twelve, and 2×3/2×4 grids.                 |
 | `auto`           | Extended patterns when the query's 2-core has at least twelve vertices, otherwise direct search. |
 
-The 2-core remains after repeatedly removing vertices with degree below two.
-Every twelve-cycle lies in this core, but twelve remaining vertices do not prove
-that such a cycle exists. Both searches preserve undirected interactions and
-injectivity and allow extra target edges. They do not consider calibration or
-native gate availability. Identity and path shortcuts precede this selection.
+Repeatedly removing vertices with fewer than two neighbors leaves the 2-core.
+Every twelve-cycle lies in the 2-core, so its size can rule out that pattern.
+Both searches map distinct vertices to distinct sites and preserve undirected
+interactions. Extra target edges are allowed. Identity and path shortcuts run
+first. Calibration and native gate availability are outside this search.
 
 Each search checks at most 100,000 candidates. A pattern tuple can assign
 several vertices, so equal budgets are not equal work. Pattern preparation and
@@ -338,6 +338,12 @@ support. When excluding sites from an explicit topology, preparation keeps the
 largest connected component, including any
 [virtual resonator connections](#resonator-mediated-compilation). Only the
 retained sites count toward the available qubit capacity.
+
+Explicit coupling graphs keep source SWAPs before later interactions because
+they can help routing. The compiler elides terminal straight-line SWAPs and
+records the output permutation in the qubit layout. All-to-all targets also
+elide nonterminal permutations through supported tensor accesses and structured
+control flow.
 
 Mapping runs multiple initial-layout trials. Set `MappingOptions.trials` and
 `CompilationOptions.seed` for reproducible choices. Each trial retains the
@@ -429,13 +435,13 @@ for name, result in results.items():
 
 The `use-target=true` option selects the target-aware form of each optimization;
 omitting it keeps the target-independent behavior. For all-to-all device
-targets, use `place-qubits` instead of `place-and-route`. For gate-set targets,
-omit placement and terminal-SWAP elision to retain program wire order. Set
-custom routing controls in the textual pass options;
-`CompilationOptions.mapping` configures the default target compiler.
-`unroll-modifiers` distributes composite gates before placement and native
-synthesis. The runner executes only the requested passes, so each sequence must
-meet its passes' input requirements.
+targets, use `elide-permutations` and `place-qubits` instead of
+`elide-terminal-swaps` and `place-and-route`. For gate-set targets, omit
+placement and terminal-SWAP elision to retain program wire order. Set custom
+routing controls in the textual pass options; `CompilationOptions.mapping`
+configures the default target compiler. `unroll-modifiers` distributes composite
+gates before placement and native synthesis. The runner executes only the
+requested passes, so each sequence must meet its passes' input requirements.
 
 The default `preserve_layout=False` clears existing layout metadata. Set
 `preserve_layout=True` throughout the sequence above: terminal-SWAP elision and
@@ -623,10 +629,14 @@ and routing metadata if the input has fixed-size entry-block allocations.
 Programs with static device-site references already name physical sites;
 compilation preserves those IDs and does not attach a layout. Static device-site
 references and allocated program qubits cannot be mixed. Native target
-compilation rejects an already attached layout. See
-[custom pass sequences](#custom-pass-sequences) for layout preservation between
-passes and [transpiler layouts](qiskit.md#transpiler-layouts) for the import and
-export requirements.
+compilation composes an attached layout without sites, such as an imported
+Qiskit layout, with its own placement and routing. The program keeps its program
+qubits and output permutation, including SWAPs that Qiskit elided. This requires
+every qubit to be allocated in the entry block; other attached layouts are
+rejected. See [custom pass sequences](#custom-pass-sequences) for layout
+preservation between passes and
+[transpiler layouts](qiskit.md#transpiler-layouts) for the import and export
+requirements.
 
 ## Metadata for device implementers
 
