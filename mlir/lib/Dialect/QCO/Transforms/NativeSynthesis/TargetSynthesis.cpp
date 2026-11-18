@@ -1158,14 +1158,16 @@ lowerDiscreteRoutingOperation(IRRewriter& rewriter, UnitaryOpInterface op,
     return target.findOperation("x", 2, {}, knownSites(ordered), 1)
                .capability != nullptr;
   };
-  const std::array direct{supportsCX(0), supportsCX(1)};
-  const bool hadamards =
-      sites ? target.supportsOperation("h", 1, 0, std::array{(*sites)[0]}) &&
-                  target.supportsOperation("h", 1, 0, std::array{(*sites)[1]})
-            : target.supportsOperation("h", 1, 0);
-  // Check every direction before emitting any part of the replacement.
-  if ((!direct[0] && !(direct[1] && hadamards)) ||
-      (swap && !direct[1] && !(direct[0] && hadamards))) {
+  const bool forward = supportsCX(0);
+  const std::array direct{forward, sites ? supportsCX(1) : forward};
+  if (!direct[0] && !direct[1]) {
+    return failure();
+  }
+  // Reversing a CX needs H on both sites.
+  if (sites && (!direct[0] || (swap && !direct[1])) &&
+      !llvm::all_of(*sites, [&](SiteId site) {
+        return target.supportsOperation("h", 1, 0, std::array{site});
+      })) {
     return failure();
   }
   rewriter.setInsertionPoint(op);

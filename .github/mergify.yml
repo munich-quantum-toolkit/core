@@ -1,0 +1,43 @@
+pull_request_rules:
+  - name: Warn on conflicts
+    conditions:
+      - conflict
+    actions:
+      label:
+        toggle:
+          - conflict
+
+  - name: Label MLIR changes
+    conditions:
+      - or:
+          - files ~= ^(mlir|bindings/mlir|docs/mlir)/
+          - files ~= ^python/mqt/core/mlir[./]
+          - files ~= ^test/python/test_mlir[_.]
+    actions:
+      label:
+        add: [MLIR]
+
+  - name: Label QDMI changes
+    conditions:
+      - or:
+          - files ~= (?i)^(bindings|docs|include|mlir|python|src|test)/.*qdmi
+          - files ~= ^json/sc/
+    actions:
+      label:
+        add: [QDMI]
+
+  - name: Label QIR changes
+    conditions:
+      - files ~= (?i)^(bindings|docs|include|mlir|python|src|test)/.*qir
+    actions:
+      label:
+        add: [QIR]
+
+  - name: Label DD changes
+    conditions:
+      - or:
+          - files ~= ^(bindings|docs|include|python|src|test)/(.*/)?dd[./_-]
+          - files ~= ^(docs|mlir|python|test)/.*(DDFunctionality|ddsim|_dd[_.])
+    actions:
+      label:
+        add: [DD]

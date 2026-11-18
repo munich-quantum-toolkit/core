@@ -56,10 +56,10 @@ execution capabilities. For native synthesis, pass the circuit's width as
 `native_num_qubits` to import a gate-set target and skip wider gates.
 
 Discrete targets, including Clifford+T, accept circuits whose gates are already
-native. Routing can lower SWAPs to CX gates and reverse CX direction when H is
-supported on both sites. Gates that remain non-native after decomposition
-require a supported synthesis basis. MQT Core does not approximate arbitrary
-rotations with Clifford+T gates.
+native. Routing lowers SWAPs to CX gates. Reversing a CX requires H on both
+sites. Gates that remain non-native after decomposition require a supported
+synthesis basis. MQT Core does not approximate arbitrary rotations with
+Clifford+T gates.
 
 A list or tuple of one input kind returns results in input order. Typed MLIR
 inputs are consumed unless `copy=True`; source text and Qiskit circuits remain
@@ -274,6 +274,12 @@ largest connected component, including any
 [virtual resonator connections](#resonator-mediated-compilation). Only the
 retained sites count toward the available qubit capacity.
 
+Explicit coupling graphs keep source SWAPs before later interactions because
+they can help routing. The compiler elides terminal straight-line SWAPs and
+records the output permutation in the qubit layout. All-to-all targets also
+elide nonterminal permutations through supported tensor accesses and structured
+control flow.
+
 Mapping runs multiple initial-layout trials. Set `MappingOptions.trials` and
 `CompilationOptions.seed` for reproducible choices. Each trial retains the
 layout with the fewest native two-qubit gates among the routes it evaluates,
@@ -364,13 +370,13 @@ for name, result in results.items():
 
 The `use-target=true` option selects the target-aware form of each optimization;
 omitting it keeps the target-independent behavior. For all-to-all device
-targets, use `place-qubits` instead of `place-and-route`. For gate-set targets,
-omit placement and terminal-SWAP elision to retain program wire order. Set
-custom routing controls in the textual pass options;
-`CompilationOptions.mapping` configures the default target compiler.
-`unroll-modifiers` distributes composite gates before placement and native
-synthesis. The runner executes only the requested passes, so each sequence must
-meet its passes' input requirements.
+targets, use `elide-permutations` and `place-qubits` instead of
+`elide-terminal-swaps` and `place-and-route`. For gate-set targets, omit
+placement and terminal-SWAP elision to retain program wire order. Set custom
+routing controls in the textual pass options; `CompilationOptions.mapping`
+configures the default target compiler. `unroll-modifiers` distributes composite
+gates before placement and native synthesis. The runner executes only the
+requested passes, so each sequence must meet its passes' input requirements.
 
 The default `preserve_layout=False` clears existing layout metadata. Set
 `preserve_layout=True` throughout the sequence above: terminal-SWAP elision and
@@ -558,10 +564,14 @@ and routing metadata if the input has fixed-size entry-block allocations.
 Programs with static device-site references already name physical sites;
 compilation preserves those IDs and does not attach a layout. Static device-site
 references and allocated program qubits cannot be mixed. Native target
-compilation rejects an already attached layout. See
-[custom pass sequences](#custom-pass-sequences) for layout preservation between
-passes and [transpiler layouts](qiskit.md#transpiler-layouts) for the import and
-export requirements.
+compilation composes an attached layout without sites, such as an imported
+Qiskit layout, with its own placement and routing. The program keeps its program
+qubits and output permutation, including SWAPs that Qiskit elided. This requires
+every qubit to be allocated in the entry block; other attached layouts are
+rejected. See [custom pass sequences](#custom-pass-sequences) for layout
+preservation between passes and
+[transpiler layouts](qiskit.md#transpiler-layouts) for the import and export
+requirements.
 
 ## Metadata for device implementers
 

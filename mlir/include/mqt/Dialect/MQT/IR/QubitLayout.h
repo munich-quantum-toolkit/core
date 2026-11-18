@@ -53,4 +53,11 @@ struct QubitLayout {
            llvm::function_ref<InFlightDiagnostic()> emitError);
 };
 
+/// Read the circuit-wire layout of a module with @p count source qubits.
+///
+/// Return the identity if no layout is attached. Emit an error unless an
+/// attached layout has no sites and one position per source qubit.
+[[nodiscard]] FailureOr<QubitLayout> getCircuitLayout(ModuleOp moduleOp,
+                                                      int64_t count);
+
 } // namespace mlir::mqt
