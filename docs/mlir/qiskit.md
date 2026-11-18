@@ -294,9 +294,11 @@ program = QCProgram.from_qiskit(transpiled_circuit)
 restored = program.to_qco().to_qc().to_qiskit()
 ```
 
-Use the conversion methods above to preserve an existing layout. To recompile a
-mapped Qiskit circuit, pass `ignore_input_layout=True` to `compile_program`.
-Core treats the current wires as inputs and may place them again. Pass
+Device compilation composes an imported layout with Core's placement and
+routing. The compiled circuit keeps the program qubits and final layout of the
+input, including the output permutation of SWAPs that Qiskit elided. To treat
+the current wires of a mapped circuit as fresh program qubits instead, pass
+`ignore_input_layout=True` to `compile_program`. Pass
 `include_output_layout=False` to omit the layout from a Qiskit circuit or
 explicit `OutputFormat.QPY` result while keeping the physical wires and
 measurement destinations. Core raises `ValueError` if the input or output format
