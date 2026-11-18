@@ -2130,13 +2130,17 @@ def test_qco_program_runs_target_passes_in_stages(topology: str, basis: str) -> 
         "fuse-single-qubit-unitary-runs{use-target=true}",
         "fuse-two-qubit-gates{use-target=true}",
     )
-    placement = "place-and-route{ntrials=1 niterations=1}" if topology == "line" else "place-qubits"
+    elision, placement = (
+        ("elide-terminal-swaps", "place-and-route{ntrials=1 niterations=1}")
+        if topology == "line"
+        else ("elide-permutations", "place-qubits")
+    )
     expected = Operator(source).data
     for candidate, order in (
         (prepared.copy(), actions),
         (QCOProgram.from_mlir_str(checkpoint), tuple(reversed(actions))),
     ):
-        for action in (*order, "unroll-modifiers", "elide-terminal-swaps", placement, "mqt-target-finalize"):
+        for action in (*order, "unroll-modifiers", elision, placement, "mqt-target-finalize"):
             candidate.run_pass_pipeline(action, options=CompilationOptions(seed=7), preserve_layout=True)
         candidate.run_pass_pipeline("verify-target-conformance", target_environment=None, preserve_layout=True)
         result = candidate.to_qiskit(target=target, copy=True)

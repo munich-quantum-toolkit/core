@@ -517,13 +517,12 @@ parameters are angles. Constant expressions and calculations using loop indices
 remain supported in retained gates.
 
 Array parameters use fixed dimensions or `#dim`, with canonical element types.
-Export infers readonly parameters from their uses, including nested calls. QIR
-uses its existing helper inlining and memref lowering; runtime borrows need the
-Adaptive profile unless static reduction removes them. jeff retains scalar
-helpers but inlines borrowed-array helpers to preserve writes under its array
-value semantics. Its existing static-storage and guard restrictions still apply;
-a borrow that cannot be inlined is diagnosed. Neither backend adds a new host
-array-result ABI.
+The exporter infers `readonly` from how a parameter is used, including in nested
+calls. QIR inlines helpers and lowers array references to memory operations.
+Borrows that survive static reduction require the Adaptive profile. jeff retains
+scalar helpers and inlines helpers that borrow arrays so writes reach the
+caller. Such helpers must meet jeff's static-storage and guard requirements. If
+a borrow cannot be inlined, jeff reports an error.
 
 Signed and unsigned index casts preserve sign extension, zero extension, and
 truncation, including truncation to one bit. Indices use 64 bits. Addition,

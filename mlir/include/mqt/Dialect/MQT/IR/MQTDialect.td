@@ -43,11 +43,15 @@ def MQTDialect : Dialect {
     update, or discard the layout when changing qubit identity or order.
 
     `mqt.source_qubit_count` records the input count during target preparation.
-    Placement consumes it when publishing the completed layout.
+    Placement consumes it when publishing the completed layout. A layout
+    without `sites` on a prepared module uses source indices as its circuit
+    wires; placement composes it into the published layout.
     `mqt.source_qubit_indices` tracks native input slots: a dense i64 array of
     distinct nonnegative indices, one per `qco.alloc` or fixed-size
-    `qtensor.alloc` slot. Tensor shrinking retains surviving entries; placement consumes them.
-    Removed slots remain in the attached layout.
+    `qtensor.alloc` slot. With a source count, indices are smaller than the
+    count. Tensor shrinking retains surviving entries; placement consumes them
+    and rejects indices repeated across allocations. Removed slots remain in
+    the attached layout.
 
     `mqt.input_name` records the source-level name of a function input,
     including the name used by parameter binding.

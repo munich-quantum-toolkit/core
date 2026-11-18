@@ -231,6 +231,51 @@ def LegalizeControlFlow : PayloadControlFlowPass<"legalize-qco-control-flow"> {
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
 
+def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Elide virtual SWAPs before placement";
+  let description = [{
+    Tracks wire permutations through QCO and structured control flow, removing
+    unconditional SWAPs and retargeting later operations. Materializes
+    permutations where resource identity or region interfaces require them.
+    Fixed physical qubits, modifier bodies, regions that capture quantum values,
+    and unstructured function bodies retain their wiring. Dynamic tensor
+    accesses reconcile pending permutations on that tensor. Programs without
+    SWAPs that can be elided remain unchanged.
+
+    Programs without source labels keep their physical output order:
+    permutations are reconciled before measurements and function exits.
+    Programs prepared by `mqt-target-prepare` instead keep terminal output
+    permutations virtual through final observations and disposal. The pass
+    composes them into the `routing` of the circuit-wire `mqt.layout`, the form
+    an imported Qiskit `final_layout` takes. Placement composes that layout
+    into the published qubit layout.
+
+    Run after inlining and cleanup, before fusion and placement.
+  }];
+}
+
+def ElideTerminalSwapsPass : Pass<"elide-terminal-swaps", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Record terminal SWAPs in the layout before placement";
+  let description = [{
+    Restricts `elide-permutations` to SWAPs in the straight-line suffix of the
+    entry block that follows its last non-SWAP multi-qubit operation, reset,
+    region, or opaque quantum boundary. Intermediate measurements and disposal
+    also end the suffix. Single-qubit gates may follow those SWAPs. Earlier
+    SWAPs remain, so a program already routed for a sparse topology keeps
+    its local interactions.
+
+    Requires source labels from `mqt-target-prepare` and records the output
+    permutation for placement like `elide-permutations`. Other programs remain
+    unchanged. Target compilation uses this pass for explicit coupling graphs.
+  }];
+}
+
 def PlacementPass : Pass<"place-qubits", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "mlir::qtensor::QTensorDialect"];
@@ -240,23 +285,10 @@ def PlacementPass : Pass<"place-qubits", "mlir::ModuleOp"> {
     deterministic order. Already placed programs remain unchanged. This does
     not enforce adjacency; use `place-and-route` for sparse topologies.
 
-    Input qubit labels prepared by `mqt-target-prepare` produce layout metadata.
-    Preserve any layout recorded by `elide-terminal-swaps` until this pass
-    consumes it. Supported tensor and control-flow forms follow the placement
-    requirements of target compilation.
-  }];
-}
-
-def ElideTerminalSwapsPass : Pass<"elide-terminal-swaps", "mlir::ModuleOp"> {
-  let summary = "Record terminal SWAPs in the layout before placement";
-  let description = [{
-    Remove terminal SWAPs from prepared straight-line programs and record the
-    resulting wire permutation. Accepts owned scalar qubits and flat, static
-    tensor unpack/pack chains. Other input forms remain unchanged.
-
-    Run after allocation cleanup, with source identities from
-    `mqt-target-prepare`. Preserve roots and the resulting `mqt.layout` until
-    placement consumes the permutation. Already placed layouts are unchanged.
+    Input qubit labels prepared by `mqt-target-prepare` produce layout metadata,
+    including any output permutation recorded by `elide-permutations` or
+    `elide-terminal-swaps`. Supported tensor and control-flow forms follow the
+    placement requirements of target compilation.
   }];
 }
 

@@ -480,7 +480,9 @@ public:
 
   /// Compile for a target and attach layout metadata when possible.
   ///
-  /// Reject a program with attached layout metadata. Do not rely on the program
+  /// Compose an attached layout without sites, such as an imported Qiskit
+  /// layout, with placement and routing when every qubit is allocated in the
+  /// entry block. Reject other layout metadata. Do not rely on the program
   /// contents if compilation fails.
   [[nodiscard]] LogicalResult
   compileForTarget(const TargetEnvironment& environment,
