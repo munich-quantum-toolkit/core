@@ -240,6 +240,19 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
   return success();
 }
 
+/// Accept only a circuit-wire layout that placement can compose.
+static LogicalResult verifyInputLayout(ModuleOp moduleOp) {
+  if (!moduleOp->hasAttr("mqt.layout")) {
+    return success();
+  }
+  auto count = moduleOp->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);
+  if (!count) {
+    return moduleOp.emitError("only programs with allocated qubits can compose "
+                              "an attached layout; discard it");
+  }
+  return mqt::getCircuitLayout(moduleOp, count.getInt());
+}
+
 static void populateTargetPreparationCleanup(OpPassManager& pm) {
   // The module cleanup owns canonicalization and dead symbols.
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
@@ -248,35 +261,6 @@ static void populateTargetPreparationCleanup(OpPassManager& pm) {
 }
 
 namespace {
-
-class RoutePlacedQubitsPass
-    : public PassWrapper<RoutePlacedQubitsPass, OperationPass<ModuleOp>> {
-public:
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(RoutePlacedQubitsPass)
-
-  explicit RoutePlacedQubitsPass(qco::MappingPassOptions options)
-      : options_(options) {}
-
-  void getDependentDialects(DialectRegistry& registry) const override {
-    qco::createMappingPass(options_)->getDependentDialects(registry);
-  }
-
-protected:
-  void runOnOperation() override {
-    // Preplaced input keeps its sites and target-native higher-arity gates.
-    if (!getOperation()->hasAttr(mqt::kPlacementOrderAttr)) {
-      return;
-    }
-    OpPassManager pipeline(ModuleOp::getOperationName());
-    pipeline.addPass(qco::createMappingPass(options_));
-    if (failed(runPipeline(pipeline, getOperation()))) {
-      signalPassFailure();
-    }
-  }
-
-private:
-  qco::MappingPassOptions options_;
-};
 
 class PrepareTargetCompilationPass
     : public PassWrapper<PrepareTargetCompilationPass,
@@ -292,9 +276,8 @@ public:
 
 protected:
   void runOnOperation() override {
-    if (getOperation()->hasAttr("mqt.layout") ||
-        getOperation()->hasAttr(mqt::kPlacementOrderAttr)) {
-      getOperation().emitError("discard existing layout metadata before target "
+    if (getOperation()->hasAttr(mqt::kPlacementOrderAttr)) {
+      getOperation().emitError("discard existing placement order before target "
                                "compilation");
       signalPassFailure();
       return;
@@ -393,6 +376,10 @@ protected:
     } else if (hasStatic) {
       getOperation()->removeAttr(mqt::kSourceQubitCountAttr);
     } else if (failed(prepareLayout(getOperation(), environment_))) {
+      signalPassFailure();
+      return;
+    }
+    if (failed(verifyInputLayout(getOperation()))) {
       signalPassFailure();
       return;
     }
@@ -542,7 +529,13 @@ static void populateDecompositionAndPlacement(OpPassManager& pm,
   // Drop unused slots before placement checks target capacity.
   pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
-  pm.addPass(qco::createElideTerminalSwapsPass());
+  // Source SWAPs before later interactions can already route explicit graphs.
+  if (target.connectivityKind() ==
+      CompilerTarget::Connectivity::Kind::Explicit) {
+    pm.addPass(qco::createElideTerminalSwapsPass());
+  } else {
+    pm.addPass(qco::createElidePermutations());
+  }
   if (target.connectivityKind() ==
       CompilerTarget::Connectivity::Kind::AllToAll) {
     pm.addPass(qco::createPlacementPass());
@@ -594,7 +587,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     placementOptions.nlookahead = mappingOptions.nlookahead;
     placementOptions.searchMemoryLimit = mappingOptions.searchMemoryLimit;
     pm.addPass(qco::createPlacementPass(placementOptions));
-    pm.addPass(std::make_unique<RoutePlacedQubitsPass>(mappingOptions));
+    pm.addPass(qco::createRoutePlacedQubitsPass(mappingOptions));
     break;
   }
   case CompilerTarget::Connectivity::Kind::AllToAll:

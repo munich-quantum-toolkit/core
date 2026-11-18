@@ -268,6 +268,12 @@ largest connected component, including any
 [virtual resonator connections](#resonator-mediated-compilation). Only the
 retained sites count toward the available qubit capacity.
 
+Explicit coupling graphs keep source SWAPs before later interactions because
+they can help routing. The compiler elides terminal straight-line SWAPs and
+records the output permutation in the qubit layout. All-to-all targets also
+elide nonterminal permutations through supported tensor accesses and structured
+control flow.
+
 The `place-qubits` pass selects and materializes an initial layout without
 inserting routing SWAPs. On explicit topologies, it tries identity and path
 shortcuts, then a bounded direct search for an injective embedding of the
@@ -294,23 +300,23 @@ provenance must cover the target and list sites in target order. The default
 target-compilation pipeline runs both passes; input that already names physical
 sites retains those sites.
 
-Set `MappingOptions(rank_placements=True)` or pass `--rank-placements` to search
-for a better calibrated placement after native synthesis. The pass streams at
-most 4,096 complete placements within 10 million attempted vertex assignments
-and applies a global site permutation only when it strictly lowers the
-CZ-count-weighted sum of negative log fidelities. It updates input and routing
-provenance and preserves the native operations and classical outputs. Ranking is
-disabled by default and adds compilation work.
+Set `MappingOptions(rank_placements=True)` or pass `--rank-placements` to rank
+placements after native synthesis. Ranking is off by default. It tries up to
+4,096 complete placements within 10 million candidate assignments and changes
+sites only when the new placement lowers the estimated CZ loss. It preserves
+native operations and classical outputs, and updates the qubit layout to reflect
+the new sites.
 
-Ranking requires a flat scalar program with physical layout metadata, standard
-native CZ gates, globally supported single-qubit gates and readout operations,
-and CZ fidelity calibration on supported edges. Site-tuple fidelity overrides
-the operation default; zero fidelity has infinite loss. Missing calibration,
-structured or indexed programs, other entanglers, and fixed-site input retain
-their placement. This score excludes single-qubit, readout, idle, and correlated
-errors, so it is a calibration proxy rather than a prediction of circuit
-fidelity. The standalone `rank-qubit-placements` pass exposes layout and
-assignment limits; run target-conformance verification afterward.
+Ranking requires a flat scalar program with a physical layout. The target must
+use standard native operation names and provide a fidelity for every supported
+CZ edge. Single-qubit gates, readout, and reset used by the program must work on
+every site. The score sums the negative log fidelity of each CZ in the circuit.
+The fidelity for an ordered pair of sites overrides the operation default. Zero
+fidelity gives infinite loss. The score excludes single-qubit, readout, idle,
+and correlated errors. Structured programs, indexed qubits, other entanglers,
+and fixed-site inputs without layout metadata keep their placement. To change
+the search limits, use the standalone `rank-qubit-placements` pass and run
+target-conformance verification afterward.
 
 ### Custom pass sequences
 
@@ -395,13 +401,13 @@ for name, result in results.items():
 
 The `use-target=true` option selects the target-aware form of each optimization;
 omitting it keeps the target-independent behavior. For all-to-all device
-targets, use `place-qubits` instead of `place-and-route`. For gate-set targets,
-omit placement and terminal-SWAP elision to retain program wire order. Set
-custom routing controls in the textual pass options;
-`CompilationOptions.mapping` configures the default target compiler.
-`unroll-modifiers` distributes composite gates before placement and native
-synthesis. The runner executes only the requested passes, so each sequence must
-meet its passes' input requirements.
+targets, use `elide-permutations` and `place-qubits` instead of
+`elide-terminal-swaps` and `place-and-route`. For gate-set targets, omit
+placement and terminal-SWAP elision to retain program wire order. Set custom
+routing controls in the textual pass options; `CompilationOptions.mapping`
+configures the default target compiler. `unroll-modifiers` distributes composite
+gates before placement and native synthesis. The runner executes only the
+requested passes, so each sequence must meet its passes' input requirements.
 
 The default `preserve_layout=False` clears existing layout metadata. Set
 `preserve_layout=True` throughout the sequence above: terminal-SWAP elision and
@@ -589,10 +595,14 @@ and routing metadata if the input has fixed-size entry-block allocations.
 Programs with static device-site references already name physical sites;
 compilation preserves those IDs and does not attach a layout. Static device-site
 references and allocated program qubits cannot be mixed. Native target
-compilation rejects an already attached layout. See
-[custom pass sequences](#custom-pass-sequences) for layout preservation between
-passes and [transpiler layouts](qiskit.md#transpiler-layouts) for the import and
-export requirements.
+compilation composes an attached layout without sites, such as an imported
+Qiskit layout, with its own placement and routing. The program keeps its program
+qubits and output permutation, including SWAPs that Qiskit elided. This requires
+every qubit to be allocated in the entry block; other attached layouts are
+rejected. See [custom pass sequences](#custom-pass-sequences) for layout
+preservation between passes and
+[transpiler layouts](qiskit.md#transpiler-layouts) for the import and export
+requirements.
 
 ## Metadata for device implementers
 

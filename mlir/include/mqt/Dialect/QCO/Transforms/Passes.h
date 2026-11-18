@@ -61,6 +61,12 @@ createFuseTwoQubitGates(const CompilerTarget& target);
 createDecomposeMultiControlled(const CompilerTarget& target,
                                uint64_t minQubits = 3);
 
+/// Route only a layout selected by place-qubits.
+///
+/// Target compilation uses this pass to retain existing physical-site input.
+[[nodiscard]] std::unique_ptr<Pass>
+createRoutePlacedQubitsPass(const MappingPassOptions& options);
+
 /// Normalize placed QCO, synthesize native gates, and verify target support.
 ///
 /// Requires a valid target environment and placed qubits.

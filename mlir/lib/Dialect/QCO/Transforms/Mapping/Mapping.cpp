@@ -13,6 +13,7 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
@@ -23,6 +24,7 @@
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Drivers.h"
+#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QCO/Utils/Graph.h"
 #include "mqt/Dialect/QCO/Utils/Layout.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
@@ -129,27 +131,6 @@ public:
     layout_->sites.emplace(target.siteIds().begin(), target.siteIds().end());
     valid_ = count.getInt() >= 0 &&
              std::cmp_less_equal(count.getInt(), target.numSites());
-
-    auto circuit = module_->getAttrOfType<DictionaryAttr>("mqt.layout");
-    if (!circuit) {
-      return;
-    }
-    auto initial = circuit.getAs<DenseI64ArrayAttr>("initial");
-    circuitRouting_ = circuit.getAs<DenseI64ArrayAttr>("routing");
-    // Layout positions are compact; source labels can have gaps after cleanup.
-    for (Operation& operation : func.getBody().front()) {
-      if (auto indices = operation.getAttrOfType<DenseI64ArrayAttr>(
-              mqt::kSourceQubitIndicesAttr)) {
-        llvm::append_range(circuitSources_, indices.asArrayRef());
-      }
-    }
-    valid_ &= !circuit.contains("sites") && circuitRouting_ &&
-              llvm::equal(initial.asArrayRef(),
-                          llvm::seq<int64_t>(0, static_cast<int64_t>(
-                                                    circuitSources_.size()))) &&
-              llvm::all_of(circuitSources_, [&](int64_t source) {
-                return source >= 0 && source < layout_->inputCount;
-              });
   }
 
   void record(Operation* root, std::optional<int64_t> slot, size_t vertex) {
@@ -200,13 +181,22 @@ public:
         used[next] = true;
       }
     }
-    if (circuitRouting_) {
-      // Translate the circuit permutation into placed device positions.
-      auto& routing = layout_->routing.emplace(layout_->initial.size());
+    // Source wires now have sites. Compose the circuit-wire layout, whose
+    // positions are those wires, including permutations of elided SWAPs.
+    auto circuit = mqt::getCircuitLayout(module_, layout_->inputCount);
+    if (failed(circuit)) {
+      return failure();
+    }
+    const auto sites = layout_->initial;
+    for (auto [program, wire] : llvm::enumerate(circuit->initial)) {
+      layout_->initial[program] = sites[wire];
+    }
+    layout_->inputCount = circuit->inputCount;
+    if (circuit->routing) {
+      auto& routing = layout_->routing.emplace(sites.size());
       std::iota(routing.begin(), routing.end(), int64_t{0});
-      for (auto [wire, source] : llvm::enumerate(circuitSources_)) {
-        const auto destination = circuitSources_[circuitRouting_[wire]];
-        routing[layout_->initial[source]] = layout_->initial[destination];
+      for (auto [wire, destination] : llvm::enumerate(*circuit->routing)) {
+        routing[sites[wire]] = sites[destination];
       }
     }
     module_->setAttr("mqt.layout", layout_->toAttr(module_.getContext()));
@@ -216,8 +206,6 @@ public:
 private:
   ModuleOp module_;
   std::optional<mqt::QubitLayout> layout_;
-  SmallVector<int64_t> circuitSources_;
-  DenseI64ArrayAttr circuitRouting_;
   bool valid_ = true;
 };
 
@@ -521,6 +509,20 @@ static bool needsPlacement(func::FuncOp func) {
 
 namespace {
 
+// Successful placement preserves QCO linearity and routing structure.
+// Intervening transformations invalidate this preparation normally.
+struct PlacementPreparation {
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PlacementPreparation)
+
+  explicit PlacementPreparation(Operation*) {}
+
+  std::unique_ptr<const NativeCostTable> table;
+  std::optional<size_t> swapCost;
+  bool hasRoutingMeasurements = true;
+  uint64_t seed = 0;
+  Attribute target;
+};
+
 class Mapping {
 private:
   using Window = SmallVector<QubitIndexPair>;
@@ -533,7 +535,8 @@ private:
     const CompilerTarget& target;
     uint64_t seed;
     QubitIndex numProgramQubits;
-    std::unique_ptr<const NativeCostTable> nativeCosts;
+    const NativeCostTable* nativeCosts = nullptr;
+    std::unique_ptr<const NativeCostTable> ownedNativeCosts;
     std::optional<size_t> nativeSwapCost;
     DenseSet<Operation*> routingMeasurements;
 
@@ -544,10 +547,11 @@ private:
               CompilerTarget::NativeOperations::Kind::Explicit) {
         return;
       }
-      nativeCosts = NativeCostTable::precompute(root, seed);
+      ownedNativeCosts = NativeCostTable::precompute(root, seed);
+      nativeCosts = ownedNativeCosts.get();
 
       // Uniform SWAP costs keep the distance heuristic in native-gate units.
-      NativeCostAnalysis analysis(seed, nativeCosts.get());
+      NativeCostAnalysis analysis(seed, nativeCosts);
       for (const auto& [a, b] : target.couplings()) {
         const auto next = analysis.swapCost(target, std::array{a, b});
         if (!next || (nativeSwapCost && nativeSwapCost != next)) {
@@ -615,8 +619,8 @@ private:
     /// Construct a routing state from a vector of wires and a layout.
     RoutingState(Wires wires, Layout<QubitIndex> layout, const Environment& env)
         : wires(std::move(wires)), layout(std::move(layout)) {
-      if (env.nativeCosts) {
-        costs.emplace(env.target, env.seed, env.nativeCosts.get());
+      if (env.nativeCosts != nullptr) {
+        costs.emplace(env.target, env.seed, env.nativeCosts);
       }
     }
 
@@ -993,8 +997,9 @@ private:
   };
 
 public:
-  Mapping(MLIRContext& context, const MappingPassOptions& options)
-      : context_(context), options_(options) {}
+  Mapping(MLIRContext& context, const MappingPassOptions& options,
+          PlacementPreparation* preparation = nullptr)
+      : context_(context), options_(options), preparation_(preparation) {}
 
   LogicalResult place(func::FuncOp func, const CompilerTarget& target) {
     Environment env{
@@ -1003,6 +1008,7 @@ public:
             compilationSeed(func->getParentOfType<ModuleOp>(), options_.seed),
         .numProgramQubits = 0,
         .nativeCosts = nullptr,
+        .ownedNativeCosts = nullptr,
         .nativeSwapCost = std::nullopt,
         .routingMeasurements = findRoutingMeasurements(func),
     };
@@ -1017,8 +1023,16 @@ public:
                             [&](size_t program) -> int64_t {
                               return placed->layout.getHardwareIndex(program);
                             });
-    func->getParentOfType<ModuleOp>()->setAttr(
-        mqt::kPlacementOrderAttr, rewriter.getDenseI64ArrayAttr(order));
+    auto moduleOp = func->getParentOfType<ModuleOp>();
+    moduleOp->setAttr(mqt::kPlacementOrderAttr,
+                      rewriter.getDenseI64ArrayAttr(order));
+    if (preparation_ != nullptr) {
+      preparation_->table = std::move(env.ownedNativeCosts);
+      preparation_->swapCost = env.nativeSwapCost;
+      preparation_->hasRoutingMeasurements = !env.routingMeasurements.empty();
+      preparation_->seed = env.seed;
+      preparation_->target = moduleOp->getAttr(mqt::TargetEnvAttr::name);
+    }
     return success();
   }
 
@@ -1029,8 +1043,12 @@ public:
         .seed = compilationSeed(moduleOp, options_.seed),
         .numProgramQubits = 0,
         .nativeCosts = nullptr,
+        .ownedNativeCosts = nullptr,
         .nativeSwapCost = std::nullopt,
-        .routingMeasurements = findRoutingMeasurements(func),
+        .routingMeasurements =
+            preparation_ != nullptr && !preparation_->hasRoutingMeasurements
+                ? DenseSet<Operation*>{}
+                : findRoutingMeasurements(func),
     };
     IRRewriter rewriter(&context_);
     FailureOr<PlacedComputation> placed = failure();
@@ -1038,7 +1056,10 @@ public:
       placed = preparePlacement(func, env, rewriter);
     } else {
       placed = readPlacement(func, target, rewriter);
-      if (succeeded(placed)) {
+      if (succeeded(placed) && preparation_ != nullptr) {
+        env.nativeCosts = preparation_->table.get();
+        env.nativeSwapCost = preparation_->swapCost;
+      } else if (succeeded(placed)) {
         DenseMap<QubitIndexPair, size_t> weights;
         if (!collectInteractionWeights(placed->wires, weights, 1, 1) ||
             !llvm::all_of(weights, [&](const auto& interaction) {
@@ -1218,6 +1239,7 @@ private:
 
   MLIRContext& context_;
   MappingPassOptions options_;
+  PlacementPreparation* preparation_;
 
   /// Return true, if a precedes b (or b precedes a for backwards iteration).
   template <WireDirection Direction>
@@ -1226,14 +1248,6 @@ private:
       return a->isBeforeInBlock(b);
     }
     return b->isBeforeInBlock(a);
-  }
-
-  /// Return values carried by a supported region terminator.
-  static ValueRange yieldedValues(Block& block) {
-    return TypeSwitch<Operation*, ValueRange>(block.getTerminator())
-        .Case([](scf::YieldOp op) { return op.getResults(); })
-        .Case([](scf::ConditionOp op) { return op.getArgs(); })
-        .Case([](YieldOp op) { return op.getTargets(); });
   }
 
   /// Return the qubit values in `values`, preserving their relative order.
@@ -2297,9 +2311,10 @@ private:
       auto& child = children.emplace_back(Wires(env.target.numSites()),
                                           parent.layout, env);
 
-      auto roots = getQubitValues(Direction == WireDirection::Forward
-                                      ? region.front().getArguments()
-                                      : yieldedValues(region.front()));
+      auto roots =
+          getQubitValues(Direction == WireDirection::Forward
+                             ? ValueRange(region.front().getArguments())
+                             : getYieldedValues(region.front()));
       for (auto [site, root] : zip_equal(sites, roots)) {
         child.wires[site] = WireIterator(root);
       }
@@ -2361,7 +2376,7 @@ private:
       if constexpr (Mode == RoutingMode::Hot) {
         auto* terminator = region.front().getTerminator();
         auto values =
-            realignQubitValues(yieldedValues(region.front()), sites, child);
+            realignQubitValues(getYieldedValues(region.front()), sites, child);
 
         rewriter->modifyOpInPlace(terminator, [&] {
           if (auto condition = dyn_cast<scf::ConditionOp>(terminator)) {
@@ -2451,8 +2466,9 @@ private:
 
 } // namespace
 
-static FailureOr<func::FuncOp> validatePlacementInput(ModuleOp moduleOp) {
-  if (failed(verifyLinearity(moduleOp)) ||
+static FailureOr<func::FuncOp>
+validatePlacementInput(ModuleOp moduleOp, bool checkLinearity = true) {
+  if ((checkLinearity && failed(verifyLinearity(moduleOp))) ||
       failed(mqt::verifyQuantumAllocations(moduleOp))) {
     return failure();
   }
@@ -2513,9 +2529,12 @@ protected:
     if (target.connectivityKind() ==
             CompilerTarget::Connectivity::Kind::Explicit &&
         succeeded(validateRoutingOperations(*func, false))) {
-      if (failed(Mapping(getContext(), options).place(*func, target))) {
+      auto& costs = getAnalysis<PlacementPreparation>();
+      if (failed(Mapping(getContext(), options, &costs).place(*func, target))) {
         signalPassFailure();
+        return;
       }
+      markAnalysesPreserved<PlacementPreparation>();
       return;
     }
 
@@ -2543,9 +2562,16 @@ protected:
 struct MappingPass final : impl::MappingPassBase<MappingPass> {
   using MappingPassBase::MappingPassBase;
 
+  MappingPass(const MappingPassOptions& options, bool requirePlacement)
+      : MappingPassBase(options), requirePlacement_(requirePlacement) {}
+
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
+    if (requirePlacement_ && !moduleOp->hasAttr(mqt::kPlacementOrderAttr)) {
+      return;
+    }
+
     const MappingPassOptions options{
         .nlookahead = nlookahead,
         .alpha = alpha,
@@ -2559,7 +2585,13 @@ protected:
       signalPassFailure();
       return;
     }
-    auto func = validatePlacementInput(moduleOp);
+    auto preparation = getCachedAnalysis<PlacementPreparation>();
+    const bool reusePreparation =
+        preparation && moduleOp->hasAttr(mqt::kPlacementOrderAttr) &&
+        preparation->get().seed == compilationSeed(moduleOp, options.seed) &&
+        preparation->get().target ==
+            moduleOp->getAttr(mqt::TargetEnvAttr::name);
+    auto func = validatePlacementInput(moduleOp, !reusePreparation);
     if (failed(func)) {
       signalPassFailure();
       return;
@@ -2582,19 +2614,29 @@ protected:
         !moduleOp->hasAttr(mqt::kPlacementOrderAttr)) {
       return;
     }
-    if (failed(validateRoutingOperations(*func))) {
+    if (!reusePreparation && failed(validateRoutingOperations(*func))) {
       signalPassFailure();
       return;
     }
-    auto swaps = Mapping(getContext(), options).map(*func, target);
+    auto swaps = Mapping(getContext(), options,
+                         reusePreparation ? &preparation->get() : nullptr)
+                     .map(*func, target);
     if (failed(swaps)) {
       signalPassFailure();
       return;
     }
     numSwaps += *swaps;
   }
+
+private:
+  bool requirePlacement_ = false;
 };
 
 } // namespace
+
+std::unique_ptr<Pass>
+createRoutePlacedQubitsPass(const MappingPassOptions& options) {
+  return std::make_unique<MappingPass>(options, true);
+}
 
 } // namespace mlir::qco

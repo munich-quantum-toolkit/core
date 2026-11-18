@@ -4111,6 +4111,10 @@ TEST_F(MappingPassFixture, ReusePassAcrossTargetsAndSeeds) {
   for (const bool parallel : {false, true}) {
     context->enableMultithreading(parallel);
     PassManager reused(context.get());
+    reused.addPass(createPlacementPass(PlacementPassOptions{
+        .ntrials = options.ntrials,
+        .seed = options.seed,
+    }));
     reused.addPass(createMappingPass(options));
     for (const int64_t seed : {7, 99}) {
       for (const auto& target : {
