@@ -2132,11 +2132,12 @@ and nested modules.)pb")
 
   nb::class_<mlir::MappingOptions>(m, "MappingOptions",
                                    "Native mapping controls.")
-      .def(nb::init<std::optional<size_t>, size_t, size_t, size_t>(),
+      .def(nb::init<std::optional<size_t>, size_t, size_t, size_t, bool>(),
            nb::kw_only(), "trials"_a = nb::none(),
            "iterations"_a = mlir::MappingOptions{}.iterations,
            "lookahead"_a = mlir::MappingOptions{}.lookahead,
-           "search_memory_limit"_a = mlir::MappingOptions{}.searchMemoryLimit)
+           "search_memory_limit"_a = mlir::MappingOptions{}.searchMemoryLimit,
+           "rank_placements"_a = mlir::MappingOptions{}.rankPlacements)
       .def_rw("trials", &mlir::MappingOptions::trials,
               "Positive trial count; None uses the available logical CPU "
               "count, with a minimum of 8.")
@@ -2150,7 +2151,13 @@ and nested modules.)pb")
           "search_memory_limit", &mlir::MappingOptions::searchMemoryLimit,
           R"pb(Estimated node and layout bytes per routing search, per concurrent trial.
 
-Zero disables node expansion. Container overhead, caches, and IR are extra.)pb");
+Zero disables node expansion. Container overhead, caches, and IR are extra.)pb")
+      .def_rw("rank_placements", &mlir::MappingOptions::rankPlacements,
+              R"pb(Post-synthesis calibrated CZ placement ranking.
+
+Disabled by default. Enumerate placements with bounded direct search and
+apply only strict improvements. Unsupported programs or missing calibration
+retain their placement. The score excludes single-qubit and readout errors.)pb");
 
   nb::class_<mlir::CompilationOptions>(m, "CompilationOptions",
                                        R"pb(Shared compiler controls.

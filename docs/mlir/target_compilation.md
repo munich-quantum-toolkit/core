@@ -300,6 +300,24 @@ provenance must cover the target and list sites in target order. The default
 target-compilation pipeline runs both passes; input that already names physical
 sites retains those sites.
 
+Set `MappingOptions(rank_placements=True)` or pass `--rank-placements` to rank
+placements after native synthesis. Ranking is off by default. It tries up to
+4,096 complete placements within 10 million candidate assignments and changes
+sites only when the new placement lowers the estimated CZ loss. It preserves
+native operations and classical outputs, and updates the qubit layout to reflect
+the new sites.
+
+Ranking requires a flat scalar program with a physical layout. The target must
+use standard native operation names and provide a fidelity for every supported
+CZ edge. Single-qubit gates, readout, and reset used by the program must work on
+every site. The score sums the negative log fidelity of each CZ in the circuit.
+The fidelity for an ordered pair of sites overrides the operation default. Zero
+fidelity gives infinite loss. The score excludes single-qubit, readout, idle,
+and correlated errors. Structured programs, indexed qubits, other entanglers,
+and fixed-site inputs without layout metadata keep their placement. To change
+the search limits, use the standalone `rank-qubit-placements` pass and run
+target-conformance verification afterward.
+
 ### Custom pass sequences
 
 Pass a `target_environment` to

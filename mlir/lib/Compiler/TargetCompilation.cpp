@@ -593,7 +593,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   case CompilerTarget::Connectivity::Kind::AllToAll:
     break;
   }
-  qco::populateTargetNativeSynthesisPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm, mapping.rankPlacements);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
@@ -615,7 +615,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
     pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   pm.addPass(mqt::createUnrollModifiers());
-  qco::populateTargetNativeSynthesisPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm, mapping.rankPlacements);
 }
 
 } // namespace mlir

@@ -70,6 +70,7 @@ createRoutePlacedQubitsPass(const MappingPassOptions& options);
 /// Normalize placed QCO, synthesize native gates, and verify target support.
 ///
 /// Requires a valid target environment and placed qubits.
-void populateTargetNativeSynthesisPipeline(OpPassManager& pm);
+void populateTargetNativeSynthesisPipeline(OpPassManager& pm,
+                                           bool rankPlacements = false);
 
 } // namespace mlir::qco

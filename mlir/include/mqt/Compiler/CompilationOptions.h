@@ -32,6 +32,8 @@ struct MappingOptions {
   /// Zero disables node expansion. Container overhead, caches, and IR are
   /// extra.
   size_t searchMemoryLimit = 256UL * 1024 * 1024;
+  /// Rank native CZ placements by calibrated two-qubit loss after synthesis.
+  bool rankPlacements = false;
 };
 
 /// Options shared by compilation entry points.

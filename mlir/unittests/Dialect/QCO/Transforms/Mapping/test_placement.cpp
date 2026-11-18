@@ -205,3 +205,48 @@ TEST(TopologyEmbedding, ParallelOrderAndBoundaryCases) {
     }
   }
 }
+
+TEST(TopologyEmbedding, EnumerationStreamsCompleteLayoutsWithinBudget) {
+  MLIRContext context;
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  Graph graph({7, 11});
+  graph.addEdge(7, 11);
+  graph.addEdge(11, 7);
+  SmallVector<SmallVector<size_t>> layouts;
+  const auto visit = [&](ArrayRef<size_t> layout) {
+    layouts.emplace_back(layout.begin(), layout.end());
+    return layouts.size() == 3;
+  };
+  enumerateTopologyLayouts(graph, target, context, 1, visit);
+  EXPECT_TRUE(layouts.empty());
+  enumerateTopologyLayouts(graph, target, context, 100, visit);
+  ASSERT_EQ(layouts.size(), 3);
+  for (const auto& layout : layouts) {
+    ASSERT_EQ(layout.size(), 2);
+    EXPECT_NE(layout[0], layout[1]);
+    EXPECT_LT(layout[0], 3);
+    EXPECT_LT(layout[1], 3);
+  }
+  llvm::sort(layouts);
+  EXPECT_EQ(std::ranges::adjacent_find(layouts), layouts.end());
+  const auto explicitTarget = llvm::cantFail(
+      CompilerTarget::create(5,
+                             CompilerTarget::Connectivity::fromCouplings(
+                                 {{0, 1}, {1, 2}, {2, 3}, {0, 3}, {3, 4}}),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  Graph disconnected({2, 5, 11, 17});
+  for (const auto [a, b] : {std::pair{2, 5}, std::pair{5, 11}}) {
+    disconnected.addEdge(a, b);
+    disconnected.addEdge(b, a);
+  }
+  layouts.clear();
+  enumerateTopologyLayouts(disconnected, explicitTarget, context, 100000,
+                           [&](ArrayRef<size_t> layout) {
+                             layouts.emplace_back(layout.begin(), layout.end());
+                             return false;
+                           });
+  llvm::sort(layouts);
+  EXPECT_EQ(layouts, bruteForceLayouts(disconnected, explicitTarget));
+}

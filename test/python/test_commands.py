@@ -177,6 +177,7 @@ def test_qpy_target_export(tmp_path: Path, gate_name: str, input_format: str, pa
             "--mapping-iterations=0",
             "--mapping-lookahead=0",
             "--mapping-search-memory-limit=0",
+            "--rank-placements",
         ]
     else:
         source.write_text(compile_program(qasm, target=target, output=OutputFormat.QC).to_qco().ir)

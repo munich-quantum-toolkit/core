@@ -92,6 +92,7 @@ void registerMQTCompilerPasses() {
     qco::registerPauliTwirl2QGates();
     qco::registerMappingPass();
     qco::registerPlacementPass();
+    qco::registerRankPlacements();
     qco::registerQuantumLoopUnroll();
     qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();
