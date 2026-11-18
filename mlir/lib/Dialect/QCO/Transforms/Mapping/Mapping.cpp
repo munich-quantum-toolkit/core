@@ -22,6 +22,7 @@
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/Drivers.h"
+#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QCO/Utils/Graph.h"
 #include "mqt/Dialect/QCO/Utils/Layout.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
@@ -128,27 +129,6 @@ public:
     layout_->sites.emplace(target.siteIds().begin(), target.siteIds().end());
     valid_ = count.getInt() >= 0 &&
              std::cmp_less_equal(count.getInt(), target.numSites());
-
-    auto circuit = module_->getAttrOfType<DictionaryAttr>("mqt.layout");
-    if (!circuit) {
-      return;
-    }
-    auto initial = circuit.getAs<DenseI64ArrayAttr>("initial");
-    circuitRouting_ = circuit.getAs<DenseI64ArrayAttr>("routing");
-    // Layout positions are compact; source labels can have gaps after cleanup.
-    for (Operation& operation : func.getBody().front()) {
-      if (auto indices = operation.getAttrOfType<DenseI64ArrayAttr>(
-              mqt::kSourceQubitIndicesAttr)) {
-        llvm::append_range(circuitSources_, indices.asArrayRef());
-      }
-    }
-    valid_ &= !circuit.contains("sites") && circuitRouting_ &&
-              llvm::equal(initial.asArrayRef(),
-                          llvm::seq<int64_t>(0, static_cast<int64_t>(
-                                                    circuitSources_.size()))) &&
-              llvm::all_of(circuitSources_, [&](int64_t source) {
-                return source >= 0 && source < layout_->inputCount;
-              });
   }
 
   void record(Operation* root, std::optional<int64_t> slot, size_t vertex) {
@@ -199,13 +179,22 @@ public:
         used[next] = true;
       }
     }
-    if (circuitRouting_) {
-      // Translate the circuit permutation into placed device positions.
-      auto& routing = layout_->routing.emplace(layout_->initial.size());
+    // Source wires now have sites. Compose the circuit-wire layout, whose
+    // positions are those wires, including permutations of elided SWAPs.
+    auto circuit = mqt::getCircuitLayout(module_, layout_->inputCount);
+    if (failed(circuit)) {
+      return failure();
+    }
+    const auto sites = layout_->initial;
+    for (auto [program, wire] : llvm::enumerate(circuit->initial)) {
+      layout_->initial[program] = sites[wire];
+    }
+    layout_->inputCount = circuit->inputCount;
+    if (circuit->routing) {
+      auto& routing = layout_->routing.emplace(sites.size());
       std::iota(routing.begin(), routing.end(), int64_t{0});
-      for (auto [wire, source] : llvm::enumerate(circuitSources_)) {
-        const auto destination = circuitSources_[circuitRouting_[wire]];
-        routing[layout_->initial[source]] = layout_->initial[destination];
+      for (auto [wire, destination] : llvm::enumerate(*circuit->routing)) {
+        routing[sites[wire]] = sites[destination];
       }
     }
     module_->setAttr("mqt.layout", layout_->toAttr(module_.getContext()));
@@ -215,8 +204,6 @@ public:
 private:
   ModuleOp module_;
   std::optional<mqt::QubitLayout> layout_;
-  SmallVector<int64_t> circuitSources_;
-  DenseI64ArrayAttr circuitRouting_;
   bool valid_ = true;
 };
 
@@ -1160,14 +1147,6 @@ private:
       return a->isBeforeInBlock(b);
     }
     return b->isBeforeInBlock(a);
-  }
-
-  /// Return values carried by a supported region terminator.
-  static ValueRange yieldedValues(Block& block) {
-    return TypeSwitch<Operation*, ValueRange>(block.getTerminator())
-        .Case([](scf::YieldOp op) { return op.getResults(); })
-        .Case([](scf::ConditionOp op) { return op.getArgs(); })
-        .Case([](YieldOp op) { return op.getTargets(); });
   }
 
   /// Return the qubit values in `values`, preserving their relative order.
@@ -2207,9 +2186,10 @@ private:
       auto& child = children.emplace_back(Wires(env.target.numSites()),
                                           parent.layout, env);
 
-      auto roots = getQubitValues(Direction == WireDirection::Forward
-                                      ? region.front().getArguments()
-                                      : yieldedValues(region.front()));
+      auto roots =
+          getQubitValues(Direction == WireDirection::Forward
+                             ? ValueRange(region.front().getArguments())
+                             : getYieldedValues(region.front()));
       for (auto [site, root] : zip_equal(sites, roots)) {
         child.wires[site] = WireIterator(root);
       }
@@ -2271,7 +2251,7 @@ private:
       if constexpr (Mode == RoutingMode::Hot) {
         auto* terminator = region.front().getTerminator();
         auto values =
-            realignQubitValues(yieldedValues(region.front()), sites, child);
+            realignQubitValues(getYieldedValues(region.front()), sites, child);
 
         rewriter->modifyOpInPlace(terminator, [&] {
           if (auto condition = dyn_cast<scf::ConditionOp>(terminator)) {

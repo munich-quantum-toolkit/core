@@ -4632,20 +4632,43 @@ def test_native_layout_uses_recorded_physical_sites(sites: list[int]) -> None:
     np.testing.assert_allclose(Operator.from_circuit(reordered).data, Operator(expected).data, atol=1e-12)
 
 
-def test_native_compilation_rejects_imported_qiskit_layout() -> None:
-    """Compilation requires a Qiskit circuit without an attached layout."""
-    source = QuantumCircuit(2)
-    source.cx(0, 1)
-    circuit = transpile(source, coupling_map=[[0, 1]], initial_layout=[1, 0], optimization_level=0)
-    program = QCProgram.from_qiskit(circuit).to_qco()
+def test_native_compilation_composes_imported_qiskit_layout() -> None:
+    """Compilation keeps the program qubits and output order of a Qiskit layout."""
+    first = QuantumRegister(2, "a")
+    second = QuantumRegister(1, "b")
+    source = QuantumCircuit(first, [Qubit()], second)
+    source.h(0)
+    source.cx(0, 2)
+    source.cx(3, 1)
+    source.swap(1, 3)
+    source.cx(1, 2)
+    source.ry(0.3, 3)
+    # Qiskit elides the SWAP, routes on a line, and adds an ancilla.
+    circuit = transpile(
+        source,
+        coupling_map=[[0, 1], [1, 2], [2, 3], [3, 4]],
+        initial_layout=[4, 0, 2, 1],
+        optimization_level=2,
+        seed_transpiler=1,
+    )
+    assert circuit.layout is not None
+    assert circuit.layout.final_index_layout() != circuit.layout.initial_index_layout(filter_ancillas=True)
+    assert len(circuit.layout.initial_index_layout(filter_ancillas=True)) < circuit.num_qubits
     target = CompilerTarget(
-        2,
+        circuit.num_qubits,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    with pytest.raises(RuntimeError, match="discard existing layout metadata"):
-        program.compile_for_target(_test_target_environment(target))
-    assert program.to_qiskit().layout is not None
+    environment = _test_target_environment(target)
+    expected = Operator.from_circuit(circuit).data
+
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    program.compile_for_target(environment)
+    compiled = program.to_qc().to_qiskit(target=target)
+    exported = compile_program(circuit, target=environment, output=OutputFormat.QISKIT)
+    for result in (compiled, exported):
+        assert result.layout is not None
+        np.testing.assert_allclose(Operator.from_circuit(result).data, expected, atol=1e-10)
 
 
 @pytest.mark.parametrize("ir_round_trip", [False, True])
