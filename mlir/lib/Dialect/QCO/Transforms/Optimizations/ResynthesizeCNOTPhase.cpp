@@ -142,6 +142,9 @@ class ParitySynthesis {
       if (score > best) {
         best = score;
         split = column;
+        if (score == terms.size()) {
+          break;
+        }
       }
     }
     SmallVector<unsigned> zero;
@@ -177,8 +180,6 @@ class ParitySynthesis {
       elimination.push_back({.target = target, .control = control});
       return cnots_ + elimination.size() < budget_;
     };
-    // ponytail: bounded Gaussian elimination; add PMH only if measurements
-    // justify its extra machinery for these at-most-64-qubit blocks.
     for (unsigned column = 0; column < width; ++column) {
       if ((residual[column] & parityBit(column)) == 0) {
         auto pivot = column + 1;
@@ -367,10 +368,11 @@ protected:
           if (!region.fits(gate, maxQubits, maxGates)) {
             region.rewrite(op);
             region = CNOTPhaseBlock{};
+            if (gate.getInputQubits().size() > maxQubits) {
+              continue;
+            }
           }
-          if (region.fits(gate, maxQubits, maxGates)) {
-            region.append(gate);
-          }
+          region.append(gate);
         } else if (op->getNumRegions() != 0 || !isMemoryEffectFree(op) ||
                    op->hasTrait<OpTrait::IsTerminator>() ||
                    region.touches(op)) {

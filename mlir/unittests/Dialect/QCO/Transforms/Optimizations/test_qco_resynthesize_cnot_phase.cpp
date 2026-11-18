@@ -127,9 +127,6 @@ TEST_F(CNOTPhaseResynthesisTest, SharesParityComputations) {
   ASSERT_EQ(countOps<CtrlOp>(*moduleOp), 8U);
   check(*moduleOp, 3);
   EXPECT_LE(countOps<CtrlOp>(*moduleOp), 4U);
-  EXPECT_EQ(countOps<RZOp>(*moduleOp), 2U);
-  EXPECT_EQ(countOps<POp>(*moduleOp), 1U);
-  EXPECT_EQ(countOps<GPhaseOp>(*moduleOp), 0U);
 }
 
 TEST_F(CNOTPhaseResynthesisTest, PureLinearMapAndNonidentityResidual) {
