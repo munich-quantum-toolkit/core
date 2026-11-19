@@ -470,8 +470,6 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::init() -> QDMI_STATUS {
   if (status_ != Status::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  sites_.resize(qubitsNum_);
-  std::iota(sites_.begin(), sites_.end(), OFFSET);
   operations_.clear();
   operations_.reserve(OPERATIONS.size());
   for (const auto& operation : OPERATIONS) {
@@ -548,8 +546,26 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryDeviceProperty(
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum_,
                             prop, size, value, sizeRet)
-  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_DDSIM_QDMI_Site, sites_,
-                    prop, size, value, sizeRet)
+  if (prop == QDMI_DEVICE_PROPERTY_SITES) {
+    const auto required = qubitsNum_ * sizeof(MQT_DDSIM_QDMI_Site);
+    if (value != nullptr) {
+      if (size < required) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      const std::span output(static_cast<std::byte*>(value), required);
+      for (size_t i = 0; i < qubitsNum_; ++i) {
+        const auto* const site =
+            reinterpret_cast<MQT_DDSIM_QDMI_Site>(OFFSET + i);
+        std::memcpy(&output[i * sizeof(MQT_DDSIM_QDMI_Site)],
+                    static_cast<const void*>(&site),
+                    sizeof(MQT_DDSIM_QDMI_Site));
+      }
+    }
+    if (sizeRet != nullptr) {
+      *sizeRet = required;
+    }
+    return QDMI_SUCCESS;
+  }
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
                     operations_, prop, size, value, sizeRet)
   return qdmi::dd::Device::get().queryProperty(prop, size, value, sizeRet);
