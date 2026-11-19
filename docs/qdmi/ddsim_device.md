@@ -176,11 +176,10 @@ because their basis indices do not fit the sparse representation.
 
 Dense results are written into the caller's buffer without retaining another
 dense copy. Reuse that buffer when reading the same state repeatedly. Sparse
-size queries count paths through the decision diagram and cache only the count;
-each key or value read traverses the diagram again. Counts are reused for equal
-child nodes, but other shared paths can be revisited, so sizing can still grow
-with the number of represented amplitudes. Allocation failures during result
-retrieval return `QDMI_ERROR_OUTOFMEM` and can be retried.
+size queries compute the amplitude count once per reachable decision-diagram
+node and retain only the total. Reading the keys or values traverses the
+represented amplitudes in order. Allocation failures during result retrieval
+return `QDMI_ERROR_OUTOFMEM` and can be retried.
 
 ## Multi-program execution
 

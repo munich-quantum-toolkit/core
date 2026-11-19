@@ -25,9 +25,11 @@
 #include "Worker.hpp"
 #include "WorkerProtocol.hpp"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/MathExtras.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
@@ -1227,27 +1229,23 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
     return QDMI_ERROR_NOTSUPPORTED;
   }
   std::call_once(sparseAmplitudeCountOnce_, [this] {
-    // shortcut: other shared paths repeat; memoize only with a memory bound.
-    const auto count = [](const auto& self, const ::dd::vNode* node) -> size_t {
+    llvm::SmallDenseMap<const ::dd::vNode*, size_t, 64> counts;
+    const auto count = [&counts](const auto& self,
+                                 const ::dd::vNode* node) -> size_t {
       if (::dd::vNode::isTerminal(node)) {
         return 1;
       }
-      const auto& low = node->e[0];
-      const auto& high = node->e[1];
-      if (low.w.exactlyZero()) {
-        return high.w.exactlyZero() ? 0 : self(self, high.p);
+      if (const auto it = counts.find(node); it != counts.end()) {
+        return it->second;
       }
-      const auto left = self(self, low.p);
-      if (high.w.exactlyZero()) {
-        return left;
+      size_t total = 0;
+      for (const auto& edge : node->e) {
+        if (!edge.w.exactlyZero()) {
+          total = llvm::SaturatingAdd(total, self(self, edge.p));
+        }
       }
-      const auto right = low.p == high.p ? left : self(self, high.p);
-      if (right > std::numeric_limits<size_t>::max() - left) {
-        // Every result element needs multiple bytes; a saturated count cannot
-        // fit.
-        return std::numeric_limits<size_t>::max();
-      }
-      return left + right;
+      counts.try_emplace(node, total);
+      return total;
     };
     sparseAmplitudeCount_ = count(count, stateVecDD_.p);
   });
