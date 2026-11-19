@@ -92,6 +92,8 @@ public:
       return std::errc::invalid_argument;
     case QDMI_ERROR_OUTOFRANGE:
       return std::errc::result_out_of_range;
+    case QDMI_ERROR_NOTSUPPORTED:
+      return std::errc::not_supported;
     case QDMI_ERROR_OUTOFMEM:
       return std::errc::not_enough_memory;
     default:
