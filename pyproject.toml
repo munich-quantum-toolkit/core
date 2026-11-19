@@ -275,7 +275,7 @@ build = "cp3*"
 skip = [ "*-musllinux_*", "cp314t-*" ]
 archs = "auto64"
 build-frontend = "uv"
-config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
+config-settings = { "cmake.define.ENABLE_IPO" = "ON", "cmake.define.MQT_CORE_RELEASE_WHEEL" = "ON" }
 environment = { DEPLOY = "ON" }
 test-command = "pytest test/python --maxprocesses=2 --dist=worksteal"
 test-groups = [ "test" ]

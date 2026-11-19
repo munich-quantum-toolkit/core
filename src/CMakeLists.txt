@@ -93,6 +93,10 @@ if(MQT_CORE_INSTALL)
     DESTINATION ${config_install_dir}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime)
   install(
+    FILES ${PROJECT_SOURCE_DIR}/cmake/MQTLLVMABI.cmake
+    DESTINATION ${config_install_dir}
+    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
+  install(
     EXPORT mqt-core-development-targets
     NAMESPACE MQT::
     DESTINATION ${config_install_dir}

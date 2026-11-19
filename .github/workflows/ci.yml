@@ -217,8 +217,6 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       use-sccache-gha: true
-      setup-mlir: true
-      llvm-version: 23.1.4
     permissions:
       contents: read
 

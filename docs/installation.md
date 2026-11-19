@@ -82,11 +82,11 @@ bundles. They also provide the `mqt-core` command with `compile`, `bench`,
 from a CMake application without installing an LLVM SDK; see {doc}`cpp_api`. C++
 development libraries and headers require a source installation.
 
-The wheels use portable CPU settings and an assertion-free LLVM/MLIR 23.1.4 SDK.
-Linux builds target manylinux_2_28 using Clang 22, LLD, and ThinLTO; macOS
-builds use Apple Clang and ThinLTO with a macOS 13.3 deployment target. Windows
-builds use MSVC and interprocedural optimization (IPO), except for DLLs that
-require automatic symbol exports.
+The wheels use portable CPU settings and the pinned LLVM/MLIR SDK with
+assertions and ABI-breaking checks disabled. Linux builds target manylinux_2_28
+using Clang 22, LLD, and ThinLTO. macOS builds use Apple Clang and ThinLTO with
+a macOS 13.3 deployment target. Windows builds use MSVC and interprocedural
+optimization (IPO), except for DLLs that require automatic symbol exports.
 
 ### Command-line tools
 
@@ -622,7 +622,8 @@ cmake -S . -B build -DMLIR_DIR=/path/to/installation/lib/cmake/mlir
 Replace `/path/to/installation` with the actual path to the MLIR installation.
 
 Alternatively, you can set the {code}`MLIR_DIR` environment variable to the same
-path before running CMake:
+path before running CMake. A repository-local `.env` file can supply `MLIR_DIR`
+when neither CMake nor the environment selects an SDK.
 
 ::::{tab-set}
 
