@@ -1864,7 +1864,7 @@ TEST(CompilerQDMIAdapterTest, TerminalReadoutAllowsIndependentGates) {
           QDMI_PROGRAM_FORMAT_QASM3)));
   const auto device =
       llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
-  for (const auto* operation : {"x", "reset", "flip"}) {
+  for (const std::string_view operation : {"x", "reset", "flip", "barrier"}) {
     for (const auto site : {0, 1}) {
       SCOPED_TRACE(llvm::formatv("{0} on site {1}", operation, site).str());
       auto program = llvm::cantFail(mlir::QCProgram::fromOpenQASMString(
@@ -1876,6 +1876,14 @@ TEST(CompilerQDMIAdapterTest, TerminalReadoutAllowsIndependentGates) {
       auto compiled =
           mlir::CompiledProgram::serialize(std::move(program), environment);
       MQT_ASSERT_SUCCESS(compiled);
+      if (operation == "barrier") {
+        const auto barrier = compiled->payload().find("barrier ");
+        const auto measurement = compiled->payload().find("measure $0;");
+        ASSERT_NE(barrier, std::string::npos);
+        ASSERT_NE(measurement, std::string::npos);
+        EXPECT_EQ(measurement < barrier, site == 0);
+        continue;
+      }
       auto job = llvm::cantFail(
           device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
       ASSERT_TRUE(llvm::cantFail(job.wait()));

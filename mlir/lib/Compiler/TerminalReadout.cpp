@@ -68,7 +68,7 @@ analyzeTerminalReadout(ModuleOp moduleOp) {
   std::map<size_t, Value> measuredSites;
   SmallVector<Operation*> oldReadout;
   for (auto& operation : block.without_terminator()) {
-    if (isa<qc::StaticOp>(operation)) {
+    if (isa<arith::ConstantOp, qc::StaticOp>(operation)) {
       continue;
     }
     if (auto measurement = dyn_cast<qc::MeasureOp>(operation)) {
@@ -106,29 +106,21 @@ analyzeTerminalReadout(ModuleOp moduleOp) {
       reg->second.sites[static_cast<size_t>(*index)] = static_cast<size_t>(
           measurement.getQubit().getDefiningOp<qc::StaticOp>().getIndex());
       oldReadout.push_back(&operation);
-    } else if (isa<arith::ConstantOp, qc::BarrierOp>(operation)) {
-      continue;
-    } else if (auto call = dyn_cast<func::CallOp>(operation)) {
-      auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
-          call, call.getCalleeAttr());
-      // Defined functions can hide sites or classical references. Native
-      // declarations act only on their explicit qubit operands.
-      if (!callee || !callee.isExternal() || call.getNumResults() != 0 ||
-          !llvm::all_of(call.getOperandTypes(), [](Type type) {
-            return type.isF64() || isa<qc::QubitType>(type);
-          })) {
-        return failure();
-      }
-      for (auto operand : call.getOperands()) {
-        if (!isa<qc::QubitType>(operand.getType())) {
-          continue;
-        }
-        auto qubit = operand.getDefiningOp<qc::StaticOp>();
-        if (!qubit || measuredSites.contains(qubit.getIndex())) {
+    } else {
+      if (auto call = dyn_cast<func::CallOp>(operation)) {
+        auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+            call, call.getCalleeAttr());
+        // Defined functions can hide sites or classical references. Native
+        // declarations act only on their explicit qubit operands.
+        if (!callee || !callee.isExternal() || call.getNumResults() != 0 ||
+            !llvm::all_of(call.getOperandTypes(), [](Type type) {
+              return type.isF64() || isa<qc::QubitType>(type);
+            })) {
           return failure();
         }
+      } else if (!isa<qc::UnitaryOpInterface, qc::ResetOp>(operation)) {
+        return failure();
       }
-    } else if (isa<qc::UnitaryOpInterface, qc::ResetOp>(operation)) {
       for (auto operand : operation.getOperands()) {
         if (!isa<qc::QubitType>(operand.getType())) {
           continue;
@@ -138,8 +130,6 @@ analyzeTerminalReadout(ModuleOp moduleOp) {
           return failure();
         }
       }
-    } else {
-      return failure();
     }
   }
   ResultLayout layout;
