@@ -1209,10 +1209,12 @@ submitProgram(const qdmi::Device& device, CompilerInput program,
                         custom3, custom4, custom5, &compiled->environment()));
 }
 
-Expected<TargetEnvironment>
-prepareProgramSubmission(const qdmi::Device& device,
-                         ArrayRef<const CompiledProgram*> programs,
-                         const TargetEnvironment* destination) {
+// A newly queried destination is owned by the caller. A retained destination
+// only needs validating, so submission can reuse it without copying it.
+static Expected<std::optional<TargetEnvironment>>
+checkProgramSubmission(const qdmi::Device& device,
+                       ArrayRef<const CompiledProgram*> programs,
+                       const TargetEnvironment* destination) {
   if (programs.empty() || llvm::is_contained(programs, nullptr)) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument),
@@ -1239,6 +1241,20 @@ prepareProgramSubmission(const qdmi::Device& device,
       return error;
     }
   }
+  return snapshot;
+}
+
+Expected<TargetEnvironment>
+prepareProgramSubmission(const qdmi::Device& device,
+                         ArrayRef<const CompiledProgram*> programs,
+                         const TargetEnvironment* destination) {
+  auto snapshot = checkProgramSubmission(device, programs, destination);
+  if (!snapshot) {
+    return snapshot.takeError();
+  }
+  if (*snapshot) {
+    return std::move(**snapshot);
+  }
   return *destination;
 }
 
@@ -1256,24 +1272,19 @@ trySubmitPrograms(const qdmi::Device& device,
         std::make_error_code(std::errc::invalid_argument),
         "A program batch requires non-null programs and nonnegative num_shots");
   }
-  auto prepared = prepareProgramSubmission(device, programs, destination);
+  auto prepared = checkProgramSubmission(device, programs, destination);
   if (!prepared) {
     return prepared.takeError();
   }
   const auto format = programs.front()->programFormat();
-  if (qdmi::isBinaryProgramFormat(format)) {
-    std::vector<std::span<const std::byte>> payloads;
-    payloads.reserve(programs.size());
-    for (const auto* program : programs) {
-      payloads.push_back(std::as_bytes(std::span(program->payload())));
-    }
-    return device.trySubmitJob(payloads, format, static_cast<size_t>(numShots),
-                               custom1, custom2, custom3, custom4, custom5);
-  }
-  std::vector<std::string> payloads;
+  std::vector<std::span<const std::byte>> payloads;
   payloads.reserve(programs.size());
   for (const auto* program : programs) {
-    payloads.push_back(program->payload());
+    auto bytes = qdmi::detail::programBytes(program->payload(), format);
+    if (!bytes) {
+      return bytes.takeError();
+    }
+    payloads.push_back(*bytes);
   }
   return device.trySubmitJob(payloads, format, static_cast<size_t>(numShots),
                              custom1, custom2, custom3, custom4, custom5);
