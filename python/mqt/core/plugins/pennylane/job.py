@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from pennylane.measurements import SampleMeasurement
     from pennylane.tape import QuantumScript
     from pennylane.typing import Result, ResultBatch
+    from pennylane.wires import Wires
 
     from mqt.core.mlir import CompiledProgram
     from mqt.core.plugins.pennylane.device import QDMIDevice
@@ -83,14 +84,7 @@ class PennyLaneJob:
                 BatchEntry(
                     index,
                     copy,
-                    attempts=(
-                        JobAttempt(
-                            status=Job.Status.DONE,
-                            result=self._process_samples(
-                                index, np.zeros((shots, len(self._wires[index])), dtype=np.int8)
-                            ),
-                        ),
-                    )
+                    attempts=(JobAttempt(status=Job.Status.DONE, result=self._local_result(index, shots)),)
                     if program is None
                     else (),
                 )
@@ -134,6 +128,33 @@ class PennyLaneJob:
         context = self._device._context  # ruff:ignore[private-member-access] Check the device that submits the batch.
         return context.supports(self._program(indices[0]).program_format, len(indices), shots)
 
+    def _local_result(self, tape_index: int, shots: int) -> object:
+        wires = self._wires[tape_index]
+        measured = []
+        samples = None
+        for measurement in self._tapes[tape_index].measurements:
+            if type(measurement) is CountsMP:
+                selected = measurement.wires or wires
+                measured.append(self._counts(measurement, selected, {"0" * len(selected): shots}))
+            elif type(measurement) in {ProbabilityMP, ExpectationMP, VarianceMP}:
+                # Repeating one outcome leaves its probabilities and moments unchanged.
+                measured.append(
+                    cast("SampleMeasurement", measurement).process_samples(
+                        np.zeros((1, len(wires)), dtype=np.int8), wires
+                    )
+                )
+            else:
+                if samples is None:
+                    samples = np.zeros((shots, len(wires)), dtype=np.int8)
+                measured.append(cast("SampleMeasurement", measurement).process_samples(samples, wires))
+        return measured[0] if len(measured) == 1 else tuple(measured)
+
+    @staticmethod
+    def _counts(measurement: CountsMP, wires: Wires, counts: dict[str, int]) -> dict:
+        # PennyLane needs explicit wires to include unobserved outcomes.
+        processor = measurement if measurement.wires else CountsMP(wires=wires, all_outcomes=measurement.all_outcomes)
+        return processor.process_counts(counts, wires)
+
     def _process_samples(self, tape_index: int, values: np.ndarray) -> object:
         measured = tuple(
             cast("SampleMeasurement", measurement).process_samples(values, self._wires[tape_index])
@@ -167,12 +188,7 @@ class PennyLaneJob:
         measured = []
         for measurement, selection, value in zip(tape.measurements, selected, marginals, strict=True):
             if type(measurement) is CountsMP:
-                processor = (
-                    measurement
-                    if measurement.wires
-                    else CountsMP(wires=selection, all_outcomes=measurement.all_outcomes)
-                )
-                measured.append(processor.process_counts(cast("dict[str, int]", value), selection))
+                measured.append(self._counts(measurement, selection, cast("dict[str, int]", value)))
             elif type(measurement) is ProbabilityMP:
                 measured.append(value)
             else:
