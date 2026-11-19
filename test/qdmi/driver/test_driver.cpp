@@ -1834,7 +1834,7 @@ TEST(DeviceRegistrationTest, RetrievesIndexedHistograms) {
   EXPECT_EQ(value(job.getCounts(0U)),
             (std::map<std::string, size_t>{{"10", 1U}, {"01", 1U}}));
   EXPECT_EQ(value(job.getCounts(1U)),
-            (std::map<std::string, size_t>{{"11", 1U}, {"00", 1U}}));
+            (std::map<std::string, size_t>{{"11", 1U}, {"", 1U}}));
 }
 
 TEST(DeviceRegistrationTest, RuntimeRegistrationsStayOutOfClientCatalog) {

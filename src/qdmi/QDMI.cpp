@@ -139,25 +139,19 @@ Expected<std::map<std::string, T>> getSparseResult(
     return error;
   }
 
-  // Parse the comma-separated keys.
+  // A final comma can separate an empty outcome or terminate the list.
   std::map<std::string, T> result;
-  if (keys.empty() && values.size() == 1) {
-    result[""] = values.front();
-    return result;
-  }
-  llvm::StringRef remaining(keys);
-  size_t idx = 0;
-  while (!remaining.empty()) {
-    const auto [key, rest] = remaining.split(',');
-    remaining = rest;
-    if (idx >= values.size()) {
+  size_t start = 0;
+  for (const auto& value : values) {
+    if (start == std::string::npos) {
       return qdmi::makeError(QDMI_ERROR_FATAL, std::string(mismatch));
     }
-    result.insert_or_assign(result.end(), key.str(), values[idx]);
-    ++idx;
+    const auto end = keys.find(',', start);
+    result.insert_or_assign(result.end(), keys.substr(start, end - start),
+                            value);
+    start = end == std::string::npos ? end : end + 1;
   }
-
-  if (idx != values.size()) {
+  if (start < keys.size()) {
     return qdmi::makeError(QDMI_ERROR_FATAL, std::string(mismatch));
   }
   return result;
