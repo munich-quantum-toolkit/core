@@ -267,12 +267,9 @@ shots: set them on the QNode or override them with `qp.set_shots`. Devices do
 not accept a `shots` argument or provide a default shot count.
 
 Ordinary QNode execution groups tapes and shot partitions with the same program
-format and shot count into native QDMI jobs. A provider may decline a list, for
-example because it exceeds a program-count or total-shot limit. The device then
-asks the provider for the largest accepted program count without submitting
-anything, and submits the fewest consecutive lists of nearly equal size. It
-halves any list that the provider still declines, down to single programs. All
-jobs are submitted before waiting for results, which retain the input tape and
+format and shot count into native QDMI jobs. For devices that limit the size of
+a list, see [multi-program jobs](driver.md#multi-program-jobs). All jobs are
+submitted before waiting for results, which retain the input tape and
 shot-partition order. `submitted_jobs` counts QDMI jobs.
 
 Use `with qp.Tracker(device) as tracker:` to record accepted program executions

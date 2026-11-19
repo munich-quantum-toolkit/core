@@ -539,10 +539,10 @@ class LimitedDevice:
         (70, 10, 30, True, [24, 23, 23]),
     ],
 )
-def test_declined_group_uses_fewest_accepted_jobs(
+def test_declined_group_is_split_in_input_order(
     count: int, low: int, high: int, *, probe: bool, sizes: list[int]
 ) -> None:
-    """Split a declined group into the fewest near-equal ordered jobs, or halve it without a check."""
+    """Fit contiguous groups to the count limit, or halve a declined group without a check."""
     device = LimitedDevice(count, low, high, probe=probe)
     device.batch.submit()
     device.batch.complete()

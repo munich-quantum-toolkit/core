@@ -122,6 +122,12 @@ the count with the requested shot count and custom parameters, which are set
 before the programs. Device unavailability and submission errors propagate,
 since retrying an uncertain submission could duplicate execution.
 
+The Qiskit and PennyLane adapters split a declined list into consecutive groups.
+They probe program counts to find an upper limit and divide the list into nearly
+equal groups within that limit. If the limit is unknown or the device still
+declines a group, they halve it until it is accepted or a single program is
+declined.
+
 Use `job.num_programs` and the optional `program_index` argument on result
 methods to retrieve results in input order. Use `job.get_program(index)` for
 text or `job.get_program(bytes, index)` for exact bytes; a retrieved historical
