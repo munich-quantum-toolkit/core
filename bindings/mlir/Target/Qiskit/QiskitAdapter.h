@@ -844,11 +844,25 @@ nativeRAngle(nb::handle operation, const std::string_view name) {
       nb::cast<size_t>(operation.attr("num_qubits")) != 1) {
     return std::nullopt;
   }
-  const auto angle = alias->angle;
   try {
-    auto expected = nativeRGate(name, parameters[nb::int_(0)]);
-    if (operation.attr("definition").equal(expected.attr("definition"))) {
-      return angle;
+    const nb::object body = operation.attr("definition");
+    if (body.is_none() || nb::cast<size_t>(body.attr("num_qubits")) != 1U ||
+        nb::cast<size_t>(body.attr("num_clbits")) != 0U ||
+        nb::cast<size_t>(body.attr("num_vars")) != 0U ||
+        !body.attr("global_phase").equal(nb::float_(alias->globalPhase))) {
+      return std::nullopt;
+    }
+    const nb::object data = body.attr("data");
+    if (nb::len(data) == 1U) {
+      const nb::object gate = data[nb::int_(0)].attr("operation");
+      const nb::object angles = gate.attr("params");
+      if (gate.type().is(
+              nb::module_::import_("qiskit.circuit.library").attr("RGate")) &&
+          nb::len(angles) == 2U &&
+          angles[nb::int_(0)].equal(nb::float_(alias->angle)) &&
+          angles[nb::int_(1)].equal(parameters[nb::int_(0)])) {
+        return alias->angle;
+      }
     }
   } catch (const nb::python_error&) {
     // Other custom definitions use normal circuit import.
