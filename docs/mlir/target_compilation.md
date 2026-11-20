@@ -117,14 +117,14 @@ measure a subset of sites, send measurements to different output positions,
 repeat a measurement, or leave output positions at zero. MQT Core records how to
 reconstruct those requested outputs from the device's measurement order.
 
-Operations on unmeasured qubits are moved before the final measurements. A
-native gate call cannot use a qubit after it has been measured. Calls to
-functions with defined bodies are rejected by this readout conversion because
-they may access physical sites that are not visible in the call's arguments.
-Programs with dynamically allocated qubits retain their classical outputs,
-subject to the selected exporter's restrictions. Provider libraries handle
-service requirements such as simulator qubit declarations and measurement of
-every qubit.
+Operations on unmeasured qubits can move before the final measurements. A
+barrier on a measured qubit preserves the order of its measurement. A native
+gate call cannot use a qubit after it has been measured. Calls to functions with
+defined bodies are rejected by this readout conversion because they may access
+physical sites that are not visible in the call's arguments. Programs with
+dynamically allocated qubits retain their classical outputs, subject to the
+selected exporter's restrictions. Provider libraries handle service requirements
+such as simulator qubit declarations and measurement of every qubit.
 
 OpenQASM 3 uses plain classical declarations as implicit outputs unless a
 non-output classical variable is emitted at global scope. In that case, output
