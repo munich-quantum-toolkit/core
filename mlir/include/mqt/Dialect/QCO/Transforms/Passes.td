@@ -355,7 +355,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Where:
 
     - `p` is the dynamic-to-static mapping associated with search node `n`.
-    - `window` contains at most `1 + nlookahead` two-qubit operations in program order.
+    - `window` contains at most `1 + nlookahead` two-qubit operations in wire-frontier order.
     - `cost(n)` is the accumulated SWAP cost from the root to node `n`.
       Without native costs, each SWAP costs one.
     - `swapCost` is the uniform standalone SWAP cost, or one without native costs.
@@ -451,7 +451,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     end runs. Branch reconciliation and loop-restoration SWAPs are included.
 
     The pass ranks candidates by estimated native two-qubit count, then estimated
-    qubit-dependency depth, retaining the earlier candidate on an exact tie.
+    qubit-dependency depth. Within a trial, the latest equally scoring layout
+    wins. Across trials, the earliest equally scoring trial wins.
     Counts are static: loop bodies and branch arms contribute their operations
     without execution frequencies. Depth is the maximum within any block; it
     excludes classical scheduling and is not a runtime control-flow bound.
