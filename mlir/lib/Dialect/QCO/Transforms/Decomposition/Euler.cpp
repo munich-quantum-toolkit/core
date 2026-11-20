@@ -351,20 +351,31 @@ Value emitRotationAngleSum(OpBuilder& builder, Location loc,
   if (terms.empty()) {
     return mqt::constantFromScalar(builder, loc, 0.);
   }
-  SmallVector<Value> angles;
-  angles.reserve(terms.size());
-  for (const auto& term : terms) {
-    Value angle = term.scale == 1.
-                      ? term.value
-                      : builder.createOrFold<arith::MulFOp>(
-                            loc, term.value,
-                            mqt::constantFromScalar(builder, loc, term.scale));
-    angles.push_back(terms.size() == 1
-                         ? angle
-                         : mqt::variantToValue(builder, loc,
-                                               normalizeRotationParameter(
-                                                   builder, loc, angle)));
+  const auto scaled = [&](const RotationAngleTerm& term) -> Value {
+    if (term.scale == 1.) {
+      return term.value;
+    }
+    return builder.createOrFold<arith::MulFOp>(
+        loc, term.value, mqt::constantFromScalar(builder, loc, term.scale));
+  };
+  if (terms.size() == 1) {
+    return scaled(terms.front());
   }
+  const auto normalized = [&](const RotationAngleTerm& term) {
+    return mqt::variantToValue(
+        builder, loc, normalizeRotationParameter(builder, loc, scaled(term)));
+  };
+  const auto& first = terms.front();
+  if (llvm::all_of(terms.drop_front(), [&](const auto& term) {
+        return term.value == first.value && term.scale == first.scale;
+      })) {
+    // Reduce modulo 4*pi before multiplying even very large input angles.
+    return builder.createOrFold<arith::MulFOp>(
+        loc, normalized(first),
+        mqt::constantFromScalar(builder, loc,
+                                static_cast<double>(terms.size())));
+  }
+  auto angles = llvm::map_to_vector(terms, normalized);
   for (size_t stride = 1; stride < angles.size(); stride *= 2) {
     for (size_t i = 0; i + stride < angles.size(); i += 2 * stride) {
       angles[i] = builder.createOrFold<arith::AddFOp>(loc, angles[i],
