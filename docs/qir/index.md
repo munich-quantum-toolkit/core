@@ -408,11 +408,12 @@ Direct host functions called by the JIT must obey their declared ABI and must
 not throw. Host function pointers cannot be sent to a DDSIM worker because they
 belong to the host process. `JitSession::create` returns an owned session or an
 `llvm::Error`. `run` and the sampling methods return `llvm::Expected<int64_t>`:
-a completed program returns its exit code, including nonzero codes, while
-recoverable validation failures return owned errors. Unhandled QIR runtime
-failures still terminate; see [runtime failures](#runtime-failures). Textual
-output uses a borrowed `llvm::raw_ostream` that must outlive the session;
-passing null disables it.
+a completed program returns its exit code, including nonzero codes. DDSIM
+reports a nonzero exit as a failed program. Recoverable validation failures
+return owned errors from the JIT. Unhandled QIR runtime failures still
+terminate; see [runtime failures](#runtime-failures). Textual output uses a
+borrowed `llvm::raw_ostream` that must outlive the session; passing null
+disables it.
 
 Every DDSIM QIR job owns its JIT session, runtime, simulator state,
 random-number generator, and output settings. QIR jobs can therefore execute
@@ -461,8 +462,10 @@ allocations rather than their cumulative number in a shot. Released handles
 remain invalid.
 
 Statevector extraction supports Base and Adaptive formats. Base extraction stops
-before the first `irreversible` call and requires a terminal irreversible
-region; defined or indirect helpers remain unsupported for that path.
+before the first `irreversible` call. The remaining path must reach a return
+through unconditional control flow. Its exit code must already be available
+before that call. Defined or indirect helpers remain unsupported for Base
+extraction.
 
 Adaptive extraction executes classical loops, branches, dynamically computed
 gate arguments, dynamic allocations and direct helper calls while deferring Z
