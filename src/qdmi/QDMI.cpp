@@ -1000,14 +1000,12 @@ Device::trySubmitJob(const std::span<const std::string> programs,
   sizes.reserve(programs.size());
   pointers.reserve(programs.size());
   for (const auto& program : programs) {
-    const auto terminator = program.find('\0');
-    if (terminator != std::string::npos && terminator != program.size() - 1) {
-      return qdmi::makeError(
-          QDMI_ERROR_INVALIDARGUMENT,
-          "Text programs must not contain embedded null bytes");
+    auto bytes = detail::programBytes(program, format);
+    if (!bytes) {
+      return bytes.takeError();
     }
-    sizes.push_back(program.size() + (terminator == std::string::npos ? 1 : 0));
-    pointers.push_back(program.c_str());
+    sizes.push_back(bytes->size());
+    pointers.push_back(bytes->data());
   }
   return submitJobImpl(format, sizes, pointers, numShots, custom1, custom2,
                        custom3, custom4, custom5);

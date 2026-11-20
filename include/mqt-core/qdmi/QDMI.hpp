@@ -346,6 +346,25 @@ isBinaryProgramFormat(const QDMI_Program_Format format) noexcept {
          format == QDMI_PROGRAM_FORMAT_QPY;
 }
 
+namespace detail {
+/// Borrow the exact bytes of an owned payload, including the text terminator.
+[[nodiscard]] inline llvm::Expected<std::span<const std::byte>>
+programBytes(const std::string& payload, QDMI_Program_Format format) {
+  size_t size = payload.size();
+  if (!isBinaryProgramFormat(format)) {
+    const auto terminator = payload.find('\0');
+    if (terminator == std::string::npos) {
+      ++size;
+    } else if (terminator != size - 1) {
+      return qdmi::makeError(
+          QDMI_ERROR_INVALIDARGUMENT,
+          "Text programs must not contain embedded null bytes");
+    }
+  }
+  return std::as_bytes(std::span(payload.c_str(), size));
+}
+} // namespace detail
+
 /// Concept for ranges that are contiguous in memory and can be
 /// constructed with a size.
 ///
