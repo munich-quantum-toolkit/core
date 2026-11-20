@@ -25,23 +25,25 @@ namespace mlir::mqt {
 /// Convert a direct constant-like value to a double.
 [[nodiscard]] std::optional<double> valueToDouble(Value value);
 
-/// Constant-fold a pure SSA expression DAG, returning null on failure.
+/// Evaluate a constant SSA expression without changing the IR.
 ///
-/// Nonconstant operations must be region-free and fold to exactly one result.
-/// The cache stores a nonnull attribute on success and a null attribute on
-/// failure. An absent entry has not been evaluated. Discard the cache when the
-/// evaluated IR changes. Evaluation uses an explicit stack to support deep
-/// expressions and stops at the first non-constant operand.
+/// Requires single-result, region-free operations that are memory-effect-free
+/// and speculatable with their constant operands. Supports deep expressions and
+/// returns null at the first unknown operand or unsuccessful fold.
+/// The cache holds an attribute on success and a null attribute on failure.
+/// Direct queries for literals and block arguments do not populate it. Discard
+/// the cache when the evaluated IR changes.
 ///
 /// @param value SSA value to evaluate.
 /// @param cache Evaluation results indexed by SSA value.
 [[nodiscard]] Attribute valueToConstantAttr(Value value,
                                             DenseMap<Value, Attribute>& cache);
 
-/// Constant-fold a pure SSA expression DAG, returning null on failure.
+/// Evaluate a constant SSA expression without changing the IR, returning null
+/// on failure.
 [[nodiscard]] Attribute valueToConstantAttr(Value value);
 
-/// Constant-fold a pure SSA expression DAG to a double.
+/// Return the numeric value of a constant SSA expression, if available.
 [[nodiscard]] std::optional<double> valueToConstantDouble(Value value);
 
 } // namespace mlir::mqt

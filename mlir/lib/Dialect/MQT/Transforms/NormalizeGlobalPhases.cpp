@@ -176,13 +176,6 @@ public:
   void normalize(Region& region) { normalizeRegion(region); }
 
 private:
-  [[nodiscard]] std::optional<double> getConstantAngle(Value angle) {
-    if (const auto constant = valueToDouble(angle)) {
-      return constant;
-    }
-    return attributeToDouble(valueToConstantAttr(angle, constants_));
-  }
-
   [[nodiscard]] std::optional<PhaseContribution>
   normalizeOperation(Operation* op, Operation* hoistBefore) {
     if (hoistBefore == nullptr) {
@@ -322,7 +315,8 @@ private:
       std::optional<PhaseContribution> phase;
       if (isa<qc::GPhaseOp, qco::GPhaseOp>(op)) {
         auto angle = op.getOperand(0);
-        const auto constant = getConstantAngle(angle);
+        const auto constant =
+            attributeToDouble(valueToConstantAttr(angle, constants_));
         // Leave invalid expressions for dead-code removal or diagnostics.
         if (constant && !isValidGlobalPhaseAngle(*constant)) {
           continue;
@@ -364,8 +358,8 @@ private:
 
     // Preserve a single normalized phase, including dynamic angles.
     if (contributions.size() == 1 && directPhases.size() == 1) {
-      const auto constant =
-          getConstantAngle(directPhases.front()->getOperand(0));
+      const auto constant = attributeToDouble(
+          valueToConstantAttr(directPhases.front()->getOperand(0), constants_));
       if (!constant ||
           (normalizeAngle(*constant) == *constant && *constant != 0.0)) {
         return std::nullopt;

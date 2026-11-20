@@ -64,7 +64,7 @@ protected:
 
 } // namespace
 
-TEST_F(ConstantFoldingTest, valueToDoubleLiteralConversions) {
+TEST_F(ConstantFoldingTest, attributeToDoubleLiteralConversions) {
   for (const auto& [attribute, expected] : {
            std::pair<TypedAttr, double>{builder->getF64FloatAttr(1.234), 1.234},
            {builder->getI32IntegerAttr(42), 42.0},
@@ -86,19 +86,13 @@ TEST_F(ConstantFoldingTest, valueToDoubleLiteralConversions) {
            },
        }) {
     SCOPED_TRACE(expected);
-    auto op = arith::ConstantOp::create(*builder, attribute);
-    const auto value = mlir::mqt::valueToDouble(op.getResult());
-    ASSERT_TRUE(value);
-    EXPECT_DOUBLE_EQ(*value, expected);
+    EXPECT_EQ(mlir::mqt::attributeToDouble(attribute), expected);
   }
+  EXPECT_FALSE(mlir::mqt::attributeToDouble({}));
+  EXPECT_FALSE(mlir::mqt::attributeToDouble(builder->getStringAttr("test")));
+
   auto op = index::ConstantOp::create(*builder, 42);
   EXPECT_EQ(mlir::mqt::valueToDouble(op.getResult()), std::optional{42.0});
-}
-
-TEST_F(ConstantFoldingTest, valueToDoubleWrongType) {
-  EXPECT_FALSE(mlir::mqt::attributeToDouble({}));
-  auto op = arith::ConstantOp::create(*builder, builder->getStringAttr("test"));
-  EXPECT_FALSE(mlir::mqt::valueToDouble(op.getResult()).has_value());
 }
 
 TEST_F(ConstantFoldingTest, valueToDoubleNonStaticValue) {
@@ -123,45 +117,30 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleNestedFold) {
   auto lhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
   auto num = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.0));
   auto den = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(2.0));
-  auto quot = arith::DivFOp::create(*builder, num, den);
+  auto negative = arith::NegFOp::create(*builder, num);
+  auto quot = arith::DivFOp::create(*builder, negative, den);
   auto op = arith::SubFOp::create(*builder, lhs, quot);
-  const auto stdValue = mlir::mqt::valueToConstantDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, 4.5);
-}
-
-TEST_F(ConstantFoldingTest, valueToConstantDoubleNegF) {
-  auto operand =
-      arith::ConstantOp::create(*builder, builder->getF64FloatAttr(2.25));
-  auto op = arith::NegFOp::create(*builder, operand);
-  const auto stdValue = mlir::mqt::valueToConstantDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, -2.25);
+  EXPECT_EQ(mlir::mqt::valueToConstantDouble(op), 5.5);
 }
 
 TEST_F(ConstantFoldingTest, valueToConstantDoubleUIToFP) {
-  constexpr uint64_t expectedValue = 7;
-  auto intConst = arith::ConstantOp::create(
-      *builder, builder->getIntegerAttr(builder->getIntegerType(64, false),
-                                        expectedValue));
-  auto op = arith::UIToFPOp::create(*builder, builder->getF64Type(),
-                                    intConst.getResult());
-  const auto stdValue = mlir::mqt::valueToConstantDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(expectedValue));
+  auto literal =
+      arith::ConstantOp::create(*builder, builder->getI8IntegerAttr(7));
+  auto first = arith::ExtUIOp::create(*builder, builder->getI16Type(), literal);
+  auto second = arith::ExtUIOp::create(*builder, builder->getI32Type(), first);
+  auto op = arith::UIToFPOp::create(*builder, builder->getF64Type(), second);
+  EXPECT_EQ(mlir::mqt::valueToConstantDouble(op), 7.0);
+  EXPECT_EQ(second.getIn(), first.getResult());
 }
 
 TEST_F(ConstantFoldingTest, valueToConstantDoubleSIToFP) {
-  constexpr int64_t expectedValue = -7;
-  auto intConst = arith::ConstantOp::create(
-      *builder,
-      builder->getIntegerAttr(builder->getIntegerType(64, /*isSigned=*/true),
-                              expectedValue));
-  auto op = arith::SIToFPOp::create(*builder, builder->getF64Type(),
-                                    intConst.getResult());
-  const auto stdValue = mlir::mqt::valueToConstantDouble(op.getResult());
-  ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(expectedValue));
+  auto lhs =
+      arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(-14));
+  auto one = arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(1));
+  auto two = arith::AddIOp::create(*builder, one, one);
+  auto quotient = arith::DivSIOp::create(*builder, lhs, two);
+  auto op = arith::SIToFPOp::create(*builder, builder->getF64Type(), quotient);
+  EXPECT_EQ(mlir::mqt::valueToConstantDouble(op), -7.0);
 }
 
 TEST_F(ConstantFoldingTest, valueToConstantAttrDynamicOperand) {
@@ -196,6 +175,9 @@ TEST_F(ConstantFoldingTest, valueToConstantAttrFoldFailure) {
       arith::ConstantOp::create(*builder, builder->getI32IntegerAttr(32));
   auto op = arith::ShLIOp::create(*builder, lhs, rhs);
   EXPECT_FALSE(mlir::mqt::valueToConstantAttr(op.getResult()));
+  auto zero = arith::SubIOp::create(*builder, lhs, lhs);
+  auto quotient = arith::DivSIOp::create(*builder, lhs, zero);
+  EXPECT_FALSE(mlir::mqt::valueToConstantAttr(quotient));
 }
 
 TEST_F(ConstantFoldingTest, valueToConstantAttrMultiResultFold) {
