@@ -2444,10 +2444,7 @@ public:
       }
       if (selected.capability == nullptr &&
           mapping == StandardGateMapping{mlir::qc::StandardGate::XXPlusYY, 0} &&
-          values.size() == 2 && values[0] && values[1] &&
-          std::abs(*values[0] + std::numbers::pi / 2.) <=
-              mlir::mqt::PARAMETER_COMPARISON_TOLERANCE &&
-          std::abs(*values[1]) <= mlir::mqt::PARAMETER_COMPARISON_TOLERANCE) {
+          values.size() == 2 && mlir::isSqrtISwap(values[0], values[1])) {
         selected =
             target_->findOperation("sqrt_iswap", qubits.size(), {}, sites);
         fixedExchange = selected.capability != nullptr;

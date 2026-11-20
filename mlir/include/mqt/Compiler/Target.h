@@ -40,6 +40,10 @@ struct NativeRAlias {
 /// Return the fixed-angle R definition of a recognized native pulse name.
 [[nodiscard]] std::optional<NativeRAlias> nativeRAlias(llvm::StringRef name);
 
+/// Return whether XX+YY(theta, beta) is the fixed square root of iSWAP.
+[[nodiscard]] bool isSqrtISwap(std::optional<double> theta,
+                               std::optional<double> beta);
+
 /// Immutable description of the operations and topology available to
 /// compilation.
 ///
@@ -534,6 +538,14 @@ public:
                 llvm::ArrayRef<std::optional<double>> parameters,
                 std::optional<llvm::ArrayRef<SiteId>> sites,
                 size_t numControls = 0,
+                llvm::function_ref<bool(const OperationCapability&)> filter =
+                    nullptr) const;
+
+  /// Resolve parameter values on demand when a capability constrains them.
+  [[nodiscard]] OperationMatch
+  findOperation(llvm::StringRef name, size_t arity, size_t numParameters,
+                llvm::function_ref<std::optional<double>(size_t)> parameterAt,
+                std::optional<llvm::ArrayRef<SiteId>> sites, size_t numControls,
                 llvm::function_ref<bool(const OperationCapability&)> filter =
                     nullptr) const;
 

@@ -11,6 +11,7 @@
 #include "mqt/Compiler/Target.h"
 
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
@@ -65,6 +66,13 @@ std::optional<NativeRAlias> nativeRAlias(StringRef name) {
                 .globalPhase = 0.,
             })
       .Default(std::nullopt);
+}
+
+bool isSqrtISwap(std::optional<double> theta, std::optional<double> beta) {
+  return theta && beta &&
+         std::abs(*theta + std::numbers::pi / 2.) <=
+             mqt::PARAMETER_COMPARISON_TOLERANCE &&
+         std::abs(*beta) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
 
 namespace {
@@ -1619,14 +1627,24 @@ CompilerTarget::OperationMatch CompilerTarget::findOperation(
     StringRef name, size_t arity, ArrayRef<std::optional<double>> parameters,
     std::optional<ArrayRef<SiteId>> sites, size_t numControls,
     function_ref<bool(const OperationCapability&)> filter) const {
+  return findOperation(
+      name, arity, parameters.size(),
+      [&](size_t index) { return parameters[index]; }, sites, numControls,
+      filter);
+}
+
+CompilerTarget::OperationMatch CompilerTarget::findOperation(
+    StringRef name, size_t arity, size_t numParameters,
+    function_ref<std::optional<double>(size_t)> parameterAt,
+    std::optional<ArrayRef<SiteId>> sites, size_t numControls,
+    function_ref<bool(const OperationCapability&)> filter) const {
   const auto select = [&](StringRef spelling, bool variadicOnly) {
     const OperationCapability* selected = nullptr;
     const bool supported = storage_->supportsOperation(
-        spelling, arity, parameters.size(), sites, variadicOnly, nullptr,
+        spelling, arity, numParameters, sites, variadicOnly, nullptr,
         [&](const OperationCapability& operation) {
           if ((!sites && !storage_->coversAllSites(operation)) ||
-              !matchesParameters(
-                  operation, [&](size_t index) { return parameters[index]; }) ||
+              !matchesParameters(operation, parameterAt) ||
               (filter && !filter(operation))) {
             return false;
           }
@@ -1709,19 +1727,16 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
       return false;
     }
     if (auto exchange = dyn_cast<qco::XXPlusYYOp>(operation)) {
-      const auto theta = mqt::valueToDouble(exchange.getTheta());
-      const auto beta = mqt::valueToDouble(exchange.getBeta());
-      if (theta && beta &&
-          std::abs(*theta + std::numbers::pi / 2.) <=
-              mqt::PARAMETER_COMPARISON_TOLERANCE &&
-          std::abs(*beta) <= mqt::PARAMETER_COMPARISON_TOLERANCE &&
-          supports("sqrt_iswap", 2, 0)) {
+      if (supports("sqrt_iswap", 2, 0) &&
+          isSqrtISwap(mqt::valueToConstantDouble(exchange.getTheta()),
+                      mqt::valueToConstantDouble(exchange.getBeta()))) {
         return true;
       }
     }
     return supports(unitary.getBaseSymbol(), unitary.getNumQubits(),
                     unitary.getNumParams(), false, [&](size_t index) {
-                      return mqt::valueToDouble(unitary.getParameter(index));
+                      return mqt::valueToConstantDouble(
+                          unitary.getParameter(index));
                     });
   }
   if (isa<qco::MeasureOp>(operation)) {

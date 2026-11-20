@@ -343,6 +343,7 @@ private:
   SmallVector<std::string> gateDefinitions_;
   std::optional<DataFlowSolver> ranges;
   std::optional<CompilerTarget> nativeTarget_;
+  DenseMap<Value, Attribute> constantParameters_;
   Operation* expressionConsumer = nullptr;
   size_t nextQubit = 0;
   size_t nextBit = 0;
@@ -3087,9 +3088,15 @@ private:
     return success();
   }
 
+  [[nodiscard]] std::optional<double> constantGateParameter(Value value) {
+    return mqt::attributeToDouble(
+        mqt::valueToConstantAttr(value, constantParameters_));
+  }
+
   [[nodiscard]] FailureOr<std::string> emitGateParameter(Value value) {
     if (version2_ && !gateNames_.contains(function)) {
-      if (auto constant = mqt::valueToConstantAttr(value)) {
+      if (auto constant =
+              mqt::valueToConstantAttr(value, constantParameters_)) {
         return emitConstant(constant, value.getLoc());
       }
       return failExpression(
@@ -3109,11 +3116,11 @@ private:
     call.symbol = gateNames_.at(callee);
     if (nativeTarget_ && callee.isExternal()) {
       SmallVector<CompilerTarget::SiteId> sites;
-      SmallVector<std::optional<double>> parameters;
+      SmallVector<Value> parameters;
       size_t arity = 0;
       for (auto operand : operands) {
         if (operand.getType().isF64()) {
-          parameters.push_back(mqt::valueToDouble(operand));
+          parameters.push_back(operand);
         } else if (auto site = operand.getDefiningOp<StaticOp>()) {
           sites.push_back(static_cast<CompilerTarget::SiteId>(site.getIndex()));
           ++arity;
@@ -3125,15 +3132,20 @@ private:
       const auto alias = nativeRAlias(call.symbol);
       const bool nativePulse = alias && parameters.size() == 1;
       if (nativePulse) {
-        parameters.insert(parameters.begin(), alias->angle);
+        parameters.insert(parameters.begin(), Value{});
         canonical = "r";
       }
       const auto selected = nativeTarget_->findOperation(
-          canonical, arity, parameters,
+          canonical, arity, parameters.size(),
+          [&](size_t i) {
+            return parameters[i] ? constantGateParameter(parameters[i])
+                                 : alias->angle;
+          },
           sites.size() == arity
               ? std::optional<ArrayRef<CompilerTarget::SiteId>>(sites)
               : std::nullopt,
-          0, [this, &call, nativePulse](const auto& capability) {
+          0,
+          [this, &call, nativePulse](const auto& capability) {
             return (!nativePulse || capability.name() == call.symbol) &&
                    hasCompatibleNativeMeaning(capability);
           });
@@ -3215,10 +3227,10 @@ private:
         sites.size() == qubits.size()
             ? std::optional<ArrayRef<CompilerTarget::SiteId>>(sites)
             : std::nullopt;
-    SmallVector<std::optional<double>> parameters;
-    for (auto parameter : body.getParameters()) {
-      parameters.push_back(mqt::valueToDouble(parameter));
-    }
+    auto parameters = body.getParameters();
+    const auto parameterAt = [&](size_t i) {
+      return constantGateParameter(parameters[i]);
+    };
     const auto symbol = body.getBaseSymbol();
     const auto compatibleSpelling = [this, symbol](const auto& operation) {
       // Standard U-family spellings differ from QC by a phase.
@@ -3229,14 +3241,23 @@ private:
               (symbol == "gphase" && operation.name() == "gphase"));
     };
     auto selected = nativeTarget_->findOperation(
-        symbol, qubits.size(), parameters, knownSites, controlCount,
-        compatibleSpelling);
+        symbol, qubits.size(), parameters.size(), parameterAt, knownSites,
+        controlCount, compatibleSpelling);
+    if (selected.capability == nullptr && controlCount == 0 &&
+        isa<XXPlusYYOp>(body.getOperation()) &&
+        isSqrtISwap(parameterAt(0), parameterAt(1))) {
+      selected = nativeTarget_->findOperation(
+          "sqrt_iswap", qubits.size(), {}, knownSites, 0, compatibleSpelling);
+      parameters = parameters.take_front(0);
+    }
     const bool promoteU2 = selected.capability == nullptr && symbol == "u2";
     if (promoteU2) {
-      parameters.insert(parameters.begin(), std::numbers::pi / 2);
-      selected = nativeTarget_->findOperation("u", qubits.size(), parameters,
-                                              knownSites, controlCount,
-                                              compatibleSpelling);
+      selected = nativeTarget_->findOperation(
+          "u", qubits.size(), 3,
+          [&](size_t i) {
+            return i == 0 ? std::numbers::pi / 2. : parameterAt(i - 1);
+          },
+          knownSites, controlCount, compatibleSpelling);
     }
     const auto [capability, genericControls] = selected;
     if (capability == nullptr) {
@@ -3251,7 +3272,7 @@ private:
     if (promoteU2) {
       call.parameters.emplace_back("pi / 2");
     }
-    for (auto parameter : body.getParameters()) {
+    for (auto parameter : parameters) {
       auto expression = emitGateParameter(parameter);
       if (failed(expression)) {
         return failure();
@@ -3263,9 +3284,9 @@ private:
       if (version2_) {
         return fail(unitary, "native GPI pulses require OpenQASM 3");
       }
-      const double angle = alias->angle;
-      if (!parameters.front() || std::abs(*parameters.front() - angle) >
-                                     mqt::PARAMETER_COMPARISON_TOLERANCE) {
+      const auto angle = parameterAt(0);
+      if (!angle || std::abs(*angle - alias->angle) >
+                        mqt::PARAMETER_COMPARISON_TOLERANCE) {
         return fail(unitary,
                     "native GPI pulse requires its fixed rotation angle");
       }
