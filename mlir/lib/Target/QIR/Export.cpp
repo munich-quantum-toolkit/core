@@ -17,6 +17,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
@@ -33,11 +34,41 @@
 
 #include <memory>
 #include <system_error>
+#include <utility>
 
 namespace mlir::qir {
 
+static LogicalResult declareNativeQIS(SymbolTable& symbols, LLVM::CallOp call,
+                                      StringAttr name) {
+  auto source = symbols.lookup<LLVM::LLVMFuncOp>(*call.getCallee());
+  if (!source || !source.isExternal()) {
+    return call.emitError()
+           << "native QIR requires an external declaration for "
+           << *call.getCallee();
+  }
+  auto* nativeSymbol = symbols.lookup(name);
+  if (nativeSymbol == source.getOperation()) {
+    return success();
+  }
+  OwningOpRef<LLVM::LLVMFuncOp> declaration(
+      cast<LLVM::LLVMFuncOp>(source->clone()));
+  declaration->setName(name.getValue());
+  if (nativeSymbol == nullptr) {
+    symbols.insert(declaration.release());
+  } else if (!OperationEquivalence::isEquivalentTo(
+                 *declaration, nativeSymbol,
+                 OperationEquivalence::IgnoreLocations)) {
+    return call.emitError()
+           << "native QIR operations require conflicting signatures "
+              "or declarations for "
+           << name.getValue();
+  }
+  return success();
+}
+
 static LogicalResult materializeNativeQISNames(ModuleOp moduleOp) {
   SymbolTable symbols(moduleOp);
+  llvm::SmallDenseSet<std::pair<FlatSymbolRefAttr, StringAttr>, 8> checked;
   const auto result = moduleOp.walk([&](LLVM::CallOp call) {
     auto name = call->getAttrOfType<StringAttr>(qir::QIR_NATIVE_NAME_ATTR);
     if (!name) {
@@ -52,17 +83,9 @@ static LogicalResult materializeNativeQISNames(ModuleOp moduleOp) {
       call.emitError("native QIR requires direct quantum instruction calls");
       return WalkResult::interrupt();
     }
-    auto source = symbols.lookup<LLVM::LLVMFuncOp>(*call.getCallee());
-    auto destination = symbols.lookup<LLVM::LLVMFuncOp>(name.getValue());
-    if (destination &&
-        destination.getFunctionType() != source.getFunctionType()) {
-      call.emitError("native QIR operations require conflicting signatures");
+    if (checked.insert({call.getCalleeAttr(), name}).second &&
+        failed(declareNativeQIS(symbols, call, name))) {
       return WalkResult::interrupt();
-    }
-    if (!destination) {
-      destination = cast<LLVM::LLVMFuncOp>(source->clone());
-      destination.setName(name.getValue());
-      symbols.insert(destination);
     }
     call.setCalleeAttr(FlatSymbolRefAttr::get(name));
     call->removeAttr(qir::QIR_NATIVE_NAME_ATTR);

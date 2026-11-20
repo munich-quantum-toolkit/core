@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 #include "qdmi/QDMI.hpp"
 
@@ -1516,6 +1517,21 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
               std::string::npos);
     EXPECT_NE(text->find("\"required_num_qubits\"=\"3\""), std::string::npos);
   }
+  auto local =
+      mlir::parseSourceString<mlir::ModuleOp>(R"mlir(
+    module {
+      llvm.func @__quantum__qis__cnot__body(%c: !llvm.ptr, %t: !llvm.ptr) {
+        llvm.return
+      }
+    })mlir",
+                                              qir->module().getContext());
+  ASSERT_TRUE(local);
+  operations.splice(operations.end(), local->getBody()->getOperations());
+  EXPECT_TRUE(mlir::failed(qir->copy().intoLLVMIR()));
+  qir->module().walk([](mlir::Operation* op) {
+    op->removeAttr(mlir::qir::QIR_NATIVE_NAME_ATTR);
+  });
+  EXPECT_TRUE(mlir::failed(qir->copy().intoLLVMIR()));
 }
 
 TEST(CompilerQDMIAdapterTest, ValidatesOpaqueQIRGatesAgainstNativeSites) {
