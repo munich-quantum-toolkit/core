@@ -276,29 +276,83 @@ def ElideTerminalSwapsPass : Pass<"elide-terminal-swaps", "mlir::ModuleOp"> {
   }];
 }
 
-def PlacementPass : Pass<"place-qubits", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect",
-                           "mlir::qtensor::QTensorDialect"];
-  let summary = "Assign physical sites without routing";
-  let description = [{
-    Assign dynamically allocated qubits to sites of the attached target in
-    deterministic order. Already placed programs remain unchanged. This does
-    not enforce adjacency; use `place-and-route` for sparse topologies.
-
-    Input qubit labels prepared by `mqt-target-prepare` produce layout metadata,
-    including any output permutation recorded by `elide-permutations` or
-    `elide-terminal-swaps`. Supported tensor and control-flow forms follow the
-    placement requirements of target compilation.
-  }];
+class QCOPlacementRoutingPass<string argument>
+    : Pass<argument, "mlir::ModuleOp"> {
+  list<Option> routingOptions =
+      [Option<"nlookahead", "nlookahead", "std::size_t", "20",
+              "The number of lookahead steps.">,
+       Option<"alpha", "alpha", "float", "1.0F",
+              "The alpha cost factor. Must be finite and > 0.">,
+       Option<"lambda", "lambda", "float", "0.5F",
+              "The lambda factor in the cost function.">,
+       Option<"niterations", "niterations", "std::size_t", "2",
+              "The maximum number of forwards and backwards traversals to "
+              "improve the initial layout. Must be >= 0.">,
+       Option<
+           "ntrials", "ntrials", "std::size_t",
+           "std::max(8U, llvm::hardware_concurrency().compute_thread_count())",
+           "The total number of greedy/identity/random trials of "
+           "the forwards and backwards mechanism. Defaults to "
+           "the available logical CPU count, with a minimum of 8. Must be > "
+           "0.">,
+       Option<"seed", "seed", "std::size_t", "42",
+              "A seed used for randomization.">,
+       Option<"searchMemoryLimit", "search-memory-limit", "size_t",
+              "256UL * 1024 * 1024",
+              "Estimated node and layout bytes per search. "
+              "Zero disables node expansion.">];
+  let options = routingOptions;
 }
 
-def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect"];
-  let summary = "Place and route a program for an explicit target topology";
+def PlacementPass : QCOPlacementRoutingPass<"place-qubits"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect"];
+  let summary = "Select and materialize an initial qubit layout";
   let description = [{
-    This pass maps top-level scalar and tensor-backed dynamically allocated
-    qubits in a quantum program to the static sites of a `CompilerTarget`. It
-    requires an explicit undirected coupling topology: arbitrary one-qubit
+    Assigns dynamic scalar qubits and supported flat tensor allocations to target
+    sites without inserting routing SWAPs. All-to-all targets keep deterministic
+    identity placement and retain supported indexed tensors. Explicit targets use
+    executable identity/path shortcuts, bounded topology search, and weighted
+    greedy, identity, and random starts. Candidate refinement and scoring reuse
+    the router read-only with the same native-cost and memory limits.
+
+    The `patterns` option selects the bounded search: `none` uses direct vertex
+    search (the default), `small` uses pairs, four-cycles, and stars, and
+    `extended` adds four-/six-qubit chains, six-/eight-/twelve-cycles, and full
+    2x3/2x4 grids. `auto` selects extended patterns when at least twelve vertices
+    remain after repeatedly removing vertices of degree below two; otherwise it
+    uses direct search. This necessary condition does not prove a twelve-cycle
+    exists. Canonical occurrences and oriented indexes share thread-safe caches
+    owned by the target. Each search checks at most 100,000 candidate assignments. Failure to
+    find an embedding, including budget exhaustion, falls back to the normal
+    routed-layout candidates; it does not fail placement.
+
+    The pass materializes static target sites and publishes source provenance
+    through `mqt.layout`. On explicit targets, the internal
+    `mqt.placement_order` permutation preserves logical router indices across
+    pass serialization; `place-and-route` validates and consumes it. Placement
+    alone does not guarantee target-adjacent gates. Run routing next with the
+    same refinement/scoring options to preserve the selected cost model.
+    Already static programs keep their placement.
+  }];
+  let options = !listconcat(
+      routingOptions,
+      [Option<"patterns", "patterns", "std::string", "\"none\"",
+              "Bounded placement patterns: none, auto, small, or extended.">]);
+}
+
+def MappingPass : QCOPlacementRoutingPass<"place-and-route"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "Route placed qubits, placing dynamic input when needed";
+  let description = [{
+    This pass routes static qubits on a `CompilerTarget`. It consumes the layout
+    selected by `place-qubits`, or accepts explicitly assigned static sites.
+    For compatibility, dynamic input first uses default placement. The standalone
+    placement pass owns pattern selection. Both passes share the routing engine
+    for read-only candidate refinement and final SWAP insertion. Existing
+    physical `mqt.layout` metadata must cover the full target with `sites` in
+    target order; the pass rejects incompatible metadata before routing.
+    The pass requires an explicit undirected coupling topology: arbitrary one-qubit
     operations pass through, and every two-qubit operation is routed to
     adjacent target vertices. Higher-arity unitaries must be decomposed before
     mapping. Target-defined site identifiers are retained in the resulting
@@ -320,9 +374,9 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     remain terminal. Placement preserves the logical classification while
     inserting SWAPs and threading physical workspace through regions.
 
-    First, the pass assigns each allocated program qubit to a device site.
-    This initial assignment is called the initial layout. The layout covers the
-    complete target. The pass materializes all target sites as routing workspace
+    When dynamic qubits remain, compatibility placement first selects and
+    materializes an initial layout. The layout covers the complete target.
+    The pass materializes all target sites as routing workspace
     and carries them through structured control flow. Cleanup after mapping
     removes unused sites. The pass traverses the circuit
     and inserts `qco.swap` operations to ensure that all two-qubit operations
@@ -433,10 +487,15 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     them along one path through the target sites. The walk prefers neighbors
     with fewer unused edges and accepts only a complete placement; it does not
     backtrack. A complete path placement needs no routing and skips layout
-    trials, as does an executable identity layout. Other interaction graphs and
-    failed walks use the weighted greedy layout, which places frequently
-    interacting qubits nearby, starting at a central target site. This layout
-    occupies the first trial slot.
+    trials, as does an executable identity layout. For other interaction graphs
+    and failed walks, a bounded graph search tries to embed every interaction
+    without routing. It checks at most 100,000 candidate vertex assignments
+    across fixed starting ranges and retains one layout per task. Independent
+    ranges use the context's thread pool; the result does not depend on thread
+    count. A complete embedding skips refinement trials. If no layout is found,
+    including after budget exhaustion, the pass uses the weighted greedy layout.
+    It places frequently interacting qubits nearby, starting at a central target
+    site. This layout occupies the first trial slot.
 
     With an explicit native operation set and a usable entangler basis, each
     candidate is scored by a read-only forward traversal of original gates and
@@ -462,29 +521,6 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     target compilation diagnoses unsupported native operations. Scoring and final
     routing use the same traversal hooks and first-SWAP cost guidance.
   }];
-  let options =
-      [Option<"nlookahead", "nlookahead", "std::size_t", "20",
-              "The number of lookahead steps.">,
-       Option<"alpha", "alpha", "float", "1.0F",
-              "The alpha cost factor. Must be finite and > 0.">,
-       Option<"lambda", "lambda", "float", "0.5F",
-              "The lambda factor in the cost function.">,
-       Option<"niterations", "niterations", "std::size_t", "2",
-              "The maximum number of forwards and backwards traversals to "
-              "improve the initial layout. Must be >= 0.">,
-       Option<
-           "ntrials", "ntrials", "std::size_t",
-           "std::max(8U, llvm::hardware_concurrency().compute_thread_count())",
-           "The total number of greedy/identity/random trials of "
-           "the forwards and backwards mechanism. Defaults to "
-           "the available logical CPU count, with a minimum of 8. "
-           "Must be > 0.">,
-       Option<"seed", "seed", "std::size_t", "42",
-              "A seed used for randomization.">,
-       Option<"searchMemoryLimit", "search-memory-limit", "size_t",
-              "256UL * 1024 * 1024",
-              "Estimated node and layout bytes per search. "
-              "Zero disables node expansion.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
                               "The number of inserted SWAPs">];
 }
@@ -522,6 +558,44 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
   }];
   let options = [Option<"seed", "seed", "uint64_t", "2023",
                         "Seed for numerical synthesis retries.">];
+}
+
+def RankPlacements : Pass<"rank-qubit-placements", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect", "mlir::mqt::MQTDialect"];
+  let summary = "Rank native CZ placements by calibrated two-qubit loss";
+  let description = [{
+    Enumerates injective placements after native synthesis and retains the
+    smallest sum of negative log CZ fidelities. The original placement remains
+    a fallback. Candidate layouts are streamed, with deterministic tie breaking.
+    Direct enumeration is the default. With `use-patterns`, cached patterns are
+    used only when both query and target contain a twelve-cycle; other queries
+    use direct enumeration.
+
+    This best-effort optimization requires a flat scalar program, physical
+    `mqt.layout` provenance in target site order, standard native spellings,
+    globally supported single-qubit/measurement/reset operations, and complete
+    fidelity metadata for standard named `cz` capabilities on supported topology
+    edges. Generic variadic Z capabilities retain their placement.
+    Tuple fidelity overrides
+    the operation default. Zero fidelity has infinite loss; missing fidelity
+    disables ranking. Other valid programs retain their placement, including
+    structured programs, non-CZ entanglers, indexed qubits, and fixed preplaced
+    programs without layout provenance.
+
+    A winning global permutation renames static sites and updates initial and
+    routing provenance without changing classical results or quantum operations.
+    The objective excludes single-qubit, readout, idle, and correlated errors.
+    Preparation and decomposition are outside the candidate-assignment budget.
+    Run target conformance verification after this pass.
+  }];
+  let options =
+      [Option<"usePatterns", "use-patterns", "bool", "false",
+              "Select cached patterns for queries containing a twelve-cycle.">,
+       Option<"maxLayouts", "max-layouts", "size_t", "4096",
+              "Maximum complete layouts to score; zero leaves placement "
+              "unchanged.">,
+       Option<"maxCandidates", "max-candidates", "size_t", "10000000",
+              "Maximum vertex or pattern-tuple assignment probes.">];
 }
 
 def VerifyTargetConformance

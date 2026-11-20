@@ -13,6 +13,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -92,6 +93,7 @@ void registerMQTCompilerPasses() {
     qco::registerMappingPass();
     qco::registerPlacementPass();
     qco::registerQuantumLoopUnroll();
+    qco::registerRankPlacements();
     qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
@@ -299,6 +301,7 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
   }
   if (!preservesLayout) {
     moduleOp->removeAttr("mqt.layout");
+    moduleOp->removeAttr(mqt::kPlacementOrderAttr);
   }
   DialectRegistry registry;
   memref::registerMemorySlotExternalModels(registry);

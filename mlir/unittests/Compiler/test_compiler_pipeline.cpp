@@ -3242,8 +3242,13 @@ cx q[0], q[2];
 
   EXPECT_TRUE(mlir::succeeded(qco.fuseSingleQubitUnitaryRuns("zyz")));
   EXPECT_NE(qco.str(), beforeFusion);
-  EXPECT_TRUE(mlir::succeeded(qco.runPassPipeline(
-      "mqt-qco-default", {.enableTiming = true, .enableStatistics = true})));
+  EXPECT_TRUE(mlir::succeeded(
+      qco.runPassPipeline("mqt-qco-default", {
+                                                 .seed = std::nullopt,
+                                                 .enableTiming = true,
+                                                 .enableStatistics = true,
+                                                 .mapping = {},
+                                             })));
 
   auto loopModule = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(qco::simpleForLoop));
@@ -3256,6 +3261,44 @@ cx q[0], q[2];
   EXPECT_NE(loopProgram->str().find("scf.for"), std::string::npos);
   EXPECT_TRUE(mlir::succeeded(loopProgram->unrollQuantumLoops()));
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, CompilationOptionsInvalidatePlacementMetadata) {
+  auto input = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %a = qco.static 0 : !qco.qubit
+      %b = qco.static 1 : !qco.qubit
+      qco.sink %a : !qco.qubit
+      qco.sink %b : !qco.qubit
+      return
+    }
+  })mlir");
+  MQT_ASSERT_SUCCESS(input);
+  Builder builder(input->module().getContext());
+  const Attribute layout =
+      mlir::mqt::QubitLayout{
+          .initial = {1, 0},
+          .routing = std::nullopt,
+          .inputCount = 2,
+          .sites = std::vector<int64_t>{0, 1},
+      }
+          .toAttr(builder.getContext());
+  const Attribute order = builder.getDenseI64ArrayAttr({1, 0});
+  for (const bool preservesLayout : {false, true}) {
+    SCOPED_TRACE(preservesLayout);
+    auto program = input->copy();
+    auto moduleOp = program.module();
+    moduleOp->setAttr("mqt.layout", layout);
+    moduleOp->setAttr(mlir::mqt::kPlacementOrderAttr, order);
+    PassManager pm(moduleOp.getContext());
+    pm.addPass(createCSEPass());
+    ASSERT_TRUE(succeeded(
+        runWithCompilationOptions(pm, moduleOp, {}, preservesLayout)));
+    EXPECT_EQ(moduleOp->getAttr("mqt.layout"),
+              preservesLayout ? layout : Attribute{});
+    EXPECT_EQ(moduleOp->getAttr(mlir::mqt::kPlacementOrderAttr),
+              preservesLayout ? order : Attribute{});
+  }
 }
 
 TEST_F(CompilerPipelineTest, FailedRunKeepsReproducerAndTraceAndRestoresSeed) {
@@ -3278,7 +3321,8 @@ TEST_F(CompilerPipelineTest, FailedRunKeepsReproducerAndTraceAndRestoresSeed) {
                                                   tracePath));
   const llvm::FileRemover traceCleanup(tracePath);
   EXPECT_TRUE(failed(runWithCompilationOptions(
-      pm, moduleOp, {.seed = 9876, .traceFile = tracePath.str().str()})));
+      pm, moduleOp,
+      {.seed = 9876, .mapping = {}, .traceFile = tracePath.str().str()})));
   EXPECT_EQ(moduleOp->getAttr(COMPILATION_SEED_ATTR), previousSeed);
   EXPECT_FALSE(moduleOp.getContext()->hasActionHandler());
   auto reproducer = llvm::MemoryBuffer::getFile(path);
@@ -3336,6 +3380,7 @@ TEST_F(CompilerPipelineTest, PipelineVerificationFollowsAssertionMode) {
 
 TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
   EXPECT_EQ(MappingOptions{}.iterations, 2U);
+  EXPECT_EQ(MappingOptions{}.placementRanking, "none");
   const TargetEnvironment environment(makeSparseUCZTarget(true),
                                       makePayloadSpecification());
   for (const auto& options : {
@@ -3345,6 +3390,7 @@ TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
                .iterations = 1,
                .lookahead = 0,
                .searchMemoryLimit = 1024,
+               .placementRanking = "patterns",
            },
        }) {
     OpPassManager pm("builtin.module");
@@ -3364,6 +3410,119 @@ TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
     EXPECT_NE(pipeline.find("search-memory-limit=" +
                             std::to_string(options.searchMemoryLimit)),
               std::string::npos);
+    EXPECT_EQ(pipeline.find("rank-qubit-placements") != std::string::npos,
+              options.placementRanking != "none");
+  }
+}
+
+TEST_F(CompilerPipelineTest, RankedPlacementsPreserveSparseRoutingProvenance) {
+  using Capability = CompilerTarget::OperationCapability;
+  using Tuple = CompilerTarget::SiteTuple;
+  for (const llvm::StringRef model :
+       {"variable", "uniform", "missing", "alias"}) {
+    SCOPED_TRACE(model.str());
+    std::vector<CompilerTarget::Site> sites;
+    for (const auto id : {0, 2, 4, 6}) {
+      sites.push_back(llvm::cantFail(CompilerTarget::Site::create(id)));
+    }
+    const bool uniform = model == "uniform";
+    std::vector<Tuple> tuples;
+    for (const auto [a, b, fidelity] :
+         std::array<std::tuple<int64_t, int64_t, std::optional<double>>, 6>{
+             {
+                 {0, 2, 0.0},
+                 {2, 0, 0.0},
+                 {2, 4, std::nullopt},
+                 {4, 2, std::nullopt},
+                 {4, 6, 0.99},
+                 {6, 4, 0.98},
+             },
+         }) {
+      tuples.push_back(llvm::cantFail(Tuple::create(
+          {a, b}, std::nullopt, uniform ? std::nullopt : fidelity)));
+    }
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        std::move(sites),
+        CompilerTarget::Connectivity::fromCouplings({{0, 2}, {2, 4}, {4, 6}}),
+        CompilerTarget::NativeOperations::fromOperations({
+            llvm::cantFail(
+                Capability::create(model == "alias" ? "device_u" : "u", 1, 3,
+                                   {}, std::nullopt, std::nullopt, {}, "u")),
+            llvm::cantFail(Capability::create("gphase", 0, 1)),
+            llvm::cantFail(Capability::create(
+                "cz", 2, 0, std::move(tuples), std::nullopt,
+                model == "missing" ? std::nullopt
+                                   : std::optional{uniform ? 0.9 : 0.75})),
+        })));
+    std::string unranked;
+    for (const llvm::StringRef mode : {"none", "direct", "patterns"}) {
+      SCOPED_TRACE(mode.str());
+      auto qc = QCProgram::fromOpenQASMString(R"qasm(OPENQASM 3.0;
+        include "stdgates.inc"; qubit[3] q;
+        h q[0]; rz(0.2) q[1]; x q[2];
+        cz q[0], q[1]; swap q[0], q[1];)qasm");
+      MQT_ASSERT_SUCCESS(qc);
+      auto program = std::move(*qc).intoQCO();
+      ASSERT_TRUE(succeeded(program));
+      auto package = llvm::cantFail(dd::Package::create(0));
+      const auto reference = qco::buildFunctionality(
+          mlir::mqt::getEntryPoint(program->module()), *package);
+      ASSERT_TRUE(succeeded(reference));
+      const auto expected = llvm::cantFail(dd::getMatrix(*reference, 3));
+      package->decRef(*reference);
+      ASSERT_TRUE(succeeded(program->compileForTarget(
+          TargetEnvironment(target, makePayloadSpecification()),
+          {.seed = 7,
+           .mapping = {.trials = 1,
+                       .iterations = 0,
+                       .placementRanking = mode.str()}})));
+      ASSERT_TRUE(succeeded(verify(program->module())));
+      ASSERT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+      if (mode == "none") {
+        unranked = program->str();
+      } else if (model != "variable") {
+        EXPECT_EQ(program->str(), unranked);
+      }
+      const auto layout = mlir::mqt::QubitLayout::fromAttr(
+          program->module()->getAttr("mqt.layout"),
+          [&] { return program->module().emitError(); });
+      ASSERT_TRUE(succeeded(layout));
+      ASSERT_TRUE(layout->sites);
+      ASSERT_TRUE(layout->routing);
+      EXPECT_EQ(layout->inputCount, 3);
+      EXPECT_EQ(*layout->sites, (std::vector<int64_t>{0, 2, 4, 6}));
+      const bool moved = model == "variable" && mode != "none";
+      EXPECT_EQ(layout->initial, moved ? (std::vector<int64_t>{2, 3, 0, 1})
+                                       : (std::vector<int64_t>{0, 1, 2, 3}));
+      EXPECT_EQ(*layout->routing, moved ? (std::vector<int64_t>{0, 1, 3, 2})
+                                        : (std::vector<int64_t>{1, 0, 2, 3}));
+      const auto actual = qco::buildFunctionality(
+          mlir::mqt::getEntryPoint(program->module()), *package);
+      ASSERT_TRUE(succeeded(actual));
+      const auto physical = [&](size_t basis, bool output) {
+        size_t result = 0;
+        for (size_t qubit = 0; qubit < 3; ++qubit) {
+          auto position = layout->initial[qubit];
+          if (output) {
+            position = (*layout->routing)[position];
+          }
+          result |= ((basis >> qubit) & 1U)
+                    << static_cast<size_t>((*layout->sites)[position]);
+        }
+        return result;
+      };
+      for (size_t row = 0; row < 8; ++row) {
+        for (size_t column = 0; column < 8; ++column) {
+          EXPECT_LE(
+              std::abs(llvm::cantFail(dd::getValueByIndex(
+                           *actual, package->qubits(), physical(row, true),
+                           physical(column, false))) -
+                       expected[row][column]),
+              1e-12);
+        }
+      }
+      package->decRef(*actual);
+    }
   }
 }
 
@@ -3754,24 +3913,36 @@ TEST_F(CompilerPipelineTest, TargetLayoutRejectsInvalidInputRoots) {
   }
 }
 
-TEST_F(CompilerPipelineTest, TargetCompilationRejectsExistingLayout) {
-  auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit q;");
-  MQT_ASSERT_SUCCESS(qc);
-  auto program = std::move(*qc).intoQCO();
-  ASSERT_TRUE(mlir::succeeded(program));
-  program->module()->setAttr("mqt.layout",
-                             mlir::mqt::QubitLayout{
-                                 .initial = {1, 0},
-                                 .inputCount = 1,
-                             }
-                                 .toAttr(program->module().getContext()));
-  const auto target = llvm::cantFail(
-      CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
-                             CompilerTarget::NativeOperations::unrestricted()));
-  const TargetEnvironment environment(target, makePayloadSpecification());
-  EXPECT_TRUE(mlir::failed(program->compileForTarget(environment)));
-  EXPECT_TRUE(mlir::failed(program->synthesizeForTarget(environment)));
-  EXPECT_TRUE(program->module()->hasAttr("mqt.layout"));
+TEST_F(CompilerPipelineTest,
+       TargetCompilationRejectsInvalidLayoutOrPlacementOrder) {
+  for (const StringRef name : {"mqt.layout", "mqt.placement_order"}) {
+    SCOPED_TRACE(name.str());
+    auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit q;");
+    MQT_ASSERT_SUCCESS(qc);
+    auto program = std::move(*qc).intoQCO();
+    ASSERT_TRUE(mlir::succeeded(program));
+    if (name == mlir::mqt::kPlacementOrderAttr) {
+      program->module()->setAttr(
+          name,
+          Builder(program->module().getContext()).getDenseI64ArrayAttr({0}));
+    } else {
+      program->module()->setAttr(name,
+                                 mlir::mqt::QubitLayout{
+                                     .initial = {1, 0},
+                                     .routing = std::nullopt,
+                                     .inputCount = 1,
+                                     .sites = std::nullopt,
+                                 }
+                                     .toAttr(program->module().getContext()));
+    }
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        1, CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::unrestricted()));
+    const TargetEnvironment environment(target, makePayloadSpecification());
+    EXPECT_TRUE(mlir::failed(program->compileForTarget(environment)));
+    EXPECT_TRUE(mlir::failed(program->synthesizeForTarget(environment)));
+    EXPECT_TRUE(program->module()->hasAttr(name));
+  }
 }
 
 TEST_F(CompilerPipelineTest, TargetSynthesisRecordsInitialLayout) {
@@ -3916,7 +4087,7 @@ TEST_F(CompilerPipelineTest,
   }
 
   const std::vector<ProgramCapability> invalid{
-      {.id = "forward-branching", .value = 1},
+      {.id = "forward-branching", .value = 1, .constraints = {}},
       {
           .id = "forward-branching",
           .constraints = {{.id = "max-case-count", .value = 1}},
@@ -4327,8 +4498,12 @@ TEST_F(CompilerPipelineTest,
       program->module(),
       TargetEnvironment(
           makeUnrestrictedTarget(),
-          makeControlPayloadSpecification(
-              {{.id = ProgramCapability::COUNTED_ITERATION.str()}})));
+          makeControlPayloadSpecification({
+              {
+                  .id = ProgramCapability::COUNTED_ITERATION.str(),
+                  .constraints = {},
+              },
+          })));
   ASSERT_TRUE(
       mlir::succeeded(program->runPassPipeline("unroll-loops-for-payload")));
   EXPECT_TRUE(succeeded(verify(program->module())));
@@ -4375,8 +4550,12 @@ TEST_F(CompilerPipelineTest, PayloadSpecializesInnerTensorSweepWithinBudget) {
         program->module(),
         TargetEnvironment(
             makeUnrestrictedTarget(),
-            makeControlPayloadSpecification(
-                {{.id = ProgramCapability::COUNTED_ITERATION.str()}})));
+            makeControlPayloadSpecification({
+                {
+                    .id = ProgramCapability::COUNTED_ITERATION.str(),
+                    .constraints = {},
+                },
+            })));
     ScopedDiagnosticHandler handler(program->module()->getContext(),
                                     [](Diagnostic&) { return success(); });
     EXPECT_EQ(succeeded(program->runPassPipeline(
@@ -4429,8 +4608,12 @@ TEST_F(CompilerPipelineTest, PayloadSpecializationRemovesIdentityRepetition) {
       program->module(),
       TargetEnvironment(
           makeUnrestrictedTarget(),
-          makeControlPayloadSpecification(
-              {{.id = ProgramCapability::COUNTED_ITERATION.str()}})));
+          makeControlPayloadSpecification({
+              {
+                  .id = ProgramCapability::COUNTED_ITERATION.str(),
+                  .constraints = {},
+              },
+          })));
   ASSERT_TRUE(succeeded(program->runPassPipeline("unroll-loops-for-payload")));
   EXPECT_TRUE(succeeded(verify(program->module())));
   EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
@@ -4474,8 +4657,12 @@ TEST_F(CompilerPipelineTest, PayloadSpecializesDependentOuterLoops) {
     const auto expected = llvm::cantFail(dd::getMatrix(*expectedDD, 3));
     package->decRef(*expectedDD);
     ASSERT_TRUE(succeeded(program->compileForTarget(TargetEnvironment(
-        target, makeControlPayloadSpecification(
-                    {{.id = ProgramCapability::COUNTED_ITERATION.str()}})))));
+        target, makeControlPayloadSpecification({
+                    {
+                        .id = ProgramCapability::COUNTED_ITERATION.str(),
+                        .constraints = {},
+                    },
+                })))));
     EXPECT_EQ(StringRef(program->str()).contains("scf.for"), retainsLoop);
     EXPECT_TRUE(succeeded(verify(program->module())));
     EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
@@ -4608,10 +4795,14 @@ TEST_F(CompilerPipelineTest, StaticQubitsKeepTheirSitesOnExplicitTopology) {
           "qco.sink %y : !qco.qubit return } }");
       MQT_ASSERT_SUCCESS(program);
       const TargetEnvironment environment(target, makePayloadSpecification());
-      EXPECT_EQ(succeeded(synthesisOnly
-                              ? program->synthesizeForTarget(environment)
-                              : program->compileForTarget(environment)),
-                secondSite == 1);
+      const CompilationOptions ranking{
+          .mapping = {.placementRanking = "patterns"},
+      };
+      EXPECT_EQ(
+          succeeded(synthesisOnly
+                        ? program->synthesizeForTarget(environment, ranking)
+                        : program->compileForTarget(environment, ranking)),
+          secondSite == 1);
       if (secondSite == 1) {
         EXPECT_FALSE(program->module()->hasAttr("mqt.layout"));
         size_t sites = 0;
@@ -5011,8 +5202,9 @@ TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
   EXPECT_FALSE(StringRef(qasm->source()).contains("for int"));
   const auto payload = llvm::cantFail(
       PayloadSpecification::forProgramFormat(ProgramFormat::QIRAdaptive));
-  ASSERT_TRUE(mlir::succeeded(
-      program->compileForTarget(TargetEnvironment(target, payload))));
+  ASSERT_TRUE(mlir::succeeded(program->compileForTarget(
+      TargetEnvironment(target, payload),
+      {.mapping = {.placementRanking = "patterns"}})));
   EXPECT_TRUE(succeeded(verify(program->module())));
   EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
   SmallVector<uint64_t> sites;
@@ -5165,7 +5357,8 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
   diagnostics.clear();
   ASSERT_TRUE(compileForTargetWithDiagnostics(
       *overflowing,
-      makeControlPayloadSpecification({{.id = "counted-iteration"}}),
+      makeControlPayloadSpecification(
+          {{.id = "counted-iteration", .constraints = {}}}),
       diagnostics));
   size_t largeLoops = 0U;
   overflowing->module().walk([&](scf::ForOp loop) {
@@ -5577,6 +5770,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsSwitchLowering) {
       MQT_ASSERT_SUCCESS(program);
       ProgramCapability capability{
           .id = native ? "multiway-branching" : "forward-branching",
+          .constraints = {},
       };
       if (depth != 0) {
         capability.constraints.push_back(
@@ -5715,9 +5909,13 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsMovedCaseDepth) {
       MQT_ASSERT_SUCCESS(program);
       attachTargetEnvironment(
           program->module(),
-          TargetEnvironment(
-              makeUnrestrictedTarget(),
-              makeControlPayloadSpecification({{.id = "forward-branching"}})));
+          TargetEnvironment(makeUnrestrictedTarget(),
+                            makeControlPayloadSpecification({
+                                {
+                                    .id = "forward-branching",
+                                    .constraints = {},
+                                },
+                            })));
       const auto before = program->str();
       ScopedDiagnosticHandler handler(program->module()->getContext(),
                                       [](Diagnostic&) { return success(); });
@@ -5833,10 +6031,10 @@ TEST_F(CompilerPipelineTest,
   )mlir";
 
   const auto payload = makeControlPayloadSpecification({
-      {.id = "forward-branching"},
-      {.id = "counted-iteration"},
-      {.id = "conditional-loop"},
-      {.id = "multiway-branching"},
+      {.id = "forward-branching", .constraints = {}},
+      {.id = "counted-iteration", .constraints = {}},
+      {.id = "conditional-loop", .constraints = {}},
+      {.id = "multiway-branching", .constraints = {}},
   });
   const std::vector<std::pair<llvm::StringRef, llvm::StringRef>> cases{
       {ifResult, "scf.if"},
@@ -6036,7 +6234,8 @@ TEST_F(CompilerPipelineTest,
   MQT_ASSERT_SUCCESS(unconstrained);
   ASSERT_TRUE(mlir::succeeded(unconstrained->compileForTarget(TargetEnvironment(
       makeUnrestrictedTarget(),
-      makeControlPayloadSpecification({{.id = "conditional-loop"}})))));
+      makeControlPayloadSpecification(
+          {{.id = "conditional-loop", .constraints = {}}})))));
   EXPECT_TRUE(StringRef(unconstrained->str()).contains("scf.while"));
 
   auto constrained = QCOProgram::fromMLIRString(source.str());
@@ -7091,61 +7290,121 @@ gphase(0.5);
 }
 
 TEST_F(CompilerPipelineTest, QCOProgramCompilesForOneWayEntangler) {
-  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
-include "stdgates.inc";
-qubit[2] q;
-cx q[0], q[1];
-cx q[1], q[0];
-)qasm";
-  auto qc = QCProgram::fromOpenQASMString(source.str());
-  MQT_ASSERT_SUCCESS(qc);
-  auto qco = std::move(*qc).intoQCO();
-  ASSERT_TRUE(mlir::succeeded(qco));
-
   using OperationCapability = CompilerTarget::OperationCapability;
   using SiteId = CompilerTarget::SiteId;
-  std::vector operations{
-      llvm::cantFail(OperationCapability::create("measure", 1, 0)),
-      llvm::cantFail(OperationCapability::create("u", 1, 3)),
-      llvm::cantFail(OperationCapability::create(
-          "cx", 2, 0,
-          {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1}))})),
-  };
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
-      CompilerTarget::NativeOperations::fromOperations(operations)));
+  for (const size_t numQubits : {size_t{2}, size_t{4}}) {
+    SCOPED_TRACE(numQubits);
+    const std::string source =
+        "OPENQASM 3.0; include \"stdgates.inc\"; qubit[" +
+        std::to_string(numQubits) + "] q; " +
+        (numQubits == 2 ? "cx q[0], q[1]; cx q[1], q[0];"
+                        : "h q[1]; rx(0.23) q[3]; cx q[2], q[0]; "
+                          "cx q[0], q[3]; cx q[3], q[1]; cx q[1], q[2];");
+    auto qc = QCProgram::fromOpenQASMString(source);
+    MQT_ASSERT_SUCCESS(qc);
+    auto qco = std::move(*qc).intoQCO();
+    ASSERT_TRUE(mlir::succeeded(qco));
+    auto package = llvm::cantFail(dd::Package::create(numQubits));
+    const auto expectedDD = qco::buildFunctionality(
+        mlir::mqt::getEntryPoint(qco->module()), *package);
+    ASSERT_TRUE(succeeded(expectedDD));
+    const auto expected = llvm::cantFail(dd::getMatrix(*expectedDD, numQubits));
+    package->decRef(*expectedDD);
 
-  ASSERT_TRUE(mlir::succeeded(qco->compileForTarget(
-      TargetEnvironment(target, makePayloadSpecification()))));
-  auto compiled = qco->module();
-  EXPECT_TRUE(verify(compiled).succeeded());
+    std::vector<CompilerTarget::Site> targetSites;
+    targetSites.reserve(numQubits);
+    for (size_t i = 0; i < numQubits; ++i) {
+      targetSites.push_back(llvm::cantFail(
+          CompilerTarget::Site::create(2 * static_cast<SiteId>(i))));
+    }
+    const std::vector<CompilerTarget::Coupling> couplings =
+        numQubits == 2 ? std::vector<CompilerTarget::Coupling>{{0, 2}}
+                       : std::vector<CompilerTarget::Coupling>{
+                             {0, 2},
+                             {2, 4},
+                             {4, 6},
+                             {0, 6},
+                         };
+    std::vector<CompilerTarget::SiteTuple> directions;
+    directions.reserve(couplings.size());
+    for (const auto& [a, b] : couplings) {
+      directions.push_back(
+          llvm::cantFail(CompilerTarget::SiteTuple::create({a, b})));
+    }
+    const auto target = llvm::cantFail(CompilerTarget::create(
+        std::move(targetSites),
+        CompilerTarget::Connectivity::fromCouplings(couplings),
+        CompilerTarget::NativeOperations::fromOperations({
+            llvm::cantFail(OperationCapability::create("u", 1, 3)),
+            llvm::cantFail(OperationCapability::create("gphase", 0, 1)),
+            llvm::cantFail(OperationCapability::create("cx", 2, 0, directions)),
+        })));
 
-  llvm::DenseMap<Value, SiteId> sites;
-  size_t numTwoQubitOperations = 0;
-  for (Operation& operation :
-       ::mlir::mqt::getEntryPoint(compiled).getFunctionBody().getOps()) {
-    if (auto staticOp = dyn_cast<qco::StaticOp>(operation)) {
-      sites.try_emplace(staticOp.getQubit(), staticOp.getIndex());
-      continue;
+    ASSERT_TRUE(mlir::succeeded(qco->compileForTarget(
+        TargetEnvironment(target, makePayloadSpecification()),
+        {.seed = 42, .mapping = {.trials = 1, .iterations = 0}})));
+    auto compiled = qco->module();
+    EXPECT_TRUE(verify(compiled).succeeded());
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(compiled)));
+
+    llvm::DenseMap<Value, SiteId> sites;
+    size_t numTwoQubitOperations = 0;
+    for (Operation& operation :
+         ::mlir::mqt::getEntryPoint(compiled).getFunctionBody().getOps()) {
+      if (auto staticOp = dyn_cast<qco::StaticOp>(operation)) {
+        sites.try_emplace(staticOp.getQubit(), staticOp.getIndex());
+        continue;
+      }
+      auto unitary = dyn_cast<qco::UnitaryOpInterface>(operation);
+      if (!unitary) {
+        continue;
+      }
+      if (unitary.getNumQubits() == 2) {
+        ++numTwoQubitOperations;
+        const llvm::SmallVector<SiteId, 2> orderedSites{
+            sites.at(unitary.getInputQubit(0)),
+            sites.at(unitary.getInputQubit(1)),
+        };
+        EXPECT_TRUE(target.supports(&operation, orderedSites));
+      }
+      for (const auto [input, output] : llvm::zip_equal(
+               unitary.getInputQubits(), unitary.getOutputQubits())) {
+        sites.try_emplace(output, sites.at(input));
+      }
     }
-    auto unitary = dyn_cast<qco::UnitaryOpInterface>(operation);
-    if (!unitary) {
-      continue;
-    }
-    if (unitary.getNumQubits() == 2) {
-      ++numTwoQubitOperations;
-      const llvm::SmallVector<SiteId, 2> orderedSites{
-          sites.at(unitary.getInputQubit(0)),
-          sites.at(unitary.getInputQubit(1)),
-      };
-      EXPECT_TRUE(target.supports(&operation, orderedSites));
-    }
-    for (const auto [input, output] :
-         llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
-      sites.try_emplace(output, sites.at(input));
+    // The cycle needs placement but no routing or extra entanglers.
+    EXPECT_EQ(numTwoQubitOperations, numQubits);
+    auto layout = mlir::mqt::QubitLayout::fromAttr(
+        compiled->getAttr("mqt.layout"), [&] { return compiled->emitError(); });
+    ASSERT_TRUE(succeeded(layout));
+    ASSERT_EQ(layout->initial.size(), numQubits);
+    ASSERT_TRUE(layout->sites);
+    const auto actualDD =
+        qco::buildFunctionality(mlir::mqt::getEntryPoint(compiled), *package);
+    ASSERT_TRUE(succeeded(actualDD));
+    const auto actual =
+        llvm::cantFail(dd::getMatrix(*actualDD, (2 * numQubits) - 1));
+    package->decRef(*actualDD);
+    const auto physicalIndex = [&](size_t basis, bool output) {
+      size_t physical = 0;
+      for (auto [qubit, initial] : llvm::enumerate(layout->initial)) {
+        const auto position =
+            output && layout->routing ? (*layout->routing)[initial] : initial;
+        const auto site = (*layout->sites)[position];
+        physical |= ((basis >> qubit) & 1U) << static_cast<size_t>(site);
+      }
+      return physical;
+    };
+    for (size_t row = 0; row < expected.size(); ++row) {
+      for (size_t column = 0; column < expected.size(); ++column) {
+        EXPECT_LE(
+            std::abs(
+                actual[physicalIndex(row, true)][physicalIndex(column, false)] -
+                expected[row][column]),
+            1e-12);
+      }
     }
   }
-  EXPECT_GT(numTwoQubitOperations, 0U);
 }
 
 TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
@@ -7676,8 +7935,8 @@ h q;
   MQT_ASSERT_SUCCESS(input);
   CompilerInput program{std::move(*input)};
   auto& sourceProgram = std::get<QCProgram>(program);
-  const auto payload = llvm::cantFail(
-      PayloadSpecification::create({.id = "unsupported", .version = "1.0.0"}));
+  const auto payload = llvm::cantFail(PayloadSpecification::create(
+      {.id = "unsupported", .version = "1.0.0", .profile = {}}));
   const TargetEnvironment environment(
       llvm::cantFail(CompilerTarget::create(
           1, CompilerTarget::Connectivity::allToAll(),

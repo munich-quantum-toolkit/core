@@ -2132,11 +2132,13 @@ and nested modules.)pb")
 
   nb::class_<mlir::MappingOptions>(m, "MappingOptions",
                                    "Native mapping controls.")
-      .def(nb::init<std::optional<size_t>, size_t, size_t, size_t>(),
+      .def(nb::init<std::optional<size_t>, size_t, size_t, size_t,
+                    std::string>(),
            nb::kw_only(), "trials"_a = nb::none(),
            "iterations"_a = mlir::MappingOptions{}.iterations,
            "lookahead"_a = mlir::MappingOptions{}.lookahead,
-           "search_memory_limit"_a = mlir::MappingOptions{}.searchMemoryLimit)
+           "search_memory_limit"_a = mlir::MappingOptions{}.searchMemoryLimit,
+           "placement_ranking"_a = mlir::MappingOptions{}.placementRanking)
       .def_rw("trials", &mlir::MappingOptions::trials,
               "Positive trial count; None uses the available logical CPU "
               "count, with a minimum of 8.")
@@ -2150,7 +2152,13 @@ and nested modules.)pb")
           "search_memory_limit", &mlir::MappingOptions::searchMemoryLimit,
           R"pb(Estimated node and layout bytes per routing search, per concurrent trial.
 
-Zero disables node expansion. Container overhead, caches, and IR are extra.)pb");
+Zero disables node expansion. Container overhead, caches, and IR are extra.)pb")
+      .def_rw("placement_ranking", &mlir::MappingOptions::placementRanking,
+              R"pb(Post-synthesis calibrated CZ placement ranking.
+
+Use ``none`` to retain direct placement without ranking (the default),
+``direct`` to enumerate directly, or ``patterns`` for the twelve-cycle selector.
+Unsupported programs or missing calibration retain their placement.)pb");
 
   nb::class_<mlir::CompilationOptions>(m, "CompilationOptions",
                                        R"pb(Shared compiler controls.

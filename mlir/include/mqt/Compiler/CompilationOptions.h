@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <string>
 
 namespace mlir {
 
@@ -32,6 +33,10 @@ struct MappingOptions {
   /// Zero disables node expansion. Container overhead, caches, and IR are
   /// extra.
   size_t searchMemoryLimit = 256UL * 1024 * 1024;
+  /// Optional native-CZ placement ranking: none, direct, or patterns.
+  ///
+  /// Patterns uses a twelve-cycle selector with direct-search fallback.
+  std::string placementRanking = "none";
 };
 
 /// Options shared by compilation entry points.

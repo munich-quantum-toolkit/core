@@ -168,6 +168,26 @@ traces. Repeatable mapping requires the same build, input, target, seed, and
 explicit trial count. Sampling uses a separate seed. For routing costs, search
 limits, and synthesis behavior, see the `place-and-route` pass in {doc}`QCO`.
 
+`MappingOptions(placement_ranking="patterns")` enables calibrated placement
+ranking after native synthesis. It uses cached patterns when the query and
+target contain a twelve-cycle and direct enumeration otherwise. Use `"direct"`
+to rank with direct enumeration throughout. The default, `"none"`, keeps direct
+initial placement without adding ranking. The CLI option is
+`--placement-ranking=none|direct|patterns`.
+
+Ranking scores up to 4,096 complete placements within ten million assignment
+probes and retains the original placement unless its calibrated CZ loss strictly
+improves. It changes physical sites and layout provenance while preserving
+quantum operations and classical result order. Target reuse amortizes pattern
+preparation; cold queries can be slower. This is a two-qubit calibration
+objective, not an estimate of full-circuit fidelity. The best-effort mode
+applies to flat scalar programs with physical provenance, standard named CZ
+capabilities, complete CZ fidelity metadata, and globally supported
+single-qubit, measurement, and reset operations. Structured programs, other
+entanglers, nonstandard native aliases, missing calibration, and fixed preplaced
+inputs retain their placement. See `rank-qubit-placements` in {doc}`QCO` for the
+standalone pass and its budgets.
+
 Controlled-gate decomposition can borrow other allocated qubits as ancilla
 qubits when this reduces estimated entangling cost. It restores their states and
 correlations and allocates no additional qubits. See
@@ -222,6 +242,57 @@ Use `CompilerTarget.SiteTuple` to attach duration or fidelity to a placement;
 plain tuples represent placements without calibration. Routing uses undirected
 adjacency, and synthesis checks the supported operand directions on each site.
 Branch exits and loop backedges must retain compatible physical sites.
+
+The `place-qubits` pass selects an initial layout without inserting routing
+SWAPs. On explicit topologies, it tries identity/path shortcuts and bounded
+embedding search before refining greedy, identity, and random layouts with the
+router's native-cost model. The `patterns` option selects the embedding search.
+
+| Value            | Search                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------ |
+| `none` (default) | Direct vertex search.                                                                            |
+| `small`          | VF2 decomposition and joins over pairs, four-cycles, and stars.                                  |
+| `extended`       | Also chains of four/six vertices, cycles of six/eight/twelve, and 2×3/2×4 grids.                 |
+| `auto`           | Extended patterns when the query's 2-core has at least twelve vertices, otherwise direct search. |
+
+Repeatedly removing vertices with fewer than two neighbors leaves the 2-core.
+Every twelve-cycle lies in the 2-core, so its size can rule out that pattern.
+Both searches map distinct vertices to distinct sites and preserve undirected
+interactions. Extra target edges are allowed. Identity and path shortcuts run
+first. Calibration and native gate availability are outside this search.
+
+Each search checks at most 100,000 candidates. A pattern tuple can assign
+several vertices, so equal budgets are not equal work. Pattern preparation and
+VF2 decomposition are outside the budget. A complete embedding skips refinement.
+Otherwise, including after budget exhaustion, normal refinement and routing
+continue. The result is deterministic across thread counts.
+
+For example, `builtin.module(place-qubits{patterns=auto},place-and-route)`
+selects automatically before routing. In C++, use
+`PlacementPassOptions::patterns` with `createPlacementPass`. The canonical
+pipeline uses `none`; there is no high-level Python option for this choice. Use
+the same routing/scoring options in both passes. Internal `mqt.placement_order`
+metadata preserves program width and logical router indices across serialization
+and is validated and consumed by routing. Existing physical provenance must
+cover the full target and list sites in target order.
+
+`CompilerTarget::topologyPatterns()` supplies canonical pair, four-cycle, and
+star groups. `topologyPattern(type)` also supplies the extended groups. Each
+extended group stops preparation after 2,000,000 probes or 65,536 occurrences.
+Exceeding either limit discards the entire group and returns `nullptr`.
+Unavailable groups leave their edges for smaller selected patterns. Original
+groups remain uncapped. `topologyPatternIndex(type)` supplies oriented tuples
+and column/site postings for joins. Both caches initialize thread-safely and are
+shared by target copies. Only requested groups/indexes allocate storage, which
+remains until the last target copy is released and grows with occurrences and
+their orientations. All-to-all targets represent patterns implicitly. See
+`Target.h` and `Mapping/Placement.h` for template order and view lifetimes.
+
+Placement alone does not guarantee adjacent gates. The subsequent
+`place-and-route` pass inserts routing SWAPs, followed by native synthesis and
+target validation. The high-level pipeline routes newly placed inputs. Already
+static input retains its assigned sites, including supported higher-arity native
+gates. Explicitly run `place-and-route` to route static input.
 
 ### Native single-qubit gates
 

@@ -158,28 +158,30 @@ TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
       "Invalid payload specification: Payload format requires an ID");
   expectInvalid(
       mlir::PayloadSpecification::create(
-          {.id = std::string("qir\0", 4), .version = "2.1.0"}),
+          {.id = std::string("qir\0", 4), .version = "2.1.0", .profile = {}}),
       "Invalid payload specification: Payload format fields must not contain "
       "null characters");
   expectInvalid(
-      mlir::PayloadSpecification::create({.id = "qir", .version = "2.1.0"},
-                                         {{.id = ""}}),
+      mlir::PayloadSpecification::create(
+          {.id = "qir", .version = "2.1.0", .profile = {}},
+          {{.id = "", .constraints = {}}}),
       "Invalid payload specification: Program capability ID must not be "
       "empty");
   expectInvalid(
-      mlir::PayloadSpecification::create({.id = "qir", .version = "2.1.0"},
-                                         {{.id = std::string("x\0", 2)}}),
+      mlir::PayloadSpecification::create(
+          {.id = "qir", .version = "2.1.0", .profile = {}},
+          {{.id = std::string("x\0", 2), .constraints = {}}}),
       "Invalid payload specification: Program capability ID must not contain "
       "a null character");
   expectInvalid(
       mlir::PayloadSpecification::create(
-          {.id = "qir", .version = "2.1.0"},
+          {.id = "qir", .version = "2.1.0", .profile = {}},
           {{.id = "capability", .constraints = {{.id = ""}}}}),
       "Invalid payload specification: Program constraint ID must not be "
       "empty");
   expectInvalid(
       mlir::PayloadSpecification::create(
-          {.id = "qir", .version = "2.1.0"},
+          {.id = "qir", .version = "2.1.0", .profile = {}},
           {
               {
                   .id = "capability",
@@ -199,14 +201,15 @@ TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
           }),
       "Invalid payload specification: Program capability contains a duplicate "
       "constraint ID");
-  expectInvalid(mlir::PayloadSpecification::create(
-                    {.id = "qir", .version = "2.1.0", .profile = "base"},
-                    {
-                        {.id = "integer-computation", .value = 64},
-                        {.id = "integer-computation", .value = 64},
-                    }),
-                "Invalid payload specification: Payload specification contains "
-                "a duplicate capability ID/value pair");
+  expectInvalid(
+      mlir::PayloadSpecification::create(
+          {.id = "qir", .version = "2.1.0", .profile = "base"},
+          {
+              {.id = "integer-computation", .value = 64, .constraints = {}},
+              {.id = "integer-computation", .value = 64, .constraints = {}},
+          }),
+      "Invalid payload specification: Payload specification contains "
+      "a duplicate capability ID/value pair");
 }
 
 TEST(PayloadSpecificationTest, RestrictsCapabilitiesWithoutChangingFormat) {
@@ -228,11 +231,11 @@ TEST(PayloadSpecificationTest, RestrictsCapabilitiesWithoutChangingFormat) {
               .id = "counted-iteration",
               .constraints = {{.id = "max-iteration-count", .value = 4}},
           },
-          {.id = "conditional-loop"},
-          {.id = "qir.int-computations"},
+          {.id = "conditional-loop", .constraints = {}},
+          {.id = "qir.int-computations", .constraints = {}},
       }));
   const auto target = valid(mlir::PayloadSpecification::create(
-      {.id = "vendor.ir", .version = "1"},
+      {.id = "vendor.ir", .version = "1", .profile = ""},
       {
           {
               .id = "forward-branching",
@@ -252,7 +255,7 @@ TEST(PayloadSpecificationTest, RestrictsCapabilitiesWithoutChangingFormat) {
                       {.id = "max-control-flow-nesting-depth", .value = 3},
                   },
           },
-          {.id = "multiway-branching"},
+          {.id = "multiway-branching", .constraints = {}},
       },
       true));
   const auto restricted = output.restrictCapabilities(target);
@@ -270,7 +273,7 @@ TEST(PayloadSpecificationTest, RestrictsCapabilitiesWithoutChangingFormat) {
                   {.id = "max-control-flow-nesting-depth", .value = 3},
               },
       },
-      {.id = "qir.int-computations"},
+      {.id = "qir.int-computations", .constraints = {}},
   };
   EXPECT_EQ(restricted.capabilities(), llvm::ArrayRef(expected));
   EXPECT_FALSE(restricted.optionalCapabilitiesKnown());
@@ -353,8 +356,8 @@ TEST(TargetEnvironmentTest, OpenQASMSwitchesDoNotEnableIndexedQubits) {
                                            NativeOperations::unrestricted()));
   using Capability = mlir::ProgramCapability;
   for (const auto& capability : std::vector<Capability>{
-           {.id = "forward-branching"},
-           {.id = "multiway-branching", .value = 1},
+           {.id = "forward-branching", .constraints = {}},
+           {.id = "multiway-branching", .value = 1, .constraints = {}},
            {
                .id = "multiway-branching",
                .constraints =
@@ -371,13 +374,14 @@ TEST(TargetEnvironmentTest, OpenQASMSwitchesDoNotEnableIndexedQubits) {
            },
        }) {
     const auto payload = valid(mlir::PayloadSpecification::create(
-        {.id = "openqasm", .version = "3.1.0"}, {capability}));
+        {.id = "openqasm", .version = "3.1.0", .profile = {}}, {capability}));
     EXPECT_FALSE(payload.supportsUnrestrictedMultiwayBranching());
     EXPECT_FALSE(
         mlir::TargetEnvironment(target, payload).supportsIndexedQubits());
   }
   const auto payload = valid(mlir::PayloadSpecification::create(
-      {.id = "openqasm", .version = "3.1.0"}, {{.id = "multiway-branching"}}));
+      {.id = "openqasm", .version = "3.1.0", .profile = {}},
+      {{.id = "multiway-branching", .constraints = {}}}));
   EXPECT_TRUE(payload.supportsUnrestrictedMultiwayBranching());
   EXPECT_FALSE(
       mlir::TargetEnvironment(target, payload).supportsIndexedQubits());
@@ -446,7 +450,7 @@ TEST(TargetEnvironmentTest, IndexedNativeOnlyOperationsCoverAllSites) {
 TEST(TargetEnvironmentTest, ReusesPreparedTargetStorage) {
   mlir::MLIRContext context;
   context.loadDialect<mlir::mqt::MQTDialect>();
-  mlir::OwningOpRef moduleOp =
+  mlir::OwningOpRef<mlir::ModuleOp> moduleOp =
       mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
   const auto target =
       valid(Target::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
@@ -481,16 +485,16 @@ TEST(TargetEnvironmentTest, ReusesPreparedTargetStorage) {
 TEST(TargetEnvironmentTest, InvalidatesCachedAnalysisAfterAttributeChange) {
   mlir::MLIRContext context;
   context.loadDialect<mlir::mqt::MQTDialect>();
-  mlir::OwningOpRef module =
+  mlir::OwningOpRef<mlir::ModuleOp> moduleOp =
       mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
   const auto payload = valid(mlir::PayloadSpecification::create(
       {.id = "qir", .version = "2.1.0", .profile = "base"}));
   mlir::attachTargetEnvironment(
-      *module, mlir::TargetEnvironment(
-                   valid(Target::create(1, Connectivity::allToAll(),
-                                        NativeOperations::unrestricted())),
-                   payload));
-  mlir::ModuleAnalysisManager moduleAnalysisManager(module.get(), nullptr);
+      *moduleOp, mlir::TargetEnvironment(
+                     valid(Target::create(1, Connectivity::allToAll(),
+                                          NativeOperations::unrestricted())),
+                     payload));
+  mlir::ModuleAnalysisManager moduleAnalysisManager(moduleOp.get(), nullptr);
   mlir::AnalysisManager analysisManager = moduleAnalysisManager;
 
   const auto& initial =
@@ -499,10 +503,10 @@ TEST(TargetEnvironmentTest, InvalidatesCachedAnalysisAfterAttributeChange) {
   EXPECT_EQ(initial.environment().target().numSites(), 1);
 
   mlir::attachTargetEnvironment(
-      *module, mlir::TargetEnvironment(
-                   valid(Target::create(2, Connectivity::allToAll(),
-                                        NativeOperations::unrestricted())),
-                   payload));
+      *moduleOp, mlir::TargetEnvironment(
+                     valid(Target::create(2, Connectivity::allToAll(),
+                                          NativeOperations::unrestricted())),
+                     payload));
   mlir::AnalysisManager::PreservedAnalyses preserved;
   preserved.preserve<mlir::TargetEnvironmentAnalysis>();
   analysisManager.invalidate(preserved);
@@ -639,6 +643,339 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
   target.forEachNeighbour(
       1, [&](const auto neighbour) { neighbours.emplace_back(neighbour); });
   EXPECT_EQ(neighbours, (std::vector<size_t>{0, 2}));
+}
+
+TEST(CompilerTargetTest, TopologyPatternsShareCacheAndAllowChords) {
+  const auto target = valid(Target::create(
+      std::vector{
+          valid(Site::create(7)),
+          valid(Site::create(2)),
+          valid(Site::create(11)),
+          valid(Site::create(4)),
+      },
+      Connectivity::fromCouplings(
+          {{7, 2}, {2, 11}, {11, 4}, {4, 7}, {7, 11}, {2, 7}}),
+      NativeOperations::unrestricted()));
+  auto first = std::async(std::launch::async,
+                          [target] { return target.topologyPatterns(); });
+  auto second = std::async(std::launch::async,
+                           [target] { return target.topologyPatterns(); });
+  auto topologyPatterns = first.get();
+  ASSERT_TRUE(topologyPatterns.has_value());
+  ASSERT_EQ(topologyPatterns->size(), 3);
+  const auto& cycles = topologyPatterns->front();
+  using Edge = Target::TopologyPatterns::Group::Edge;
+  EXPECT_EQ(cycles.type(), Target::TopologyPatterns::Type::FourCycle);
+  EXPECT_EQ(cycles.arity(), 4);
+  EXPECT_EQ(cycles.edges(),
+            (llvm::ArrayRef<Edge>{{0, 1}, {1, 2}, {2, 3}, {3, 0}}));
+  ASSERT_EQ(cycles.size(), 1);
+  EXPECT_EQ(cycles[0], (llvm::ArrayRef<size_t>{0, 1, 2, 3}));
+  const auto& pairs = (*topologyPatterns)[1];
+  EXPECT_EQ(pairs.type(), Target::TopologyPatterns::Type::QubitPair);
+  EXPECT_EQ(pairs.arity(), 2);
+  EXPECT_EQ(pairs.edges(), (llvm::ArrayRef<Edge>{{0, 1}}));
+  const std::array<std::array<size_t, 2>, 5> expectedPairs{
+      {
+          {0, 1},
+          {0, 2},
+          {0, 3},
+          {1, 2},
+          {2, 3},
+      },
+  };
+  ASSERT_EQ(pairs.size(), expectedPairs.size());
+  for (size_t i = 0; i < pairs.size(); ++i) {
+    EXPECT_EQ(pairs[i], llvm::ArrayRef<size_t>(expectedPairs[i]));
+  }
+  const auto& stars = (*topologyPatterns)[2];
+  EXPECT_EQ(stars.type(), Target::TopologyPatterns::Type::Star);
+  EXPECT_EQ(stars.arity(), 4);
+  EXPECT_EQ(stars.edges(), (llvm::ArrayRef<Edge>{{0, 1}, {0, 2}, {0, 3}}));
+  ASSERT_EQ(stars.size(), 2);
+  EXPECT_EQ(stars[0], (llvm::ArrayRef<size_t>{0, 1, 2, 3}));
+  EXPECT_EQ(stars[1], (llvm::ArrayRef<size_t>{2, 0, 1, 3}));
+  for (const auto& group : *topologyPatterns) {
+    for (size_t vertex = 0; vertex < group.arity(); ++vertex) {
+      llvm::SmallVector<size_t, 3> expected;
+      for (const auto& [a, b] : group.edges()) {
+        if (a == vertex) {
+          expected.push_back(b);
+        } else if (b == vertex) {
+          expected.push_back(a);
+        }
+      }
+      EXPECT_EQ(group.neighbours(vertex), llvm::ArrayRef<size_t>(expected));
+    }
+  }
+  auto shared = second.get();
+  ASSERT_TRUE(shared.has_value());
+  EXPECT_EQ(topologyPatterns->data(), shared->data());
+  EXPECT_EQ(topologyPatterns->data(), target.topologyPatterns()->data());
+  const auto complete = valid(Target::create(1000, Connectivity::allToAll(),
+                                             NativeOperations::unrestricted()));
+  EXPECT_FALSE(complete.topologyPatterns().has_value());
+  const auto single = valid(Target::create(1, Connectivity::fromCouplings({}),
+                                           NativeOperations::unrestricted()));
+  auto empty = single.topologyPatterns();
+  ASSERT_TRUE(empty.has_value());
+  ASSERT_EQ(empty->size(), 3);
+  EXPECT_EQ(empty->front().size(), 0);
+  EXPECT_EQ((*empty)[1].size(), 0);
+  EXPECT_EQ((*empty)[2].size(), 0);
+}
+
+TEST(CompilerTargetTest, TopologyPatternsMatchExhaustiveFiveVertexOracle) {
+  constexpr size_t n = 5;
+  size_t connected = 0;
+  for (unsigned mask = 0; mask < (1U << 10U); ++mask) {
+    std::vector<Coupling> edges;
+    unsigned bit = 0;
+    for (size_t a = 0; a < n; ++a) {
+      for (size_t b = a + 1; b < n; ++b, ++bit) {
+        if ((mask & (1U << bit)) != 0) {
+          edges.emplace_back(a, b);
+        }
+      }
+    }
+    auto target = Target::create(n, Connectivity::fromCouplings(edges),
+                                 NativeOperations::unrestricted());
+    if (!target) {
+      // Compiler targets require connected topologies.
+      llvm::consumeError(target.takeError());
+      continue;
+    }
+    ++connected;
+    std::vector<std::array<size_t, 4>> expected;
+    for (size_t a = 0; a < n; ++a) {
+      for (size_t b = a + 1; b < n; ++b) {
+        for (size_t c = a + 1; c < n; ++c) {
+          for (size_t d = b + 1; d < n; ++d) {
+            if (b != c && c != d && target->areAdjacent(a, b) &&
+                target->areAdjacent(b, c) && target->areAdjacent(c, d) &&
+                target->areAdjacent(d, a)) {
+              expected.push_back({a, b, c, d});
+            }
+          }
+        }
+      }
+    }
+    auto topologyPatterns = target->topologyPatterns();
+    ASSERT_TRUE(topologyPatterns.has_value());
+    ASSERT_EQ(topologyPatterns->size(), 3);
+    const auto& pairs = (*topologyPatterns)[1];
+    ASSERT_EQ(pairs.size(), edges.size());
+    for (size_t i = 0; i < edges.size(); ++i) {
+      EXPECT_EQ(pairs[i],
+                (llvm::ArrayRef<size_t>{static_cast<size_t>(edges[i].first),
+                                        static_cast<size_t>(edges[i].second)}));
+    }
+    const auto& cycles = topologyPatterns->front();
+    std::vector<std::array<size_t, 4>> actual;
+    for (size_t i = 0; i < cycles.size(); ++i) {
+      auto row = cycles[i];
+      actual.push_back({row[0], row[1], row[2], row[3]});
+    }
+    llvm::sort(actual);
+    EXPECT_EQ(actual, expected) << "graph mask: " << mask;
+    std::vector<std::array<size_t, 4>> expectedStars;
+    for (size_t center = 0; center < 5; ++center) {
+      for (size_t b = 0; b < 5; ++b) {
+        for (size_t c = b + 1; c < 5; ++c) {
+          for (size_t d = c + 1; d < 5; ++d) {
+            if (center != b && center != c && center != d &&
+                target->areAdjacent(center, b) &&
+                target->areAdjacent(center, c) &&
+                target->areAdjacent(center, d)) {
+              expectedStars.push_back({center, b, c, d});
+            }
+          }
+        }
+      }
+    }
+    const auto& stars = (*topologyPatterns)[2];
+    ASSERT_EQ(stars.size(), expectedStars.size()) << "graph mask: " << mask;
+    for (size_t i = 0; i < stars.size(); ++i) {
+      EXPECT_EQ(stars[i], llvm::ArrayRef<size_t>(expectedStars[i]))
+          << "graph mask: " << mask;
+    }
+  }
+  EXPECT_EQ(connected, 728);
+}
+
+TEST(CompilerTargetTest,
+     ExtendedTopologyPatternsShareCacheAndCoverLargerGrids) {
+  using Type = Target::TopologyPatterns::Type;
+  const auto target = valid(Target::create(8,
+                                           Connectivity::fromCouplings({
+                                               {0, 1},
+                                               {1, 2},
+                                               {2, 3},
+                                               {4, 5},
+                                               {5, 6},
+                                               {6, 7},
+                                               {0, 4},
+                                               {1, 5},
+                                               {2, 6},
+                                               {3, 7},
+                                           }),
+                                           NativeOperations::unrestricted()));
+  auto first = std::async(std::launch::async, [target] {
+    return target.topologyPattern(Type::Grid2x4);
+  });
+  auto second = std::async(std::launch::async, [target] {
+    return target.topologyPattern(Type::Grid2x4);
+  });
+  const auto* grid = first.get();
+  ASSERT_NE(grid, nullptr);
+  EXPECT_EQ(grid, second.get());
+  ASSERT_EQ(grid->size(), 1);
+  EXPECT_EQ((*grid)[0], (llvm::ArrayRef<size_t>{0, 1, 2, 3, 4, 5, 6, 7}));
+  for (const auto [type, expected] : {
+           std::pair{Type::Grid2x3, 2U},
+           std::pair{Type::SixCycle, 2U},
+           std::pair{Type::EightCycle, 1U},
+       }) {
+    const auto* group = target.topologyPattern(type);
+    ASSERT_NE(group, nullptr);
+    EXPECT_EQ(group->size(), expected);
+    for (size_t row = 0; row < group->size(); ++row) {
+      for (const auto& [a, b] : group->edges()) {
+        EXPECT_TRUE(target.areAdjacent((*group)[row][a], (*group)[row][b]));
+      }
+    }
+  }
+  auto defaults = target.topologyPatterns();
+  ASSERT_TRUE(defaults.has_value());
+  ASSERT_EQ(defaults->size(), 3);
+  EXPECT_EQ(target.topologyPattern(Type::FourCycle), &defaults->front());
+  EXPECT_EQ(target.topologyPattern(Type::QubitPair), &(*defaults)[1]);
+  EXPECT_EQ(target.topologyPattern(Type::Star), &(*defaults)[2]);
+
+  const auto chain = valid(Target::create(
+      6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
+      NativeOperations::unrestricted()));
+  const auto* shortChains = chain.topologyPattern(Type::Chain4);
+  ASSERT_NE(shortChains, nullptr);
+  ASSERT_EQ(shortChains->size(), 3);
+  for (size_t row = 0; row < shortChains->size(); ++row) {
+    EXPECT_EQ((*shortChains)[row],
+              (llvm::ArrayRef<size_t>{row, row + 1, row + 2, row + 3}));
+  }
+  const auto* longChains = chain.topologyPattern(Type::Chain6);
+  ASSERT_NE(longChains, nullptr);
+  EXPECT_EQ(longChains->size(), 1);
+  const auto* absent = chain.topologyPattern(Type::SixCycle);
+  ASSERT_NE(absent, nullptr);
+  EXPECT_EQ(absent->size(), 0);
+}
+
+TEST(CompilerTargetTest, ExtendedTopologyPatternsAllowChordsAndDeduplicate) {
+  using Type = Target::TopologyPatterns::Type;
+  std::vector<Coupling> edges;
+  for (size_t a = 0; a < 6; ++a) {
+    for (size_t b = a + 1; b < 6; ++b) {
+      edges.emplace_back(a, b);
+    }
+  }
+  const auto target = valid(Target::create(
+      6, Connectivity::fromCouplings(edges), NativeOperations::unrestricted()));
+  // Every injective tuple is an embedding in K6. Divide by 2 path reversals,
+  // 12 cycle rotations/reflections, or 4 grid reflections.
+  for (const auto [type, expected] : {
+           std::pair{Type::Chain4, 180U},
+           std::pair{Type::Chain6, 360U},
+           std::pair{Type::SixCycle, 60U},
+           std::pair{Type::Grid2x3, 180U},
+       }) {
+    const auto* group = target.topologyPattern(type);
+    ASSERT_NE(group, nullptr);
+    EXPECT_EQ(group->size(), expected);
+    std::vector<std::vector<size_t>> rows;
+    rows.reserve(group->size());
+    for (size_t row = 0; row < group->size(); ++row) {
+      rows.emplace_back((*group)[row].begin(), (*group)[row].end());
+    }
+    llvm::sort(rows);
+    EXPECT_EQ(std::ranges::unique(rows).begin(), rows.end());
+  }
+  const auto* tooLarge = target.topologyPattern(Type::EightCycle);
+  ASSERT_NE(tooLarge, nullptr);
+  EXPECT_EQ(tooLarge->size(), 0);
+}
+
+TEST(CompilerTargetTest, OrientedIndexesInitializeOnceAcrossTargetCopies) {
+  using Type = Target::TopologyPatterns::Type;
+  std::vector<Coupling> couplings;
+  couplings.reserve(13);
+  for (size_t vertex = 0; vertex < 12; ++vertex) {
+    couplings.emplace_back(vertex, (vertex + 1) % 12);
+  }
+  // Extra edges are allowed by non-induced matching.
+  couplings.emplace_back(0, 6);
+  const auto target =
+      valid(Target::create(12, Connectivity::fromCouplings(couplings),
+                           NativeOperations::unrestricted()));
+  std::barrier start(4);
+  const auto initialize = [target, &start] {
+    start.arrive_and_wait();
+    const auto* cycle = target.topologyPatternIndex(Type::TwelveCycle);
+    const auto* pair = target.topologyPatternIndex(Type::QubitPair);
+    return std::pair{cycle, pair};
+  };
+  std::array futures{
+      std::async(std::launch::async, initialize),
+      std::async(std::launch::async, initialize),
+      std::async(std::launch::async, initialize),
+      std::async(std::launch::async, initialize),
+  };
+  const auto expected = futures[0].get();
+  ASSERT_NE(expected.first, nullptr);
+  ASSERT_NE(expected.second, nullptr);
+  EXPECT_EQ(expected.first->size(), 24);
+  for (size_t worker = 1; worker < futures.size(); ++worker) {
+    EXPECT_EQ(futures[worker].get(), expected);
+  }
+  for (const auto* index : {expected.first, expected.second}) {
+    const auto* group = target.topologyPattern(
+        index == expected.first ? Type::TwelveCycle : Type::QubitPair);
+    ASSERT_NE(group, nullptr);
+    ASSERT_EQ(index->size(),
+              group->size() * (index == expected.first ? 24U : 2U));
+    for (size_t row = 0; row < index->size(); ++row) {
+      for (const auto& [a, b] : group->edges()) {
+        EXPECT_TRUE(target.areAdjacent((*index)[row][a], (*index)[row][b]));
+      }
+      for (size_t column = 0; column < index->arity(); ++column) {
+        EXPECT_TRUE(llvm::is_contained(
+            index->candidates(column, (*index)[row][column]), row));
+      }
+    }
+  }
+}
+
+TEST(CompilerTargetTest, CappedTopologyPatternsKeepCompleteFallbacks) {
+  using Type = Target::TopologyPatterns::Type;
+  std::vector<Coupling> edges;
+  for (size_t a = 0; a < 20; ++a) {
+    for (size_t b = a + 1; b < 20; ++b) {
+      edges.emplace_back(a, b);
+    }
+  }
+  const auto target =
+      valid(Target::create(20, Connectivity::fromCouplings(edges),
+                           NativeOperations::unrestricted()));
+  EXPECT_EQ(target.topologyPattern(Type::Chain6), nullptr);
+  EXPECT_EQ(target.topologyPattern(Type::Chain6), nullptr);
+  const auto* shortChains = target.topologyPattern(Type::Chain4);
+  ASSERT_NE(shortChains, nullptr);
+  EXPECT_EQ(shortChains->size(), 20U * 19U * 18U * 17U / 2U);
+  const auto* pairs = target.topologyPattern(Type::QubitPair);
+  ASSERT_NE(pairs, nullptr);
+  EXPECT_EQ(pairs->size(), edges.size());
+  const auto complete = valid(Target::create(20, Connectivity::allToAll(),
+                                             NativeOperations::unrestricted()));
+  EXPECT_EQ(complete.topologyPattern(Type::Chain6), nullptr);
 }
 
 TEST(CompilerTargetTest, ShortestPathsUseDeterministicMinimumHopRoutes) {

@@ -262,6 +262,35 @@ static void populateTargetPreparationCleanup(OpPassManager& pm) {
 
 namespace {
 
+class RoutePlacedQubitsPass
+    : public PassWrapper<RoutePlacedQubitsPass, OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(RoutePlacedQubitsPass)
+
+  explicit RoutePlacedQubitsPass(qco::MappingPassOptions options)
+      : options_(options) {}
+
+  void getDependentDialects(DialectRegistry& registry) const override {
+    qco::createMappingPass(options_)->getDependentDialects(registry);
+  }
+
+protected:
+  void runOnOperation() override {
+    // Preplaced input keeps its sites and target-native higher-arity gates.
+    if (!getOperation()->hasAttr(mqt::kPlacementOrderAttr)) {
+      return;
+    }
+    OpPassManager pipeline(ModuleOp::getOperationName());
+    pipeline.addPass(qco::createMappingPass(options_));
+    if (failed(runPipeline(pipeline, getOperation()))) {
+      signalPassFailure();
+    }
+  }
+
+private:
+  qco::MappingPassOptions options_;
+};
+
 class PrepareTargetCompilationPass
     : public PassWrapper<PrepareTargetCompilationPass,
                          OperationPass<ModuleOp>> {
@@ -272,12 +301,26 @@ public:
                                         bool allToAllOnly = false,
                                         MappingOptions mapping = {})
       : environment_(std::move(environment)), allToAllOnly_(allToAllOnly),
-        mapping_(mapping) {}
+        mapping_(std::move(mapping)) {}
 
 protected:
   void runOnOperation() override {
+    if (getOperation()->hasAttr(mqt::kPlacementOrderAttr)) {
+      getOperation().emitError("discard existing placement order before target "
+                               "compilation");
+      signalPassFailure();
+      return;
+    }
     if (mapping_.trials == 0) {
       getOperation().emitError("mapping trials must be greater than zero");
+      signalPassFailure();
+      return;
+    }
+    if (mapping_.placementRanking != "none" &&
+        mapping_.placementRanking != "direct" &&
+        mapping_.placementRanking != "patterns") {
+      getOperation().emitError(
+          "placement ranking must be none, direct, or patterns");
       signalPassFailure();
       return;
     }
@@ -575,13 +618,20 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     mappingOptions.niterations = mapping.iterations;
     mappingOptions.nlookahead = mapping.lookahead;
     mappingOptions.searchMemoryLimit = mapping.searchMemoryLimit;
-    pm.addPass(qco::createMappingPass(mappingOptions));
+    qco::PlacementPassOptions placementOptions;
+    placementOptions.ntrials = mappingOptions.ntrials;
+    placementOptions.niterations = mappingOptions.niterations;
+    placementOptions.nlookahead = mappingOptions.nlookahead;
+    placementOptions.searchMemoryLimit = mappingOptions.searchMemoryLimit;
+    pm.addPass(qco::createPlacementPass(placementOptions));
+    pm.addPass(std::make_unique<RoutePlacedQubitsPass>(mappingOptions));
     break;
   }
   case CompilerTarget::Connectivity::Kind::AllToAll:
     break;
   }
-  qco::populateTargetNativeSynthesisPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm, mapping.placementRanking,
+                                             &target);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
@@ -603,7 +653,8 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
     pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   pm.addPass(mqt::createUnrollModifiers());
-  qco::populateTargetNativeSynthesisPipeline(pm);
+  qco::populateTargetNativeSynthesisPipeline(pm, mapping.placementRanking,
+                                             &target);
 }
 
 } // namespace mlir

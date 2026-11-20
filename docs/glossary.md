@@ -76,6 +76,13 @@ routing
   on the interface. Core's maps are described in the
   [Qiskit layout reference](mlir/qiskit.md#transpiler-layouts).
 
+topology pattern
+  **Preferred term:** topology pattern. **Accepted aliases:** none. A small graph
+  pattern, such as a four-cycle. An occurrence identifies distinct target
+  vertices connected by the pattern's edges; additional edges are allowed.
+  It describes connectivity, not native gate availability or direction.
+  These patterns are called motifs in [Δ-Motif](https://arxiv.org/abs/2508.21287).
+
 Pauli string
   Also called Pauli product. A tensor product of single-qubit identity or
   Pauli X, Y, and Z operators.
