@@ -1670,17 +1670,22 @@ private:
     }
     if (auto unitary = dyn_cast<UnitaryOpInterface>(&operation)) {
       if (auto barrier = dyn_cast<BarrierOp>(&operation)) {
-        SmallVector<std::string> qubits;
+        llvm::StringSet<> seen;
+        *output << "barrier ";
         for (auto value : barrier.getTargets()) {
           auto qubit = emitQubit(value);
           if (failed(qubit)) {
             return failure();
           }
-          if (!llvm::is_contained(qubits, *qubit)) {
-            qubits.push_back(std::move(*qubit));
+          if (!seen.insert(*qubit).second) {
+            continue;
           }
+          if (seen.size() > 1) {
+            *output << ", ";
+          }
+          *output << *qubit;
         }
-        *output << "barrier " << llvm::join(qubits, ", ") << ";\n";
+        *output << ";\n";
         return success();
       }
       auto call = emitGateCall(unitary);
