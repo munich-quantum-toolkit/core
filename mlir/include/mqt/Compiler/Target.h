@@ -289,7 +289,9 @@ public:
     std::optional<double> fidelity_;
   };
 
-  /// Native-operation support.
+  /// Native-operation support. Each canonical operation with the same arity,
+  /// parameter count, and fixed parameter values has one native spelling
+  /// across all sites and parameter bounds.
   class NativeOperations {
   public:
     enum class Kind : uint8_t { Unrestricted, Explicit };

@@ -65,5 +65,5 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
       checked against the Base Profile instruction subset.
   }];
 
-  let dependentDialects = ["mlir::LLVM::LLVMDialect"];
+  let dependentDialects = ["mlir::mqt::MQTDialect", "mlir::LLVM::LLVMDialect"];
 }

@@ -61,7 +61,7 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
     - Classical array indices must be in bounds. No runtime checks are inserted.
   }];
 
-  let dependentDialects = ["mlir::LLVM::LLVMDialect",
+  let dependentDialects = ["mlir::mqt::MQTDialect", "mlir::LLVM::LLVMDialect",
                            "mlir::cf::ControlFlowDialect",
                            "mlir::memref::MemRefDialect",
                            "mlir::scf::SCFDialect", "mlir::qc::QCDialect",

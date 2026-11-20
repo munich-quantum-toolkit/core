@@ -812,7 +812,8 @@ protected:
     const auto run = [&](OpPassManager& pm) {
       return runPipeline(pm, moduleOp);
     };
-    auto payload = prepareQIRTarget(moduleOp, "adaptive", run,
+    LoweringState state;
+    auto payload = prepareQIRTarget(moduleOp, "adaptive", state, run,
                                     environment ? &*environment : nullptr);
     if (failed(payload)) {
       signalPassFailure();
@@ -820,7 +821,6 @@ protected:
     }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
-    LoweringState state;
 
     target.addLegalDialect<LLVM::LLVMDialect>();
 
@@ -830,11 +830,9 @@ protected:
       const FrozenRewritePatternSet frozen(std::move(patterns));
       walkAndApplyPatterns(moduleOp, frozen);
     }
-    if (failed(
-            prepareClassicalResults(moduleOp, state,
-                                    /*allowComputedOutputs=*/true,
-                                    /*deferMeasurementStores=*/true,
-                                    environment ? &*environment : nullptr))) {
+    if (failed(prepareClassicalResults(moduleOp, state,
+                                       /*allowComputedOutputs=*/true,
+                                       /*deferMeasurementStores=*/true))) {
       signalPassFailure();
       return;
     }

@@ -155,17 +155,23 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
 }
 
 FailureOr<std::optional<PayloadSpecification>>
-prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
+prepareQIRTarget(ModuleOp moduleOp, StringRef profile, LoweringState& state,
                  function_ref<LogicalResult(OpPassManager&)> runPipeline,
                  const TargetEnvironment* preparedEnvironment) {
-  if (preparedEnvironment == nullptr &&
-      !moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+  if (preparedEnvironment != nullptr) {
+    attachTargetEnvironment(moduleOp, *preparedEnvironment);
+  } else if (!moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
     return std::optional<PayloadSpecification>{};
   }
   const TargetEnvironmentAnalysis environment(moduleOp, preparedEnvironment);
   if (!environment) {
     moduleOp.emitError(environment.error());
     return failure();
+  }
+  const auto& target = environment.environment().target();
+  if (target.nativeOperationsKind() ==
+      CompilerTarget::NativeOperations::Kind::Explicit) {
+    state.nativeTarget = target;
   }
   auto payload = environment.environment().payloadSpecification();
   const auto& format = payload.format();
@@ -860,17 +866,10 @@ nameOpaqueQIRGates(ModuleOp moduleOp,
   return success();
 }
 
-LogicalResult
-prepareClassicalResults(Operation* moduleOp, LoweringState& state,
-                        bool allowComputedOutputs, bool deferMeasurementStores,
-                        const TargetEnvironment* preparedEnvironment) {
+LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
+                                      bool allowComputedOutputs,
+                                      bool deferMeasurementStores) {
   auto funcOp = mqt::getEntryPoint(cast<ModuleOp>(moduleOp));
-  const TargetEnvironmentAnalysis environment(moduleOp, preparedEnvironment);
-  if (environment &&
-      environment.environment().target().nativeOperationsKind() ==
-          CompilerTarget::NativeOperations::Kind::Explicit) {
-    state.nativeTarget = environment.environment().target();
-  }
   bool hasInvalidMemory = false;
   moduleOp->walk([&](Operation* operation) {
     operation->removeAttr(qir::QIR_NATIVE_NAME_ATTR);

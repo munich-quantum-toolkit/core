@@ -127,7 +127,7 @@ struct LoweringState {
 /// return a copy with proved counted-loop constraints discharged. Run child
 /// passes through the caller to preserve instrumentation and reproducers.
 [[nodiscard]] FailureOr<std::optional<PayloadSpecification>>
-prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
+prepareQIRTarget(ModuleOp moduleOp, StringRef profile, LoweringState& state,
                  function_ref<LogicalResult(OpPassManager&)> runPipeline,
                  const TargetEnvironment* environment = nullptr);
 
@@ -225,8 +225,7 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 [[nodiscard]] LogicalResult
 prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                         bool allowComputedOutputs = false,
-                        bool deferMeasurementStores = false,
-                        const TargetEnvironment* environment = nullptr);
+                        bool deferMeasurementStores = false);
 
 /// Refresh measurement indices from surviving stores and consume those stores.
 void finalizeClassicalResults(LoweringState& state);
