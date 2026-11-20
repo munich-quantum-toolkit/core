@@ -210,7 +210,10 @@ requiring the original jump statement to survive normalization.
 
 Local scalar state covers Boolean values, fixed-width integers, and `f64` using
 supported backend operations. It uses native `expr.Var` declarations, `Store`
-assignments, and captures in nested circuits. Compiler variables do not increase
+assignments, and captures in nested circuits. For a target that supports
+classical assignments, register the `qiskit.circuit.Store` class with
+`target.add_instruction(Store, name="store")`. Measuring directly into a
+classical bit needs only measurement support. Compiler variables do not increase
 the classical-bit or register counts. Import accepts initialized local variables
 and captures from enclosing supported circuits. External runtime inputs remain
 unsupported. Runtime classical values cannot be used as symbolic gate
