@@ -596,7 +596,7 @@ modifierQubitMap(const llvm::DenseMap<mlir::Value, uint32_t>& outer,
     throw std::runtime_error(
         "QC modifier block arguments do not match its qubit operands");
   }
-  auto result = outer;
+  llvm::DenseMap<mlir::Value, uint32_t> result;
   for (auto [argument, operand] :
        llvm::zip_equal(block.getArguments(), operands)) {
     const auto mapped = outer.find(operand);
