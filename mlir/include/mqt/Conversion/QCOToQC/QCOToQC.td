@@ -12,32 +12,26 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
   let summary = "Convert QCO dialect to QC dialect.";
 
   let description = [{
-    Convert QCO qubit values to QC references and QTensor registers to memrefs.
-    Scalar qubits and fixed-size rank-one qubit-tensor arguments become in-place
-    references; each function must return its quantum arguments as a positional
-    suffix. Register helpers must be private. Registers must be complete when
-    passed through calls or structured regions, returned, or dynamically freed.
-    Extracted qubits may be passed to scalar helpers while their remaining
-    tensor stays in the caller. Transferring the register itself is unsupported.
-    Other results remain explicit, including qubits created by a function.
+    Convert linear QCO values to QC references and QTensor registers to memrefs.
+    A function returns the current values of its quantum arguments in order,
+    after its ordinary results. QC updates the arguments in place and retains
+    the ordinary results. Private helpers may borrow fixed-size rank-one qubit
+    tensors. They may return fresh scalar qubits. Register ownership stays
+    with the caller.
 
-    Before rewriting, prove that quantum values yielded by modifiers, branches,
-    and loops correspond positionally to their region arguments. Reject wire
-    permutations and changes to quantum loop-state counts or types. Classical
-    loop state can change type in `scf.while`. Extraction becomes `memref.load`;
-    reinsertion preserves the same slot and needs no store. Extraction and
-    insertion indices must be the same value, equal constants, or expressions
-    whose equality MLIR value-bounds analysis can prove. Unproved equalities
-    are rejected before rewriting. See the shared
+    Quantum values yielded by modifiers, branches and loops must correspond to
+    their region arguments in order. The pass retains classical region results
+    and loop-carried state. Extracting a qubit becomes a load. Reinsertion needs
+    no store when the pass can prove that it restores the original slot.
+    Borrowed registers must be complete when passed through calls or regions
+    and when returned. A scalar helper can operate on an extracted qubit while
+    the remaining tensor stays in the caller.
+
+    A module may use dynamic allocations or static physical qubits.
+    A register created by `qtensor.alloc` must be complete at deallocation.
+    A tensor assembled from existing qubits requires placement or a gate-set
+    synthesis environment and becomes a local reference buffer. See the
     [quantum resource rules](index.md#quantum-resource-rules).
-
-    Determine the module's allocation mode before converting any function.
-    Dynamic qubit sinks become deallocations; static qubit sinks are removed.
-    Mixing static and dynamic allocation roots is unsupported.
-    Tensors of existing qubits must contain static qubits, assigned by placement,
-    and use local reference buffers. Static tensor release does not release
-    physical qubits. Dynamic tensors must restore every extracted slot before
-    region exit or deallocation. Unsupported lifetimes fail before rewriting.
   }];
 
   let dependentDialects = ["mlir::memref::MemRefDialect",

@@ -1154,16 +1154,6 @@ struct ConvertQCCallOp final : LoweringPattern<qc::CallOp> {
   }
 };
 
-/// Converts memref.alloc to qtensor.alloc
-///
-/// @par Example:
-/// ```mlir
-/// %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
-/// ```
 struct ConvertMemRefAllocOp final : LoweringPattern<memref::AllocOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1254,16 +1244,6 @@ struct ConvertMemRefStoreOp final : LoweringPattern<memref::StoreOp> {
   }
 };
 
-/// Converts memref.dealloc to qtensor.dealloc
-///
-/// @par Example:
-/// ```mlir
-/// memref.dealloc %memref : memref<3x!qc.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// qtensor.dealloc %tensor : tensor<3x!qco.qubit>
-/// ```
 struct ConvertMemRefDeallocOp final : LoweringPattern<memref::DeallocOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1426,17 +1406,6 @@ struct ConvertQCUnitaryOp final : LoweringPattern<qc::UnitaryOp> {
   }
 };
 
-/// Converts qc.barrier to qco.barrier
-///
-/// @par Example:
-/// ```mlir
-/// qc.barrier %q0, %q1 : !qc.qubit, !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out:2 = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
-/// !qco.qubit, !qco.qubit
-/// ```
 struct ConvertQCBarrierOp final : LoweringPattern<qc::BarrierOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1458,21 +1427,6 @@ struct ConvertQCBarrierOp final : LoweringPattern<qc::BarrierOp> {
   }
 };
 
-/// Converts qc.ctrl to qco.ctrl
-///
-/// @par Example:
-/// ```mlir
-/// qc.ctrl(%q0) targets(%a0 = %q1) {
-///   qc.x %a0 : !qc.qubit
-/// } : !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%a_in = %q1_in) {
-///   %a_res = qco.x %a_in : !qco.qubit
-///   qco.yield %a_res : !qco.qubit
-/// } : ({!qco.qubit}, {!qco.qubit})
-/// ```
 struct ConvertQCCtrlOp final : LoweringPattern<qc::CtrlOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1506,21 +1460,6 @@ struct ConvertQCCtrlOp final : LoweringPattern<qc::CtrlOp> {
   }
 };
 
-/// Converts qc.inv to qco.inv
-///
-/// @par Example:
-/// ```mlir
-/// qc.inv {
-///   qc.s %q0 : !qc.qubit
-/// } : !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q0_out = qco.inv (%a0_in = %q0_in) {
-///   %a0_res = qco.s %a0_in : !qco.qubit
-///   qco.yield %a0_res : !qco.qubit
-/// } : {!qco.qubit} -> {!qco.qubit}
-/// ```
 struct ConvertQCInvOp final : LoweringPattern<qc::InvOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1547,21 +1486,6 @@ struct ConvertQCInvOp final : LoweringPattern<qc::InvOp> {
   }
 };
 
-/// Converts qc.pow to qco.pow
-///
-/// @par Example:
-/// ```mlir
-/// qc.pow(%exponent) (%a0 = %q0) {
-///   qc.s %a0 : !qc.qubit
-/// } : !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q0_out = qco.pow(%exponent) (%a0_in = %q0_in) {
-///   %a0_res = qco.s %a0_in : !qco.qubit
-///   qco.yield %a0_res
-/// } : {!qco.qubit} -> {!qco.qubit}
-/// ```
 struct ConvertQCPowOp final : LoweringPattern<qc::PowOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1589,16 +1513,6 @@ struct ConvertQCPowOp final : LoweringPattern<qc::PowOp> {
   }
 };
 
-/// Converts qc.yield to qco.yield
-///
-/// @par Example:
-/// ```mlir
-/// qc.yield
-/// ```
-/// is converted to
-/// ```mlir
-/// qco.yield %targets : !qco.qubit
-/// ```
 struct ConvertQCYieldOp final : LoweringPattern<qc::YieldOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1620,26 +1534,7 @@ struct ConvertQCYieldOp final : LoweringPattern<qc::YieldOp> {
   }
 };
 
-/// Converts scf.for with memory semantics to scf.for with value
-/// semantics for qubit values
-///
-/// @par Example:
-/// ```mlir
-/// scf.for %iv = %lb to %ub step %step {
-///   %q0 = memref.load %memref[%iv] : memref<3x!qc.qubit>
-///   qc.h %q0 : !qc.qubit
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 =
-/// %qtensor) -> (tensor<3x!qco.qubit>) {
-///   %t0, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
-///   %q1 = qco.h %q0 : !qco.qubit
-///   %t1 = qtensor.insert %q1 into %t0[%iv] : tensor<3x!qco.qubit>
-///   scf.yield %t1 : tensor<3x!qco.qubit>
-/// }
-/// ```
+/// Append captured quantum state to the existing loop-carried values.
 struct ConvertSCFForOp final : LoweringPattern<scf::ForOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1694,30 +1589,6 @@ struct ConvertSCFForOp final : LoweringPattern<scf::ForOp> {
   }
 };
 
-/// Converts scf.while with memory semantics to scf.while with value
-/// semantics for qubit values.
-///
-/// @par Example:
-/// ```mlir
-/// scf.while : () -> () {
-///   %cond = qc.measure %q0 : !qc.qubit -> i1
-///   scf.condition(%cond)
-/// } do {
-///   qc.h %q0 : !qc.qubit
-///   scf.yield
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
-///   %q1, %cond = qco.measure %arg0 : !qco.qubit
-///   scf.condition(%cond) %q1 : !qco.qubit
-/// } do {
-/// ^bb0(%arg0: !qco.qubit):
-///   %q2 = qco.h %arg0 : !qco.qubit
-///   scf.yield %q2 : !qco.qubit
-/// }
-/// ```
 struct ConvertSCFWhileOp final : LoweringPattern<scf::WhileOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1800,23 +1671,6 @@ struct ConvertSCFWhileOp final : LoweringPattern<scf::WhileOp> {
   }
 };
 
-/// Converts scf.if to qco.if
-///
-/// @par Example:
-/// ```mlir
-/// scf.if %cond {
-///   qc.h %q0 : !qc.qubit
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// %targets_out = qco.if %cond args(%arg0 = %q0) -> (!qco.qubit) {
-///   %q1 = qco.h %arg0 : !qco.qubit
-///   qco.yield %q1 : !qco.qubit
-/// } else args(%arg0 = %q0) {
-///   qco.yield %arg0 : !qco.qubit
-/// }
-/// ```
 struct ConvertSCFIfOp final : LoweringPattern<scf::IfOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1879,30 +1733,6 @@ struct ConvertSCFIfOp final : LoweringPattern<scf::IfOp> {
   }
 };
 
-/// Converts scf.index_switch to qco.index_switch
-///
-/// @par Example:
-/// ```mlir
-/// scf.index_switch %condition
-/// case 0 {
-///   qc.x %q0 : !qc.qubit
-/// }
-/// default {
-///   qc.z %q0 : !qc.qubit
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// %result = qco.index_switch %condition -> !qco.qubit
-/// case 0 args(%arg0 = %q0) {
-///   %q1 = qco.x %arg0 : !qco.qubit
-///   qco.yield %q1 : !qco.qubit
-/// }
-/// default args(%arg0 = %q0) {
-///   %q2 = qco.z %arg0 : !qco.qubit
-///   qco.yield %q2 : !qco.qubit
-/// }
-/// ```
 struct ConvertSCFIndexSwitchOp final : LoweringPattern<scf::IndexSwitchOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1955,18 +1785,6 @@ struct ConvertSCFIndexSwitchOp final : LoweringPattern<scf::IndexSwitchOp> {
   }
 };
 
-/// Converts scf.yield with memory semantics to scf.yield with value
-/// semantics for qubit values or to qco.yield if the parentOp is a qco::IfOp or
-/// qco::IndexSwitchOp.
-///
-/// @par Example:
-/// ```mlir
-/// scf.yield
-/// ```
-/// is converted to
-/// ```mlir
-/// scf.yield %targets
-/// ```
 struct ConvertSCFYieldOp final : LoweringPattern<scf::YieldOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1990,17 +1808,6 @@ struct ConvertSCFYieldOp final : LoweringPattern<scf::YieldOp> {
   }
 };
 
-/// Converts scf.condition with memory semantics to scf.condition with
-/// value semantics for qubit values
-///
-/// @par Example:
-/// ```mlir
-/// scf.condition(%cond)
-/// ```
-/// is converted to
-/// ```mlir
-/// scf.condition(%cond) %targets
-/// ```
 struct ConvertSCFConditionOp final : LoweringPattern<scf::ConditionOp> {
   using LoweringPattern::LoweringPattern;
 
