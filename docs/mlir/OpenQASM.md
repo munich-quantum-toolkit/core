@@ -319,13 +319,13 @@ Standard integer operations represent computation, including all comparisons:
 effects. jeff legalization preserves native widths and promotes other widths up
 to 64 to 8, 16, 32, or 64 bits, masking results to retain exact-width semantics.
 Wider register-versus-constant comparisons remain supported; wider general
-integer expressions are rejected. Integer-to-floating-point casts (for example,
-using a runtime population count as a rotation angle) remain outside the jeff
-subset. Explicit outputs and implicit global outputs are returned by the entry
-function; internal CBit allocations are not outputs. Other scalar outputs use
-builtin MLIR scalar types. Programs without classical outputs have a void entry
-function; a returned integer zero is ordinary output data. A scalar `qubit`
-lowers to `qc.alloc`, while `qubit[1]` remains a one-element qubit register.
+integer expressions are rejected. jeff supports signed and unsigned
+integer-to-floating-point casts at its native widths. The entry function returns
+explicit outputs and implicit global outputs. Internal CBit allocations stay
+local. Other scalar outputs use builtin MLIR scalar types. Programs without
+classical outputs have a void entry function; a returned integer zero is
+ordinary output data. A scalar `qubit` lowers to `qc.alloc`, while `qubit[1]`
+remains a one-element qubit register.
 
 ## Export OpenQASM
 
@@ -538,7 +538,8 @@ cannot guarantee initialization. Import represents the example as one
 `scf.while` operation. It accepts constant-true loops but does not prove that
 they terminate.
 
-Resources must be allocated outside loops and conditionals. Unsupported scalar
+Allocate qubits, arrays, and output registers in the entry block. Local bit
+registers may be allocated inside loops and conditionals. Unsupported scalar
 types, operations, captures, or runtime gate parameters produce a
 target-specific diagnostic without writing partial output.
 
