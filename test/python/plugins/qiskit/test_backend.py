@@ -824,13 +824,15 @@ def test_seeded_retries_keep_circuit_streams(monkeypatch: pytest.MonkeyPatch, ma
 
 
 def test_seed_range_covers_every_circuit() -> None:
-    """Reject a run whose last circuit needs a seed above the device integer range."""
+    """A batch can clear a default seed that would overflow on its second circuit."""
     backend = DDSIMBackend(num_qubits=1)
+    backend.set_options(seed_simulator=2**31 - 1)
     circuit = QuantumCircuit(1, 1)
     circuit.measure(0, 0)
+    assert backend.run(circuit, shots=1).result().get_counts() == {"0": 1}
     with pytest.raises(ValueError, match="seed_simulator"):
-        backend.run([circuit, circuit], seed_simulator=2**31 - 1)
-    assert backend.run(circuit, shots=1, seed_simulator=2**31 - 1).result().get_counts() == {"0": 1}
+        backend.run([circuit, circuit])
+    assert backend.run([circuit, circuit], shots=1, seed_simulator=None).result().get_counts() == [{"0": 1}, {"0": 1}]
 
 
 def test_serial_seed_reproducibility_and_statistics() -> None:
