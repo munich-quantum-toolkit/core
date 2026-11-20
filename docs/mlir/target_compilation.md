@@ -274,12 +274,12 @@ records the output permutation in the qubit layout. All-to-all targets also
 elide nonterminal permutations through supported tensor accesses and structured
 control flow.
 
-Mapping runs multiple initial-layout trials. Set `MappingOptions.trials` and
-`CompilationOptions.seed` for reproducible choices. Each trial retains the
-layout with the fewest native two-qubit gates among the routes it evaluates,
-using depth to break ties. Each trial has a bounded search-memory budget,
-configured with `MappingOptions.search_memory_limit`; this does not cap total
-process memory. See {doc}`QCO` for routing and synthesis details.
+When placement needs routing trials, the mapper ranks layouts by estimated
+native two-qubit gate count and then by estimated depth. If it cannot estimate a
+route, it uses the number of inserted SWAPs. Final synthesis can change the gate
+count. Set `MappingOptions.trials` and `CompilationOptions.seed` for
+reproducible choices. `MappingOptions.search_memory_limit` bounds node storage
+for each routing search. See {doc}`QCO` for details.
 
 ### Custom pass sequences
 
