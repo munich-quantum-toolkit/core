@@ -38,8 +38,6 @@ jobs:
       runs-on: ubuntu-26.04
       sessions: '["catalyst-dev"]'
       draft-sessions: '["catalyst-dev"]'
-      setup-mlir: true
-      llvm-version: 23.1.4
     permissions:
       contents: read
 
@@ -53,8 +51,6 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-z3: true
-      setup-mlir: true
-      llvm-version: 23.1.4
     permissions:
       contents: read
 

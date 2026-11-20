@@ -9,11 +9,7 @@
 # set the include directory for the build tree
 set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
 set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
-set(_mqt_mlir_series "23.1")
-if(NOT MQT_CORE_RELEASE_WHEEL)
-  set(MQT_MLIR_MIN_VERSION "${_mqt_mlir_series}" CACHE STRING "Required MLIR release series")
-  set(_mqt_mlir_series "${MQT_MLIR_MIN_VERSION}")
-endif()
+set(MQT_MLIR_MIN_VERSION "23.1" CACHE STRING "Required MLIR release series")
 option(MQT_CORE_AUTO_INSTALL_MLIR "Download LLVM/MLIR when no compatible SDK is found" ON)
 set(MQT_CORE_MLIR_VERSION "23.1.4" CACHE STRING "LLVM/MLIR version to download")
 get_property(_mqt_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
@@ -25,16 +21,13 @@ endif()
 option(MQT_CORE_MLIR_ASSERTIONS "Use assertions in the downloaded LLVM/MLIR SDK"
        ${_mqt_mlir_assertions_default})
 
-# Explicit SDK paths take precedence over package search prefixes and the local .env.
-foreach(_mqt_package IN ITEMS LLVM MLIR)
-  if(NOT ${_mqt_package}_DIR AND NOT "$ENV{${_mqt_package}_DIR}" STREQUAL "")
-    set(${_mqt_package}_DIR "$ENV{${_mqt_package}_DIR}")
+# Prefer explicit SDK paths to the local .env and CMake's package search.
+foreach(package IN ITEMS MLIR LLVM)
+  if(NOT ${package}_DIR AND NOT "$ENV{${package}_DIR}" STREQUAL "")
+    set(${package}_DIR "$ENV{${package}_DIR}")
   endif()
 endforeach()
-if(MQT_CORE_RELEASE_WHEEL AND LLVM_DIR AND NOT MLIR_DIR)
-  set(MLIR_DIR "${LLVM_DIR}/../mlir")
-endif()
-if(NOT MLIR_DIR AND EXISTS "${PROJECT_SOURCE_DIR}/.env")
+if(NOT MLIR_DIR AND NOT LLVM_DIR AND EXISTS "${PROJECT_SOURCE_DIR}/.env")
   file(STRINGS "${PROJECT_SOURCE_DIR}/.env" MQT_CORE_DOTENV_LINES)
   foreach(MQT_CORE_DOTENV_LINE IN LISTS MQT_CORE_DOTENV_LINES)
     if(MQT_CORE_DOTENV_LINE MATCHES
@@ -46,7 +39,7 @@ if(NOT MLIR_DIR AND EXISTS "${PROJECT_SOURCE_DIR}/.env")
   endforeach()
 endif()
 
-# Portable SDKs install both package configs together.
+# LLVM and MLIR in a portable SDK must come from the same prefix.
 if(MLIR_DIR AND NOT LLVM_DIR AND EXISTS "${MLIR_DIR}/../llvm/LLVMConfig.cmake")
   set(LLVM_DIR "${MLIR_DIR}/../llvm")
 endif()
@@ -54,25 +47,29 @@ endif()
 # Imported targets cannot be replaced by another SDK during configuration.
 if(TARGET LLVMSupport OR TARGET MLIRSupport)
   if(NOT LLVM_PACKAGE_VERSION
-     OR NOT "${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}" VERSION_EQUAL _mqt_mlir_series)
+     OR NOT "${LLVM_VERSION_MAJOR}.${LLVM_VERSION_MINOR}" VERSION_EQUAL MQT_MLIR_MIN_VERSION)
     message(FATAL_ERROR "The embedding project must provide a compatible LLVM/MLIR SDK.")
   endif()
   find_package(MLIR ${LLVM_PACKAGE_VERSION} EXACT CONFIG REQUIRED)
-elseif(NOT MQT_CORE_RELEASE_WHEEL)
-  find_package(MLIR ${_mqt_mlir_series} CONFIG QUIET)
-endif()
-if(MQT_CORE_RELEASE_WHEEL OR NOT MLIR_FOUND)
-  if(NOT MQT_CORE_MLIR_VERSION MATCHES "^([0-9]+\\.[0-9]+)\\.[0-9]+$"
-     OR NOT CMAKE_MATCH_1 VERSION_EQUAL _mqt_mlir_series)
-    message(FATAL_ERROR "MQT_CORE_MLIR_VERSION must be a ${_mqt_mlir_series}.x release.")
+elseif("$ENV{CIBUILDWHEEL}" STREQUAL "1")
+  # Release wheels use the pinned SDK unless the caller supplies one explicitly.
+  set(MQT_CORE_MLIR_ASSERTIONS OFF)
+  if(MLIR_DIR OR LLVM_DIR)
+    find_package(
+      MLIR ${MQT_MLIR_MIN_VERSION}
+      CONFIG
+      REQUIRED
+      HINTS "${LLVM_DIR}/../mlir" NO_DEFAULT_PATH)
   endif()
-endif()
-if(MQT_CORE_RELEASE_WHEEL AND NOT MLIR_FOUND AND MLIR_DIR)
-  # A release wheel can reuse an explicitly supplied portable SDK, including offline.
-  find_package(MLIR ${MQT_CORE_MLIR_VERSION} EXACT CONFIG REQUIRED NO_DEFAULT_PATH)
+else()
+  find_package(MLIR ${MQT_MLIR_MIN_VERSION} CONFIG QUIET)
 endif()
 if(NOT MLIR_FOUND)
-  if(MQT_CORE_MLIR_ASSERTIONS AND NOT MQT_CORE_RELEASE_WHEEL)
+  if(NOT MQT_CORE_MLIR_VERSION MATCHES "^([0-9]+\\.[0-9]+)\\.[0-9]+$"
+     OR NOT CMAKE_MATCH_1 VERSION_EQUAL MQT_MLIR_MIN_VERSION)
+    message(FATAL_ERROR "MQT_CORE_MLIR_VERSION must be a ${MQT_MLIR_MIN_VERSION}.x release.")
+  endif()
+  if(MQT_CORE_MLIR_ASSERTIONS)
     set(_mqt_mlir_assertions ON)
   else()
     set(_mqt_mlir_assertions OFF)
@@ -110,7 +107,7 @@ if(NOT MLIR_FOUND)
           "${MQT_CORE_MLIR_VERSION}"
           -install_prefix
           "${_mqt_mlir_prefix}")
-      if(NOT _mqt_mlir_assertions)
+      if(NOT MQT_CORE_MLIR_ASSERTIONS)
         list(APPEND _mqt_mlir_command -no_assertions)
       endif()
     else()
@@ -150,24 +147,18 @@ list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
+# HandleLLVMOptions sets this to 1 for SDKs built with ABI-breaking checks.
+set(LLVM_ENABLE_ABI_BREAKING_CHECKS 0)
 include(HandleLLVMOptions)
-include(MQTLLVMABI)
-mqt_get_llvm_abi_checks(MQT_CORE_LLVM_ABI_CHECKS)
-if(MQT_CORE_RELEASE_WHEEL)
-  if(NOT MLIR_VERSION VERSION_EQUAL MQT_CORE_MLIR_VERSION
-     OR NOT LLVM_PACKAGE_VERSION VERSION_EQUAL MQT_CORE_MLIR_VERSION
-     OR LLVM_ENABLE_ASSERTIONS OR MQT_CORE_LLVM_ABI_CHECKS)
-    message(
-      FATAL_ERROR
-        "Release wheels require LLVM/MLIR ${MQT_CORE_MLIR_VERSION} with assertions and ABI-breaking checks disabled. "
-        "Found MLIR ${MLIR_VERSION} and LLVM ${LLVM_PACKAGE_VERSION} with assertions ${LLVM_ENABLE_ASSERTIONS} and ABI-breaking checks ${MQT_CORE_LLVM_ABI_CHECKS}."
-    )
-  endif()
-  if(NOT MLIR_INSTALL_PREFIX STREQUAL LLVM_INSTALL_PREFIX)
-    message(
-      FATAL_ERROR
-        "Release wheels require LLVM and MLIR from the same SDK. Check MLIR_DIR and LLVM_DIR.")
-  endif()
+
+if(
+  "$ENV{CIBUILDWHEEL}" STREQUAL "1" AND
+  (NOT MLIR_VERSION STREQUAL MQT_CORE_MLIR_VERSION OR LLVM_ENABLE_ASSERTIONS
+        OR LLVM_ENABLE_ABI_BREAKING_CHECKS OR NOT MLIR_INSTALL_PREFIX STREQUAL LLVM_INSTALL_PREFIX))
+  message(
+    FATAL_ERROR
+      "Release wheels require a matching LLVM/MLIR ${MQT_CORE_MLIR_VERSION} SDK with assertions and ABI-breaking checks disabled. Check MLIR_DIR and LLVM_DIR."
+  )
 endif()
 
 # Keep direct LLVM consumers compatible with an RTTI-free LLVM installation. Ordinary MLIR targets

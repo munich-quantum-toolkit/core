@@ -51,8 +51,6 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
-      setup-mlir: true
-      llvm-version: 23.1.4
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -78,8 +76,6 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
-      setup-mlir: true
-      llvm-version: 23.1.4
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -105,8 +101,6 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
-      setup-mlir: true
-      llvm-version: 23.1.4
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -117,9 +111,6 @@ jobs:
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-cpp-tests)
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-coverage.yml@4e380c0bb1774aa8b9dd53194f4a7f6575cc3d42 # v2.5.10
-    with:
-      setup-mlir: true
-      llvm-version: 23.1.4
     permissions:
       contents: read
       id-token: write
@@ -141,8 +132,6 @@ jobs:
       # Vendored third-party headers are checked upstream and are not maintained
       # according to MQT Core's clang-tidy configuration.
       cpp-linter-ignore-extra: "vendor/**"
-      setup-mlir: true
-      llvm-version: 23.1.4
     permissions:
       contents: read
       pull-requests: write # Needed to post review comments
@@ -159,8 +148,6 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       sessions: ${{ matrix.runs-on == 'ubuntu-26.04' && '["minimums", "tests", "qiskit-compat", "catalyst"]' || '["minimums", "tests"]' }}
-      setup-mlir: true
-      llvm-version: 23.1.4
     permissions:
       contents: read
 
@@ -182,8 +169,6 @@ jobs:
       check-stubs: true
       enable-ty: true
       enable-mypy: false
-      setup-mlir: true
-      llvm-version: 23.1.4
     secrets:
       APP_ID: ${{ secrets.APP_ID }}
       APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
