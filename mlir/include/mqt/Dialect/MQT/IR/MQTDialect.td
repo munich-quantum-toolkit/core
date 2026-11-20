@@ -42,6 +42,14 @@ def MQTDialect : Dialect {
     transformations that may change qubit identity. Raw IR editors must preserve,
     update, or discard the layout when changing qubit identity or order.
 
+    `mqt.placement_order` is an internal dense i64 array on the module.
+    Placement records each program qubit's dense target vertex in logical router
+    order, including idle program qubits. Its length excludes unused target sites.
+    Separate and serialized passes retain the program width and search ordering.
+    Routing checks distinct in-range vertices and requires every active root in
+    the array. It completes unused sites in ascending order and consumes the
+    attribute. It does not replace source provenance in `mqt.layout`.
+
     `mqt.source_qubit_count` records the input count during target preparation.
     Placement consumes it when publishing the completed layout. A layout
     without `sites` on a prepared module uses source indices as its circuit
@@ -110,6 +118,7 @@ def MQTDialect : Dialect {
       "::mlir::IntegerAttr":$input_id, "::mlir::DictionaryAttr":$layout,
       "::mlir::StringAttr":$source_name,
       "::mlir::DenseI64ArrayAttr":$source_qubit_indices,
+      "::mlir::DenseI64ArrayAttr":$placement_order,
       "::mlir::DictionaryAttr":$parameter_group,
       "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
       "::mlir::UnitAttr":$unitary);

@@ -274,12 +274,31 @@ records the output permutation in the qubit layout. All-to-all targets also
 elide nonterminal permutations through supported tensor accesses and structured
 control flow.
 
-Mapping runs multiple initial-layout trials. Set `MappingOptions.trials` and
-`CompilationOptions.seed` for reproducible choices. Each trial retains the
-layout with the fewest native two-qubit gates among the routes it evaluates,
-using depth to break ties. Each trial has a bounded search-memory budget,
-configured with `MappingOptions.search_memory_limit`; this does not cap total
-process memory. See {doc}`QCO` for routing and synthesis details.
+The `place-qubits` pass selects and materializes an initial layout without
+inserting routing SWAPs. On explicit topologies, it tries identity and path
+shortcuts, then a bounded direct search for an injective embedding of the
+program's undirected interaction graph. Extra target edges are allowed. The
+search does not use calibration or native gate availability; synthesis checks
+native support afterward. A complete embedding skips layout refinement. Inputs
+that routing does not support retain identity or indexed placement.
+
+If no embedding is found within 100,000 candidate assignments, mapping refines
+greedy, identity, and random layouts with the router's native-cost model. Set
+`MappingOptions.trials` and `CompilationOptions.seed` for reproducible choices.
+Each trial retains the layout with the fewest native two-qubit gates among the
+routes it evaluates, using depth to break ties. Each trial has a bounded
+search-memory budget, configured with `MappingOptions.search_memory_limit`; this
+does not cap total process memory. See {doc}`QCO` for routing and synthesis
+details.
+
+The `place-and-route` pass accepts allocated program qubits or a layout from
+`place-qubits` and inserts routing SWAPs. Use the same routing options in both
+passes, for example `builtin.module(place-qubits,place-and-route)`. Internal
+`mqt.placement_order` metadata preserves program width and logical router order
+across serialization. Routing validates and consumes it. Existing physical
+provenance must cover the target and list sites in target order. The default
+target-compilation pipeline runs both passes; input that already names physical
+sites retains those sites.
 
 ### Custom pass sequences
 
