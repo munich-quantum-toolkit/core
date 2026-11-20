@@ -1347,7 +1347,6 @@ private:
   /// identity and random starts.
   [[nodiscard]] std::optional<std::pair<Layout<QubitIndex>, bool>>
   generateGreedyLayout(const Wires& wires, const Environment& env) const {
-    const DistanceMatrix distances(env.target);
     DenseMap<QubitIndexPair, size_t> weights;
     // Bound both sums over neighbors and their distance-weighted costs.
     const size_t maximumWeight = std::numeric_limits<size_t>::max() /
@@ -1442,6 +1441,7 @@ private:
       }
     }
 
+    const DistanceMatrix distances(env.target);
     SmallVector<size_t> centrality(nhardware, 0);
     SmallVector<size_t> hardwareDegree(nhardware, 0);
     for (size_t hw = 0; hw < nhardware; ++hw) {
@@ -1603,8 +1603,6 @@ private:
   search(ArrayRef<QubitIndexPair> window, RoutingState& state, Arena& arena,
          const Environment& env) const {
     const Parameters params{.alpha = alpha, .lambda = lambda};
-    const DistanceMatrix distances(env.target);
-
     arena.reset();
     Node* root = arena.allocate();
     assert(root != nullptr && "expected root allocation to succeed");
@@ -1614,6 +1612,7 @@ private:
       return SmallVector<QubitIndexPair>{};
     }
 
+    const DistanceMatrix distances(env.target);
     SearchFrontier frontier;
     frontier.push(root);
 
