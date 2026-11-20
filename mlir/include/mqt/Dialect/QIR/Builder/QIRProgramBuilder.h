@@ -21,8 +21,8 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringMap.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -946,9 +946,9 @@ public:
   ///
   /// @par Example:
   /// ```c++
-  /// builder.scfFor(lb, ub, step, [&](Value iv) {
-  ///   auto q0 = builder.load(register, iv);
-  ///   builder.h(q0);
+  /// auto reg = builder.allocQubitRegister(3);
+  /// builder.scfFor(0, 3, 1, [&](Value iv) {
+  ///   builder.h(builder.loadQubit(reg.value, iv));
   /// });
   /// ```
   /// ```mlir
@@ -1118,8 +1118,12 @@ private:
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 
-  /// Map from register name to `ClassicalRegister`
-  llvm::StringMap<ClassicalRegister> cregs;
+  /// Register storage identities in output order.
+  llvm::MapVector<Value, ClassicalRegister> cregs;
+
+  const ClassicalRegister&
+  resolveRegister(const ClassicalRegister& reg,
+                  const std::variant<int64_t, Value>& index) const;
 
   /// Indexed scalar results for output recording.
   DenseMap<int64_t, StaticResult> scalarResults;
