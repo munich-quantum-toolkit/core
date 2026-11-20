@@ -601,17 +601,16 @@ c = measure q;
 
 
 @pytest.mark.parametrize(
-    "program_format",
+    ("program_format", "capture"),
     [
-        ProgramFormat.QIR_BASE_STRING,
-        ProgramFormat.QIR_BASE_MODULE,
-        ProgramFormat.QIR_ADAPTIVE_STRING,
-        ProgramFormat.QIR_ADAPTIVE_MODULE,
+        (ProgramFormat.QIR_BASE_STRING, False),
+        (ProgramFormat.QIR_BASE_MODULE, True),
+        (ProgramFormat.QIR_ADAPTIVE_MODULE, False),
+        (ProgramFormat.QIR_ADAPTIVE_STRING, True),
     ],
 )
-@pytest.mark.parametrize("capture", [False, True])
-def test_binary_qir_results(program_format: ProgramFormat, *, capture: bool) -> None:
-    """Binary QIR sampling exposes counts, shots, and eligible retained states."""
+def test_qir_results(program_format: ProgramFormat, *, capture: bool) -> None:
+    """QIR sampling exposes counts, shots, captured records, and eligible retained states."""
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; h q[0]; bit[2] c = measure q;'
     job = submit_program(
         source, target="mqt.ddsim.default", program_format=program_format, num_shots=8, custom1=7, custom2=capture

@@ -109,7 +109,9 @@ print(sample(base_llvm, shots=32, seed=71))
 print(simulate(base_llvm))
 ```
 
-The serialization and QDMI format must agree:
+When submitting a QDMI job, choose the format for both the serialized data and
+the profile declared on its entry point. The DDSIM worker rejects a mismatch
+before running the program.
 
 | Profile  | LLVM text (`str`)                   | LLVM bitcode (`bytes`)              |
 | -------- | ----------------------------------- | ----------------------------------- |
