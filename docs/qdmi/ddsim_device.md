@@ -13,10 +13,8 @@ DDSIM executes quantum programs locally through QDMI using
 
 ## Compile and execute
 
-Compile a Bell circuit, sample its measurements, and inspect its statevector.
-DDSIM retains the state before terminal measurements, so state extraction does
-not require a separate job or zero shots. Circuits with mid-circuit measurements
-or resets do not support state extraction.
+Compile a Bell circuit and sample its measurements. The same job returns the
+statevector that produced those samples.
 
 ```{code-cell} ipython3
 from mqt.core.mlir import submit_program
@@ -93,26 +91,28 @@ loop. Sampling supports measurement feedback and reset; loops must terminate.
 
 ### Sampling and statevectors
 
-DDSIM can sample measurement outcomes from every supported program format. For
-OpenQASM and eligible QIR programs, it can also return the full statevector. Set
-the `QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` parameter to the desired number of
-shots, or to `0` to request only the state. In Python, use `num_shots`.
+DDSIM can sample measurement outcomes from every supported program format. Set
+`QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` to the desired number of shots. In Python,
+use `num_shots`.
 
-When all measurements can be deferred until the end, DDSIM can prepare a state
-once and sample it repeatedly. Those jobs retain the state before measurement.
-Such jobs provide statevector and probability results alongside shots and
-counts. Dense and sparse vectors are materialized only when queried; queries do
-not rerun simulation or change the samples. Jobs that execute separately for
-each shot do not expose their last trajectory as a statevector and return
-`QDMI_ERROR_NOTSUPPORTED` for state queries. Use a zero-shot job to request a
-statevector from an eligible program that cannot share one state across its
-shots.
+Jobs that prepare one state for all shots retain it before measurement. You can
+query its statevector and probabilities alongside shots and counts. DDSIM
+materializes dense and sparse vectors on request. Other sampling jobs return
+`QDMI_ERROR_NOTSUPPORTED` for state queries.
+
+With [QIR output capture](#qir-output-capture) enabled, DDSIM retains the state
+only when it recognizes the terminal measurements and their outputs before
+execution. A QIR program that dynamically allocates its results can retain its
+state with capture disabled. Enabling capture for that program requires a
+separate simulation per shot. To request only the state of an eligible program,
+submit it with `num_shots=0` and capture disabled.
 
 State extraction defers terminal measurements without collapsing the returned
 state. Measurement-dependent computation, resets and subsequent operations on
 measured wires are unsupported. Adaptive QIR may still execute classical loops,
-branches, dynamic allocations and direct helpers; see the
-[QIR state extraction](../qir/index.md) for result-use and lifetime rules.
+branches, dynamic allocations, and direct helpers. See
+[QIR state extraction](../qir/index.md#sampling-and-state-extraction) for
+result-use and lifetime rules.
 
 ### Seeds and parallel execution
 
