@@ -34,21 +34,51 @@
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/iterator_range.h"
 
 #include <array>
-#include <cstdint>
 #include <memory>
 #include <utility>
 
 namespace mlir {
 
-void forEachVirtualCZ(
-    const CompilerTarget& target, ArrayRef<CompilerTarget::SiteId> sites,
+// Keep the first reported order when both CZ placements are native.
+static DenseSet<CompilerTarget::Coupling>
+preferredCZOrientations(const CompilerTarget& target) {
+  using Arity = CompilerTarget::OperationCapability::Arity;
+  DenseSet<CompilerTarget::Coupling> result;
+  for (const auto& op : target.operations()) {
+    if (op.canonicalName() != "cz" || op.arity() != Arity::fixed(2) ||
+        op.numParameters() != 0) {
+      continue;
+    }
+    for (const auto& tuple : op.siteTuples()) {
+      auto sites = tuple.sites();
+      if (!result.contains({sites[1], sites[0]})) {
+        result.insert({sites[0], sites[1]});
+      }
+    }
+  }
+  return result;
+}
+
+bool forEachVirtualCZ(
+    const CompilerTarget& target,
     function_ref<void(CompilerTarget::SiteId, CompilerTarget::SiteId,
                       CompilerTarget::SiteId, bool)>
         visit) {
-  const DenseSet<CompilerTarget::SiteId> placeable(sites.begin(), sites.end());
-  for (const auto& move : target.operations()) {
+  const auto operations = target.operations();
+  const auto* firstMove = llvm::find_if(operations, [](const auto& operation) {
+    return operation.canonicalName() == "move";
+  });
+  if (firstMove == operations.end()) {
+    return false;
+  }
+  const auto placeable = target.placeableSites();
+  const DenseSet<CompilerTarget::SiteId> placementSites(placeable.begin(),
+                                                        placeable.end());
+  const auto preferredCZs = preferredCZOrientations(target);
+  for (const auto& move : llvm::make_range(firstMove, operations.end())) {
     if (move.canonicalName() != "move" ||
         move.arity() != CompilerTarget::OperationCapability::Arity::fixed(2) ||
         move.numParameters() != 0) {
@@ -57,43 +87,43 @@ void forEachVirtualCZ(
     for (const auto& tuple : move.siteTuples()) {
       const auto a = tuple.sites()[0];
       const auto r = tuple.sites()[1];
-      if (!placeable.contains(a) || placeable.contains(r)) {
+      if (!placementSites.contains(a) || placementSites.contains(r) ||
+          !target.arePhysicallyCoupled(a, r)) {
         continue;
       }
-      for (const auto& cz : target.operations()) {
-        if (cz.canonicalName() != "cz" ||
-            cz.arity() !=
-                CompilerTarget::OperationCapability::Arity::fixed(2) ||
-            cz.numParameters() != 0) {
-          continue;
+      // Query the real neighbours of the resonator. The target resolves native
+      // CZ aliases, unrestricted placements, and ordered site tuples alike.
+      target.forEachNeighbour(*target.vertexForSite(r), [&](size_t vertex) {
+        const auto b = target.siteForVertex(vertex);
+        if (a == b || !placementSites.contains(b) ||
+            !target.arePhysicallyCoupled(r, b)) {
+          return;
         }
-        for (const auto& pair : cz.siteTuples()) {
-          const bool first = pair.sites()[0] == r;
-          const auto b = pair.sites()[first ? 1 : 0];
-          if (pair.sites()[first ? 0 : 1] == r && a != b &&
-              placeable.contains(b)) {
-            visit(a, b, r, first);
+        bool resonatorFirst = preferredCZs.contains({r, b});
+        if (!resonatorFirst &&
+            !target.supports(CompilerTarget::GateKind::CZ, std::array{b, r})) {
+          if (!target.supports(CompilerTarget::GateKind::CZ,
+                               std::array{r, b})) {
+            return;
           }
+          resonatorFirst = true;
         }
-      }
+        visit(a, b, r, resonatorFirst);
+      });
     }
   }
+  return true;
 }
 
 static void insertResonatorMoves(ModuleOp moduleOp,
                                  const CompilerTarget& target) {
-  if (llvm::none_of(target.operations(), [](const auto& operation) {
-        return operation.canonicalName() == "move";
-      })) {
-    return;
-  }
   using SiteId = CompilerTarget::SiteId;
-  const auto placeable = target.placeableSites();
   DenseMap<std::pair<SiteId, SiteId>, std::pair<SiteId, bool>> routes;
-  forEachVirtualCZ(target, placeable, [&](auto a, auto b, auto r, bool first) {
-    routes.try_emplace({a, b}, r, first);
-  });
-  if (routes.empty()) {
+  const bool hasMove =
+      forEachVirtualCZ(target, [&](auto a, auto b, auto r, bool first) {
+        routes.try_emplace({a, b}, r, first);
+      });
+  if (!hasMove) {
     return;
   }
   func::FuncOp move;
@@ -106,17 +136,25 @@ static void insertResonatorMoves(ModuleOp moduleOp,
     }
     auto a = ctrl.getControl(0).getDefiningOp<qc::StaticOp>();
     auto b = ctrl.getTarget(0).getDefiningOp<qc::StaticOp>();
-    if (!a || !b ||
-        target.supports(CompilerTarget::GateKind::CZ,
-                        std::array<int64_t, 2>{
-                            static_cast<int64_t>(a.getIndex()),
-                            static_cast<int64_t>(b.getIndex()),
-                        })) {
+    if (!a || !b) {
       return;
     }
-    auto route = routes.find({a.getIndex(), b.getIndex()});
+    const auto firstSite = static_cast<SiteId>(a.getIndex());
+    const auto secondSite = static_cast<SiteId>(b.getIndex());
+    if (target.arePhysicallyCoupled(firstSite, secondSite)) {
+      if (target.supports(CompilerTarget::GateKind::CZ,
+                          std::array{firstSite, secondSite})) {
+        return;
+      }
+      if (target.supports(CompilerTarget::GateKind::CZ,
+                          std::array{secondSite, firstSite})) {
+        ctrl->setOperands({b.getResult(), a.getResult()});
+        return;
+      }
+    }
+    auto route = routes.find({firstSite, secondSite});
     if (route == routes.end()) {
-      route = routes.find({b.getIndex(), a.getIndex()});
+      route = routes.find({secondSite, firstSite});
     }
     if (route == routes.end()) {
       return;
@@ -136,8 +174,8 @@ static void insertResonatorMoves(ModuleOp moduleOp,
     Value r = qc::StaticOp::create(builder, ctrl.getLoc(),
                                    qc::QubitType::get(moduleOp.getContext()),
                                    resonator);
-    Value m = a.getIndex() == moving ? a.getResult() : b.getResult();
-    Value s = a.getIndex() == stationary ? a.getResult() : b.getResult();
+    Value m = firstSite == moving ? a.getResult() : b.getResult();
+    Value s = firstSite == stationary ? a.getResult() : b.getResult();
     func::CallOp::create(builder, ctrl.getLoc(), move, ValueRange{m, r});
     qc::CtrlOp::create(builder, ctrl.getLoc(), ValueRange{first ? r : s},
                        ValueRange{first ? s : r}, [&](ValueRange values) {
@@ -147,7 +185,9 @@ static void insertResonatorMoves(ModuleOp moduleOp,
     func::CallOp::create(builder, ctrl.getLoc(), move, ValueRange{m, r});
     ctrl.erase();
   });
-  scheduleTerminalReadout(moduleOp);
+  if (!routes.empty()) {
+    scheduleTerminalReadout(moduleOp);
+  }
 }
 
 namespace {

@@ -14,7 +14,6 @@
 
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 
 #include <memory>
@@ -23,12 +22,14 @@ namespace mlir {
 
 class Pass;
 
-/// Visit virtual CZ routes through sites excluded from program-qubit placement.
+/// Visit physically connected MOVE/CZ routes between placeable sites
+/// through a MOVE destination excluded from placement.
 ///
 /// The callback receives the moving qubit, stationary qubit, resonator, and
-/// whether the native CZ lists the resonator first.
-void forEachVirtualCZ(
-    const CompilerTarget& target, ArrayRef<CompilerTarget::SiteId> sites,
+/// whether the native CZ lists the resonator first. Returns whether the target
+/// advertises MOVE.
+bool forEachVirtualCZ(
+    const CompilerTarget& target,
     function_ref<void(CompilerTarget::SiteId, CompilerTarget::SiteId,
                       CompilerTarget::SiteId, bool)>
         visit);

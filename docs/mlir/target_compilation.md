@@ -431,10 +431,11 @@ and mediate gates between device qubits. Supported IQM devices expose an ordered
 back. The resonator is a target site, but it is excluded from program-qubit
 placement because it lacks the required single-qubit gates and readout.
 
-Target preparation combines native MOVE and CZ placements to expose virtual CZ
-connections between placeable sites. For example, `move(a, r)` and `cz(r, b)`
-permit a virtual `cz(a, b)` through an idle resonator `r`. The native circuit
-contains the following sequence, which returns the state to the original qubit:
+Target preparation combines physically connected MOVE and CZ placements to
+expose virtual CZ connections between placeable sites. For example, `move(a, r)`
+and `cz(r, b)` permit a virtual `cz(a, b)`. Programs that explicitly use the
+resonator must leave it idle at each virtual CZ. The native circuit returns the
+transferred state to the original qubit with this sequence:
 
 ```text
 move(a, r); cz(r, b); move(a, r)
