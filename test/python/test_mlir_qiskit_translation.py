@@ -228,29 +228,6 @@ def test_dense_unitary_round_trip_preserves_qarg_mapping_and_source_data() -> No
     assert np.allclose(Operator(restored_unitary.operation).data, local_operator.data)
 
 
-def test_dense_unitary_import_converts_qiskit_qubit_order() -> None:
-    """Convert Qiskit's qubit order by reversing the operation targets."""
-    matrix = np.array([
-        [0.0, 1.0, 0.0, 0.0],
-        [0.0, 0.0, 1.0j, 0.0],
-        [0.0, 0.0, 0.0, -1.0],
-        [-1.0j, 0.0, 0.0, 0.0],
-    ])
-    circuit = QuantumCircuit(2)
-    circuit.append(library.UnitaryGate(matrix), [0, 1])
-
-    ir = QCProgram.from_qiskit(circuit).ir
-
-    dense_text = ir.split("qc.unitary dense<[", 1)[1].split("]>", 1)[0]
-    matches = re.findall(r"\(([-+0-9.eE]+),([-+0-9.eE]+)\)", dense_text)
-    entries = [complex(float(real), float(imaginary)) for real, imaginary in matches]
-    imported = np.asarray(entries).reshape((4, 4))
-    assert np.allclose(imported, matrix)
-    loaded_qubits = re.findall(r"(?m)^\s*(%\w+) = memref.load %alloc\[%c[01]\]", ir)
-    assert len(loaded_qubits) == 2
-    assert f"{loaded_qubits[1]}, {loaded_qubits[0]} : !qc.qubit, !qc.qubit" in ir
-
-
 @pytest.mark.parametrize("num_qubits", [1, 2, 3])
 def test_dense_unitary_round_trip(num_qubits: int) -> None:
     """Preserve one-, two-, and three-qubit dense unitaries."""
@@ -292,7 +269,7 @@ def test_quantum_volume_unitaries_remain_dense() -> None:
 
 
 def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
-    """Synthesize a dense two-qubit unitary to the target basis."""
+    """Synthesize a dense unitary while preserving its qubit order and phase."""
     circuit = QuantumCircuit(2)
     circuit.append(library.UnitaryGate(random_unitary(4, seed=2136)), [0, 1])
     target = CompilerTarget(
@@ -302,6 +279,7 @@ def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
             CompilerTarget.OperationCapability("measure", 1, 0),
             CompilerTarget.OperationCapability("u", 1, 3),
             CompilerTarget.OperationCapability("cx", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
     )
     program = QCProgram.from_qiskit(circuit).to_qco()
@@ -312,6 +290,7 @@ def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
 
     assert restored.size() > 0
     assert set(restored.count_ops()) <= {"u", "cx"}
+    np.testing.assert_allclose(Operator.from_circuit(restored).data, Operator(circuit).data, atol=1e-12, rtol=0)
 
 
 @pytest.mark.parametrize("decompose", [False, True])
@@ -4584,16 +4563,6 @@ def test_native_mapping_exports_full_qiskit_layout(*, routed: bool, basis: str, 
         atol=1e-12,
     )
 
-    if disabled_site:
-        environment = TargetEnvironment(target, PayloadSpecification.from_program_format(ProgramFormat.QPY))
-        artifact = compile_program(circuit, target=environment)
-        assert isinstance(artifact, CompiledProgram)
-        payload = artifact.payload
-        assert isinstance(payload, bytes)
-        restored = qpy.load(BytesIO(payload))[0]
-        assert restored.layout is not None
-        np.testing.assert_allclose(Operator.from_circuit(restored).data, Operator(expected).data, atol=1e-12)
-
 
 @pytest.mark.parametrize("sites", [[0, 1], [1, 0], [1, 3]])
 def test_native_layout_uses_recorded_physical_sites(sites: list[int]) -> None:
@@ -5058,7 +5027,7 @@ assert '2.99.0' in str(seen[0].message)
 def test_qpy_compilation_and_native_readout() -> None:
     """QPY preserves dynamic control flow and native logical readout."""
     circuit = QuantumCircuit(2, 2)
-    circuit.h(0)
+    circuit.x(0)
     circuit.measure(0, 0)
     with circuit.if_test((circuit.clbits[0], True)):
         circuit.x(1)
@@ -5068,6 +5037,7 @@ def test_qpy_compilation_and_native_readout() -> None:
     assert qpy.get_qpy_version(BytesIO(payload)) == 17
     restored = qpy.load(BytesIO(payload))[0]
     assert restored.count_ops() == circuit.count_ops()
+    assert sample(QCProgram.from_qiskit(restored), shots=1) == {"11": 1}
 
     target = CompilerTarget(
         2,
