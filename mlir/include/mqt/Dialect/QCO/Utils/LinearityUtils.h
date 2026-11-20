@@ -28,6 +28,10 @@ namespace mlir::qco {
 /// other index values is a program precondition.
 [[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
+/// Verify linearity and retain the wire origins used for positional checks.
+[[nodiscard]] LogicalResult verifyLinearity(Operation* root,
+                                            DenseMap<Value, Value>& origins);
+
 /// Collect quantum wire roots and verify positional quantum state flow.
 ///
 /// Requires ordinary MLIR verification first. Checks register-slot ownership

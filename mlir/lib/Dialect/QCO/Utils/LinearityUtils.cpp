@@ -304,6 +304,13 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
 }
 
 LogicalResult mlir::qco::verifyLinearity(Operation* root) {
+  DenseMap<Value, Value> origins;
+  return verifyLinearity(root, origins);
+}
+
+LogicalResult mlir::qco::verifyLinearity(Operation* root,
+                                         DenseMap<Value, Value>& origins) {
+  origins.clear();
   func::FuncOp entryPoint;
   if (auto moduleOp = dyn_cast<ModuleOp>(root)) {
     entryPoint = mqt::getEntryPoint(moduleOp);
@@ -363,6 +370,5 @@ LogicalResult mlir::qco::verifyLinearity(Operation* root) {
   if (!needsWireChecks) {
     return success();
   }
-  DenseMap<Value, Value> origins;
   return collectWireOrigins(root, origins);
 }
