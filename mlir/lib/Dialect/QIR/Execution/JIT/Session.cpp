@@ -866,6 +866,7 @@ Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
   std::string entryPointName;
   std::vector<std::pair<std::string, void*>> runtimeSymbols;
   bool hasAggregateLoads = false;
+  bool allowTerminalSampling = false;
   auto preparation = loadedModule.withModuleDo([&](llvm::Module& module)
                                                    -> Error {
     if (auto error = normalizeNativeQISNames(module)) {
@@ -982,8 +983,10 @@ Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
         first->getCalledFunction()->getName() == "__quantum__rt__initialize";
     // Destructors may inspect the last shot's collapsed state and Result
     // values.
-    if (execution == Execution::Sampling &&
-        module.getNamedGlobal("llvm.global_dtors") == nullptr) {
+    allowTerminalSampling =
+        execution == Execution::Sampling &&
+        module.getNamedGlobal("llvm.global_dtors") == nullptr;
+    if (allowTerminalSampling) {
       samplingOutputs_ = getStaticSamplingOutputs(entryPoint);
     }
     return Error::success();
@@ -1121,12 +1124,14 @@ Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
             llvm::OptimizationLevel::O1, llvm::ThinOrFullLTOPhase::None));
       }
       pipeline.run(module, moduleAnalyses);
-      sampleBranches_ =
-          execution == Execution::Sampling &&
-          qir::canSampleBranches(*module.getFunction(entryPointName));
+      auto& entryPoint = *module.getFunction(entryPointName);
+      if (allowTerminalSampling) {
+        samplingOutputs_ = getStaticSamplingOutputs(entryPoint);
+      }
+      sampleBranches_ = !samplingOutputs_ && execution == Execution::Sampling &&
+                        qir::canSampleBranches(entryPoint);
       tryTerminalSampling_ =
-          sampleBranches_ &&
-          qir::canDeferMeasurements(*module.getFunction(entryPointName));
+          sampleBranches_ && qir::canDeferMeasurements(entryPoint);
     });
   }
 
