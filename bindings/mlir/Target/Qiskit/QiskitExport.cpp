@@ -2743,7 +2743,8 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
 
 static void validateCircuit(const ExportedCircuit& circuit,
                             const VersionedTranslation& translation,
-                            const mlir::PayloadSpecification* payload) {
+                            const mlir::PayloadSpecification* payload,
+                            llvm::StringSet<>& calledGates) {
   for (const auto& instruction : circuit.instructions) {
     if (instruction.kind == ExportedInstruction::Kind::Gate &&
         !translation.supportsGate(instruction.gate)) {
@@ -2759,6 +2760,7 @@ static void validateCircuit(const ExportedCircuit& circuit,
       if (instruction.customGate.empty()) {
         throw std::runtime_error("Qiskit custom Gate has an empty name");
       }
+      calledGates.insert(instruction.customGate);
       for (const auto qubit : instruction.qubits) {
         if (!qubits.insert(qubit).second) {
           throw std::runtime_error("Qiskit custom Gate '" +
@@ -2780,7 +2782,7 @@ static void validateCircuit(const ExportedCircuit& circuit,
                                capability.str() + "'");
     }
     for (const auto& block : instruction.controlFlow->blocks) {
-      validateCircuit(block, translation, payload);
+      validateCircuit(block, translation, payload, calledGates);
     }
   }
 }
@@ -2838,7 +2840,7 @@ static void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer) {
 [[nodiscard]] static size_t gateParameterCount(mlir::func::FuncOp function) {
   size_t numParameters = 0U;
   while (numParameters < function.getNumArguments() &&
-         function.getArgument(numParameters).getType().isF64()) {
+         function.getArgumentTypes()[numParameters].isF64()) {
     ++numParameters;
   }
   return numParameters;
@@ -2971,16 +2973,6 @@ exportCircuitImpl(mlir::QCProgram program,
     throw std::runtime_error(
         "QC to Qiskit export requires a single-block entry function");
   }
-  if (payload == nullptr || payload->format().id != "qpy") {
-    bool externalCall = false;
-    moduleOp.walk([&](mlir::func::CallOp call) {
-      auto callee = moduleOp.lookupSymbol<mlir::func::FuncOp>(call.getCallee());
-      externalCall |= !callee || callee.isExternal();
-    });
-    if (externalCall) {
-      throw std::runtime_error("Opaque native calls require QPY serialization");
-    }
-  }
   const auto gateFunctions = collectGateFunctions(moduleOp, function);
   std::vector<ExportedGateDefinition> gateDefinitions;
   gateDefinitions.reserve(gateFunctions.size());
@@ -3013,15 +3005,19 @@ exportCircuitImpl(mlir::QCProgram program,
                                                   state.numClbits, "classical");
 
   auto translation = selectTranslation();
+  llvm::StringSet<> calledGates;
+  for (const auto& definition : gateDefinitions) {
+    validateCircuit(definition.circuit, *translation, payload, calledGates);
+  }
+  validateCircuit(circuit, *translation, payload, calledGates);
   for (auto external : moduleOp.getOps<mlir::func::FuncOp>()) {
-    if (!external.isExternal()) {
+    if (!external.isExternal() || !calledGates.contains(external.getName())) {
       continue;
     }
-    size_t numParameters = 0;
-    while (numParameters < external.getNumArguments() &&
-           external.getArgumentTypes()[numParameters].isF64()) {
-      ++numParameters;
+    if (payload == nullptr || payload->format().id != "qpy") {
+      throw std::runtime_error("Opaque native calls require QPY serialization");
     }
+    const auto numParameters = gateParameterCount(external);
     if (external.getNumResults() != 0 ||
         !llvm::all_of(external.getArgumentTypes().drop_front(numParameters),
                       [](mlir::Type type) {
@@ -3036,10 +3032,6 @@ exportCircuitImpl(mlir::QCProgram program,
                                     sourceName ? sourceName.str()
                                                : external.getName().str());
   }
-  for (const auto& definition : gateDefinitions) {
-    validateCircuit(definition.circuit, *translation, payload);
-  }
-  validateCircuit(circuit, *translation, payload);
   for (auto& definition : gateDefinitions) {
     auto definitionWriter =
         translation->createCircuit(definition.numQubits, 0U);
