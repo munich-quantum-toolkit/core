@@ -1656,9 +1656,9 @@ struct ConvertSCFForOp final : LoweringPattern<scf::ForOp> {
     SmallVector<Value> initArgs(op.getInitArgs());
     llvm::append_range(initArgs, qcoTargets);
 
-    auto newForOp =
-        scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
-                           op.getUpperBound(), op.getStep(), initArgs);
+    auto newForOp = scf::ForOp::create(
+        rewriter, op.getLoc(), op.getLowerBound(), op.getUpperBound(),
+        op.getStep(), initArgs, nullptr, op.getUnsignedCmp());
     newForOp->setDiscardableAttrs(op->getDiscardableAttrDictionary());
 
     assignMappedTensors(state, op.getOperation(), registers,
