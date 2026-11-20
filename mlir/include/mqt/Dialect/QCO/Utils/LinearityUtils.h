@@ -36,6 +36,16 @@ namespace mlir::qco {
 [[nodiscard]] LogicalResult collectWireOrigins(Operation* root,
                                                DenseMap<Value, Value>& origins);
 
+/// Check tensor lifetimes while the IR remains unchanged.
+class TensorLifetimeAnalysis {
+public:
+  /// Check that extracted slots are restored at calls and region exits.
+  [[nodiscard]] bool isComplete(Value tensor, unsigned depth = 0);
+
+private:
+  DenseMap<Value, Value> callResults_;
+};
+
 /// Check that extracted tensor slots are restored at calls and region exits.
 ///
 /// Slot identity and disjoint extractions are program preconditions; known
