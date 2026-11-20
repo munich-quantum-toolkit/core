@@ -417,30 +417,40 @@ bit result = measure q;
   EXPECT_EQ(analyzed.program->scalars[1].name, "enabled");
 }
 
-TEST(OpenQASMFrontendTest, ExpandsEveryTextualIncludeOccurrence) {
+TEST(OpenQASMFrontendTest, RebindsLocalsAtEveryTextualInclude) {
   llvm::SourceMgr sources;
-  sources.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(R"qasm(
-OPENQASM 3.1;
-qubit q;
-include "operations.inc";
-include "operations.inc";
-bit result = measure q;
-)qasm",
-                                                                  "main.qasm"),
-                             llvm::SMLoc());
   sources.AddNewSourceBuffer(
-      llvm::MemoryBuffer::getMemBufferCopy("x q;\n", "operations.inc"),
+      llvm::MemoryBuffer::getMemBufferCopy(R"qasm(OPENQASM 3.1;
+array[int, 4] a;
+int endpoint = 0;
+uint result = 0;
+include "body.inc";
+endpoint = 2;
+include "body.inc";
+)qasm",
+                                           "main.qasm"),
       llvm::SMLoc());
+  sources.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
+                                 "if (bool(endpoint)) { int local = endpoint; "
+                                 "result = sizeof(a[:local]); }",
+                                 "body.inc"),
+                             llvm::SMLoc());
 
   auto analyzed = openqasm::frontend::analyzeOpenQASM(sources);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  size_t applications = 0;
-  for (const auto& statement : analyzed.program->statements) {
-    applications += static_cast<size_t>(
-        std::holds_alternative<openqasm::frontend::GateApplication>(
-            statement.data));
+  const auto& program = *analyzed.program;
+  ASSERT_EQ(program.arraySizeQueries.size(), 2);
+  const auto first = program.arraySizeQueries[0].range.stop;
+  const auto second = program.arraySizeQueries[1].range.stop;
+  ASSERT_TRUE(first && second);
+  EXPECT_NE(program.expressions[*first].variable,
+            program.expressions[*second].variable);
+  ASSERT_EQ(program.conditions.size(), 2);
+  for (size_t i = 0; i < program.conditions.size(); ++i) {
+    const auto& location = program.conditions[i].location;
+    ASSERT_EQ(location.includeStack.size(), 1);
+    EXPECT_EQ(location.includeStack.front().line, 5 + 2 * i);
   }
-  EXPECT_EQ(applications, 2);
 }
 
 TEST(OpenQASMFrontendTest, RejectsRecursiveAndRepeatedStandardIncludes) {

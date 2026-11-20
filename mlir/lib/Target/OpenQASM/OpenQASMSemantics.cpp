@@ -1391,8 +1391,7 @@ private:
       MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(syntaxId));
       return addCondition({
           .kind = ConditionKind::Literal,
-          .location =
-              sourceLocation(sources, syntax.expressions[syntaxId].location),
+          .location = getSourceLocation(syntax.expressions[syntaxId].location),
           .literal = asDouble(constant) != 0.0,
           .bit = {},
           .measurement = {},
@@ -1412,8 +1411,7 @@ private:
     const auto zero = addConstant(zeroValue);
     return addCondition({
         .kind = ConditionKind::Comparison,
-        .location =
-            sourceLocation(sources, syntax.expressions[syntaxId].location),
+        .location = getSourceLocation(syntax.expressions[syntaxId].location),
         .bit = {},
         .measurement = {},
         .comparisonLhs = value,
@@ -3248,6 +3246,8 @@ private:
     assert(syntax.bodyIncludeContexts.empty() ||
            syntax.body.size() == syntax.bodyIncludeContexts.size());
     for (const auto [index, id] : llvm::enumerate(syntax.body)) {
+      // Repeated includes share syntax IDs but bind fresh local variables.
+      sizeOfExpressions_.clear();
       if (!syntax.bodyIncludeContexts.empty()) {
         currentIncludeContext = syntax.bodyIncludeContexts[index];
       }
