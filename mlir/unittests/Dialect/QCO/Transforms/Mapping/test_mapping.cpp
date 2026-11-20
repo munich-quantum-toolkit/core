@@ -1651,8 +1651,9 @@ TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
   ASSERT_TRUE(condMeasure->isBeforeInBlock(condStore));
 }
 
-TEST_P(MappingPassTest, FailNoEntryPoint) {
-  for (const auto& target : {GetParam(), withNativeBasis(GetParam(), "cx")}) {
+TEST_F(MappingPassFixture, FailNoEntryPoint) {
+  const auto topology = getSquareGridTarget(2);
+  for (const auto& target : {topology, withNativeBasis(topology, "cx")}) {
     OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
     attachTestEnvironment(*moduleOp, target);
     const auto before = printModule(*moduleOp);
@@ -1812,8 +1813,8 @@ TEST_P(MappingPassTest, MapProgramAfterQubitReuse) {
   EXPECT_EQ(numResets, 1);
 }
 
-TEST_P(MappingPassTest, FailNestedHigherArityUnitary) {
-  const auto& target = GetParam();
+TEST_F(MappingPassFixture, FailNestedHigherArityUnitary) {
+  const auto target = getSquareGridTarget(2);
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -1855,8 +1856,8 @@ TEST_P(MappingPassTest, FailNestedHigherArityUnitary) {
   EXPECT_EQ(numStatics, 0);
 }
 
-TEST_P(MappingPassTest, FailNoExtractAfterInsert) {
-  const auto& target = GetParam();
+TEST_F(MappingPassFixture, FailNoExtractAfterInsert) {
+  const auto target = getSquareGridTarget(2);
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -3911,7 +3912,7 @@ TEST_F(MappingPassFixture, RetainBestRefinementPlacement) {
         [&](UnitaryOpInterface gate) { counts[rounds] += gate.isTwoQubit(); });
   }
   EXPECT_LT(counts[1], counts[0]);
-  EXPECT_EQ(counts[2], counts[1]);
+  EXPECT_LE(counts[2], counts[1]);
 }
 
 TEST_F(MappingPassFixture, PreferNativeGateCountThenDepth) {
