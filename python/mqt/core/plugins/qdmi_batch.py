@@ -75,10 +75,9 @@ class Batch(Generic[_Owner, _Result]):
     batch are synchronous, and concurrent calls on the same batch are unsupported.
 
     Entries with the same group key share one multi-program job when the device
-    accepts it. If the device declines a group, the batch checks the largest
-    accepted program count and submits the fewest near-equal contiguous parts.
-    It halves a declined part down to single entries. Without a support check,
-    it halves the declined group.
+    accepts it. For a declined group, the batch probes for an upper count limit
+    and splits the group into near-equal contiguous parts. It halves groups
+    when the limit is unknown and halves any part the device still declines.
 
     The batch holds only a weak reference to its owner, the adapter job that
     holds the batch, and passes the owner to every callback as the first

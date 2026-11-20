@@ -104,11 +104,10 @@ generic backend rejects other options, including non-`None` `seed_simulator`,
 because QDMI has no standard seed parameter.
 
 Pass a list of circuits to submit a batch. Equal-format, equal-shot circuits use
-a native program list when the device supports it. If the device declines the
-list, for example because of a program-count or total-shot limit, the backend
-submits the fewest consecutive lists of nearly equal size that the device
-accepts, and separate jobs when it accepts no list. The backend validates the
-whole batch before submitting any circuit and returns results in input order.
+a native program list when the device supports it. The backend validates the
+whole batch before submission and returns results in input order. For devices
+that limit the size of a list, see
+[multi-program jobs](driver.md#multi-program-jobs).
 
 ### Optional retries
 
