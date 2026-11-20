@@ -185,8 +185,8 @@ public:
   /// Whether indexed qubits can retain runtime addresses through placement.
   ///
   /// Requires Adaptive QIR and an all-to-all target. Site-restricted extras
-  /// require a selected synthesis basis usable at unknown sites; advertised
-  /// measurement/reset operations must also support unknown sites. The
+  /// require a synthesis basis usable at unknown sites. Advertised
+  /// measurement and reset operations must also support unknown sites. The
   /// execution format's other control-flow limits still apply.
   [[nodiscard]] bool supportsIndexedQubits() const noexcept;
 

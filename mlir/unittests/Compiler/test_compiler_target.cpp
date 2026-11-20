@@ -383,7 +383,7 @@ TEST(TargetEnvironmentTest, OpenQASMSwitchesDoNotEnableIndexedQubits) {
       mlir::TargetEnvironment(target, payload).supportsIndexedQubits());
 }
 
-TEST(TargetEnvironmentTest, IndexedSynthesisRequiresTheSelectedUniformBasis) {
+TEST(TargetEnvironmentTest, IndexedSynthesisRequiresAUniformBasis) {
   const auto u = valid(OperationCapability::create("u", 1, 3));
   const auto cz = valid(OperationCapability::create("cz", 2, 0));
   const auto measure = valid(OperationCapability::create("measure", 1, 0));

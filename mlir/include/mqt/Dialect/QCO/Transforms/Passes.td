@@ -186,9 +186,11 @@ def UnrollLoopsForPayload : PayloadControlFlowPass<"unroll-loops-for-payload"> {
     loops remain unchanged.
     Local classical memory is promoted and static branches fold between
     expansion rounds, exposing constant accesses and nested loop bounds.
-    In target-environment mode, tensor-carrying loops remain indexed for Adaptive
-    QIR on all-to-all targets whose native operations have no site tuples. Other
-    cases require fixed quantum indices and specialize these loops. Scalar loops
+    In target-environment mode, Adaptive QIR can retain tensor indices on an
+    all-to-all target when its native operations work at every placement.
+    Site-restricted extras are also allowed when a synthesis basis covers
+    unknown sites and any advertised measurement or reset does too. Other
+    targets require fixed indices and specialize tensor-carrying loops. Scalar loops
     remain when supported by the payload. Run QCO cleanup first to move
     complete constant-slot tensor accesses outside structured control flow.
     Constant inner sweeps can become scalar-qubit loops after tensor cleanup,

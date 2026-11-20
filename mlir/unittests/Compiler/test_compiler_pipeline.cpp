@@ -4787,6 +4787,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementDecomposesRestrictedNativeExtras) {
   using Capability = CompilerTarget::OperationCapability;
   std::vector<CompilerTarget::SiteTuple> allSites;
   std::vector<CompilerTarget::SiteTuple> allPairs;
+  std::vector<CompilerTarget::SiteTuple> forwardPairs;
   for (CompilerTarget::SiteId first = 0; first < 4; ++first) {
     allSites.push_back(
         llvm::cantFail(CompilerTarget::SiteTuple::create({first})));
@@ -4794,6 +4795,9 @@ TEST_F(CompilerPipelineTest, IndexedPlacementDecomposesRestrictedNativeExtras) {
       if (first != second) {
         allPairs.push_back(
             llvm::cantFail(CompilerTarget::SiteTuple::create({first, second})));
+        if (first < second) {
+          forwardPairs.push_back(allPairs.back());
+        }
       }
     }
   }
@@ -4801,6 +4805,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementDecomposesRestrictedNativeExtras) {
       4, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
           llvm::cantFail(Capability::create("u", 1, 3, allSites)),
+          llvm::cantFail(Capability::create("rxx", 2, 1, forwardPairs)),
           llvm::cantFail(Capability::create("cz", 2, 0, allPairs)),
           llvm::cantFail(Capability::create("measure", 1, 0, allSites)),
           llvm::cantFail(Capability::create(
@@ -4810,6 +4815,8 @@ TEST_F(CompilerPipelineTest, IndexedPlacementDecomposesRestrictedNativeExtras) {
   const TargetEnvironment environment(
       target, llvm::cantFail(PayloadSpecification::forProgramFormat(
                   ProgramFormat::QIRAdaptive)));
+  ASSERT_EQ(target.synthesisBasis()->entangler->gate,
+            CompilerTarget::GateKind::RXX);
   ASSERT_TRUE(environment.supportsIndexedQubits());
   auto placed = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() attributes {mqt.entry_point} {
