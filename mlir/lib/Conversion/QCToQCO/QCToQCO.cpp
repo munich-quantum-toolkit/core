@@ -606,24 +606,37 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
                              "qubit reference buffer with identity layout");
       return WalkResult::interrupt();
     }
-    auto& elements = state.referenceBuffers[allocation];
-    elements.resize(static_cast<size_t>(type.getDimSize(0)));
+    // A slot can have later identity stores. Find its first initializer among
+    // this buffer's own uses, which MLIR does not keep in program order.
+    SmallVector<memref::StoreOp> initializers(
+        static_cast<size_t>(type.getDimSize(0)));
+    for (auto* user : allocation->getUsers()) {
+      auto store = dyn_cast<memref::StoreOp>(user);
+      if (!store || store->getBlock() != allocation->getBlock() ||
+          !isa_and_nonnull<qc::StaticOp, qc::AllocOp>(
+              store.getValue().getDefiningOp())) {
+        continue;
+      }
+      const auto index = getConstantIntValue(store.getIndices().front());
+      if (index && *index >= 0 && *index < type.getDimSize(0)) {
+        auto& first = initializers[*index];
+        if (!first || store->isBeforeInBlock(first)) {
+          first = store;
+        }
+      }
+    }
+
     const auto reg = state.registerIds.size();
     state.registerIds.try_emplace(allocation, reg);
+    auto& elements = state.referenceBuffers[allocation];
+    elements.reserve(initializers.size());
     Operation* finalInitialization = nullptr;
-    // Find initializers in block order with one scan per buffer; later identity
-    // stores share the register-slot validation below.
-    for (auto store : allocation->getBlock()->getOps<memref::StoreOp>()) {
-      if (store.getMemref() != allocation) {
-        continue;
+    for (auto store : initializers) {
+      if (!store) {
+        allocation.emitOpError("reference buffers must be fully initialized");
+        return WalkResult::interrupt();
       }
       auto qubit = store.getValue();
-      const auto index = getConstantIntValue(store.getIndices().front());
-      if (!isa_and_nonnull<qc::StaticOp, qc::AllocOp>(qubit.getDefiningOp()) ||
-          !index || *index < 0 || *index >= type.getDimSize(0) ||
-          elements[*index]) {
-        continue;
-      }
       if (!state.registerAccesses
                .try_emplace(qubit,
                             RegisterAccess{
@@ -635,12 +648,10 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
                           "initialized once per slot");
         return WalkResult::interrupt();
       }
-      elements[*index] = qubit;
-      finalInitialization = store;
-    }
-    if (llvm::any_of(elements, [](Value element) { return !element; })) {
-      allocation.emitOpError("reference buffers must be fully initialized");
-      return WalkResult::interrupt();
+      elements.push_back(qubit);
+      if (!finalInitialization || finalInitialization->isBeforeInBlock(store)) {
+        finalInitialization = store;
+      }
     }
     DominanceInfo dominance(function);
     for (auto reference : elements) {
