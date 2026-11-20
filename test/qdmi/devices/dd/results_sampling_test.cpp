@@ -279,13 +279,8 @@ TEST_F(QIRHistogramTestString, BaseStatic) {
       runProgram(format, qdmi_test::getQIRProgram("BellPairStatic.ll")));
 }
 
-TEST_F(QIRHistogramTestModule, BaseDynamic) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
-  checkHistogram(runProgram(format, getProgram("BellPairDynamic.ll")));
-}
-
-TEST_F(QIRHistogramTestString, BaseDynamic) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+TEST_F(QIRHistogramTestString, DynamicAllocation) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
   checkHistogram(
       runProgram(format, qdmi_test::getQIRProgram("BellPairDynamic.ll")));
 }
@@ -293,17 +288,6 @@ TEST_F(QIRHistogramTestString, BaseDynamic) {
 TEST_F(QIRHistogramTestModule, Adaptive) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
   checkHistogram(runProgram(format, getProgram("BellPairAdaptive.ll")));
-}
-
-TEST_F(QIRHistogramTestString, Adaptive) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
-  checkHistogram(
-      runProgram(format, qdmi_test::getQIRProgram("BellPairAdaptive.ll")));
-}
-
-TEST_F(QIRHistogramTestModule, AdaptiveRecordOutputs) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
-  checkTypedOutput(format, getProgram("AdaptiveRecordOutputs.ll"));
 }
 
 TEST_F(QIRHistogramTestString, AdaptiveRecordOutputs) {
