@@ -2178,10 +2178,13 @@ TEST_F(QCToQCORegressionTest, ConvertsOwnedReferenceBufferWithDynamicAccess) {
       %idle = qc.alloc : !qc.qubit
       %q0 = qc.alloc : !qc.qubit
       %q1 = qc.alloc : !qc.qubit
-      %reg = memref.alloca() : memref<2x!qc.qubit>
       %zero = arith.constant 0 : index
       %one = arith.constant 1 : index
       %two = arith.constant 2 : index
+      scf.for %i = %zero to %one step %one {
+        qc.x %q1 : !qc.qubit
+      }
+      %reg = memref.alloca() : memref<2x!qc.qubit>
       memref.store %q0, %reg[%zero] : memref<2x!qc.qubit>
       memref.store %q1, %reg[%one] : memref<2x!qc.qubit>
       scf.for %i = %zero to %two step %one {
@@ -2209,7 +2212,7 @@ TEST_F(QCToQCORegressionTest, ConvertsOwnedReferenceBufferWithDynamicAccess) {
   auto counts = qco::sample(function, 8, 17);
   ASSERT_TRUE(succeeded(counts));
   ASSERT_EQ(counts->size(), 1U);
-  EXPECT_EQ(counts->at("1"), 8U);
+  EXPECT_EQ(counts->at("0"), 8U);
   ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   function = mlir::mqt::getEntryPoint(*moduleOp);

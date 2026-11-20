@@ -28,9 +28,12 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
     the remaining tensor stays in the caller.
 
     A module may use dynamic allocations or static physical qubits.
-    A register created by `qtensor.alloc` must be complete at deallocation.
-    A tensor assembled from existing qubits requires placement or a gate-set
-    synthesis environment and becomes a local reference buffer. See the
+    Deallocating an owned register requires every extracted qubit to be
+    restored. A tensor assembled from placed qubits becomes a local buffer
+    of references to physical sites. Releasing the buffer leaves those qubits
+    in place. In [gate-set synthesis](target_compilation.md#gate-set-synthesis),
+    a register of program qubits retains its individual allocations and
+    releases them when the register is deallocated. See the
     [quantum resource rules](index.md#quantum-resource-rules).
   }];
 

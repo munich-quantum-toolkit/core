@@ -62,9 +62,10 @@ namespace {
 
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
-  Unset,   //!< No allocation mode has been established yet.
-  Static,  //!< The module uses static qubit allocation.
-  Dynamic, //!< The module uses dynamic qubit allocation.
+  Unset,   ///< No allocation mode has been established yet.
+  Static,  ///< The module uses static qubit allocation.
+  Dynamic, ///< The module uses dynamic qubit allocation.
+  Program, ///< Gate-set synthesis keeps individually owned program qubits.
 };
 
 /// Track function argument positions and the module's allocation mode.
@@ -121,6 +122,9 @@ getAllocationMode(ModuleOp moduleOp) {
   });
   if (result.wasInterrupted()) {
     return failure();
+  }
+  if (mode != AllocationMode::Static && mqt::preservesProgramQubits(moduleOp)) {
+    return AllocationMode::Program;
   }
   return mode;
 }
@@ -357,17 +361,21 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
       return failed(verifyTensorSlot(insert, origins)) ? WalkResult::interrupt()
                                                        : WalkResult::advance();
     }
-    if (isa<qtensor::FromElementsOp>(op) &&
-        state.allocationMode != AllocationMode::Static &&
-        !mqt::preservesProgramQubits(op)) {
-      op->emitOpError("QCO-to-QC requires static qubits in tensors of "
-                      "existing qubits; run placement before conversion");
-      return WalkResult::interrupt();
+    if (isa<qtensor::FromElementsOp>(op)) {
+      if (state.allocationMode == AllocationMode::Static) {
+        return WalkResult::advance();
+      }
+      if (state.allocationMode != AllocationMode::Program) {
+        op->emitOpError("QCO-to-QC requires placed qubits or owned program "
+                        "qubits in tensors of existing qubits");
+        return WalkResult::interrupt();
+      }
+    } else if (!isa<qtensor::AllocOp>(op)) {
+      return WalkResult::advance();
     }
-    if (auto alloc = dyn_cast<qtensor::AllocOp>(op);
-        alloc && !lifetimes.isComplete(alloc.getResult())) {
-      alloc.emitOpError("QCO-to-QC requires all dynamic tensor slots to be "
-                        "restored before region exit or deallocation");
+    if (!lifetimes.isComplete(op->getResult(0))) {
+      op->emitOpError("QCO-to-QC requires all dynamic tensor slots to be "
+                      "restored before region exit or deallocation");
       return WalkResult::interrupt();
     }
     return WalkResult::advance();
@@ -495,18 +503,10 @@ struct ConvertQCOCallOp final : OpConversionPattern<qco::CallOp> {
   }
 };
 
-/// Converts qtensor.alloc to memref.alloc
-///
-/// @par Example:
-/// ```mlir
-/// %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
-/// ```
-struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
-  using OpConversionPattern::OpConversionPattern;
+/// Gate-set synthesis retains each program qubit as a separate QC allocation.
+struct ConvertQTensorAllocOp final
+    : StatefulOpConversionPattern<qtensor::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
@@ -515,7 +515,7 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
     auto tensorType = op.getResult().getType();
     auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
 
-    if (mqt::preservesProgramQubits(op)) {
+    if (getState().allocationMode == AllocationMode::Program) {
       const auto width = getConstantIntValue(op.getSize());
       if (!width || *width <= 0) {
         return op.emitError("program qubit storage requires a fixed extent");
@@ -569,10 +569,10 @@ struct ConvertQTensorExtractOp final : OpConversionPattern<qtensor::ExtractOp> {
   }
 };
 
-/// A tensor of placed qubits needs only storage for references.
+/// Store references to existing qubits in a fixed-size local buffer.
 struct ConvertQTensorFromElementsOp final
-    : OpConversionPattern<qtensor::FromElementsOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : StatefulOpConversionPattern<qtensor::FromElementsOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::FromElementsOp op, OpAdaptor adaptor,
@@ -584,7 +584,11 @@ struct ConvertQTensorFromElementsOp final
     {
       OpBuilder::InsertionGuard guard(rewriter);
       auto function = op->getParentOfType<func::FuncOp>();
-      if (!mqt::preservesProgramQubits(op)) {
+      if (!function) {
+        return op.emitOpError("requires an enclosing function for a qubit "
+                              "reference buffer");
+      }
+      if (getState().allocationMode != AllocationMode::Program) {
         rewriter.setInsertionPointToStart(&function.getBody().front());
       }
       storage = memref::AllocaOp::create(rewriter, op.getLoc(), type);
@@ -621,7 +625,7 @@ struct ConvertQTensorDeallocOp final
   LogicalResult
   matchAndRewrite(qtensor::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (mqt::preservesProgramQubits(op)) {
+    if (getState().allocationMode == AllocationMode::Program) {
       Value storage = adaptor.getTensor();
       while (auto cast = storage.getDefiningOp<memref::CastOp>()) {
         storage = cast.getSource();
@@ -1117,7 +1121,6 @@ protected:
 
     // Register operation conversion patterns that do not need state tracking
     patterns.add<ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOUnitaryOp,
-                 ConvertQTensorAllocOp, ConvertQTensorFromElementsOp,
                  ConvertQTensorExtractOp, ConvertQTensorInsertOp,
                  ConvertQCOAllocOp, ConvertQCOStaticOp,
                  ConvertQCOGateToQC<qco::GPhaseOp, qc::GPhaseOp, 0, 1>>(
@@ -1136,7 +1139,8 @@ protected:
                  ConvertQCOSCFForOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
-    patterns.add<ConvertQTensorDeallocOp, ConvertQCOSinkOp>(typeConverter,
+    patterns.add<ConvertQTensorAllocOp, ConvertQTensorFromElementsOp,
+                 ConvertQTensorDeallocOp, ConvertQCOSinkOp>(typeConverter,
                                                             context, &state);
 
     // QCO qubit arguments are returned positionally and become in-place QC
@@ -1165,7 +1169,7 @@ protected:
       signalPassFailure();
       return;
     }
-    if (mqt::preservesProgramQubits(moduleOp)) {
+    if (state.allocationMode == AllocationMode::Program) {
       // Keep fixed reference buffers directly visible to later conversions.
       moduleOp.walk([](memref::LoadOp load) {
         std::ignore = memref::foldMemRefCast(load);

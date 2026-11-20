@@ -62,8 +62,8 @@ When writing IR or a transformation, observe these requirements:
   `qtensor.extract` borrows that qubit; `qtensor.insert` restores it to the same
   slot. Gates change quantum states, including `swap`, which exchanges states
   without changing the identities stored in the register. QC register stores may
-  initialize a physical reference buffer or write back the same reference; they
-  cannot move, replace, or copy qubits between slots.
+  initialize a slot in a reference buffer or write the same reference back to
+  its slot.
 - A register passed to a helper, carried through a structured region boundary,
   returned, or dynamically deallocated must be complete: every extracted qubit
   has been restored. A scalar helper may use an extracted qubit while the
@@ -74,6 +74,14 @@ When writing IR or a transformation, observe these requirements:
   `qco::verifyLinearity` checks both use counts and positional correspondence
   after ordinary MLIR verification. Public QCO program APIs run this check;
   parsing MLIR alone does not establish it.
+
+A QC reference buffer can group qubits that already exist. Its QCO counterpart
+is `qtensor.from_elements`. After placement, the buffer holds references to
+physical sites. Releasing it leaves the physical qubits available. During
+[gate-set synthesis](target_compilation.md#gate-set-synthesis), the register can
+own individually allocated program qubits, including idle qubits. A program can
+prepare these qubits before assembling the register. Deallocating the complete
+register releases each owned qubit once.
 
 Indices must be in bounds. Distinct runtime indices used together must select
 non-overlapping resources; extraction and reinsertion indices must select the

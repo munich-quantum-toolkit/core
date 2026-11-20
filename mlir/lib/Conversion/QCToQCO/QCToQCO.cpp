@@ -575,6 +575,14 @@ static void commitQubits(LoweringState& state, Operation* anchor,
   return success(!result.wasInterrupted());
 }
 
+/// Gate-set programs can own fresh qubits returned by helpers.
+static bool isOwnedBufferElement(Value qubit) {
+  if (auto call = qubit.getDefiningOp<func::CallOp>()) {
+    return mqt::preservesProgramQubits(call);
+  }
+  return isa_and_nonnull<qc::AllocOp>(qubit.getDefiningOp());
+}
+
 /// Collects stable register identifiers and load provenance.
 [[nodiscard]] static LogicalResult
 collectRegisterAccesses(Operation* root, LoweringState& state) {
@@ -613,8 +621,8 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
     for (auto* user : allocation->getUsers()) {
       auto store = dyn_cast<memref::StoreOp>(user);
       if (!store || store->getBlock() != allocation->getBlock() ||
-          !isa_and_nonnull<qc::StaticOp, qc::AllocOp>(
-              store.getValue().getDefiningOp())) {
+          (!store.getValue().getDefiningOp<qc::StaticOp>() &&
+           !isOwnedBufferElement(store.getValue()))) {
         continue;
       }
       const auto index = getConstantIntValue(store.getIndices().front());
@@ -655,17 +663,18 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
     }
     DominanceInfo dominance(function);
     for (auto reference : elements) {
-      if (auto owned = reference.getDefiningOp<qc::AllocOp>();
-          owned && !dominance.properlyDominates(owned.getOperation(),
+      const bool owned = !reference.getDefiningOp<qc::StaticOp>();
+      if (owned && !dominance.properlyDominates(reference.getDefiningOp(),
                                                 allocation.getOperation())) {
         allocation.emitOpError(
-            "owned reference buffers require qubit allocations before storage");
+            "owned reference buffers require their qubits before storage");
         return WalkResult::interrupt();
       }
       for (auto* user : reference.getUsers()) {
-        if (!dominance.properlyDominates(allocation.getOperation(), user)) {
-          user->emitOpError("reference buffers must precede uses of "
-                            "their qubits");
+        if ((!owned || isa<qc::DeallocOp>(user)) &&
+            !dominance.properlyDominates(allocation.getOperation(), user)) {
+          user->emitOpError("reference buffers must precede physical qubit "
+                            "uses and owned qubit releases");
           return WalkResult::interrupt();
         }
       }
@@ -719,7 +728,7 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       auto load = qubit.getDefiningOp<memref::LoadOp>();
       const bool consumesReference =
           isa<qc::DeallocOp>(user) &&
-          (qubit.getDefiningOp<qc::AllocOp>() ||
+          (isOwnedBufferElement(qubit) ||
            (load && load.getMemref().getDefiningOp<memref::AllocaOp>()));
       if (!consumesReference &&
           !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, func::CallOp,
@@ -867,40 +876,36 @@ static void collectScalarRegisters(ModuleOp moduleOp, LoweringState& state) {
   });
 }
 
-/// Collects values captured by supported structured control flow.
-static void collectStructuredCaptures(Operation* root, LoweringState& state) {
-  root->walk([&](Operation* operation) {
-    if (!isa<scf::ForOp, scf::WhileOp, scf::IfOp, scf::IndexSwitchOp>(
-            operation)) {
-      return;
-    }
+/// Classify captures using the register bindings live at this operation.
+static bool collectStructuredCaptures(Operation* operation,
+                                      LoweringState& state) {
+  SetVector<Value> captures;
+  getUsedValuesDefinedAbove(operation->getRegions(), captures);
 
-    SetVector<Value> captures;
-    getUsedValuesDefinedAbove(operation->getRegions(), captures);
-
-    SmallVector<Value> qubits;
-    SetVector<RegisterId> registers;
-    for (auto value : captures) {
-      if (const auto access = state.registerAccesses.find(value);
-          access != state.registerAccesses.end()) {
-        registers.insert(access->second.reg);
-        continue;
-      }
-      if (isa<qc::QubitType>(value.getType())) {
-        qubits.push_back(value);
-        continue;
-      }
-      if (isQubitMemrefType(value.getType())) {
-        registers.insert(lookupRegisterId(state, value));
-      }
+  SmallVector<Value> qubits;
+  SetVector<RegisterId> registers;
+  for (auto value : captures) {
+    if (const auto access = state.registerAccesses.find(value);
+        access != state.registerAccesses.end()) {
+      registers.insert(access->second.reg);
+      continue;
     }
-    if (!qubits.empty() || !registers.empty()) {
-      state.structuredValues[operation] = {
-          .qubits = std::move(qubits),
-          .registers = registers.takeVector(),
-      };
+    if (isa<qc::QubitType>(value.getType())) {
+      qubits.push_back(value);
+      continue;
     }
-  });
+    if (isQubitMemrefType(value.getType())) {
+      registers.insert(lookupRegisterId(state, value));
+    }
+  }
+  if (!qubits.empty() || !registers.empty()) {
+    state.structuredValues[operation] = {
+        .qubits = std::move(qubits),
+        .registers = registers.takeVector(),
+    };
+    return true;
+  }
+  return false;
 }
 
 // Keep the block and its argument identities; only their types change. All
@@ -1220,7 +1225,9 @@ struct ConvertMemRefAllocaOp final : LoweringPattern<memref::AllocaOp> {
     if (buffer == state.referenceBuffers.end()) {
       return failure();
     }
+    const auto reg = lookupRegisterId(state, op.getResult());
     SmallVector<Value> qubits;
+    qubits.reserve(buffer->second.size());
     for (auto [index, element] : llvm::enumerate(buffer->second)) {
       if (auto physical = element.getDefiningOp<qc::StaticOp>()) {
         if (failed(state.ensureAllocationMode(AllocationMode::Static, op))) {
@@ -1232,13 +1239,13 @@ struct ConvertMemRefAllocaOp final : LoweringPattern<memref::AllocaOp> {
         qubits.push_back(lookupMappedQubit(state, op, element));
         assignMappedQubit(state, op, element, nullptr);
       }
-      state.registerAccesses[element].index = arith::ConstantIndexOp::create(
-          rewriter, op.getLoc(), static_cast<int64_t>(index));
+      auto offset = arith::ConstantIndexOp::create(rewriter, op.getLoc(),
+                                                   static_cast<int64_t>(index));
+      state.registerAccesses[element] = {.reg = reg, .index = offset};
     }
     auto tensor =
         qtensor::FromElementsOp::create(rewriter, op.getLoc(), qubits);
     tensor->setDiscardableAttrs(op->getDiscardableAttrDictionary());
-    const auto reg = lookupRegisterId(state, op.getResult());
     assignMappedTensor(state, op, reg, tensor.getResult());
     state.localReferenceRegisters[op->getParentRegion()].push_back(reg);
     // Source identity retained until all QC users are lowered.
@@ -1871,8 +1878,16 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
       }
     }
   }
+  // Preflight needs every alias. During lowering an owned qubit stays scalar
+  // until its reference buffer is assembled.
+  for (auto& elements : llvm::make_second_range(state.referenceBuffers)) {
+    for (Value qubit : elements) {
+      if (!qubit.getDefiningOp<qc::StaticOp>()) {
+        state.registerAccesses.erase(qubit);
+      }
+    }
+  }
   collectScalarRegisters(moduleOp, state);
-  collectStructuredCaptures(moduleOp, state);
   auto* ctx = moduleOp.getContext();
   auto* qcDialect = ctx->getLoadedDialect<qc::QCDialect>();
   auto* memrefDialect = ctx->getLoadedDialect<memref::MemRefDialect>();
@@ -1972,7 +1987,7 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
     }
     if (isa<scf::ForOp, scf::WhileOp, scf::IfOp, scf::IndexSwitchOp>(
             operation)) {
-      required = state.structuredValues.contains(operation);
+      required = collectStructuredCaptures(operation, state);
     }
     if (isa<scf::YieldOp, scf::ConditionOp>(operation)) {
       required = state.structuredValues.contains(operation->getParentOp());
