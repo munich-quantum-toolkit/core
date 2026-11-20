@@ -719,6 +719,15 @@ TEST_F(QCOMatrixTest, PowMatrixAvailabilityContract) {
   auto staticPow = firstPowOp(*staticModule);
   EXPECT_TRUE(staticPow.hasCompileTimeKnownUnitaryMatrix());
   EXPECT_TRUE(staticPow.getUnitaryMatrix().has_value());
+  // A subsequent integral power can make the fractional part observable.
+  for (const double exponent : {5.e-16, 1. - 0x1p-50}) {
+    const auto matrix = staticPow.getUnitaryMatrix(exponent);
+    ASSERT_TRUE(matrix);
+    const double phase =
+        std::numbers::pi * (exponent < 0.5 ? exponent : exponent - 1.);
+    const double expected = (exponent < 0.5 ? -0.5 : 0.5) * std::sin(phase);
+    EXPECT_NEAR((*matrix)(0, 1).imag() * 2048., expected * 2048., 3.e-13);
+  }
 
   makePowExponentDynamic(*staticModule);
   EXPECT_FALSE(staticPow.hasCompileTimeKnownUnitaryMatrix());
