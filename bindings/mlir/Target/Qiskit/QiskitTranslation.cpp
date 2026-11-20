@@ -61,20 +61,24 @@ void ParameterGroupRegistry::add(const ParameterGroup& group) {
   }
 }
 
+void validateRegisterName(const llvm::StringRef name, llvm::StringSet<>& names,
+                          const std::string_view kind) {
+  if (name.contains('\0') || !llvm::json::isUTF8(name)) {
+    throw std::runtime_error(
+        "Qiskit register names must be UTF-8 without null characters");
+  }
+  if (name.empty() || !names.insert(name).second) {
+    throw std::runtime_error("Qiskit requires unique, non-empty " +
+                             std::string(kind) + " register names");
+  }
+}
+
 uint32_t validateRegisterLayout(const std::vector<Register>& registers,
                                 const uint32_t total,
                                 const std::string_view kind) {
   llvm::StringSet<> names;
   for (const auto& reg : registers) {
-    if (reg.name.find('\0') != std::string::npos ||
-        !llvm::json::isUTF8(reg.name)) {
-      throw std::runtime_error(
-          "Qiskit register names must be UTF-8 without null characters");
-    }
-    if (reg.name.empty() || !names.insert(reg.name).second) {
-      throw std::runtime_error("Qiskit requires unique, non-empty " +
-                               std::string(kind) + " register names");
-    }
+    validateRegisterName(reg.name, names, kind);
     if (reg.bits.empty()) {
       throw std::runtime_error("Qiskit does not support empty " +
                                std::string(kind) + " registers");

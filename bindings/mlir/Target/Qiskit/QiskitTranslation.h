@@ -20,6 +20,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 
 #include <complex>
 #include <cstddef>
@@ -52,6 +53,9 @@ struct Register {
   std::string name;
   std::vector<uint32_t> bits;
 };
+
+void validateRegisterName(llvm::StringRef name, llvm::StringSet<>& names,
+                          std::string_view kind);
 
 /// Validate canonical register membership and return the leading loose bits.
 [[nodiscard]] uint32_t

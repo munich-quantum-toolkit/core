@@ -54,6 +54,7 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SCCIterator.h"
@@ -346,6 +347,12 @@ checkedTargetSiteId(const uint64_t index) {
 }
 
 namespace {
+struct QuantumRegister {
+  std::string name;
+  uint32_t start;
+  uint32_t size;
+};
+
 struct ExportState {
   struct ClassicalRegisterInfo {
     size_t registerIndex;
@@ -360,7 +367,7 @@ struct ExportState {
   llvm::DenseMap<mlir::Value, ClassicalRegisterInfo> classicalRegisterInfo;
   llvm::DenseSet<mlir::Operation*> expressionOperations;
   llvm::DenseMap<mlir::Value, size_t> expressionDepths;
-  std::vector<Register> quantumRegisters;
+  std::vector<QuantumRegister> quantumRegisters;
   std::vector<Register> classicalRegisters;
   ExportedParameters parameters;
   llvm::DenseMap<mlir::Value, ClassicalVariable> locals;
@@ -920,7 +927,7 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
         const auto name = location.getName().getValue();
         if (!name.empty() && usedNames.insert(name).second) {
           state.quantumRegisters.push_back(
-              {.name = name.str(), .bits = {state.numQubits}});
+              {.name = name.str(), .start = state.numQubits, .size = 1U});
         }
       }
       state.numQubits = checkedAdd(state.numQubits, 1U, "qubit");
@@ -950,10 +957,8 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
           throw std::runtime_error(
               "Qiskit does not support empty quantum registers");
         }
-        Register reg{.name = name.str()};
-        reg.bits.resize(size);
-        std::iota(reg.bits.begin(), reg.bits.end(), state.numQubits);
-        state.quantumRegisters.push_back(std::move(reg));
+        state.quantumRegisters.push_back(
+            {.name = name.str(), .start = state.numQubits, .size = size});
       }
       state.numQubits = checkedAdd(state.numQubits, size, "qubit");
     } else {
@@ -983,8 +988,17 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
         throw std::runtime_error(
             "Qiskit does not support empty quantum registers");
       }
-      state.quantumRegisters.push_back(
-          {.name = name.str(), .bits = {indices.begin(), indices.end()}});
+      for (auto [offset, bit] : llvm::enumerate(indices)) {
+        if (bit != indices.front() + offset) {
+          throw std::runtime_error(
+              "Qiskit quantum registers require consecutive qubits");
+        }
+      }
+      state.quantumRegisters.push_back({
+          .name = name.str(),
+          .start = indices.front(),
+          .size = static_cast<uint32_t>(indices.size()),
+      });
     }
   }
   function.walk([&](mlir::memref::LoadOp load) {
@@ -1030,32 +1044,38 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
           "QC to Qiskit export does not support duplicate result registers");
     }
   }
+  if (target != nullptr) {
+    state.quantumRegisters.push_back(
+        {.name = "q", .start = 0U, .size = state.numQubits});
+  }
   if (!state.quantumRegisters.empty()) {
-    std::ranges::sort(state.quantumRegisters, {},
-                      [](const Register& reg) { return reg.bits.front(); });
-    std::vector<Register> registers;
-    uint32_t next = state.quantumRegisters.front().bits.front();
+    std::ranges::sort(state.quantumRegisters, {}, &QuantumRegister::start);
+    std::vector<QuantumRegister> registers;
+    uint32_t next = state.quantumRegisters.front().start;
     size_t generated = 0;
-    const auto fillGap = [&](const uint32_t end) {
-      if (next == end) {
-        return;
-      }
+    const auto addGap = [&](const uint32_t end) {
       std::string name;
       do {
         name = "_mqt_q" + std::to_string(generated++);
       } while (!usedNames.insert(name).second);
-      Register reg{.name = std::move(name)};
-      reg.bits.resize(end - next);
-      std::iota(reg.bits.begin(), reg.bits.end(), next);
-      registers.push_back(std::move(reg));
-      next = end;
+      registers.push_back(
+          {.name = std::move(name), .start = next, .size = end - next});
     };
+    llvm::StringSet<> registerNames;
     for (auto& reg : state.quantumRegisters) {
-      fillGap(reg.bits.front());
-      next = reg.bits.back() + 1U;
+      validateRegisterName(reg.name, registerNames, "quantum");
+      if (reg.start < next) {
+        throw std::runtime_error("Qiskit quantum registers must not overlap");
+      }
+      if (next < reg.start) {
+        addGap(reg.start);
+      }
+      next = reg.start + reg.size;
       registers.push_back(std::move(reg));
     }
-    fillGap(state.numQubits);
+    if (next < state.numQubits) {
+      addGap(state.numQubits);
+    }
     state.quantumRegisters = std::move(registers);
   }
   llvm::SmallVector<mlir::Value> registers;
@@ -2993,14 +3013,9 @@ exportCircuitImpl(mlir::QCProgram program,
   auto circuit = collectBlock(function.getBody().front(), state, 0U);
   llvm::StringSet<> usedNames;
   validateExportParameters(circuit, usedNames);
-  if (deviceTarget) {
-    Register reg{.name = "q"};
-    reg.bits.resize(state.numQubits);
-    std::iota(reg.bits.begin(), reg.bits.end(), 0U);
-    state.quantumRegisters.push_back(std::move(reg));
-  }
-  const auto looseQubits = validateRegisterLayout(state.quantumRegisters,
-                                                  state.numQubits, "quantum");
+  const auto looseQubits = state.quantumRegisters.empty()
+                               ? state.numQubits
+                               : state.quantumRegisters.front().start;
   const auto looseClbits = validateRegisterLayout(state.classicalRegisters,
                                                   state.numClbits, "classical");
 
@@ -3042,8 +3057,7 @@ exportCircuitImpl(mlir::QCProgram program,
   }
   auto writer = translation->createCircuit(looseQubits, looseClbits, target);
   for (const auto& reg : state.quantumRegisters) {
-    writer->addQuantumRegister(reg.name,
-                               static_cast<uint32_t>(reg.bits.size()));
+    writer->addQuantumRegister(reg.name, reg.size);
   }
   for (const auto& reg : state.classicalRegisters) {
     writer->addClassicalRegister(reg.name,
@@ -3058,9 +3072,16 @@ exportCircuitImpl(mlir::QCProgram program,
     for (auto& site : layout->initial) {
       site = sites[static_cast<size_t>(site)];
     }
-    for (uint32_t site = 0; site < state.numQubits; ++site) {
-      if (!llvm::is_contained(sites, site)) {
-        layout->initial.push_back(site);
+    if (sites.size() < state.numQubits) {
+      llvm::BitVector occupied(state.numQubits);
+      for (const auto site : sites) {
+        occupied.set(static_cast<uint32_t>(site));
+      }
+      layout->initial.reserve(state.numQubits);
+      for (uint32_t site = 0; site < state.numQubits; ++site) {
+        if (!occupied.test(site)) {
+          layout->initial.push_back(site);
+        }
       }
     }
     if (layout->routing) {
