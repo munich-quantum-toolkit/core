@@ -614,8 +614,8 @@ class QDMIBackend(BackendV2):
             )
             raise CircuitValidationError(msg)
 
-        # Native primitives pass an unset simulator seed to every backend.
-        if options.get("seed_simulator") is None:
+        # Native primitives pass an unset seed even to backends without a seed option.
+        if "seed_simulator" not in self._options and options.get("seed_simulator") is None:
             options.pop("seed_simulator", None)
         if unsupported := options.keys() - self._options.keys():
             msg = f"Unsupported execution options: {', '.join(sorted(unsupported))}"
