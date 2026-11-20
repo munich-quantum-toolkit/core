@@ -767,6 +767,7 @@ TEST_F(QCToQCORegressionTest, ThreadsConstantRegisterSlotsThroughAliases) {
   auto left = builder.loadQubit(reg, zero);
   builder.x(left);
   auto alias = builder.loadQubit(reg, builder.indexConstant(0));
+  memref::StoreOp::create(builder, alias, reg, ValueRange{zero});
   builder.x(alias);
   builder.inv(left, [&](Value qubit) { builder.x(qubit); });
   auto right = builder.loadQubit(reg, one);
