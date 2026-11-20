@@ -1331,6 +1331,10 @@ def test_symbolic_pauli_composition_preserves_phase_and_native_cost(
         source.cp(a, 0, 1)
         source.crz(-b, 1 if shape.endswith("reversed") else 0, 0 if shape.endswith("reversed") else 1)
         source.rzz(c, 0, 1)
+    elif shape == "cartan" and entangler == "sqrt_iswap":
+        for _ in range(16):
+            source.rxx(a, 0, 1)
+            source.ryy(b, 0, 1)
     elif shape == "reversed_axes":
         source.rzx(a, 0, 1)
         source.rzx(b, 1, 0)
