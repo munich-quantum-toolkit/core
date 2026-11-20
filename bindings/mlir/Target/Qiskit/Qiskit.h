@@ -70,9 +70,8 @@ importNativeOperations(nb::handle target, nb::handle operationNames);
 importTargetEnvironment(nb::handle target, std::optional<size_t> nativeWidth,
                         bool strict);
 
-/// Describe Qiskit output capabilities, restricted to a target when supplied.
-[[nodiscard]] mlir::PayloadSpecification
-payloadSpecification(nb::handle target = nb::none());
+/// Describe unconstrained Qiskit output capabilities.
+[[nodiscard]] mlir::PayloadSpecification payloadSpecification();
 
 /// Consume a QC program to build a Qiskit circuit for an optional target.
 [[nodiscard]] nb::object
