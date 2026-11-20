@@ -78,6 +78,29 @@ TEST_F(OpenQASM2EmissionTest, PreservesOpaqueSignature) {
   EXPECT_TRUE(mlir::qc::translateOpenQASMToQC(*emitted, &context));
 }
 
+TEST_F(OpenQASM2EmissionTest, AppliesVersion2SpellingToNames) {
+  auto program = mlir::qc::translateOpenQASMToQC(
+      "OPENQASM 3; qubit qα; reset qα;", &context);
+  ASSERT_TRUE(program);
+  const auto source = mlir::qc::translateQCToOpenQASM2(std::move(program));
+  ASSERT_TRUE(mlir::succeeded(source));
+  EXPECT_EQ(source->find("qα"), std::string::npos);
+  EXPECT_TRUE(mlir::qc::translateOpenQASMToQC(*source, &context));
+
+  auto reg = mlir::qc::translateOpenQASMToQC(
+      "OPENQASM 3; qubit[2] qα; reset qα;", &context);
+  ASSERT_TRUE(reg);
+  EXPECT_TRUE(mlir::failed(mlir::qc::translateQCToOpenQASM2(std::move(reg))));
+  auto gate = mlir::parseSourceString<mlir::ModuleOp>(R"(
+    module {
+      func.func private @pulse(!qc.qubit) attributes {mqt.source_name = "pulseα"}
+      func.func @main() attributes {mqt.entry_point} { return }
+    })",
+                                                      &context);
+  ASSERT_TRUE(gate);
+  EXPECT_TRUE(mlir::failed(mlir::qc::translateQCToOpenQASM2(std::move(gate))));
+}
+
 TEST_F(OpenQASM2EmissionTest,
        RejectsUnrepresentableControlAndClassicalAssignments) {
   for (const auto* source : {

@@ -146,6 +146,12 @@ struct GateCall {
 
 } // namespace
 
+[[nodiscard]] static bool hasVersion2IdentifierSpelling(StringRef name) {
+  return !name.empty() && llvm::isLower(name.front()) &&
+         llvm::all_of(name.drop_front(),
+                      [](char c) { return llvm::isAlnum(c) || c == '_'; });
+}
+
 [[nodiscard]] static bool isValidDeclarationName(const StringRef value) {
   return openqasm::frontend::isValidIdentifier(value) &&
          !value.starts_with("_mqt_") &&
@@ -387,10 +393,11 @@ private:
         return fail(function,
                     "OpenQASM 2 outputs must follow register allocation order");
       }
-      if (resource.name.empty() || !llvm::isLower(resource.name.front())) {
+      if (!hasVersion2IdentifierSpelling(resource.name)) {
         return fail(
             function,
-            "OpenQASM 2 register names must start with a lowercase letter");
+            "OpenQASM 2 register names must start with a lowercase letter and "
+            "contain only ASCII letters, digits, or underscores");
       }
       if (resource.kind == ResourceKind::Qubit && resource.scalar) {
         valueNames[value] = resource.name + "[0]";
@@ -413,6 +420,11 @@ private:
       deviceRegister_ = qubitRegisterName("q");
     }
     return success();
+  }
+
+  [[nodiscard]] bool isValidIdentifier(StringRef name) const {
+    return (!version2_ || hasVersion2IdentifierSpelling(name)) &&
+           openqasm::frontend::isValidIdentifier(name);
   }
 
   [[nodiscard]] bool
@@ -440,10 +452,11 @@ private:
   [[nodiscard]] LogicalResult recordOpaqueGate(StringRef name,
                                                size_t parameters, size_t qubits,
                                                Operation* operation) {
-    if (name.empty() || !llvm::isLower(name.front()) ||
-        !openqasm::frontend::isValidIdentifier(name)) {
-      return fail(operation,
-                  "OpenQASM 2 gate names must start with a lowercase letter");
+    if (!isValidIdentifier(name)) {
+      return fail(
+          operation,
+          "OpenQASM 2 gate names must start with a lowercase letter and "
+          "contain only ASCII letters, digits, or underscores");
     }
     if (const auto* gate = openqasm::frontend::lookupGate(name);
         gate != nullptr && isIncludedGate(*gate)) {
@@ -883,8 +896,7 @@ private:
           mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
       const auto name =
           sourceName ? sourceName.getValue() : declaration.getName();
-      if (!openqasm::frontend::isValidIdentifier(name) ||
-          (version2_ && !llvm::isLower(name.front()))) {
+      if (!isValidIdentifier(name)) {
         return fail(declaration,
                     "external gate name must be an OpenQASM identifier");
       }
@@ -950,8 +962,7 @@ private:
       }
       const auto requested = current.getName();
       const bool preserveName =
-          openqasm::frontend::isValidIdentifier(requested) &&
-          (!version2_ || llvm::isLower(requested.front())) &&
+          isValidIdentifier(requested) &&
           openqasm::frontend::lookupGate(requested) == nullptr &&
           usedNames.insert(requested).second;
       gateNames_.try_emplace(current, preserveName
@@ -1019,6 +1030,19 @@ private:
     return false;
   }
 
+  [[nodiscard]] StringRef registerNameHint(Location loc) const {
+    const auto location = dyn_cast<NameLoc>(loc);
+    if (!location) {
+      return {};
+    }
+    const auto hint = location.getName().getValue();
+    if (declaredRegisterNames.contains(hint) ||
+        (version2_ && !hasVersion2IdentifierSpelling(hint))) {
+      return {};
+    }
+    return hint;
+  }
+
   [[nodiscard]] LogicalResult collectClassicalResource(cbit::AllocOp alloc) {
     const auto type = alloc.getResult().getType();
     const auto width = type.getWidth();
@@ -1032,13 +1056,8 @@ private:
     const bool isOutput = returnedRegisters.contains(alloc.getResult());
     const auto name = alloc->getAttrOfType<StringAttr>(
         mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
-    const auto location = dyn_cast<NameLoc>(alloc.getLoc());
-    const auto sourceName =
-        location ? location.getName().getValue() : StringRef{};
-    const auto requested = name ? name.getValue()
-                           : declaredRegisterNames.contains(sourceName)
-                               ? StringRef{}
-                               : sourceName;
+    const auto requested =
+        name ? name.getValue() : registerNameHint(alloc.getLoc());
     Resource resource{
         .kind = ResourceKind::Bit,
         .name =
@@ -1079,12 +1098,7 @@ private:
     collectArrayAssignments();
     for (Operation& operation : function.getBody().front().getOperations()) {
       if (auto alloc = dyn_cast<qc::AllocOp>(&operation)) {
-        const auto location = dyn_cast<NameLoc>(alloc.getLoc());
-        const auto sourceName =
-            location ? location.getName().getValue() : StringRef{};
-        const auto name = qubitRegisterName(
-            declaredRegisterNames.contains(sourceName) ? StringRef{}
-                                                       : sourceName);
+        const auto name = qubitRegisterName(registerNameHint(alloc.getLoc()));
         Resource resource{
             .kind = ResourceKind::Qubit,
             .name = name,
@@ -3241,7 +3255,7 @@ private:
       return operation.name() != "U" && operation.name() != "u2" &&
              operation.name() != "u3" && operation.name() != "cu3" &&
              hasCompatibleNativeMeaning(operation) &&
-             (openqasm::frontend::isValidIdentifier(operation.name()) ||
+             (isValidIdentifier(operation.name()) ||
               (symbol == "gphase" && operation.name() == "gphase"));
     };
     auto selected = nativeTarget_->findOperation(

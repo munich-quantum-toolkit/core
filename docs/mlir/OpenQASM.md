@@ -395,7 +395,7 @@ written by measurement. Mid-circuit and repeated measurements, resets, and
 barriers are supported. Conditions compare a complete classical register to an
 integer: `if (c == 1) x q[0];`. Whole-register measurements remain one statement
 when they overwrite the condition register, preserving one condition evaluation.
-Register and opaque gate names must start with a lowercase letter. The output
+Register and opaque gate names must match `[a-z][A-Za-z0-9_]*`. The output
 includes `qelib1.inc`; opaque names from that library must match its gate
 signatures. Device qubit indices become one `qreg` whose width includes unused
 lower indices. A conditional measurement that overwrites its selector must fit a
