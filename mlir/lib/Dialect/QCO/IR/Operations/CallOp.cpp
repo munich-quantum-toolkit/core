@@ -8,10 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Utils/UnitaryCall.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
@@ -83,25 +82,5 @@ LogicalResult CallOp::verify() {
 }
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection& symbolTable) {
-  auto function =
-      symbolTable.lookupNearestSymbolFrom<func::FuncOp>(*this, getCalleeAttr());
-  if (!function) {
-    return emitOpError() << "'" << getCallee()
-                         << "' does not reference a valid function";
-  }
-  if (!mqt::isUnitaryFunction(function)) {
-    return emitOpError() << "callee '" << getCallee()
-                         << "' is not marked with mqt.unitary";
-  }
-  if (function.getArgumentTypes() != getOperandTypes()) {
-    return emitOpError() << "operand types " << getOperandTypes()
-                         << " do not match callee argument types "
-                         << function.getArgumentTypes();
-  }
-  if (function.getResultTypes() != getResultTypes()) {
-    return emitOpError() << "result types " << getResultTypes()
-                         << " do not match callee result types "
-                         << function.getResultTypes();
-  }
-  return success();
+  return mqt::verifyUnitaryCall(*this, symbolTable);
 }
