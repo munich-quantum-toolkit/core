@@ -294,6 +294,10 @@ program = QCProgram.from_qiskit(transpiled_circuit)
 restored = program.to_qco().to_qc().to_qiskit()
 ```
 
+Compiling a mapped circuit to Qiskit or QPY requires a device target or an
+explicit `ignore_input_layout=True`. Use `to_qiskit()` for a direct conversion
+that preserves the layout.
+
 Device compilation composes an imported layout with Core's placement and
 routing. The compiled circuit keeps the program qubits and final layout of the
 input, including the output permutation of SWAPs that Qiskit elided. To treat

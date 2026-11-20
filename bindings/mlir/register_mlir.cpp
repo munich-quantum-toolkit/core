@@ -795,7 +795,9 @@ qpyCircuit(mlir::QCProgram program,
     }
   }
   // Device compilation composes input layouts; other pipelines clear them.
-  if (selected == OutputFormat::Qiskit && !outputEnvironment) {
+  const bool qiskitOutput =
+      selected == OutputFormat::Qiskit || selected == OutputFormat::QPY;
+  if (qiskitOutput && !outputEnvironment) {
     std::visit(
         [](const auto& value) {
           if constexpr (std::is_base_of_v<
@@ -804,7 +806,7 @@ qpyCircuit(mlir::QCProgram program,
             if (value.module()->hasAttr("mqt.layout")) {
               throw nb::builtin_exception(
                   nb::exception_type::runtime_error,
-                  "Qiskit output requires input without layout "
+                  "Qiskit and QPY output require input without layout "
                   "metadata; use "
                   "to_qiskit() for a layout-preserving conversion");
             }
@@ -812,10 +814,9 @@ qpyCircuit(mlir::QCProgram program,
         },
         input.program);
   }
-  const auto nativeOutput =
-      (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY)
-          ? mlir::ProgramFormat::QC
-          : static_cast<mlir::ProgramFormat>(selected);
+  const auto nativeOutput = qiskitOutput
+                                ? mlir::ProgramFormat::QC
+                                : static_cast<mlir::ProgramFormat>(selected);
   auto compiled = [&] {
     const nb::gil_scoped_release release;
     auto result =
@@ -830,7 +831,7 @@ qpyCircuit(mlir::QCProgram program,
     }
     return std::move(*result);
   }();
-  if (selected == OutputFormat::Qiskit || selected == OutputFormat::QPY) {
+  if (qiskitOutput) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
     if (!includeOutputLayout) {
       qc.module()->removeAttr("mqt.layout");

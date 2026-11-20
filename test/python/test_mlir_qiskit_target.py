@@ -140,6 +140,8 @@ def test_recompile_qiskit_physical_wires() -> None:
     circuit.measure([0, 1], [1, 0])
     mapped = transpile(circuit, backend, initial_layout=[2, 3], optimization_level=0)
 
+    with pytest.raises(RuntimeError, match="layout"):
+        compile_program(mapped, output=OutputFormat.QPY)
     target = TargetEnvironment.from_qiskit(backend, strict=True)
     physical = QuantumCircuit(*mapped.qregs, *mapped.cregs)
     physical.compose(mapped, inplace=True)
