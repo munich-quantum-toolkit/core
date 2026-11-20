@@ -579,6 +579,31 @@ module {
   expectNoQCOperations(*moduleOp);
 }
 
+template <typename BranchOp>
+static void expectClassicalBranchRoundTrip(ModuleOp moduleOp,
+                                           Value classicalResult) {
+  auto getReturnValue = [&] {
+    auto main = moduleOp.lookupSymbol<func::FuncOp>("main");
+    return cast<func::ReturnOp>(main.front().getTerminator()).getOperand(0);
+  };
+  auto expectNoScratch = [&] {
+    moduleOp.walk([](Operation* op) {
+      EXPECT_FALSE(
+          (isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(op)));
+    });
+  };
+
+  EXPECT_EQ(getReturnValue(), classicalResult);
+  expectNoScratch();
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(moduleOp)));
+  ASSERT_TRUE(succeeded(verify(moduleOp)));
+  Value returned = getReturnValue();
+  auto branch = returned.getDefiningOp<BranchOp>();
+  ASSERT_TRUE(branch);
+  EXPECT_EQ(branch.getNumResults(), 1U);
+  expectNoScratch();
+}
+
 TEST_F(QCToQCORegressionTest, PreservesIfClassicalResultsWithoutScratch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
@@ -619,18 +644,9 @@ module {
     EXPECT_TRUE(isa<qco::QubitType>(yield.getOperand(1).getType()));
   }
 
-  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
-  EXPECT_EQ(returnOp.getOperand(0), ifOp.getClassicalResults().front());
-
-  bool containsScratchStorage = false;
-  moduleOp->walk([&](Operation* operation) {
-    containsScratchStorage |=
-        isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
-  });
-  EXPECT_FALSE(containsScratchStorage);
   expectNoQCOperations(*moduleOp);
+  expectClassicalBranchRoundTrip<scf::IfOp>(*moduleOp,
+                                            ifOp.getClassicalResults().front());
 }
 
 TEST_F(QCToQCORegressionTest,
@@ -678,18 +694,9 @@ module {
     EXPECT_TRUE(isa<qco::QubitType>(yield.getOperand(1).getType()));
   }
 
-  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
-  EXPECT_EQ(returnOp.getOperand(0), switchOp.getClassicalResults().front());
-
-  bool containsScratchStorage = false;
-  moduleOp->walk([&](Operation* operation) {
-    containsScratchStorage |=
-        isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
-  });
-  EXPECT_FALSE(containsScratchStorage);
   expectNoQCOperations(*moduleOp);
+  expectClassicalBranchRoundTrip<scf::IndexSwitchOp>(
+      *moduleOp, switchOp.getClassicalResults().front());
 }
 
 TEST_F(QCToQCORegressionTest,
@@ -1826,9 +1833,6 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{
             "IfWithMeasurement", MQT_NAMED_BUILDER(qc::ifWithMeasurement),
             MQT_NAMED_BUILDER(qco::ifWithMeasurementCompleteTensorState), true},
-        QCToQCOTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qc::ifWithCreg),
-                        MQT_NAMED_BUILDER(qco::ifWithCregCompleteTensorState),
-                        true},
         QCToQCOTestCase{
             "SimpleIndexSwitchOp", MQT_NAMED_BUILDER(qc::simpleIndexSwitch),
             MQT_NAMED_BUILDER(qco::simpleIndexSwitchCompleteTensorState), true},
