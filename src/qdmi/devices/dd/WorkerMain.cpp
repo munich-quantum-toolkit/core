@@ -218,8 +218,10 @@ struct Execution {
         outputTemplate_.emplace(std::move(terminalOutput->text),
                                 std::move(terminalOutput->resultOffsets));
       }
-      for (const auto& [shot, count] : outcomes) {
-        counts_.emplace(std::string(shot.rbegin(), shot.rend()), count);
+      while (!outcomes.empty()) {
+        auto entry = outcomes.extract(outcomes.begin());
+        std::ranges::reverse(entry.key());
+        counts_.insert(std::move(entry));
       }
     } else {
       const auto streams = ::dd::makeShotStreams(
