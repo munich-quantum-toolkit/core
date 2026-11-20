@@ -1767,9 +1767,10 @@ bool CompilerTarget::supportsIndexedSynthesis() const noexcept {
                    [](bool covered) { return covered; })) {
     return true;
   }
-  const auto& basis = storage_->basis;
-  if (!basis ||
-      (numSites() > 1 && (!basis->entangler || !supports(*basis->entangler)))) {
+  if (!storage_->basis ||
+      (numSites() > 1 &&
+       llvm::none_of(synthesisEntanglers(),
+                     [&](Entangler gate) { return supports(gate); }))) {
     return false;
   }
   return llvm::all_of(std::array{StringRef{"measure"}, StringRef{"reset"}},
