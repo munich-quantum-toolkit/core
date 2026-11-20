@@ -87,12 +87,6 @@ struct Constant {
   std::variant<bool, int64_t, uint64_t, double, FixedAngle> value = int64_t{0};
 };
 
-struct GateSignature {
-  size_t parameterCount = 0;
-  size_t qubitCount = 0;
-  bool variadicControls = false;
-};
-
 enum class SymbolKind : uint8_t {
   Scalar,
   Array,
@@ -494,7 +488,7 @@ private:
     size_t scalars;
   };
   SmallVector<Scope> scopes;
-  llvm::StringMap<GateSignature> customGates;
+  llvm::StringMap<GateId> customGates;
   std::vector<std::shared_ptr<BitInitialization>> initializedBits;
   std::vector<bool> initializedScalars;
   std::vector<uint64_t> scalarGenerations;
@@ -4582,10 +4576,8 @@ private:
                                   "' is already declared");
       }
     }
-    customGates[declaration.identifier] = {
-        .parameterCount = declaration.parameters.size(),
-        .qubitCount = declaration.qubits.size(),
-    };
+    customGates[declaration.identifier] =
+        static_cast<GateId>(program.gates.size());
     GateDefinition definition{
         .opaque = declaration.opaque,
         .name = declaration.identifier.str(),
@@ -5630,21 +5622,20 @@ private:
   [[nodiscard]] LogicalResult
   analyzeGateApplication(const SyntaxGateCall& call,
                          std::vector<StatementId>& destination) {
-    std::string callee = call.identifier.str();
+    auto callee = call.identifier;
     const GateCatalogEntry* standard = lookupGate(callee);
     auto custom = customGates.find(callee);
     uint64_t compatibilityControls = 0;
     if (standard == nullptr && custom == customGates.end() &&
         program.openQASM2) {
       auto stripped = callee;
-      while (!stripped.empty() && stripped.front() == 'c') {
-        stripped.erase(stripped.begin());
+      while (stripped.consume_front("c")) {
         ++compatibilityControls;
       }
       standard = lookupGate(stripped);
       custom = customGates.find(stripped);
       if (standard != nullptr || custom != customGates.end()) {
-        callee = std::move(stripped);
+        callee = stripped;
       }
     }
     if (standard != nullptr && !isGateAvailable(*standard)) {
@@ -5664,13 +5655,10 @@ private:
                                      call.identifier + "'.");
     }
 
-    const auto signature =
-        standard != nullptr
-            ? GateSignature{.parameterCount = standard->parameterCount,
-                            .qubitCount = standard->qubitCount(),
-                            .variadicControls = standard->variadicControls,}
-            : custom->second;
-    if (signature.parameterCount != call.parameters.size()) {
+    const auto parameterCount =
+        standard != nullptr ? standard->parameterCount
+                            : program.gates[custom->second].parameterCount;
+    if (parameterCount != call.parameters.size()) {
       return fail(call.location, "Invalid number of parameters for gate '" +
                                      call.identifier + "'.");
     }
@@ -5769,14 +5757,18 @@ private:
     }
 
     const auto baseOperandCount = call.operands.size() - addedControls;
-    if (signature.variadicControls ? baseOperandCount < signature.qubitCount
-                                   : baseOperandCount != signature.qubitCount) {
+    const auto qubitCount = standard != nullptr
+                                ? standard->qubitCount()
+                                : program.gates[custom->second].qubitCount;
+    const bool variadic = standard != nullptr && standard->variadicControls;
+    if (variadic ? baseOperandCount < qubitCount
+                 : baseOperandCount != qubitCount) {
       return fail(call.location, "Invalid number of qubit operands for gate '" +
                                      call.identifier + "'.");
     }
 
     size_t emittedOperandCount = call.operands.size();
-    if (standard != nullptr && standard->variadicControls) {
+    if (variadic) {
       size_t activeBaseOperands = baseOperandCount;
       if (standard->name == "mcx_vchain") {
         if (baseOperandCount < 5) {
@@ -5800,7 +5792,8 @@ private:
               .value = static_cast<int64_t>(intrinsicControls),
           }),
       });
-      callee = canonicalGateName(standard->gate).str();
+      standard = lookupGate(canonicalGateName(standard->gate));
+      assert(standard && "variadic gate requires a catalog primitive");
       emittedOperandCount = addedControls + activeBaseOperands;
     }
 
@@ -5823,10 +5816,12 @@ private:
     }
 
     const auto broadcastWidth = registerWidth.value_or(1);
+    const GateCallee resolved =
+        standard != nullptr ? GateCallee{standard} : GateCallee{custom->second};
     size_t affineComparisons = 0;
     for (size_t index = 0; index < broadcastWidth; ++index) {
       GateApplication application{
-          .callee = callee,
+          .callee = resolved,
           .parameters = parameters,
           .qubits = {},
           .modifiers = modifiers,

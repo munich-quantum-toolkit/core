@@ -648,26 +648,29 @@ out = measure q;
   EXPECT_EQ(pairCalls, 1);
 }
 
-TEST(OpenQASMTargetTest, ResolvesManyCustomGateDefinitionsThroughTheIndex) {
-  constexpr size_t definitionCount = 2048;
-  std::string source = "OPENQASM 3.1;\nqubit q;\n";
-  source.reserve(definitionCount * 40);
-  for (size_t index = 0; index < definitionCount; ++index) {
-    source += "gate g" + std::to_string(index) + " target { x target; }\n";
-  }
-  for (size_t index = 0; index < definitionCount; ++index) {
-    source += "g" + std::to_string(index) + " q;\n";
-  }
+TEST(OpenQASMTargetTest, BindsGateCallsAtTheirDeclarations) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit[3] q;
+x q[0];
+gate x a {}
+x q[1];
+mcx q[0], q[1], q[2];
+)qasm";
 
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  size_t xGates = 0;
-  moduleOp->walk(
-      [&](Operation* operation) { xGates += isa<qc::XOp>(operation); });
-  EXPECT_EQ(xGates, definitionCount);
+  auto entry = mqt::getEntryPoint(*moduleOp);
+  ASSERT_TRUE(entry);
+  EXPECT_EQ(llvm::range_size(entry.getOps<qc::XOp>()), 1);
+  EXPECT_EQ(llvm::range_size(entry.getOps<qc::CallOp>()), 1);
+  auto controls = entry.getOps<qc::CtrlOp>();
+  ASSERT_EQ(llvm::range_size(controls), 1);
+  auto control = *controls.begin();
+  EXPECT_EQ(control.getNumControls(), 2);
+  EXPECT_EQ(llvm::range_size(control.getRegion().getOps<qc::XOp>()), 1);
 }
 
 TEST(OpenQASMTargetTest, LowersOpenQASM2ControlledGateCompatibilityPrefixes) {
