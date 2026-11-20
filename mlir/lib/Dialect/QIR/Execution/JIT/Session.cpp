@@ -483,6 +483,15 @@ Expected<std::unique_ptr<JitSession>>
 JitSession::create(llvm::StringRef irBytes, llvm::StringRef bufferName,
                    Execution execution, std::optional<uint64_t> randomSeed,
                    llvm::raw_ostream* output, std::optional<size_t> maxQubits) {
+  return create(irBytes, bufferName, execution, randomSeed, output, maxQubits,
+                {});
+}
+
+Expected<std::unique_ptr<JitSession>>
+JitSession::create(llvm::StringRef irBytes, llvm::StringRef bufferName,
+                   Execution execution, std::optional<uint64_t> randomSeed,
+                   llvm::raw_ostream* output, std::optional<size_t> maxQubits,
+                   llvm::StringRef expectedProfile) {
   auto loadedModule = loadModuleFromMemory(irBytes, bufferName);
   if (!loadedModule) {
     return loadedModule.takeError();
@@ -493,7 +502,8 @@ JitSession::create(llvm::StringRef irBytes, llvm::StringRef bufferName,
     session->runtime_->maxQubits_ =
         std::min(*maxQubits, dd::Package::MAX_POSSIBLE_QUBITS);
   }
-  if (auto error = session->initialize(std::move(*loadedModule), execution)) {
+  if (auto error = session->initialize(std::move(*loadedModule), execution,
+                                       expectedProfile)) {
     // A failed construction must not run program destructors.
     session->jit_.reset();
     return error;
@@ -850,7 +860,8 @@ static Error normalizeNativeQISNames(llvm::Module& module) {
 }
 
 Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
-                             const Execution execution) {
+                             const Execution execution,
+                             llvm::StringRef expectedProfile) {
 
   std::string entryPointName;
   std::vector<std::pair<std::string, void*>> runtimeSymbols;
@@ -915,6 +926,16 @@ Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
       return selected.takeError();
     }
     auto& entryPoint = **selected;
+    if (!expectedProfile.empty()) {
+      const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
+      if (!profile.isStringAttribute() ||
+          profile.getValueAsString() != expectedProfile) {
+        return createStringError(
+            std::errc::invalid_argument,
+            "QIR entry point must declare the '%s' profile",
+            expectedProfile.str().c_str());
+      }
+    }
     entryPointName = entryPoint.getName().str();
     runtime_->setOutputSchema(readOutputSchema(entryPoint));
     std::vector<std::pair<std::string, std::string>> metadata;

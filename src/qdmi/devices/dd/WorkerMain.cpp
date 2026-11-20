@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QIR/Execution/JIT/Session.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
+#include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
 #include "qdmi/common/Diagnostics.hpp"
 
@@ -28,6 +29,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/BinaryFormat/Magic.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/Signals.h"
@@ -139,8 +141,20 @@ struct Execution {
     stateVecDD_ = *state;
     return true;
   }
-  bool qirProgram() {
+  bool qirProgram(QDMI_Program_Format format) {
     const llvm::StringRef irBytes(program_.data(), program_.size());
+    const bool binary = format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
+                        format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+    if (binary !=
+        (llvm::identify_magic(irBytes) == llvm::file_magic::bitcode)) {
+      qdmi::diagnostics::error(
+          "QIR encoding does not match the submitted program format");
+      return false;
+    }
+    const auto profile = format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
+                                 format == QDMI_PROGRAM_FORMAT_QIRBASESTRING
+                             ? ::qir::BASE_PROFILE
+                             : ::qir::ADAPTIVE_PROFILE;
     const bool sampling = numShots_ != 0;
     const bool capture = sampling && captureQIROutput_;
     std::optional<raw_string_ostream> output;
@@ -149,7 +163,8 @@ struct Execution {
         sampling ? ::qir::Execution::Sampling
                  : ::qir::Execution::StateExtraction,
         sampling ? seed_ : std::nullopt,
-        capture ? &output.emplace(qirOutput_.emplace()) : nullptr, maxQubits_);
+        capture ? &output.emplace(qirOutput_.emplace()) : nullptr, maxQubits_,
+        profile);
     if (!created) {
       llvm::errs() << llvm::toString(created.takeError()) << "\n";
       return false;
@@ -251,7 +266,7 @@ struct Execution {
         } else if (i != 0) {
           auto createdPeer = ::qir::JitSession::create(
               irBytes, "QDMI job", ::qir::Execution::Sampling, streams[i].seed,
-              capture ? &localOutput : nullptr, maxQubits_);
+              capture ? &localOutput : nullptr, maxQubits_, profile);
           if (!createdPeer) {
             qdmi::diagnostics::error("DDSIM program failed: {0}",
                                      llvm::toString(createdPeer.takeError()));
@@ -365,7 +380,10 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
   };
   const bool qasm = request.format == QDMI_PROGRAM_FORMAT_QASM2 ||
                     request.format == QDMI_PROGRAM_FORMAT_QASM3;
-  response.succeeded = qasm ? execution.qasmProgram() : execution.qirProgram();
+  response.succeeded =
+      qasm ? execution.qasmProgram()
+           : execution.qirProgram(
+                 static_cast<QDMI_Program_Format>(request.format));
   if (response.succeeded) {
     response.shotCount = execution.shotCount_;
     response.shots = std::move(execution.shots_);
