@@ -862,9 +862,11 @@ private:
               1, searchMemoryLimit /
                      (sizeof(Node) + 2 * nsites * sizeof(QubitIndex)))) {}
 
+    [[nodiscard]] bool full() const { return index == budget; }
+
     /// Return a node slot to initialize, or nullptr when the arena is full.
     Node* allocate() {
-      if (index >= budget) {
+      if (full()) {
         return nullptr;
       }
 
@@ -1626,42 +1628,38 @@ private:
       if (curr->isGoal(window.front(), env.target)) {
         return curr->swaps();
       }
+      if (arena.full()) {
+        continue;
+      }
 
-      // Given a layout, create child-nodes for each possible SWAP
-      // between two neighboring hardware qubits.
-
-      llvm::SmallDenseSet<QubitIndexPair, 8> seen;
+      // The nonadjacent front sites have disjoint sets of incident edges.
       for (const auto& [q0, q1] = window.front(); const auto prog : {q0, q1}) {
         const auto hw0 = curr->programToHardware[prog];
         env.target.forEachNeighbour(hw0, [&](const QubitIndex hw1) {
-          const QubitIndexPair indices(std::minmax(hw0, hw1));
-          if (seen.contains(indices)) {
+          Node* child = arena.allocate();
+          if (child == nullptr) {
             return;
           }
 
+          const QubitIndexPair indices(std::minmax(hw0, hw1));
           const auto standalone = env.nativeSwapCost.value_or(1L);
           const auto prefix =
               curr->isRoot() && state.costs && env.nativeSwapCost.has_value()
                   ? state.costs->swapCostAdjustment(indices.first,
                                                     indices.second, standalone)
                   : 0;
-
-          if (Node* child = arena.allocate()) {
-            const SwapCandidate candidate = {
-                .indices = indices,
-                .standalone = standalone,
-                .prefix = prefix,
-            };
-
-            child->initializeChild(curr, candidate);
-            seen.insert(indices);
-            if (!frontier.improves(child)) {
-              arena.discardLast();
-              return;
-            }
-            child->updatePriority(standalone, window, distances, params);
-            frontier.push(child);
+          const SwapCandidate candidate{
+              .indices = indices,
+              .standalone = standalone,
+              .prefix = prefix,
+          };
+          child->initializeChild(curr, candidate);
+          if (!frontier.improves(child)) {
+            arena.discardLast();
+            return;
           }
+          child->updatePriority(standalone, window, distances, params);
+          frontier.push(child);
         });
       }
     }
