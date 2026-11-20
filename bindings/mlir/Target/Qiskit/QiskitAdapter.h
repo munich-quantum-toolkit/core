@@ -3116,26 +3116,11 @@ public:
            (gate.controls != 0 && versionGate({gate.gate, 0}) != nullptr);
   }
 
-  static nb::object targetObject(nb::handle source) {
-    auto target = nb::borrow<nb::object>(source);
-    if (nb::isinstance(
-            target,
-            nb::module_::import_("qiskit.providers").attr("BackendV2"))) {
-      target = target.attr("target");
-    }
-    if (!nb::isinstance(
-            target, nb::module_::import_("qiskit.transpiler").attr("Target"))) {
-      throw nb::type_error("Expected a Qiskit Target or BackendV2");
-    }
-    return target;
-  }
-
   static mlir::CompilerTarget::NativeOperations
-  readOperations(nb::handle source, nb::handle operationNames, bool strict,
+  readOperations(nb::handle target, nb::handle operationNames, bool strict,
                  std::set<mlir::CompilerTarget::SiteId>* activeSites,
                  std::optional<size_t> nativeWidth = std::nullopt) {
     using Target = mlir::CompilerTarget;
-    auto target = targetObject(source);
     const auto circuit = nb::module_::import_("qiskit.circuit");
     const auto controlFlow = nb::module_::import_("qiskit.circuit.controlflow");
     const auto ignoredTypes = nb::make_tuple(
@@ -3336,9 +3321,8 @@ public:
   }
 
   [[nodiscard]] mlir::PayloadSpecification
-  payloadSpecification(nb::handle source) const override {
+  payloadSpecification(nb::handle target) const override {
     using Capability = mlir::ProgramCapability;
-    const auto target = source.is_none() ? nb::none() : targetObject(source);
     const auto circuit = nb::module_::import_("qiskit.circuit");
     std::vector<Capability> capabilities;
     for (const auto& [name, type, kind] : {
@@ -3371,15 +3355,10 @@ public:
   }
 
   [[nodiscard]] mlir::CompilerTarget
-  importTarget(nb::handle source, nb::handle operationNames,
+  importTarget(nb::handle target, nb::handle operationNames,
                const std::optional<std::string>& name,
                bool strict) const override {
     using Target = mlir::CompilerTarget;
-    auto target = targetObject(source);
-    auto targetName = name;
-    if (!targetName && !source.is(target)) {
-      targetName = nb::cast<std::string>(source.attr("name"));
-    }
     size_t numQubits = 0;
     if (!nb::try_cast(target.attr("num_qubits"), numQubits) || numQubits == 0) {
       throw nb::value_error(
@@ -3426,9 +3405,8 @@ public:
             : Target::Connectivity::fromCouplings(std::vector<Target::Coupling>(
                   couplings.begin(), couplings.end()));
     return unwrap(
-        targetName
-            ? Target::create(*targetName, sites, connectivity, nativeOperations)
-            : Target::create(sites, connectivity, nativeOperations));
+        name ? Target::create(*name, sites, connectivity, nativeOperations)
+             : Target::create(sites, connectivity, nativeOperations));
   }
 
   [[nodiscard]] std::unique_ptr<CircuitWriter>

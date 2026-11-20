@@ -1408,14 +1408,14 @@ def test_compile_program_sequence_qiskit_target_snapshot() -> None:
     backend = Backend(2, basis_gates=["u", "cx"], seed=1)
     backend.target_reads = 0
     assert isinstance(compile_program(circuits[0], target=backend), QuantumCircuit)
-    scalar_reads = backend.target_reads
+    assert backend.target_reads == 1
     backend.target_reads = 0
     pending.extend(circuits)
     inputs: Sequence[QuantumCircuit] = pending
     compiled = compile_program(inputs, target=backend)
     assert isinstance(compiled, list)
     assert all(isinstance(circuit, QuantumCircuit) for circuit in compiled)
-    assert backend.target_reads == scalar_reads > 0
+    assert backend.target_reads == 1
     assert pending == []
     assert circuits == originals
     assert [sample(circuit, shots=1) for circuit in compiled] == [{"0": 1}, {"1": 1}]

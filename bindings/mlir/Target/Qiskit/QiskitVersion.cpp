@@ -141,15 +141,35 @@ std::unique_ptr<VersionedTranslation> selectTranslation() {
       "'; supported versions: >=2.5.0,<3.0.0");
 }
 
+static nb::object resolveTarget(nb::handle source,
+                                std::optional<std::string>* name = nullptr) {
+  auto target = nb::borrow<nb::object>(source);
+  if (nb::isinstance(
+          source, nb::module_::import_("qiskit.providers").attr("BackendV2"))) {
+    target = source.attr("target");
+    if (name != nullptr && !*name) {
+      *name = nb::cast<std::string>(source.attr("name"));
+    }
+  }
+  if (!nb::isinstance(
+          target, nb::module_::import_("qiskit.transpiler").attr("Target"))) {
+    throw nb::type_error("Expected a Qiskit Target or BackendV2");
+  }
+  return target;
+}
+
 mlir::CompilerTarget importTarget(nb::handle target, nb::handle operationNames,
                                   const std::optional<std::string>& name) {
-  return selectTranslation()->importTarget(target, operationNames, name, false);
+  auto targetName = name;
+  const auto resolved = resolveTarget(target, &targetName);
+  return selectTranslation()->importTarget(resolved, operationNames, targetName,
+                                           false);
 }
 
 mlir::CompilerTarget::NativeOperations
 importNativeOperations(nb::handle target, nb::handle operationNames) {
-  return selectTranslation()->importNativeOperations(target, operationNames,
-                                                     false, std::nullopt);
+  return selectTranslation()->importNativeOperations(
+      resolveTarget(target), operationNames, false, std::nullopt);
 }
 
 mlir::TargetEnvironment
@@ -160,16 +180,18 @@ importTargetEnvironment(nb::handle source, std::optional<size_t> nativeWidth,
     throw nb::value_error("native_num_qubits must be positive");
   }
   const auto translation = selectTranslation();
+  std::optional<std::string> name;
+  const auto resolved = resolveTarget(source, nativeWidth ? nullptr : &name);
   auto target =
       nativeWidth
           ? unwrap(Target::forGateSet(translation->importNativeOperations(
-                source, nb::none(), strict, nativeWidth)))
-          : translation->importTarget(source, nb::none(), std::nullopt, strict);
-  return {target, translation->payloadSpecification(source)};
+                resolved, nb::none(), strict, nativeWidth)))
+          : translation->importTarget(resolved, nb::none(), name, strict);
+  return {target, translation->payloadSpecification(resolved)};
 }
 
-mlir::PayloadSpecification payloadSpecification(nb::handle target) {
-  return selectTranslation()->payloadSpecification(target);
+mlir::PayloadSpecification payloadSpecification() {
+  return selectTranslation()->payloadSpecification(nb::none());
 }
 
 } // namespace mqt::bindings::qiskit
