@@ -321,9 +321,7 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
   return pm.run(moduleOp);
 }
 
-void populateQCExportPipeline(OpPassManager& pm) {
-  pm.addPass(mlir::mqt::createSimplifyClassicalControl());
-  pm.addPass(mqt::createPromoteClassicalMemory());
+void populateQCStructuralCleanupPipeline(OpPassManager& pm) {
   pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(createCanonicalizerPass(GreedyRewriteConfig{}
                                          .enableCSEBetweenIterations()
@@ -331,6 +329,12 @@ void populateQCExportPipeline(OpPassManager& pm) {
   pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qc::createShrinkQubitRegistersPass());
   pm.addPass(createSymbolDCEPass());
+}
+
+void populateQCExportPipeline(OpPassManager& pm) {
+  pm.addPass(mlir::mqt::createSimplifyClassicalControl());
+  pm.addPass(mqt::createPromoteClassicalMemory());
+  populateQCStructuralCleanupPipeline(pm);
 }
 
 void populateQCCleanupPipeline(OpPassManager& pm) {

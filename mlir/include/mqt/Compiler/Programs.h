@@ -313,9 +313,9 @@ public:
 
   /// Consume this program and translate it to portable OpenQASM 3.
   ///
-  /// Legalize classical memory and control flow for the source format without
-  /// optimizing quantum operations. The program is consumed even when export
-  /// fails; call copy() first to preserve it.
+  /// Promote eligible classical storage to SSA values before translation.
+  /// Export consumes the program even on failure. Call copy() first to preserve
+  /// it.
   [[nodiscard]] FailureOr<OpenQASMProgram>
   intoOpenQASM3(const TargetEnvironment* environment = nullptr) &&;
 
