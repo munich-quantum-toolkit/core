@@ -3482,14 +3482,7 @@ private:
             destination.push_back(analyzed);
             return success();
           } else if constexpr (std::is_same_v<T, SyntaxGateCall>) {
-            MQT_OQ3_TRY_ASSIGN(applications, analyzeGateApplication(data));
-            for (auto& application : applications) {
-              MQT_OQ3_TRY_ASSIGN(
-                  analyzed,
-                  addStatement(statement.location, std::move(application)));
-              destination.push_back(analyzed);
-            }
-            return success();
+            return analyzeGateApplication(data, destination);
           } else if constexpr (std::is_same_v<T, SyntaxGateDefinition>) {
             if (!global) {
               return fail(statement.location,
@@ -4756,26 +4749,9 @@ private:
 
       if (!provenRegisterQubits.empty()) {
         size_t affineComparisons = 0;
-        llvm::DenseMap<RegisterId, SmallVector<const QubitReference*>>
-            registerQubits;
-        for (const auto& qubit : qubits) {
-          if (qubit.kind == QubitReferenceKind::Register) {
-            registerQubits[qubit.symbol].push_back(&qubit);
-          }
-        }
-        for (const auto& qubit : qubits) {
-          if (!qubit.provenIndex) {
-            continue;
-          }
-          for (const auto* other : registerQubits[qubit.symbol]) {
-            if (other == &qubit || (other->provenIndex && other < &qubit)) {
-              continue;
-            }
-            if (!proveDistinct(*other, qubit, affineComparisons)) {
-              return fail(location, "cannot prove that barrier operands "
-                                    "reference distinct qubits");
-            }
-          }
+        if (!affineOperandsAreDistinct(qubits, affineComparisons)) {
+          return fail(location, "cannot prove that barrier operands "
+                                "reference distinct qubits");
         }
       }
     }
@@ -5633,8 +5609,9 @@ private:
     return addCondition(std::move(typed));
   }
 
-  [[nodiscard]] FailureOr<std::vector<GateApplication>>
-  analyzeGateApplication(const SyntaxGateCall& call) {
+  [[nodiscard]] LogicalResult
+  analyzeGateApplication(const SyntaxGateCall& call,
+                         std::vector<StatementId>& destination) {
     std::string callee = call.identifier.str();
     const GateCatalogEntry* standard = lookupGate(callee);
     auto custom = customGates.find(callee);
@@ -5828,8 +5805,6 @@ private:
     }
 
     const auto broadcastWidth = registerWidth.value_or(1);
-    std::vector<GateApplication> applications;
-    applications.reserve(broadcastWidth);
     size_t affineComparisons = 0;
     for (size_t index = 0; index < broadcastWidth; ++index) {
       GateApplication application{
@@ -5838,45 +5813,68 @@ private:
           .qubits = {},
           .modifiers = modifiers,
       };
+      application.qubits.reserve(emittedOperandCount);
       for (const auto& selection :
            ArrayRef(selections).take_front(emittedOperandCount)) {
         application.qubits.push_back(
             selection[selection.size() == 1 ? 0 : index]);
       }
-      llvm::DenseSet<std::tuple<QubitReferenceKind, uint32_t, uint64_t>>
-          staticQubits;
-      llvm::DenseMap<RegisterId, SmallVector<const QubitReference*>>
-          registerQubits;
-      for (const auto& qubit : application.qubits) {
-        if (!qubit.provenIndex &&
-            !staticQubits.insert({qubit.kind, qubit.symbol, qubit.index})
-                 .second) {
-          return fail(
-              call.location,
-              "cannot prove that gate operands reference distinct qubits");
-        }
-        if (qubit.kind == QubitReferenceKind::Register) {
-          registerQubits[qubit.symbol].push_back(&qubit);
-        }
+      if (!gateOperandsAreDistinct(application.qubits, affineComparisons)) {
+        return fail(
+            call.location,
+            "cannot prove that gate operands reference distinct qubits");
       }
-      for (const auto& qubit : application.qubits) {
-        if (!qubit.provenIndex) {
+      MQT_OQ3_TRY_ASSIGN(id,
+                         addStatement(call.location, std::move(application)));
+      destination.push_back(id);
+    }
+    return success();
+  }
+
+  [[nodiscard]] bool gateOperandsAreDistinct(ArrayRef<QubitReference> qubits,
+                                             size_t& affineComparisons) const {
+    if (qubits.size() < 2) {
+      return true;
+    }
+    if (qubits.size() == 2) {
+      return proveDistinct(qubits.front(), qubits.back(), affineComparisons);
+    }
+    llvm::DenseSet<std::tuple<QubitReferenceKind, uint32_t, uint64_t>> seen;
+    bool hasAffineOperand = false;
+    for (const auto& qubit : qubits) {
+      if (qubit.provenIndex) {
+        hasAffineOperand = true;
+      } else if (!seen.insert({qubit.kind, qubit.symbol, qubit.index}).second) {
+        return false;
+      }
+    }
+    return !hasAffineOperand ||
+           affineOperandsAreDistinct(qubits, affineComparisons);
+  }
+
+  [[nodiscard]] bool
+  affineOperandsAreDistinct(ArrayRef<QubitReference> qubits,
+                            size_t& affineComparisons) const {
+    llvm::DenseMap<RegisterId, SmallVector<const QubitReference*>> byRegister;
+    for (const auto& qubit : qubits) {
+      if (qubit.kind == QubitReferenceKind::Register) {
+        byRegister[qubit.symbol].push_back(&qubit);
+      }
+    }
+    for (const auto& qubit : qubits) {
+      if (!qubit.provenIndex) {
+        continue;
+      }
+      for (const auto* other : byRegister[qubit.symbol]) {
+        if (other == &qubit || (other->provenIndex && other < &qubit)) {
           continue;
         }
-        for (const auto* other : registerQubits[qubit.symbol]) {
-          if (other == &qubit || (other->provenIndex && other < &qubit)) {
-            continue;
-          }
-          if (!proveDistinct(*other, qubit, affineComparisons)) {
-            return fail(
-                call.location,
-                "cannot prove that gate operands reference distinct qubits");
-          }
+        if (!proveDistinct(*other, qubit, affineComparisons)) {
+          return false;
         }
       }
-      applications.push_back(std::move(application));
     }
-    return applications;
+    return true;
   }
 
   [[nodiscard]] FailureOr<std::vector<QubitReference>>
