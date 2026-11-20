@@ -393,17 +393,11 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t index,
                                  bool record) {
   checkFinalized();
 
-  InsertionGuard guard(*this);
   // Get or create result pointer
   auto result = getResult(index, record,
                           profile == Profile::Adaptive && !staticResults
                               ? AllocationMode::Dynamic
                               : AllocationMode::Static);
-
-  // Only set the insertion point if the Base Profile is used
-  if (profile == Profile::Base) {
-    setInsertionPoint(measurementsBlock->getTerminator());
-  }
 
   // Create measure call
   const auto mzSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
@@ -417,7 +411,6 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t index,
 Value QIRProgramBuilder::measure(Value qubit, const ClassicalRegister& reg,
                                  const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  InsertionGuard guard(*this);
 
   const auto& live = resolveRegister(reg, index);
 
@@ -435,7 +428,6 @@ Value QIRProgramBuilder::measure(Value qubit, const ClassicalRegister& reg,
           "Dynamic indices cannot be used in the Base Profile");
     }
     result = live.results[*indexValue];
-    setInsertionPoint(measurementsBlock->getTerminator());
   }
 
   // Create measure call
@@ -991,6 +983,12 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
   checkFinalized();
+  if (!returnValue || !returnValue.getType().isSignlessInteger(64)) {
+    moduleOp_->emitError("QIR entry points must return an i64 exit code");
+    clearInsertionPoint();
+    moduleOp_ = {};
+    return {};
+  }
   const bool isAdaptive = (profile == Profile::Adaptive);
 
   // Release owned qubits at the finalization point, before leaving the body.
@@ -1046,6 +1044,11 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
   // Attach attributes
   auto moduleOp = std::move(moduleOp_);
   clearInsertionPoint();
+  if (!isAdaptive &&
+      (failed(moveTerminalMeasurements(*bodyBlock, *measurementsBlock)) ||
+       failed(verifyBaseInstructions(cast<LLVM::LLVMFuncOp>(mainFunc))))) {
+    return {};
+  }
   if (failed(runWithPassManager(
           *moduleOp,
           [&](OpPassManager& pm) {
@@ -1066,7 +1069,6 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::build(
   builder.staticResults = staticResults;
   builder.initialize();
   auto result = buildFunc(builder);
-  builder.retype(result.getType());
   return builder.finalize(result);
 }
 

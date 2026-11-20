@@ -58,6 +58,12 @@ inline constexpr auto QIR_RESULT_STORE_ATTR = "qir.result_store";
 /// Remove unreferenced external functions whose name starts with the prefix.
 void removeUnusedDeclarations(ModuleOp moduleOp, StringRef prefix = {});
 
+/// Move terminal measurements after checking qubit use in source order.
+LogicalResult moveTerminalMeasurements(Block& body, Block& measurements);
+
+/// Verify Base Profile instructions and initialization of recorded results.
+LogicalResult verifyBaseInstructions(LLVM::LLVMFuncOp function);
+
 /// Normalize QIR profile module flags after MLIR-to-LLVM translation.
 ///
 /// MLIR translates integer-valued `llvm.module_flags` attributes to i32

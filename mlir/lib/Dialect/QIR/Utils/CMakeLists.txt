@@ -6,11 +6,10 @@
 #
 # Licensed under the MIT License
 
-file(GLOB QIR_UTILS_SOURCES *.cpp)
-
 add_mlir_library(
   MLIRQIRUtils
-  ${QIR_UTILS_SOURCES}
+  BaseProfile.cpp
+  QIRUtils.cpp
   LINK_LIBS
   PUBLIC
   LLVMCore
