@@ -22,7 +22,6 @@
 #include "mlir/Target/LLVMIR/ModuleTranslation.h"
 
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/LLVMContext.h"
@@ -72,22 +71,7 @@ static LogicalResult materializeNativeQISNames(ModuleOp moduleOp) {
   if (result.wasInterrupted()) {
     return failure();
   }
-  const auto uses = SymbolTable::getSymbolUses(&moduleOp.getBodyRegion());
-  if (!uses) {
-    return success();
-  }
-  DenseSet<StringAttr> referencedSymbols;
-  for (const auto& use : *uses) {
-    referencedSymbols.insert(use.getSymbolRef().getRootReference());
-  }
-  for (auto function :
-       llvm::make_early_inc_range(moduleOp.getOps<LLVM::LLVMFuncOp>())) {
-    if (function.isExternal() &&
-        function.getName().starts_with("__quantum__qis__") &&
-        !referencedSymbols.contains(function.getSymNameAttr())) {
-      function.erase();
-    }
-  }
+  removeUnusedDeclarations(moduleOp, "__quantum__qis__");
   return success();
 }
 

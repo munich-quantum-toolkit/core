@@ -55,6 +55,9 @@ inline constexpr auto QIR_QUBIT_STORE_ATTR = "qir.qubit_store";
 /// Marks stores of static result pointers into compiler-emitted arrays.
 inline constexpr auto QIR_RESULT_STORE_ATTR = "qir.result_store";
 
+/// Remove unreferenced external functions whose name starts with the prefix.
+void removeUnusedDeclarations(ModuleOp moduleOp, StringRef prefix = {});
+
 /// Normalize QIR profile module flags after MLIR-to-LLVM translation.
 ///
 /// MLIR translates integer-valued `llvm.module_flags` attributes to i32
