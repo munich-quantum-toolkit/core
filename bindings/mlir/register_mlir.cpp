@@ -1203,15 +1203,15 @@ qirFormat(llvm::StringRef payload, bool binary) {
 [[nodiscard]] static qdmi::Job
 executeQIRProgram(const mlir::QIRProgram& program, size_t shots,
                   uint64_t seed) {
-  requireValid(program);
-  auto copy = program.copy();
-  const auto payload =
-      withDiagnostics(program.context().get(), "cannot export QIR",
-                      [&] { return std::move(copy).intoLLVMIR(); });
+  auto copy = copyProgram(program);
+  llvm::SmallVector<char> buffer;
+  llvm::raw_svector_ostream stream(buffer);
+  withDiagnostics(program.context().get(), "cannot export QIR",
+                  [&] { return std::move(copy).intoBitcode(stream); });
   const auto format = program.profile() == mlir::QIRProfile::Base
-                          ? QDMI_PROGRAM_FORMAT_QIRBASESTRING
-                          : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
-  return executeQIR(payload, format, shots, seed);
+                          ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
+                          : QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  return executeQIR(std::as_bytes(std::span(buffer)), format, shots, seed);
 }
 
 [[nodiscard]] static std::optional<qdmi::Job>
