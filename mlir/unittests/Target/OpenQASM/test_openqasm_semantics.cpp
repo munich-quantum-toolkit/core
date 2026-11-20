@@ -447,6 +447,8 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
               "integer expression",
           },
           {"array[int, 1] a = {0}; if (a[0]) {}", "bool type"},
+          {"array[int, 4] a; int i = 1; if (sizeof(a[:i])) {}", "bool type"},
+          {"array[int, 1] a; if (a ++ missing) {}", "bool type"},
           {"array[int, 1] a = {0}; a = 1;", "array or subarray source"},
           {
               "int value = 1; array[int, 1] a = value;",

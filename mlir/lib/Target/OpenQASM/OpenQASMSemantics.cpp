@@ -5623,43 +5623,7 @@ private:
       }
       break;
     }
-    case Expr::Kind::Slice:
-    case Expr::Kind::Int:
-    case Expr::Kind::Float:
-    case Expr::Kind::Bool:
-    case Expr::Kind::FloatCast:
-    case Expr::Kind::IntCast:
-    case Expr::Kind::UintCast:
-    case Expr::Kind::AngleCast:
-    case Expr::Kind::Neg:
-    case Expr::Kind::BitNot:
-    case Expr::Kind::Add:
-    case Expr::Kind::Sub:
-    case Expr::Kind::Mul:
-    case Expr::Kind::Div:
-    case Expr::Kind::ArcCos:
-    case Expr::Kind::ArcSin:
-    case Expr::Kind::ArcTan:
-    case Expr::Kind::Ceiling:
-    case Expr::Kind::Cos:
-    case Expr::Kind::Exp:
-    case Expr::Kind::Floor:
-    case Expr::Kind::Log:
-    case Expr::Kind::Mod:
-    case Expr::Kind::BuiltinMod:
-    case Expr::Kind::Pow:
-    case Expr::Kind::BuiltinPow:
-    case Expr::Kind::BitAnd:
-    case Expr::Kind::BitOr:
-    case Expr::Kind::BitXor:
-    case Expr::Kind::ShiftLeft:
-    case Expr::Kind::ShiftRight:
-    case Expr::Kind::PopCount:
-    case Expr::Kind::RotateLeft:
-    case Expr::Kind::RotateRight:
-    case Expr::Kind::Sin:
-    case Expr::Kind::Sqrt:
-    case Expr::Kind::Tan:
+    default:
       return fail(condition.location, "condition must have bool type");
     }
     return addCondition(std::move(typed));
