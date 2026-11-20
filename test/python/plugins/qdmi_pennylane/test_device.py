@@ -301,17 +301,21 @@ def test_warns_once_for_new_catalyst_abi(monkeypatch: pytest.MonkeyPatch, instal
     assert not recorded
 
 
-@pytest.mark.parametrize("measured", [False, True])
-def test_local_results_need_no_provider_job(*, measured: bool) -> None:
+def test_local_results_need_no_provider_job() -> None:
     """Empty readout and untouched measured wires are completed locally."""
     device = QDMIDevice("mqt.ddsim.default", wires=2)
-    tape = qp.tape.QuantumScript([], [qp.sample(wires=[1, 0])] if measured else [], shots=[2, 3])
-    result = device.execute(tape)
-    if measured:
-        for shots, samples in zip((2, 3), result, strict=True):
-            np.testing.assert_array_equal(samples, np.zeros((shots, 2)))
-    else:
-        assert result == ((), ())
+    empty = qp.tape.QuantumScript([], [], shots=[2, 3])
+    measured = qp.tape.QuantumScript(
+        [],
+        [qp.counts(all_outcomes=True), qp.probs(wires=[1]), qp.sample(wires=[1, 0])],
+        shots=[2, 3],
+    )
+    empty_results, measurements = device.execute((empty, measured))
+    assert empty_results == ((), ())
+    for shots, (counts, probabilities, samples) in zip((2, 3), measurements, strict=True):
+        assert counts == {"00": shots, "01": 0, "10": 0, "11": 0}
+        np.testing.assert_array_equal(probabilities, [1, 0])
+        np.testing.assert_array_equal(samples, np.zeros((shots, 2)))
     assert device.submitted_jobs == 0
     assert device.last_job is not None
     assert all(entry.result is not None for entry in device.last_job.entries)
