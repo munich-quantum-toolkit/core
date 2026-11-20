@@ -84,13 +84,14 @@ same-major upper bound.
 
 For a custom pipeline, a {py:class}`~mqt.core.mlir.QCProgram` also provides
 `to_qir(QIRProfile.BASE)` and `to_qir(QIRProfile.ADAPTIVE)`. These conversions
-consume that program unless `copy=True` is set. They lower prepared QC without
-inlining calls, expanding modifiers, or optimizing the resulting QIR. Calls with
-quantum-register arguments must already be inlined. Base conversion requires
-straight-line quantum operations; Adaptive conversion retains loops. Use
-`compile_program` for optimization, inlining, modifier expansion, and bounded
-Base loop unrolling. It also consumes typed MLIR programs unless `copy=True` is
-set.
+consume the program unless `copy=True` is set. Both profiles lower supported
+controls, inverses, and powers on individual operations, simplify the emitted
+LLVM IR, and attach its QIR metadata. Base conversion requires straight-line
+quantum operations. Adaptive conversion retains loops and promotes eligible
+classical memory to SSA values. Use `compile_program` to inline calls with
+quantum-register arguments, unroll eligible multi-operation modifiers and
+bounded Base loops, and apply circuit optimizations. It also consumes typed MLIR
+programs unless `copy=True` is set.
 
 ## Execute LLVM text or bitcode
 

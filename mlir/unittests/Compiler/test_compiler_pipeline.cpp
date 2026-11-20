@@ -1929,45 +1929,42 @@ TEST_F(CompilerPipelineTest, QIRTargetVersionBoundsEmittedRequirements) {
 
 TEST_F(CompilerPipelineTest, QIRChecksLoopBoundsBeforeLowering) {
   const auto environment = makeBoundedQIREnvironment();
-  for (const auto& [body, permitted] : {
-           std::pair{"for int i in [0:2] { h q; }", true},
-           std::pair{"for int i in [0:3] { h q; }", false},
-           std::pair{"int i = 0; while (i < 4) { h q; i += 1; }", false},
+  for (const auto& [body, branchFlag] : {
+           std::pair{"for int i in [0:2] { h q; }", 1},
+           std::pair{"for int i in [0:3] { h q; }", 0},
+           std::pair{"int i = 0; while (i < 4) { h q; i += 1; }", 0},
            std::pair{"output bit result; for int i in [0:2] { h q; } "
                      "int j = 0; while (j < 2) { h q; j += 1; } "
                      "result = measure q;",
-                     false},
-           std::pair{"bit b = 0; while (!b) { h q; b = measure q; }", false},
+                     0},
+           // LLVM prints the two-bit measurement-feedback flag as -2.
+           std::pair{"bit b = 0; while (!b) { h q; b = measure q; }", -2},
            std::pair{"array[int, 8] a = {0, 1, 2, 3, 4, 5, 6, 7}; "
                      "array[int, 4] b = a[0:2:6]; rx(b[3]) q;",
-                     false},
-           std::pair{"for int i in [0:1] { for int j in [0:2] { h q; } }",
-                     false},
+                     0},
+           std::pair{"for int i in [0:1] { for int j in [0:2] { h q; } }", 0},
            std::pair{"bit b = measure q; int n = 2; if (b) { n = 3; } "
                      "for int i in [0:n] { h q; }",
-                     false},
+                     0},
        }) {
     SCOPED_TRACE(body);
     auto input = QCProgram::fromOpenQASMString(
         std::string("OPENQASM 3; include \"stdgates.inc\"; qubit q; ") + body +
         " bit c = measure q;");
     MQT_ASSERT_SUCCESS(input);
-    attachTargetEnvironment(input->module(), environment);
-    auto target = input->module()->getAttr(mlir::mqt::TargetEnvAttr::name);
     auto output = [&] {
       ScopedDiagnosticHandler handler(input->module().getContext(),
                                       [](Diagnostic&) { return success(); });
-      return input->copy().intoQIR(QIRProfile::Adaptive);
+      return input->copy().intoQIR(QIRProfile::Adaptive, &environment);
     }();
-    ASSERT_EQ(succeeded(output), permitted);
-    if (!permitted) {
+    ASSERT_EQ(succeeded(output), branchFlag != 0);
+    if (branchFlag == 0) {
       continue;
     }
-    EXPECT_EQ(output->module()->getAttr(mlir::mqt::TargetEnvAttr::name),
-              target);
     auto llvmIR = std::move(*output).intoLLVMIR();
     ASSERT_TRUE(succeeded(llvmIR));
-    EXPECT_TRUE(StringRef(*llvmIR).contains("backwards_branching"));
+    EXPECT_TRUE(StringRef(*llvmIR).contains("!\"backwards_branching\", i2 " +
+                                            std::to_string(branchFlag)));
     auto qco = std::move(*input).intoQCO();
     ASSERT_TRUE(succeeded(qco));
     ASSERT_TRUE(succeeded(qco->compileForTarget(environment)));
@@ -2047,6 +2044,26 @@ TEST_F(CompilerPipelineTest, QIRReceiverRangePromotesMinimumVersion) {
     EXPECT_TRUE(StringRef(*ir).contains(StringRef(version) == ">=2.1,<3"
                                             ? "!\"qir_minor_version\", i32 1"
                                             : "!\"qir_minor_version\", i32 0"));
+  }
+}
+
+TEST_F(CompilerPipelineTest, ValidatesCapabilitiesAfterMemoryPromotion) {
+  for (const auto* version : {"2.0", "2.1"}) {
+    SCOPED_TRACE(version);
+    auto qc = QCProgram::fromOpenQASMString("OPENQASM 3; bit one = true;");
+    MQT_ASSERT_SUCCESS(qc);
+    const TargetEnvironment environment(
+        makeUnrestrictedTarget(),
+        llvm::cantFail(PayloadSpecification::create(
+            {.id = "qir", .version = version, .profile = "adaptive"})));
+    auto program = std::move(*qc).intoQIR(QIRProfile::Adaptive, &environment);
+    MQT_ASSERT_SUCCESS(program);
+    auto ir = std::move(*program).intoLLVMIR();
+    MQT_ASSERT_SUCCESS(ir);
+    EXPECT_TRUE(StringRef(*ir).contains(
+        "call void @__quantum__rt__bool_record_output(i1 true"));
+    EXPECT_TRUE(StringRef(*ir).contains("!\"qir_minor_version\", i32 0"));
+    EXPECT_FALSE(StringRef(*ir).contains("!\"arrays\""));
   }
 }
 

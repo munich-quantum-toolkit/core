@@ -328,7 +328,6 @@ TEST_F(QCToQIRAdaptiveNativeTest, ContiguousCopiesNeedOnlyArrayOperations) {
     }
   });
   EXPECT_EQ(copiedElements, (SmallVector<uint64_t>{6, 3, 1}));
-  ASSERT_TRUE(succeeded(runQIRCleanupPipeline(*moduleOp, true)));
   bool requiresDouble = false;
   moduleOp->walk([&](LLVM::ModuleFlagsOp flags) {
     for (const auto flag :
@@ -598,7 +597,6 @@ TEST_F(QCToQIRAdaptiveNativeTest, AssignsStaticResultIdsToArrays) {
     EXPECT_NE(call.getCallee(), qir::QIR_RESULT_ARRAY_RELEASE);
   });
 
-  ASSERT_TRUE(succeeded(runQIRCleanupPipeline(moduleOp.get(), true)));
   auto main = moduleOp->lookupSymbol<LLVM::LLVMFuncOp>("main");
   EXPECT_TRUE(llvm::is_contained(
       main.getPassthroughAttr(),
@@ -1010,9 +1008,7 @@ TEST_F(QCToQIRAdaptiveNativeTest, PreservesOutputOrderMultiplicityAndLabels) {
       bool found = false;
       for (auto measurement : measurements) {
         auto load = measurement.getDefiningOp<LLVM::LoadOp>();
-        auto element =
-            load ? load.getAddr().getDefiningOp<LLVM::GEPOp>() : LLVM::GEPOp{};
-        if (element && element.getBase() == call.getOperand(1)) {
+        if (load && load.getAddr() == call.getOperand(1)) {
           recorded.push_back(measurement);
           found = true;
           break;
@@ -1285,7 +1281,6 @@ TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   ASSERT_TRUE(succeeded(modifierLowering.run(*program)));
   ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(program.get())));
   ASSERT_TRUE(::mqt::test::verifyQIRTestStage(*program, "Converted QIR"));
-  ASSERT_TRUE(runQIRCleanupPipeline(program.get(), true).succeeded());
 
   auto reference = ::mqt::test::buildMLIRProgram(
       context.get(), referenceBuilder,

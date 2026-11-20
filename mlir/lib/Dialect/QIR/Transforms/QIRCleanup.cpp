@@ -10,8 +10,11 @@
 
 #include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
 
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Transforms/Passes.h"
 
 namespace mlir::qir {
 
@@ -27,3 +30,12 @@ protected:
 
 } // namespace
 } // namespace mlir::qir
+
+void populateQIRCleanupPipeline(mlir::OpPassManager& pm, bool useAdaptive) {
+  pm.addPass(mlir::createCanonicalizerPass());
+  pm.addPass(mlir::createCSEPass());
+  pm.addPass(mlir::createMem2Reg());
+  pm.addPass(mlir::qir::createQIRCleanupPass());
+  pm.addPass(mlir::createRemoveDeadValuesPass());
+  pm.addPass(mlir::qir::createQIRSetAttributesAndMetadata({useAdaptive}));
+}

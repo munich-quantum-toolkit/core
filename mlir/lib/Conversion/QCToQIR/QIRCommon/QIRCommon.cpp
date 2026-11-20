@@ -15,12 +15,13 @@
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
-#include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
 #include "mqt/Target/QIR/Capabilities.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
@@ -182,8 +183,8 @@ prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
     }
     OpPassManager preparation(ModuleOp::getOperationName());
     preparation.addPass(mqt::createPromoteClassicalMemory());
-    preparation.addPass(mqt::createLegalizeControlFlow());
-    if (failed(runPipeline(preparation))) {
+    if (failed(runPipeline(preparation)) ||
+        failed(mqt::legalizePayloadControlFlow(moduleOp, payload))) {
       return failure();
     }
     // QIR can classify a while loop as counted after dependence analysis.
@@ -209,8 +210,7 @@ finalizeQIRMetadata(ModuleOp moduleOp, StringRef profile,
                     const std::optional<PayloadSpecification>& payload,
                     function_ref<LogicalResult(OpPassManager&)> runPipeline) {
   OpPassManager metadata(ModuleOp::getOperationName());
-  metadata.addPass(
-      qir::createQIRSetAttributesAndMetadata({profile == "adaptive"}));
+  populateQIRCleanupPipeline(metadata, profile == "adaptive");
   if (failed(runPipeline(metadata))) {
     return failure();
   }

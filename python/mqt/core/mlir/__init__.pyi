@@ -1046,9 +1046,11 @@ class QCProgram(Program):
         Entry results may be direct measurements or CBit registers. Adaptive Profile
         also supports computed Boolean (``i1``) results. Other scalar outputs are
         unsupported. The generated QIR returns a zero execution status.
-        Base conversion requires straight-line quantum operations; Adaptive retains loops.
-        Calls with quantum-register arguments must be inlined before conversion.
-        Use ``compile_program`` for inlining, modifier expansion, and Base loop unrolling.
+        Both profiles lower supported controls, inverses, and powers on individual operations.
+        Base requires straight-line quantum operations. Adaptive retains loops and promotes
+        eligible classical memory to SSA values. Use ``compile_program`` to inline calls
+        with quantum-register arguments and unroll eligible multi-operation modifiers and
+        bounded Base loops.
         The source is consumed even on failure. Set ``copy=True`` to preserve it.
         """
 
