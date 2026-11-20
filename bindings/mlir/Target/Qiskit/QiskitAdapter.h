@@ -2620,17 +2620,19 @@ public:
       throw std::runtime_error("Qiskit custom Gate '" + std::string(name) +
                                "' has incompatible parameters");
     }
-    nb::dict parameterMap;
-    for (size_t index = 0U; index < parameters.size(); ++index) {
-      parameterMap[formalParameters[index]] =
-          pythonParameter(parameters[index]);
-    }
     nb::object operation = gate->second.operation;
     if (!parameters.empty()) {
-      operation =
-          pythonAttribute(operation.attr("definition"), "to_gate",
-                          "Qiskit custom definition cannot become a Gate")(
-              nb::arg("parameter_map") = parameterMap);
+      nb::dict parameterMap;
+      for (size_t index = 0U; index < parameters.size(); ++index) {
+        parameterMap[formalParameters[index]] =
+            pythonParameter(parameters[index]);
+      }
+      auto bound =
+          operation.attr("definition").attr("assign_parameters")(parameterMap);
+      operation = circuitModule.attr("Gate")(operation.attr("name"),
+                                             operation.attr("num_qubits"),
+                                             parameterMap.attr("values")());
+      operation.attr("definition") = std::move(bound);
     }
     if (!gateModifiers.empty()) {
       nb::list modifiers;
