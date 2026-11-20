@@ -953,13 +953,13 @@ TEST(QCOToQCRegressionTest, PreservesClassicalForLoopState) {
 module {
   func.func @main() -> i64 attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
-    %lb = arith.constant 0 : index
-    %ub = arith.constant 2 : index
-    %step = arith.constant 1 : index
+    %lb = arith.constant 127 : i8
+    %ub = arith.constant -128 : i8
+    %step = arith.constant 1 : i8
     %initial = arith.constant 0 : i64
     %one = arith.constant 1 : i64
-    %result, %q1 = scf.for %iv = %lb to %ub step %step
-        iter_args(%value = %initial, %q = %q0) -> (i64, !qco.qubit) {
+    %result, %q1 = scf.for unsigned %iv = %lb to %ub step %step
+        iter_args(%value = %initial, %q = %q0) -> (i64, !qco.qubit) : i8 {
       %next = arith.addi %value, %one : i64
       %q2 = qco.reset %q : !qco.qubit
       scf.yield %next, %q2 : i64, !qco.qubit
@@ -979,6 +979,7 @@ module {
   scf::ForOp loop;
   moduleOp->walk([&](scf::ForOp candidate) { loop = candidate; });
   ASSERT_TRUE(loop);
+  EXPECT_TRUE(loop.getUnsignedCmp());
   EXPECT_EQ(llvm::range_size(loop.getBody()->getOps<qc::ResetOp>()), 1);
   ASSERT_EQ(loop.getInitArgs().size(), 1);
   EXPECT_TRUE(loop.getInitArgs().front().getType().isInteger(64));

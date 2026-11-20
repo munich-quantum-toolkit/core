@@ -323,13 +323,16 @@ TEST_F(QCToQCORegressionTest, PreservesForResultsWithQuantumState) {
 module {
   func.func @main() -> i1 attributes {mqt.entry_point} {
     %qc = qc.alloc : !qc.qubit
-    %c0 = arith.constant 0 : index
-    %c1 = arith.constant 1 : index
-    %true = arith.constant true
-    %loop = scf.for %i = %c0 to %c1 step %c1
-        iter_args(%flag = %true) -> (i1) {
-      qc.h %qc : !qc.qubit
-      scf.yield %flag : i1
+    %lower = arith.constant 127 : i8
+    %upper = arith.constant -128 : i8
+    %step = arith.constant 1 : i8
+    %false = arith.constant false
+    %loop = scf.for unsigned %i = %lower to %upper step %step
+        iter_args(%flag = %false) -> (i1) : i8 {
+      qc.x %qc : !qc.qubit
+      %bit = qc.measure %qc : !qc.qubit -> i1
+      %out = arith.xori %flag, %bit : i1
+      scf.yield %out : i1
     }
     qc.dealloc %qc : !qc.qubit
     return %loop : i1
@@ -354,6 +357,9 @@ module {
     EXPECT_TRUE(llvm::equal(yield.getOperandTypes(), loop.getResultTypes()));
   });
   EXPECT_TRUE(sawLoop);
+  auto counts = qco::sample(mlir::mqt::getEntryPoint(*moduleOp), 1, 17);
+  ASSERT_TRUE(succeeded(counts));
+  EXPECT_EQ(counts->at("1"), 1U);
 
   expectNoQCOperations(*moduleOp);
 }
