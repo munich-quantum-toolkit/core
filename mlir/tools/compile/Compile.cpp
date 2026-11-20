@@ -22,7 +22,6 @@
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Support/Passes.h"
-#include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
 #include "qdmi/QDMI.hpp"
 
 #include "NativeCommands.h"
@@ -153,36 +152,18 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
       Twine("Failed to configure the QDMI registry from '") + path + "'.");
 }
 
-/// Load and parse a `.qasm` file
-static OwningOpRef<ModuleOp> loadOpenQASMFile(const StringRef filename,
-                                              MLIRContext* const context,
-                                              llvm::SourceMgr& sourceMgr) {
+/// Add the main source buffer to the diagnostic source manager.
+static LogicalResult loadSourceFile(const StringRef filename,
+                                    llvm::SourceMgr& sourceMgr) {
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
   if (!file) {
     llvm::errs() << "Failed to load file '" << filename << "': '"
                  << errorMessage << "'\n";
-    return nullptr;
+    return failure();
   }
-
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
-  return qc::translateOpenQASMToQC(sourceMgr, context);
-}
-
-/// Load and parse an `.mlir` file
-static OwningOpRef<ModuleOp> loadMLIRFile(const StringRef filename,
-                                          llvm::SourceMgr& sourceMgr,
-                                          const ParserConfig& parserConfig) {
-  std::string errorMessage;
-  auto file = openInputFile(filename, &errorMessage);
-  if (!file) {
-    llvm::errs() << "Failed to load file '" << filename << "': '"
-                 << errorMessage << "'\n";
-    return nullptr;
-  }
-
-  sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
-  return parseSourceFile<ModuleOp>(sourceMgr, parserConfig);
+  return success();
 }
 
 /// Load a `.jeff` file and convert the program to QCO.
@@ -665,23 +646,8 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
     return 1;
   }
 
-  ParsedProgram program;
-  switch (*parsedInputFormat) {
-  case InputFormat::MLIR:
-    program.mod = loadMLIRFile(inputFilename, sourceMgr, parserConfig);
-    if (!isolated && program.mod &&
-        containsProgramOperations(*program.mod, ProgramDialect::QCO)) {
-      program.dialect = ProgramDialect::QCO;
-    }
-    break;
-  case InputFormat::OpenQASM:
-    program.mod = loadOpenQASMFile(inputFilename, context.get(), sourceMgr);
-    break;
-  case InputFormat::Jeff:
-    program = loadJeffFile(inputFilename, context.get());
-    break;
-  }
-  if (!program.mod) {
+  if (*parsedInputFormat != InputFormat::Jeff &&
+      failed(loadSourceFile(inputFilename, sourceMgr))) {
     return 1;
   }
   const auto parseCustomPipeline = [&](OpPassManager& pm) {
@@ -695,6 +661,10 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
   };
 
   if (isolated) {
+    auto mod = parseSourceFile<ModuleOp>(sourceMgr, parserConfig);
+    if (!mod) {
+      return 1;
+    }
     PassManager pm(context.get());
     if (runReproducer) {
       if (failed(reproducerOptions.apply(pm))) {
@@ -706,23 +676,18 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
         return 1;
       }
     } else if (failed(parseCustomPipeline(pm)) ||
-               failed(qco::verifyLinearity(*program.mod))) {
+               failed(qco::verifyLinearity(*mod))) {
       return 1;
     }
-    if (failed(runWithCompilationOptions(pm, *program.mod, options))) {
+    if (failed(runWithCompilationOptions(pm, *mod, options))) {
       return 1;
     }
-    if (!runReproducer && failed(qco::verifyLinearity(*program.mod))) {
+    if (!runReproducer && failed(qco::verifyLinearity(*mod))) {
       return 1;
     }
-    return failed(writeOutput(*program.mod, outputFilename)) ? 1 : 0;
+    return failed(writeOutput(*mod, outputFilename)) ? 1 : 0;
   }
 
-  if (*parsedOutputFormat == ProgramFormat::QCImport &&
-      program.dialect != ProgramDialect::QC) {
-    llvm::errs() << "--emit=qc-import requires QC frontend input.\n";
-    return 1;
-  }
   if (passPipeline.getNumOccurrences() != 0 &&
       (*parsedOutputFormat == ProgramFormat::QCImport ||
        *parsedOutputFormat == ProgramFormat::QCO)) {
@@ -747,6 +712,34 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
   }
 
   auto input = [&]() -> FailureOr<CompilerInput> {
+    ParsedProgram program;
+    switch (*parsedInputFormat) {
+    case InputFormat::MLIR:
+      program.mod = parseSourceFile<ModuleOp>(sourceMgr, parserConfig);
+      if (program.mod &&
+          containsProgramOperations(*program.mod, ProgramDialect::QCO)) {
+        program.dialect = ProgramDialect::QCO;
+      }
+      break;
+    case InputFormat::OpenQASM: {
+      auto qc = QCProgram::fromOpenQASM(sourceMgr, context);
+      if (failed(qc)) {
+        return failure();
+      }
+      return CompilerInput(std::move(*qc));
+    }
+    case InputFormat::Jeff:
+      program = loadJeffFile(inputFilename, context.get());
+      break;
+    }
+    if (!program.mod) {
+      return failure();
+    }
+    if (*parsedOutputFormat == ProgramFormat::QCImport &&
+        program.dialect != ProgramDialect::QC) {
+      llvm::errs() << "--emit=qc-import requires QC frontend input.\n";
+      return failure();
+    }
     if (program.dialect == ProgramDialect::QC) {
       auto qc = QCProgram::fromModule(context, std::move(program.mod));
       if (failed(qc)) {

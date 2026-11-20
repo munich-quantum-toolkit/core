@@ -346,6 +346,12 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
 }
 
 ParseResult parseOpenQASM(llvm::SourceMgr& sourceMgr) {
+  if (sourceMgr.getNumBuffers() == 0) {
+    ParseResult result;
+    result.diagnostics.push_back(
+        {.message = "OpenQASM source manager has no input buffer"});
+    return result;
+  }
   const auto* source = sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID());
   auto parsed =
       parseBuffer(llvm::MemoryBuffer::getMemBufferCopy(

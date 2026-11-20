@@ -71,6 +71,7 @@ x q;
 
 TEST(OpenQASMFrontendTest, PreservesSourceNamesInSemanticDiagnostics) {
   llvm::SourceMgr sourceMgr;
+  EXPECT_FALSE(openqasm::frontend::analyzeOpenQASM(sourceMgr));
   sourceMgr.AddNewSourceBuffer(
       llvm::MemoryBuffer::getMemBufferCopy(
           "OPENQASM 3.0;\nqubit q;\nunknown q;\n", "fixture.qasm"),

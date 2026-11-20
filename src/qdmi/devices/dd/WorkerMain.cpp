@@ -18,7 +18,6 @@
 #include "mqt/Dialect/QIR/Execution/JIT/Session.h"
 #include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
-#include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
 #include "qdmi/common/Diagnostics.hpp"
 
 #include "NativeCommands.h"
@@ -60,21 +59,6 @@ void appendShot(std::string& packed, std::string_view shot) {
   packed.push_back(',');
 }
 
-[[nodiscard]] auto parseQASMToQCO(const std::string_view source)
-    -> llvm::FailureOr<mlir::QCOProgram> {
-  auto context = mlir::createCompilerContext();
-  auto moduleOp = mlir::qc::translateOpenQASMToQC(source, context.get());
-  if (!moduleOp) {
-    return llvm::failure();
-  }
-  auto qcProgram =
-      mlir::QCProgram::fromModule(std::move(context), std::move(moduleOp));
-  if (llvm::failed(qcProgram)) {
-    return llvm::failure();
-  }
-  return std::move(*qcProgram).intoQCO();
-}
-
 struct Execution {
   raw_socket_stream* stream_;
   std::string_view program_;
@@ -104,7 +88,12 @@ struct Execution {
     return slots.count;
   }
   bool qasmProgram() {
-    auto qcoProgram = parseQASMToQCO(program_);
+    auto qcProgram = mlir::QCProgram::fromOpenQASMString(program_);
+    if (!qcProgram) {
+      qdmi::diagnostics::error("{0}", llvm::toString(qcProgram.takeError()));
+      return false;
+    }
+    auto qcoProgram = std::move(*qcProgram).intoQCO();
     if (llvm::failed(qcoProgram)) {
       return false;
     }

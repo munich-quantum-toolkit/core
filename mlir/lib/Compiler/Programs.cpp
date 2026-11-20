@@ -301,13 +301,26 @@ QCProgram::fromOpenQASMFile(const std::filesystem::path& path) {
   if (failed(openSourceMgr(path, context.get(), sourceMgr))) {
     return diagnostics.takeError();
   }
-  auto mod = qc::translateOpenQASMToQC(sourceMgr, context.get());
-  if (!mod) {
+  auto program = fromOpenQASM(sourceMgr, context);
+  if (failed(program)) {
     emitError(UnknownLoc::get(context.get()))
         << "failed to translate OpenQASM file '" << path.string() << "' to QC";
     return diagnostics.takeError();
   }
-  return QCProgram({.context = context, .mod = std::move(mod)});
+  return std::move(*program);
+}
+
+FailureOr<QCProgram>
+QCProgram::fromOpenQASM(llvm::SourceMgr& sourceMgr,
+                        std::shared_ptr<MLIRContext> context) {
+  if (!context) {
+    return failure();
+  }
+  auto mod = qc::translateOpenQASMToQC(sourceMgr, context.get());
+  if (!mod) {
+    return failure();
+  }
+  return QCProgram({.context = std::move(context), .mod = std::move(mod)});
 }
 
 FailureOr<QCProgram> QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
