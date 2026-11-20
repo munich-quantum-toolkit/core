@@ -137,14 +137,17 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
   return std::move(mod);
 }
 
-/// Check whether a module contains an operation from a dialect.
-[[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
-                                            const StringRef dialect) {
-  return mod
-      ->walk([&](Operation* operation) {
-        return operation->getDialect()->getNamespace() == dialect
-                   ? WalkResult::interrupt()
-                   : WalkResult::advance();
+bool containsProgramOperations(ModuleOp moduleOp,
+                               const ProgramDialect dialect) {
+  return moduleOp
+      ->walk([dialect](Operation* operation) {
+        const auto ns = operation->getName().getDialectNamespace();
+        const bool matches =
+            dialect == ProgramDialect::QC
+                ? ns == qc::QCDialect::getDialectNamespace()
+                : ns == qco::QCODialect::getDialectNamespace() ||
+                      ns == qtensor::QTensorDialect::getDialectNamespace();
+        return matches ? WalkResult::interrupt() : WalkResult::advance();
       })
       .wasInterrupted();
 }
@@ -333,8 +336,7 @@ FailureOr<QCProgram> QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
        failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
     return failure();
   }
-  if (moduleUsesDialect(*storage.mod, "qco") ||
-      moduleUsesDialect(*storage.mod, "qtensor")) {
+  if (containsProgramOperations(*storage.mod, ProgramDialect::QCO)) {
     storage.mod->emitError(
         "QC programs must not contain QCO or QTensor operations");
     return failure();
@@ -401,7 +403,7 @@ QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
        failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
     return failure();
   }
-  if (moduleUsesDialect(*storage.mod, "qc")) {
+  if (containsProgramOperations(*storage.mod, ProgramDialect::QC)) {
     storage.mod->emitError("QCO programs must not contain QC operations");
     return failure();
   }

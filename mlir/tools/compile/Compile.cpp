@@ -69,11 +69,10 @@ using namespace mlir;
 
 namespace {
 enum class InputFormat : std::uint8_t { MLIR, OpenQASM, Jeff };
-enum class InputDialect : std::uint8_t { QC, QCO };
 
 struct ParsedProgram {
   OwningOpRef<ModuleOp> mod;
-  InputDialect dialect = InputDialect::QC;
+  ProgramDialect dialect = ProgramDialect::QC;
 };
 } // namespace
 
@@ -94,20 +93,6 @@ parseInputFormat(const StringRef format, const StringRef filename) {
     return InputFormat::MLIR;
   }
   return std::nullopt;
-}
-
-/// Detect the input dialect of a module.
-///
-/// Defaults to QC if no QCO operation is found.
-[[nodiscard]] static InputDialect detectInputDialect(ModuleOp mod) {
-  const bool hasQCO =
-      mod->walk([](Operation* operation) {
-           return operation->getDialect()->getNamespace() == "qco"
-                      ? WalkResult::interrupt()
-                      : WalkResult::advance();
-         })
-          .wasInterrupted();
-  return hasQCO ? InputDialect::QCO : InputDialect::QC;
 }
 
 /// Parse an output format.
@@ -229,7 +214,7 @@ static ParsedProgram loadJeffFile(const StringRef filename,
     llvm::errs() << "Failed to convert jeff input to QCO.\n";
     return {};
   }
-  return {.mod = std::move(mod), .dialect = InputDialect::QCO};
+  return {.mod = std::move(mod), .dialect = ProgramDialect::QCO};
 }
 
 /// Write serialized `jeff` bytes to an output file.
@@ -684,8 +669,9 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
   switch (*parsedInputFormat) {
   case InputFormat::MLIR:
     program.mod = loadMLIRFile(inputFilename, sourceMgr, parserConfig);
-    if (program.mod) {
-      program.dialect = detectInputDialect(*program.mod);
+    if (!isolated && program.mod &&
+        containsProgramOperations(*program.mod, ProgramDialect::QCO)) {
+      program.dialect = ProgramDialect::QCO;
     }
     break;
   case InputFormat::OpenQASM:
@@ -733,7 +719,7 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
   }
 
   if (*parsedOutputFormat == ProgramFormat::QCImport &&
-      program.dialect != InputDialect::QC) {
+      program.dialect != ProgramDialect::QC) {
     llvm::errs() << "--emit=qc-import requires QC frontend input.\n";
     return 1;
   }
@@ -760,25 +746,8 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
     }
   }
 
-  if (enableDecomposeMultiControlled &&
-      *parsedOutputFormat != ProgramFormat::QCImport &&
-      *parsedOutputFormat != ProgramFormat::QCO &&
-      passPipeline.getNumOccurrences() == 0) {
-    PassManager pm(context.get());
-    if (program.dialect == InputDialect::QC) {
-      pm.addPass(createQCToQCO());
-    }
-    // Keep potential ancilla qubits until decomposition.
-    populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
-    populateDecomposeMultiControlledPipeline(
-        pm, decomposeMultiControlledMinQubits.getValue());
-    if (failed(runWithCompilationOptions(pm, *program.mod, options))) {
-      return 1;
-    }
-    program.dialect = InputDialect::QCO;
-  }
   auto input = [&]() -> FailureOr<CompilerInput> {
-    if (program.dialect == InputDialect::QC) {
+    if (program.dialect == ProgramDialect::QC) {
       auto qc = QCProgram::fromModule(context, std::move(program.mod));
       if (failed(qc)) {
         return failure();
@@ -793,6 +762,29 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
   }();
   if (failed(input)) {
     return 1;
+  }
+  if (enableDecomposeMultiControlled &&
+      *parsedOutputFormat != ProgramFormat::QCImport &&
+      *parsedOutputFormat != ProgramFormat::QCO &&
+      passPipeline.getNumOccurrences() == 0) {
+    if (auto* qc = std::get_if<QCProgram>(&*input)) {
+      auto qco = std::move(*qc).intoQCO();
+      if (failed(qco)) {
+        return 1;
+      }
+      *input = std::move(*qco);
+    }
+    if (failed(runWithPassManager(
+            std::get<QCOProgram>(*input).module(),
+            [](OpPassManager& pm) {
+              // Keep potential ancilla qubits until decomposition.
+              populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
+              populateDecomposeMultiControlledPipeline(
+                  pm, decomposeMultiControlledMinQubits.getValue());
+            },
+            "failed to decompose multi-controlled operations", options))) {
+      return 1;
+    }
   }
   auto compiled =
       targetEnvironment

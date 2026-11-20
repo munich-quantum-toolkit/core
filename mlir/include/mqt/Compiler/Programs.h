@@ -52,6 +52,13 @@ class QIRProgram;
 class TargetEnvironment;
 class CompilerTarget;
 
+/// Quantum operation families accepted by the typed program constructors.
+enum class ProgramDialect : uint8_t { QC, QCO };
+
+/// Whether the module contains operations of this family. QCO includes QTensor.
+[[nodiscard]] bool containsProgramOperations(ModuleOp moduleOp,
+                                             ProgramDialect dialect);
+
 /// A value for a scalar or statically sized one-dimensional f64 input.
 using ParameterValue = std::variant<std::vector<double>, double>;
 

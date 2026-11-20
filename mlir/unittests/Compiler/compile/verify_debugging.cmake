@@ -65,6 +65,22 @@ endif()
 reject_compiler("Could not determine the input format" "${QASM_INPUT}" --input-format=qasm)
 reject_compiler("Unknown output format" "${QASM_INPUT}" --emit=mlir)
 
+# A register-only module also uses QCO value semantics.
+set(register_input "${OUTPUT_DIR}/register.mlir")
+file(
+  WRITE "${register_input}"
+  [=[func.func @main() attributes {mqt.entry_point} {
+  %size = arith.constant 1 : index
+  %r = qtensor.alloc(%size) : tensor<1x!qco.qubit>
+  qtensor.dealloc %r : tensor<1x!qco.qubit>
+  return
+}]=])
+run_compiler(0 "${register_input}" --emit=qco)
+file(APPEND "${register_input}"
+     "\nfunc.func private @unused(%q: !qc.qubit) { qc.x %q : !qc.qubit return }")
+reject_compiler("QCO programs must not contain QC" "${register_input}" --emit=qc
+                --decompose-multi-controlled)
+
 foreach(option IN ITEMS profile-actions-to log-actions-to)
   reject_compiler("Opening file for --${option} failed" "${QASM_INPUT}" "--${option}=${OUTPUT_DIR}")
 endforeach()
