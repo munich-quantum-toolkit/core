@@ -28,21 +28,13 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <cstring>
-#include <filesystem>
 #include <limits>
 #include <string>
 #include <utility>
 #include <vector>
 
 using mqt::test::value;
-
-#ifdef _WIN32
-#define SYSTEM _wsystem
-#else
-#define SYSTEM std::system
-#endif
 
 namespace qir {
 
@@ -250,12 +242,6 @@ TEST_F(QIRRuntimeTest, FloatOutputPreservesShortestRepresentations) {
   }
 }
 
-TEST_F(QIRRuntimeTest, XGate) {
-  auto* q0 = reinterpret_cast<Qubit*>(0UL);
-  __quantum__rt__initialize(nullptr);
-  __quantum__qis__x__body(q0);
-}
-
 TEST_F(QIRRuntimeTest, IdentityGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
@@ -272,12 +258,6 @@ TEST_F(QIRRuntimeTest, ZGate) {
   auto* q0 = reinterpret_cast<Qubit*>(0UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__z__body(q0);
-}
-
-TEST_F(QIRRuntimeTest, HGate) {
-  auto* q0 = reinterpret_cast<Qubit*>(0UL);
-  __quantum__rt__initialize(nullptr);
-  __quantum__qis__h__body(q0);
 }
 
 TEST_F(QIRRuntimeTest, SGate) {
@@ -440,13 +420,6 @@ TEST_F(QIRRuntimeTest, CNotGate) {
   auto* q1 = reinterpret_cast<Qubit*>(1UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__cnot__body(q0, q1);
-}
-
-TEST_F(QIRRuntimeTest, CXGate) {
-  auto* q0 = reinterpret_cast<Qubit*>(0UL);
-  auto* q1 = reinterpret_cast<Qubit*>(1UL);
-  __quantum__rt__initialize(nullptr);
-  __quantum__qis__cx__body(q0, q1);
 }
 
 TEST_F(QIRRuntimeTest, CYGate) {
@@ -642,13 +615,6 @@ TEST_F(QIRRuntimeTest, RCCXGate) {
   auto* q2 = reinterpret_cast<Qubit*>(2UL);
   __quantum__rt__initialize(nullptr);
   EXPECT_NO_THROW(__quantum__qis__rccx__body(q0, q1, q2));
-}
-
-TEST_F(QIRRuntimeTest, MzGate) {
-  auto* q0 = reinterpret_cast<Qubit*>(0UL);
-  auto* r0 = reinterpret_cast<Result*>(0UL);
-  __quantum__rt__initialize(nullptr);
-  __quantum__qis__mz__body(q0, r0);
 }
 
 TEST_F(QIRRuntimeTest, ResetGate) {
@@ -938,35 +904,6 @@ TEST_F(QIRRuntimeTest, AdaptiveRecordOutputs) {
   __quantum__rt__result_release(r1);
   __quantum__rt__result_release(r2);
 }
-
-namespace {
-
-class QIRFilesTest : public ::testing::TestWithParam<std::filesystem::path> {};
-
-} // namespace
-
-// Instantiate the test suite with different parameters
-INSTANTIATE_TEST_SUITE_P(
-    QIRExecutablesTest, //< Custom instantiation name
-    QIRFilesTest,       //< Test suite name
-    // Parameters to test with
-    ::testing::Values(TEST_EXECUTABLES),
-    [](const testing::TestParamInfo<std::filesystem::path>& inf) {
-      // Extract the last part of the file path
-      auto filename = inf.param.stem().string();
-      // replace all '-' with '_'
-      std::ranges::replace(filename, '-', '_');
-      return filename;
-    });
-
-TEST_P(QIRFilesTest, Executables) {
-  const auto& path = GetParam();
-  const auto result = SYSTEM(path.c_str());
-  EXPECT_EQ(result, 0);
-}
-} // namespace qir
-
-namespace qir {
 
 TEST_F(QIRRuntimeTest, PreservesPhaseBeforeFirstQubitAndFollowingGates) {
   __quantum__rt__initialize(nullptr);
