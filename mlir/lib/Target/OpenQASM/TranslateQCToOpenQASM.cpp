@@ -852,10 +852,11 @@ private:
         if (!controlSupport_) {
           return failure();
         }
+      } else {
+        supportsDispatch = environment.environment()
+                               .payloadSpecification()
+                               .supportsUnrestrictedMultiwayBranching();
       }
-      supportsDispatch = environment.environment()
-                             .payloadSpecification()
-                             .supportsUnrestrictedMultiwayBranching();
     }
     SmallVector<func::FuncOp> functions(moduleOp.getOps<func::FuncOp>());
     function = mqt::getEntryPoint(moduleOp);
@@ -1729,6 +1730,10 @@ private:
       return success();
     }
 
+    if (!supportsDispatch) {
+      return fail(extract,
+                  "indexed export requires unrestricted multiway branching");
+    }
     llvm::MapVector<Attribute, SmallVector<int64_t>> cases;
     for (auto [slot, value] : llvm::enumerate(table.getValues<Attribute>())) {
       cases[value].push_back(static_cast<int64_t>(slot));
@@ -1737,28 +1742,25 @@ private:
         llvm::max_element(cases, [](const auto& left, const auto& right) {
           return left.second.size() < right.second.size();
         });
-    if (!supportsDispatch) {
-      return fail(extract,
-                  "indexed export requires unrestricted multiway branching");
-    }
     auto argument = emitExpression(extract.getIndices().front());
     if (failed(argument)) {
       return failure();
     }
     requiredMinorVersion = std::max(requiredMinorVersion, 1U);
-    if (failed(
-            checkSwitch(extract, static_cast<uint64_t>(type.getDimSize(0))))) {
+    const auto labels = static_cast<uint64_t>(table.getNumElements()) -
+                        mostCommon->second.size();
+    if (failed(checkSwitch(extract, labels))) {
       return failure();
     }
     *output << "switch (" << *argument << ") {\n";
     output->indent();
     for (const auto& [attribute, slots] : cases) {
+      if (attribute == mostCommon->first) {
+        continue;
+      }
       auto value = emitConstant(attribute, extract.getLoc());
       if (failed(value)) {
         return failure();
-      }
-      if (attribute == mostCommon->first) {
-        continue;
       }
       *output << "case ";
       llvm::interleaveComma(slots, *output);

@@ -5557,6 +5557,37 @@ c = measure q;
   }
 }
 
+TEST_F(CompilerPipelineTest, TableSwitchCountsExplicitLabelsAgainstPayload) {
+  auto program = QCProgram::fromMLIRString(R"mlir(module {
+    func.func @main() -> i64 attributes {mqt.entry_point} {
+      %q = qc.static 0 : !qc.qubit
+      %bit = qc.measure %q : !qc.qubit -> i1
+      %index = arith.index_castui %bit : i1 to index
+      %table = arith.constant dense<[7, 8, 7, 8, 7]> : tensor<5xi64>
+      %value = tensor.extract %table[%index] : tensor<5xi64>
+      return %value : i64
+    }
+  })mlir");
+  MQT_ASSERT_SUCCESS(program);
+  for (const uint64_t limit : {1U, 2U}) {
+    const TargetEnvironment environment(
+        makeUnrestrictedTarget(),
+        llvm::cantFail(PayloadSpecification::create(
+            {.id = "openqasm", .version = "3.1"},
+            {
+                {
+                    .id = "multiway-branching",
+                    .constraints = {{.id = "max-case-count", .value = limit}},
+                },
+            })));
+    auto source = program->copy().intoOpenQASM3(&environment);
+    ASSERT_EQ(succeeded(source), limit == 2);
+    if (succeeded(source)) {
+      EXPECT_TRUE(StringRef(source->source()).contains("case 1, 3"));
+    }
+  }
+}
+
 [[nodiscard]] static std::string
 makePayloadSwitchSource(size_t cases, bool quantum,
                         StringRef lastCaseBody = {}) {
