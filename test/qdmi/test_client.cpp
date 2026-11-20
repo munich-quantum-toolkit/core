@@ -17,6 +17,7 @@
 #include "gtest/gtest.h"
 #include "qdmi/client.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
@@ -408,17 +409,22 @@ TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
 }
 
 TEST(JobShotsTest, PreservesZeroWidthShots) {
-  EXPECT_EQ(value(detail::parseShots("", 0)), std::vector<std::string>{});
-  EXPECT_EQ(value(detail::parseShots("", 1)), std::vector<std::string>{""});
-  EXPECT_EQ(value(detail::parseShots(",,,", 4)),
-            (std::vector<std::string>{"", "", "", ""}));
+  const auto noShots = value(detail::PackedShots::parse(bytesOf(""), 0));
+  const auto oneShot = value(detail::PackedShots::parse(bytesOf(""), 1));
+  const auto fourShots = value(detail::PackedShots::parse(bytesOf(",,,"), 4));
+  EXPECT_TRUE(noShots.rows().empty());
+  EXPECT_THAT(llvm::to_vector(oneShot.rows()), testing::ElementsAre(""));
+  EXPECT_THAT(llvm::to_vector(fourShots.rows()),
+              testing::ElementsAre("", "", "", ""));
 }
 
 TEST(JobShotsTest, ValidatesShotCount) {
-  EXPECT_TRUE(
-      errorStatus([&] { return detail::parseShots("0,1", 1); }).has_value());
-  EXPECT_TRUE(
-      errorStatus([&] { return detail::parseShots("0", 2); }).has_value());
+  EXPECT_EQ(
+      errorStatus([] { return detail::PackedShots::parse(bytesOf("0,1"), 1); }),
+      QDMI_ERROR_FATAL);
+  EXPECT_EQ(
+      errorStatus([] { return detail::PackedShots::parse(bytesOf("0"), 2); }),
+      QDMI_ERROR_FATAL);
 }
 
 TEST(QDMITest, StatusToString) {

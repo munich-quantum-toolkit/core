@@ -60,30 +60,32 @@ using llvm::Expected;
 
 namespace qdmi {
 namespace detail {
-Expected<std::vector<std::string>> parseShots(const std::string_view shots,
-                                              const size_t numShots) {
-  if (numShots == 0) {
-    if (!shots.empty()) {
-      return qdmi::makeError(QDMI_ERROR_FATAL, "Number of shots mismatch");
-    }
-    return std::vector<std::string>{};
+Expected<PackedShots> PackedShots::parse(std::vector<std::byte> bytes,
+                                         size_t count) {
+  if (bytes.empty() || bytes.back() != std::byte{0}) {
+    return qdmi::makeError(QDMI_ERROR_FATAL, "Unterminated QDMI SHOTS result");
   }
-
-  std::vector<std::string> parsed;
-  parsed.reserve(numShots);
-  size_t start = 0;
-  while (true) {
-    const auto end = shots.find(',', start);
-    parsed.emplace_back(shots.substr(start, end - start));
-    if (end == std::string_view::npos) {
-      break;
-    }
-    start = end + 1;
-  }
-  if (parsed.size() != numShots) {
+  const auto rows = llvm::StringRef(reinterpret_cast<const char*>(bytes.data()),
+                                    bytes.size() - 1);
+  if (count == 0 ? !rows.empty() : rows.count(',') != count - 1) {
     return qdmi::makeError(QDMI_ERROR_FATAL, "Number of shots mismatch");
   }
-  return parsed;
+  return PackedShots{std::move(bytes), count};
+}
+
+Expected<PackedShots> getPackedShots(const Job& job, size_t programIndex) {
+  auto bytes = job.getResults(QDMI_JOB_RESULT_SHOTS, programIndex);
+  if (!bytes) {
+    return bytes.takeError();
+  }
+  if (bytes->empty()) {
+    return PackedShots{};
+  }
+  auto count = job.getNumShots();
+  if (!count) {
+    return count.takeError();
+  }
+  return PackedShots::parse(std::move(*bytes), *count);
 }
 
 } // namespace detail
@@ -1363,32 +1365,16 @@ Expected<std::optional<size_t>> Job::getQueuePosition() const {
 
 Expected<std::vector<std::string>>
 Job::getShots(const size_t programIndex) const {
-  size_t shotsSize = 0;
-  if (auto error = qdmi::checkError(
-          api().job_get_results(job_.get(), programIndex, QDMI_JOB_RESULT_SHOTS,
-                                0, nullptr, &shotsSize),
-          "Querying shots size")) {
-    return error;
+  auto packed = detail::getPackedShots(*this, programIndex);
+  if (!packed) {
+    return packed.takeError();
   }
-
-  if (shotsSize == 0) {
-    return std::vector<std::string>{};
+  std::vector<std::string> parsed;
+  parsed.reserve(packed->count);
+  for (const auto bits : packed->rows()) {
+    parsed.emplace_back(bits.data(), bits.size());
   }
-
-  std::string shots(shotsSize, '\0');
-  if (auto error = qdmi::checkError(
-          api().job_get_results(job_.get(), programIndex, QDMI_JOB_RESULT_SHOTS,
-                                shotsSize, shots.data(), nullptr),
-          "Querying shots")) {
-    return error;
-  }
-  shots.pop_back();
-
-  auto count = getNumShots();
-  if (!count) {
-    return count.takeError();
-  }
-  return detail::parseShots(shots, (*count));
+  return parsed;
 }
 
 Expected<std::map<std::string, size_t>>
