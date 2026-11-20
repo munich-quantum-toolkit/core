@@ -472,8 +472,14 @@ TEST(ResultsStatevector, SizesDoNotMaterializeUnaddressableVectors) {
   for (const auto& [qubits, stateSize, probabilitySize, keySize] : cases) {
     SCOPED_TRACE(qubits);
     const qdmi_test::JobGuard job{session.session};
-    const auto program =
+    auto program =
         "OPENQASM 3.0; qubit[" + std::to_string(qubits) + "] q; h q;";
+    // A cluster state has full support and shared subgraphs with different
+    // parents.
+    for (size_t i = 1; i < qubits; ++i) {
+      program +=
+          " cz q[" + std::to_string(i - 1) + "], q[" + std::to_string(i) + "];";
+    }
     ASSERT_EQ(
         qdmi_test::setProgram(job.job, QDMI_PROGRAM_FORMAT_QASM3, program),
         QDMI_SUCCESS);
