@@ -92,6 +92,7 @@ using mlir::mqt::FloatExpression;
 using LocalParameters = llvm::StringMap<mlir::Value>;
 using GlobalParameters = llvm::StringMap<mlir::Value>;
 using ValidationParameters = llvm::StringMap<Parameter>;
+using ParameterIdentities = llvm::StringMap<std::optional<std::string>>;
 
 namespace {
 struct GateImportState {
@@ -2318,7 +2319,7 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
 static void validateCircuit(
     const CircuitReader& circuit, const ValidationParameters& localParameters,
     const ValidationParameters& freeParameters,
-    llvm::StringSet<>& parameterNames,
+    ParameterIdentities& parameterNames,
     llvm::DenseSet<uintptr_t>& validatedGateDefinitions, uint32_t rootQubits,
     uint32_t rootClbits, size_t definitionDepth, size_t controlFlowDepth,
     bool gateDefinition, bool native = false,
@@ -2503,7 +2504,7 @@ static void validateTarget(const ClassicalTarget& target,
 static void validateControlFlow(
     const ControlFlowReader& controlFlow, ValidationParameters localParameters,
     const ValidationParameters& freeParameters,
-    llvm::StringSet<>& parameterNames,
+    ParameterIdentities& parameterNames,
     llvm::DenseSet<uintptr_t>& validatedGateDefinitions, uint32_t rootQubits,
     uint32_t rootClbits, size_t definitionDepth, size_t controlFlowDepth,
     bool native) {
@@ -2571,7 +2572,9 @@ static void validateControlFlow(
         throw std::runtime_error(
             "Qiskit for-loop parameter has invalid symbol metadata");
       }
-      if (!parameterNames.insert(symbol->name).second) {
+      const auto [known, inserted] =
+          parameterNames.try_emplace(symbol->name, symbol->identity);
+      if (!inserted && known->second != symbol->identity) {
         throw std::runtime_error(
             "Qiskit circuit contains distinct parameters with the same name");
       }
@@ -2646,7 +2649,7 @@ static void
 validateDefinition(const CircuitReader& circuit, size_t index,
                    const ValidationParameters& localParameters,
                    const ValidationParameters& freeParameters,
-                   llvm::StringSet<>& parameterNames,
+                   ParameterIdentities& parameterNames,
                    llvm::DenseSet<uintptr_t>& validatedGateDefinitions,
                    size_t definitionDepth, size_t controlFlowDepth,
                    bool gateDefinition) {
@@ -2688,7 +2691,7 @@ validateDefinition(const CircuitReader& circuit, size_t index,
 void validateCircuit(const CircuitReader& circuit,
                      const ValidationParameters& localParameters,
                      const ValidationParameters& freeParameters,
-                     llvm::StringSet<>& parameterNames,
+                     ParameterIdentities& parameterNames,
                      llvm::DenseSet<uintptr_t>& validatedGateDefinitions,
                      const uint32_t rootQubits, const uint32_t rootClbits,
                      size_t definitionDepth, size_t controlFlowDepth,
@@ -2932,7 +2935,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit, const bool native,
   auto view = translation->openCircuit(circuit);
   const auto freeParameters = view->parameters();
   ValidationParameters freeParameterSymbols;
-  llvm::StringSet<> parameterNames;
+  ParameterIdentities parameterNames;
   ParameterGroupRegistry parameterGroups;
   for (const auto& parameter : freeParameters) {
     const auto* symbol = parameter.getSymbol();
@@ -2940,7 +2943,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit, const bool native,
       throw std::runtime_error(
           "Qiskit circuit returned an invalid free parameter");
     }
-    if (!parameterNames.insert(symbol->name).second) {
+    if (!parameterNames.try_emplace(symbol->name, symbol->identity).second) {
       throw std::runtime_error(
           "Qiskit circuit contains distinct parameters with the same name");
     }
@@ -2971,7 +2974,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit, const bool native,
   const auto classicalRegisters = circuitRegisters(*view, false);
   for (const auto& reg :
        llvm::concat<const Register>(quantumRegisters, classicalRegisters)) {
-    if (!parameterNames.insert(reg.name).second) {
+    if (!parameterNames.try_emplace(reg.name, std::nullopt).second) {
       throw std::runtime_error(
           "Qiskit circuit requires unique parameter and register names");
     }

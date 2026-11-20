@@ -3991,12 +3991,13 @@ def test_same_name_free_and_bound_parameters_are_rejected() -> None:
     assert circuit.parameters == {global_parameter}
 
 
-def test_bound_parameter_names_are_unique_across_scopes() -> None:
-    """Reject same-name binders in separate lexical scopes."""
+@pytest.mark.parametrize("shared", [False, True])
+def test_bound_parameter_names_are_unique_across_scopes(*, shared: bool) -> None:
+    """Reuse a binder across scopes while rejecting different same-name IDs."""
     first = Parameter("index")
     first_body = QuantumCircuit(1)
     first_body.rx(first, 0)
-    second = Parameter("index")
+    second = first if shared else Parameter("index")
     second_body = QuantumCircuit(1)
     second_body.ry(second, 0)
     circuit = QuantumCircuit(1)
@@ -4004,8 +4005,15 @@ def test_bound_parameter_names_are_unique_across_scopes() -> None:
     circuit.for_loop(range(2), second, second_body, [0], [], label=None)
     source_data = list(circuit.data)
 
-    with pytest.raises(RuntimeError, match="distinct parameters with the same name"):
-        QCProgram.from_qiskit(circuit)
+    if shared:
+        restored = QCProgram.from_qiskit(circuit).to_qiskit()
+        expected = QuantumCircuit(1)
+        expected.rx(1, 0)
+        expected.ry(1, 0)
+        np.testing.assert_allclose(simulate(restored), Statevector(expected).data, atol=1e-12, rtol=0)
+    else:
+        with pytest.raises(RuntimeError, match="distinct parameters with the same name"):
+            QCProgram.from_qiskit(circuit)
 
     assert list(circuit.data) == source_data
     assert not circuit.parameters
