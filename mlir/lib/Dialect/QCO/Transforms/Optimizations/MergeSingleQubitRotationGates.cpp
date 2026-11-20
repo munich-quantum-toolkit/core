@@ -527,12 +527,14 @@ struct MergeSingleQubitRotationGatesPattern final
   explicit MergeSingleQubitRotationGatesPattern(
       MLIRContext* context,
       std::optional<CompilerTarget::SynthesisBasis> fusionBasis = std::nullopt,
-      const CompilerTarget* target = nullptr)
+      const CompilerTarget* target = nullptr,
+      decomposition::SingleQubitSiteLookup siteFor = nullptr)
       : OpInterfaceRewritePattern(context), fusionBasis(fusionBasis),
-        target(target) {}
+        target(target), siteFor(siteFor) {}
 
   std::optional<CompilerTarget::SynthesisBasis> fusionBasis;
   const CompilerTarget* target;
+  decomposition::SingleQubitSiteLookup siteFor;
 
   /// Checks if this op is the start of a mergeable chain.
   ///
@@ -902,13 +904,14 @@ struct MergeSingleQubitRotationGatesPattern final
         return failure();
       }
       // A multi-gate control body is not itself a native operation.
-      if (target != nullptr && !control &&
-          llvm::all_of(chain, [&](auto member) {
-            return target->supports(member.getOperation());
-          })) {
-        return failure();
-      }
       if (target != nullptr && !control) {
+        const auto site = siteFor ? siteFor(op.getInputQubit(0)) : std::nullopt;
+        if (llvm::all_of(chain, [&](auto member) {
+              return decomposition::supportsSingleQubitGate(
+                  *target, member.getOperation(), site);
+            })) {
+          return failure();
+        }
         return tryMergeDirectChain(chain, rewriter, *fusionBasis);
       }
       return mergeDynamicChain(chain, rewriter, *fusionBasis);
@@ -986,7 +989,7 @@ void populateRotationCompositionPatterns(RewritePatternSet& patterns,
 
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
-    const CompilerTarget* target) {
+    const CompilerTarget* target, SingleQubitSiteLookup siteFor) {
   populateRotationCompositionPatterns(patterns, target);
   RZOp::getOptimizationPatterns(patterns, patterns.getContext());
   if (basis.singleQubit == SingleQubitBasis::ZSXX && target != nullptr) {
@@ -996,7 +999,7 @@ void populateParameterizedSingleQubitRunCompositionPatterns(
   RYOp::getOptimizationPatterns(patterns, patterns.getContext());
   POp::getOptimizationPatterns(patterns, patterns.getContext());
   patterns.add<MergeSingleQubitRotationGatesPattern>(patterns.getContext(),
-                                                     basis, target);
+                                                     basis, target, siteFor);
 }
 
 } // namespace mlir::qco::decomposition

@@ -1573,7 +1573,7 @@ protected:
     if (targetBasis) {
       RewritePatternSet patterns(&getContext());
       decomposition::populateRotationCompositionPatterns(patterns);
-      if (targetBasis->entangler) {
+      if (emissionBasis->entangler) {
         patterns.add<ComposePauliRotations>(&getContext(), *emissionBasis,
                                             target, analysis, &*sites);
       }
@@ -1585,9 +1585,11 @@ protected:
       }
       listener.foldPending();
     }
+    const auto siteFor = [&](Value wire) { return sites->lookup(wire); };
     if (targetBasis) {
       decomposition::SingleQubitRunFusion fusion(
-          *targetBasis, &target, GreedyRewriteConfig{}.setListener(&listener));
+          *targetBasis, &target, GreedyRewriteConfig{}.setListener(&listener),
+          siteFor);
       if (failed(fuseGateRuns(rewriter, moduleOp, *emissionBasis, analysis,
                               &target, &*sites, false,
                               equatorial ? nullptr : &fusion))) {
@@ -1661,7 +1663,7 @@ protected:
       RewritePatternSet patterns(&getContext());
       decomposition::populateRotationCompositionPatterns(patterns, &target);
       decomposition::populateFuseSingleQubitUnitaryRunsPatterns(
-          patterns, *targetBasis, &target);
+          patterns, *targetBasis, &target, siteFor);
       auto config = compositionConfig;
       if (failed(applyPatternsGreedily(moduleOp, std::move(patterns),
                                        config.setListener(&listener)))) {
