@@ -101,6 +101,35 @@ protected:
 
 } // namespace
 
+TEST_F(QIRTest, CleanupPreservesCheckedQubitAllocation) {
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    llvm.func @__quantum__rt__qubit_array_allocate(i64, !llvm.ptr, !llvm.ptr)
+    llvm.func @__quantum__rt__qubit_array_release(i64, !llvm.ptr)
+    llvm.func @checked() -> i1 {
+      %one = llvm.mlir.constant(1 : i64) : i64
+      %array = llvm.alloca %one x !llvm.ptr : (i64) -> !llvm.ptr
+      %err = llvm.alloca %one x i1 : (i64) -> !llvm.ptr
+      llvm.call @__quantum__rt__qubit_array_allocate(%one, %array, %err) : (i64, !llvm.ptr, !llvm.ptr) -> ()
+      llvm.call @__quantum__rt__qubit_array_release(%one, %array) : (i64, !llvm.ptr) -> ()
+      %status = llvm.load %err : !llvm.ptr -> i1
+      llvm.return %status : i1
+    })mlir",
+                                             context.get());
+  ASSERT_TRUE(program);
+  PassManager manager(context.get());
+  manager.addPass(createQIRCleanupPass());
+  ASSERT_TRUE(succeeded(manager.run(*program)));
+  auto checked = program->lookupSymbol<LLVM::LLVMFuncOp>("checked");
+  auto calls = llvm::to_vector(checked.front().getOps<LLVM::CallOp>());
+  ASSERT_EQ(calls.size(), 2U);
+  EXPECT_EQ(calls[0].getCallee(), QIR_QUBIT_ARRAY_ALLOC);
+  EXPECT_EQ(calls[1].getCallee(), QIR_QUBIT_ARRAY_RELEASE);
+  auto returned = cast<LLVM::ReturnOp>(checked.front().getTerminator());
+  auto load = returned.getOperand(0).getDefiningOp<LLVM::LoadOp>();
+  ASSERT_TRUE(load);
+  EXPECT_EQ(load.getAddr(), calls[0].getOperand(2));
+}
+
 TEST_F(QIRTest, CanonicalizesDuplicateStaticQubits) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(staticQubitsWithDuplicates),

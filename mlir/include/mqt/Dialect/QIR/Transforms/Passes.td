@@ -37,11 +37,7 @@ def QIRSetAttributesAndMetadata
 
 def QIRCleanupPass : Pass<"qir-cleanup", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];
-  let summary = "Remove redundant QIR runtime bookkeeping.";
-  let description = [{
-    Removes redundant QIR runtime qubit-array allocation/release pairs that do
-    not contribute to observable behavior, and keeps QIR modules compact.
-  }];
+  let summary = "Remove unused external LLVM function declarations.";
 }
 
 #endif // MLIR_DIALECT_QIR_TRANSFORMS_PASSES_TD
