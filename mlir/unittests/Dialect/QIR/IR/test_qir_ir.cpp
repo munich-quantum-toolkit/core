@@ -346,6 +346,17 @@ TEST_F(QIRTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
       "Register index is out of bounds");
 }
 
+TEST_F(QIRTest, BuilderRejectsAnotherProgramsClassicalRegister) {
+  QIRProgramBuilder first(context.get());
+  first.initialize();
+  auto reg = first.allocClassicalBitRegister(1);
+  QIRProgramBuilder second(context.get());
+  second.initialize();
+  second.allocClassicalBitRegister(1);
+  EXPECT_DEATH(second.loadClassicalBit(reg, 0),
+               "does not belong to this builder");
+}
+
 TEST_F(QIRTest, BuilderReturnsCompleteClassicalRegister) {
   ClassicalRegister returnedRegister;
   auto module = QIRProgramBuilder::build(
