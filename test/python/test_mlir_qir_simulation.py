@@ -76,7 +76,7 @@ def test_raw_phase_and_failure_recovery(*, abort: bool) -> None:
         )
         failed += "\ndeclare ptr @__quantum__rt__array_create_1d(i32, i64)\n"
     else:
-        failed = payload.replace("ret i64 0", "ret i64 42")
+        failed = (ROOT / "asymmetric.ll").read_text().replace("ret i64 0", "ret i64 42")
     with pytest.raises(RuntimeError, match="QIR execution failed"):
         simulate(failed)
     np.testing.assert_allclose(simulate(payload), expected, atol=1e-12)
