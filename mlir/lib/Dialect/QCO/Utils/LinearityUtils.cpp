@@ -25,6 +25,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/RegionKindInterface.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Support/WalkResult.h"
 
@@ -38,6 +39,10 @@ using namespace mlir;
 using namespace mlir::qco;
 
 bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
+  return TensorLifetimeAnalysis().isComplete(tensor, depth);
+}
+
+bool TensorLifetimeAnalysis::isComplete(Value tensor, unsigned depth) {
   // Bound recursive stack use at nesting depth 64.
   if (depth >= 64) {
     return false;
@@ -71,7 +76,7 @@ bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
         auto arguments =
             llvm::filter_to_vector(region.getArguments(), isTensor);
         if (index >= arguments.size() ||
-            !hasCompleteTensorLifetime(arguments[index], depth + 1)) {
+            !isComplete(arguments[index], depth + 1)) {
           return false;
         }
       }
@@ -84,20 +89,37 @@ bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
       if (extracted != 0) {
         return false;
       }
-      auto arguments = qco::getQuantumArgumentIndices(call.getOperandTypes());
-      auto* position =
-          llvm::find(arguments, tensor.use_begin()->getOperandNumber());
-      if (position == arguments.end() ||
-          call.getNumResults() < arguments.size()) {
+      if (auto result = callResults_.find(tensor);
+          result != callResults_.end()) {
+        tensor = result->second;
+        callResults_.erase(result);
+        continue;
+      }
+      if (!SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+              call, call.getCalleeAttr())) {
         return false;
       }
-      const auto result = call.getNumResults() - arguments.size() +
-                          std::distance(arguments.begin(), position);
-      auto argument = qco::getCallArgumentForResult(call, result);
-      if (failed(argument)) {
+      auto arguments = getQuantumArgumentIndices(call.getOperandTypes());
+      if (call.getNumResults() < arguments.size()) {
         return false;
       }
-      tensor = call.getResult(result);
+      Value next;
+      for (auto [argument, result] : llvm::zip_equal(
+               arguments, call.getResults().take_back(arguments.size()))) {
+        auto input = call.getOperand(argument);
+        if (input.getType() != result.getType()) {
+          continue;
+        }
+        if (input == tensor) {
+          next = result;
+        } else if (isTensor(input)) {
+          callResults_.try_emplace(input, result);
+        }
+      }
+      if (!next) {
+        return false;
+      }
+      tensor = next;
     } else {
       return isa<qtensor::DeallocOp, qco::YieldOp, scf::YieldOp,
                  scf::ConditionOp, func::ReturnOp>(user) &&

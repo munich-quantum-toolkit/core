@@ -165,9 +165,10 @@ func::FuncOp QCOProgramBuilder::createFunction(
   }
   disposeLinearValues();
   func::ReturnOp::create(*this, results);
+  TensorLifetimeAnalysis lifetimes;
   for (auto argument : quantumArguments) {
     auto value = block->getArgument(argument);
-    if (isQubitTensor(value.getType()) && !hasCompleteTensorLifetime(value)) {
+    if (isQubitTensor(value.getType()) && !lifetimes.isComplete(value)) {
       llvm::reportFatalUsageError(
           "Function must restore all extracted slots in borrowed registers");
     }

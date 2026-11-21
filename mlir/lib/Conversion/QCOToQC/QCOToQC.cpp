@@ -303,7 +303,8 @@ verifyTensorSlots(ModuleOp moduleOp, const DenseMap<Value, Value>& origins) {
 }
 
 [[nodiscard]] static LogicalResult
-collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
+collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
+                              TensorLifetimeAnalysis& lifetimes) {
   for (auto function : moduleOp.getOps<func::FuncOp>()) {
     auto& qubitArguments = state.qubitArguments[function];
     qubitArguments =
@@ -318,7 +319,7 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
               "rank-one tensors without encoding");
         }
         if (!function.isDeclaration() &&
-            !hasCompleteTensorLifetime(function.getArgument(argument))) {
+            !lifetimes.isComplete(function.getArgument(argument))) {
           return function.emitOpError(
               "borrowed registers must restore all extracted slots");
         }
@@ -347,11 +348,13 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
     }
   }
   auto calls = moduleOp.walk([&](func::CallOp call) {
+    auto attrs = call.getResAttrsAttr();
+    if (!attrs) {
+      return WalkResult::advance();
+    }
     const auto count =
         qco::getQuantumArgumentIndices(call.getOperandTypes()).size();
-    if (auto attrs = call.getResAttrsAttr();
-        attrs &&
-        llvm::any_of(attrs.getValue().take_back(count), [](Attribute attr) {
+    if (llvm::any_of(attrs.getValue().take_back(count), [](Attribute attr) {
           return !cast<DictionaryAttr>(attr).empty();
         })) {
       call.emitOpError(
@@ -1079,7 +1082,8 @@ protected:
         return;
       }
     }
-    if (failed(collectFunctionQubitArguments(moduleOp, state))) {
+    TensorLifetimeAnalysis lifetimes;
+    if (failed(collectFunctionQubitArguments(moduleOp, state, lifetimes))) {
       signalPassFailure();
       return;
     }
@@ -1092,7 +1096,7 @@ protected:
         return WalkResult::interrupt();
       }
       if (auto alloc = dyn_cast<qtensor::AllocOp>(op);
-          alloc && !hasCompleteTensorLifetime(alloc.getResult())) {
+          alloc && !lifetimes.isComplete(alloc.getResult())) {
         alloc.emitOpError("QCO-to-QC requires all dynamic tensor slots to be "
                           "restored before region exit or deallocation");
         return WalkResult::interrupt();
