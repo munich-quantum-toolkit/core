@@ -157,11 +157,17 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   EXPECT_EQ(decodeSamples(job, 4, 2, 0, layout),
             (std::vector<int8_t>{1, 0, 0, 1, 0, 0, 1, 0}));
   EXPECT_THROW(decodeSamples(job, 3, 2, 0, layout), std::runtime_error);
+  returnedKeys = "111";
+  returnedCounts = {2};
+  queries.clear();
   for (const auto* malformed :
        {"001", "0000,001", "0x1,001", "00\xFF,001", "000,001,001"}) {
     returnedShots = malformed;
     EXPECT_THROW(decodeSamples(job, 3, 2), std::runtime_error);
   }
+  EXPECT_TRUE(std::ranges::all_of(queries, [](const auto& query) {
+    return query.second == QDMI_JOB_RESULT_SHOTS;
+  }));
   returnedShots.reset();
   returnedKeys = "10 0,001";
   returnedCounts = {2, 3};
