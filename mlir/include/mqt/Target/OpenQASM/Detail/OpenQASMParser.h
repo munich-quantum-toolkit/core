@@ -146,6 +146,24 @@ private:
       return parseInputDecl();
     case TokenKind::Gate:
       return parseGateStatement();
+    case TokenKind::Def:
+      return parseSubroutineDefinition();
+    case TokenKind::Return: {
+      const auto location = current().loc;
+      advance();
+      std::optional<SyntaxExpressionId> value;
+      if (current().kind != TokenKind::Semicolon) {
+        auto expression = parseExpression();
+        if (failed(expression)) {
+          return failure();
+        }
+        value = *expression;
+      }
+      if (failed(expect(TokenKind::Semicolon))) {
+        return failure();
+      }
+      return sink.returnStmt(location, value);
+    }
     case TokenKind::Opaque:
       return parseGateStatement(/*opaque=*/true);
     case TokenKind::Barrier:
@@ -592,7 +610,10 @@ private:
     }
     if (measureSource) {
       const BitReference target{
-          .location = loc, .identifier = id, .index = std::nullopt};
+          .location = loc,
+          .identifier = id,
+          .index = std::nullopt,
+      };
       return sink.measure(loc, &target, *measureSource);
     }
     return success();
@@ -729,7 +750,10 @@ private:
     }
     if (measureSource) {
       const BitReference target{
-          .location = loc, .identifier = id, .index = std::nullopt};
+          .location = loc,
+          .identifier = id,
+          .index = std::nullopt,
+      };
       return sink.measure(loc, &target, *measureSource);
     }
     return success();
@@ -799,6 +823,7 @@ private:
       return failure();
     }
     SyntaxExpressionId assignedValue = *value;
+    std::optional<SyntaxExpressionId> compoundLhs;
     if (compound) {
       const auto kind = llvm::StringSwitch<std::optional<Expr::Kind>>(
                             compoundSpelling.drop_back())
@@ -825,13 +850,14 @@ private:
       previous.identifier = target->identifier;
       previous.lhs = target->index;
       previous.additionalIndices = target->additionalIndices;
-      assignedValue = makeBinary(*kind, sink.addExpression(previous),
-                                 assignedValue, compoundLocation);
+      compoundLhs = sink.addExpression(previous);
+      assignedValue =
+          makeBinary(*kind, *compoundLhs, assignedValue, compoundLocation);
     }
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.assignment(loc, *target, assignedValue);
+    return sink.assignment(loc, *target, assignedValue, compoundLhs);
   }
 
   //===--- Measure ------------------------------------------------------===//
@@ -945,11 +971,158 @@ private:
     SmallVector<Modifier> modifiers;
     SmallVector<SyntaxExpressionId> parameters;
     SmallVector<Operand> operands;
+    const bool mayBeSubroutine = current().kind == TokenKind::Identifier &&
+                                 peek().kind == TokenKind::LParen;
     auto call = parseGateCall(modifiers, parameters, operands);
     if (failed(call)) {
       return failure();
     }
+    if (mayBeSubroutine && modifiers.empty() && operands.empty()) {
+      SyntaxExpression expression;
+      expression.kind = Expr::Kind::Call;
+      expression.location = call->loc;
+      expression.identifier = call->identifier;
+      expression.arguments.assign(parameters.begin(), parameters.end());
+      return sink.subroutineCall(call->loc, sink.addExpression(expression));
+    }
     return sink.gateCall(*call);
+  }
+
+  [[nodiscard]] FailureOr<SyntaxSubroutineType> parseSubroutineType() {
+    SyntaxSubroutineType type;
+    if (current().kind == TokenKind::Readonly ||
+        current().kind == TokenKind::Mutable) {
+      type.readonly = current().kind == TokenKind::Readonly;
+      advance();
+      if (failed(expect(TokenKind::Array)) ||
+          failed(expect(TokenKind::LBracket))) {
+        return failure();
+      }
+    }
+    switch (current().kind) {
+    case TokenKind::Bit:
+      type.bitVector = true;
+      break;
+    case TokenKind::Bool:
+      type.scalar = ScalarKind::Bool;
+      break;
+    case TokenKind::Int:
+      type.scalar = ScalarKind::Int;
+      break;
+    case TokenKind::Uint:
+      type.scalar = ScalarKind::Uint;
+      break;
+    case TokenKind::Float:
+      type.scalar = ScalarKind::Float;
+      break;
+    case TokenKind::Angle:
+      if (!type.readonly) {
+        return sink.error(current().loc,
+                          "runtime angle subroutine types are not supported");
+      }
+      type.scalar = ScalarKind::Angle;
+      break;
+    default:
+      return sink.error(
+          current().loc,
+          "expected a scalar type or readonly/mutable array reference");
+    }
+    advance();
+    if (current().kind == TokenKind::LBracket) {
+      advance();
+      auto width = parseExpression();
+      if (failed(width) || failed(expect(TokenKind::RBracket))) {
+        return failure();
+      }
+      type.width = *width;
+    }
+    if (type.readonly) {
+      if (type.bitVector) {
+        return sink.error(current().loc, "unsupported array element type");
+      }
+      if (failed(expect(TokenKind::Comma))) {
+        return failure();
+      }
+      if (current().kind == TokenKind::Dim) {
+        advance();
+        if (failed(expect(TokenKind::Equals))) {
+          return failure();
+        }
+        auto rank = parseExpression();
+        if (failed(rank)) {
+          return failure();
+        }
+        type.rank = *rank;
+      } else {
+        do {
+          if (type.dimensions.size() >= ARRAY_RANK_LIMIT) {
+            return sink.error(current().loc,
+                              "arrays support at most 7 dimensions");
+          }
+          auto dimension = parseExpression();
+          if (failed(dimension)) {
+            return failure();
+          }
+          type.dimensions.push_back(*dimension);
+          if (current().kind != TokenKind::Comma) {
+            break;
+          }
+          advance();
+        } while (current().kind != TokenKind::RBracket);
+      }
+      if (failed(expect(TokenKind::RBracket))) {
+        return failure();
+      }
+    }
+    return type;
+  }
+
+  [[nodiscard]] LogicalResult parseSubroutineDefinition() {
+    const auto location = current().loc;
+    advance();
+    if (current().kind != TokenKind::Identifier) {
+      return expectedIdentifier("expected subroutine name");
+    }
+    SyntaxSubroutineDefinition definition;
+    definition.identifier = current().identifier;
+    advance();
+    if (failed(expect(TokenKind::LParen))) {
+      return failure();
+    }
+    while (current().kind != TokenKind::RParen) {
+      auto type = parseSubroutineType();
+      if (failed(type)) {
+        return failure();
+      }
+      if (current().kind != TokenKind::Identifier) {
+        return expectedIdentifier("expected subroutine parameter name");
+      }
+      definition.parameters.push_back(
+          {.type = *type, .identifier = current().identifier});
+      advance();
+      if (current().kind != TokenKind::RParen &&
+          failed(expect(TokenKind::Comma))) {
+        return failure();
+      }
+    }
+    advance();
+    if (current().kind == TokenKind::Arrow) {
+      advance();
+      auto type = parseSubroutineType();
+      if (failed(type)) {
+        return failure();
+      }
+      if (type->readonly) {
+        return sink.error(current().loc,
+                          "subroutines cannot return array references");
+      }
+      definition.result = *type;
+    }
+    if (current().kind != TokenKind::LBrace) {
+      return sink.error(current().loc, "expected subroutine body");
+    }
+    return sink.subroutineDefinition(location, std::move(definition),
+                                     [this] { return parseBlock(); });
   }
 
   [[nodiscard]] FailureOr<GateCall>
@@ -1103,10 +1276,9 @@ private:
     }
     operand.identifier = current().identifier;
     advance();
-    if (current().kind == TokenKind::LBracket) {
-      if (failed(parseSubscript(operand.index, operand.slice))) {
-        return failure();
-      }
+    if (current().kind == TokenKind::LBracket &&
+        failed(parseSubscript(operand.index, operand.slice))) {
+      return failure();
     }
     return operand;
   }
@@ -1119,11 +1291,10 @@ private:
     }
     reference.identifier = current().identifier;
     advance();
-    if (current().kind == TokenKind::LBracket) {
-      if (failed(parseSubscript(reference.index, reference.slice,
-                                &reference.additionalIndices))) {
-        return failure();
-      }
+    if (current().kind == TokenKind::LBracket &&
+        failed(parseSubscript(reference.index, reference.slice,
+                              &reference.additionalIndices))) {
+      return failure();
     }
     return reference;
   }
@@ -1717,8 +1888,23 @@ private:
         const auto kind = getMathFunctionKind(
             sink.isOpenQASM2() && name == "ln" ? "log" : name);
         if (!kind) {
-          return sink.error(current().loc, Twine("unknown function '") +
-                                               current().identifier + "'");
+          expr.kind = Expr::Kind::Call;
+          expr.identifier = current().identifier;
+          advance();
+          advance();
+          while (current().kind != TokenKind::RParen) {
+            auto argument = parseExpression();
+            if (failed(argument)) {
+              return failure();
+            }
+            expr.arguments.push_back(*argument);
+            if (current().kind != TokenKind::RParen &&
+                failed(expect(TokenKind::Comma))) {
+              return failure();
+            }
+          }
+          advance();
+          return sink.addExpression(expr);
         }
         return parseBuiltinCall(*kind, expr);
       }

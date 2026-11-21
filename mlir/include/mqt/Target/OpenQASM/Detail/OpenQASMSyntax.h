@@ -55,6 +55,7 @@ struct Expr {
     FloatCast,
     Bool,
     Identifier,
+    Call,
     IntCast,
     BoolCast,
     BitCast,
@@ -163,7 +164,7 @@ struct BitReference {
   StringRef identifier;
   std::optional<SyntaxExpressionId> index = std::nullopt;
   std::optional<Slice> slice;
-  std::vector<SyntaxExpressionId> additionalIndices{};
+  std::vector<SyntaxExpressionId> additionalIndices;
 };
 
 /// @ingroup ParseVocabulary
@@ -194,7 +195,8 @@ struct SyntaxExpression {
   std::optional<SyntaxExpressionId> rhs;
   std::optional<Slice> slice;
   std::optional<SyntaxExpressionId> step;
-  std::vector<SyntaxExpressionId> additionalIndices{};
+  std::vector<SyntaxExpressionId> additionalIndices;
+  std::vector<SyntaxExpressionId> arguments;
 };
 
 struct SyntaxGateCall {
@@ -219,6 +221,7 @@ struct SyntaxScalarDeclaration {
 struct SyntaxAssignment {
   BitReference target;
   SyntaxExpressionId value = 0;
+  std::optional<SyntaxExpressionId> compoundLhs;
 };
 
 struct SyntaxArrayInitializer {
@@ -267,6 +270,35 @@ struct SyntaxGateDefinition {
   std::vector<SyntaxStatementId> body;
 };
 
+struct SyntaxSubroutineType {
+  bool bitVector = false;
+  ScalarKind scalar = ScalarKind::Int;
+  std::optional<SyntaxExpressionId> width;
+  std::optional<bool> readonly;
+  std::vector<SyntaxExpressionId> dimensions;
+  std::optional<SyntaxExpressionId> rank;
+};
+
+struct SyntaxSubroutineParameter {
+  SyntaxSubroutineType type;
+  StringRef identifier;
+};
+
+struct SyntaxSubroutineDefinition {
+  StringRef identifier;
+  std::vector<SyntaxSubroutineParameter> parameters;
+  std::optional<SyntaxSubroutineType> result;
+  std::vector<SyntaxStatementId> body;
+};
+
+struct SyntaxReturn {
+  std::optional<SyntaxExpressionId> value;
+};
+
+struct SyntaxSubroutineCallStatement {
+  SyntaxExpressionId call = 0;
+};
+
 struct SyntaxIf {
   SyntaxExpressionId condition = 0;
   std::vector<SyntaxStatementId> thenStatements;
@@ -312,13 +344,13 @@ struct SyntaxStandardLibraryInclude {
   StandardLibraryKind kind = StandardLibraryKind::StdGates;
 };
 
-using SyntaxStatementData =
-    std::variant<SyntaxStandardLibraryInclude, SyntaxScalarDeclaration,
-                 SyntaxArrayDeclaration, SyntaxAssignment,
-                 SyntaxQubitDeclaration, SyntaxBitDeclaration,
-                 SyntaxMeasurement, SyntaxReset, SyntaxBarrier, SyntaxGateCall,
-                 SyntaxGateDefinition, SyntaxIf, SyntaxFor, SyntaxWhile,
-                 SyntaxSwitch, SyntaxBreak, SyntaxContinue>;
+using SyntaxStatementData = std::variant<
+    SyntaxStandardLibraryInclude, SyntaxScalarDeclaration,
+    SyntaxArrayDeclaration, SyntaxAssignment, SyntaxQubitDeclaration,
+    SyntaxBitDeclaration, SyntaxMeasurement, SyntaxReset, SyntaxBarrier,
+    SyntaxGateCall, SyntaxGateDefinition, SyntaxIf, SyntaxFor, SyntaxWhile,
+    SyntaxSwitch, SyntaxBreak, SyntaxContinue, SyntaxSubroutineDefinition,
+    SyntaxReturn, SyntaxSubroutineCallStatement>;
 
 struct SyntaxStatement {
   SMLoc location;
@@ -368,9 +400,10 @@ public:
              std::optional<SyntaxExpressionId> size,
              std::optional<SyntaxExpressionId> initializer, bool isConst,
              IOQualifier io);
-  [[nodiscard]] LogicalResult assignment(SMLoc location,
-                                         const BitReference& target,
-                                         SyntaxExpressionId value);
+  [[nodiscard]] LogicalResult
+  assignment(SMLoc location, const BitReference& target,
+             SyntaxExpressionId value,
+             std::optional<SyntaxExpressionId> compoundLhs);
   [[nodiscard]] LogicalResult arrayDecl(SMLoc location,
                                         SyntaxArrayDeclaration declaration);
   [[nodiscard]] LogicalResult
@@ -386,6 +419,13 @@ public:
   [[nodiscard]] LogicalResult barrier(SMLoc location,
                                       ArrayRef<Operand> operands);
   [[nodiscard]] LogicalResult gateCall(const GateCall& call);
+  [[nodiscard]] LogicalResult subroutineCall(SMLoc location,
+                                             SyntaxExpressionId call);
+  [[nodiscard]] LogicalResult
+  returnStmt(SMLoc location, std::optional<SyntaxExpressionId> value);
+  [[nodiscard]] LogicalResult
+  subroutineDefinition(SMLoc location, SyntaxSubroutineDefinition definition,
+                       function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult
   gateDefinition(SMLoc location, StringRef identifier,
                  ArrayRef<StringRef> parameters, ArrayRef<StringRef> qubits,

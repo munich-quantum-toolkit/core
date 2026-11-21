@@ -19,6 +19,7 @@ add_mlir_conversion_library(
   MLIRAffineToStandard
   MLIRLinalgTransforms
   MLIRMemRefTransforms
+  MLIRFuncInlinerExtension
   MLIRFuncTransforms
   MLIRLLVMDialect
   MLIRSupportMQT

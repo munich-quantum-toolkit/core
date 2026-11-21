@@ -25,6 +25,7 @@
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/InliningUtils.h"
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -68,7 +69,22 @@ static void attachMemorySlotInterfaces(MLIRContext* context);
 // shortcut: cap per-bit IR growth; raise with compile-time evidence.
 static constexpr int64_t MAX_PROMOTED_REGISTER_WIDTH = 256;
 
+namespace {
+
+struct CBitInlinerInterface final : DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  bool isLegalToInline(Operation* /*operation*/, Region* /*destination*/,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return true;
+  }
+};
+
+} // namespace
+
 void CBitDialect::initialize() {
+  addInterfaces<CBitInlinerInterface>();
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addAttributes<
 #define GET_ATTRDEF_LIST

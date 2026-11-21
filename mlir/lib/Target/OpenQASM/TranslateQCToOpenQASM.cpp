@@ -29,6 +29,7 @@
 #include "mqt/Dialect/QC/Translation/MeasurementStores.h"
 #include "mqt/Dialect/QC/Translation/QubitReferences.h"
 #include "mqt/Support/IntegerExpressions.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMSyntax.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 #include "mqt/Target/OpenQASM/GateCatalog.h"
 
@@ -46,6 +47,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/MemRef/IR/ValueBoundsOpInterfaceImpl.h"
 #include "mlir/Dialect/MemRef/Transforms/ComposeSubView.h"
 #include "mlir/Dialect/MemRef/Transforms/Transforms.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -201,6 +203,64 @@ public:
                 .wasInterrupted();
   }
 
+  [[nodiscard]] static std::string subroutineType(Type type) {
+    if (type.isInteger(1)) {
+      return "bool";
+    }
+    if (auto integer = dyn_cast<IntegerType>(type);
+        integer && integer.getWidth() <= MAX_CLASSICAL_BITS) {
+      return (Twine(integer.getWidth() <= 64 ? "uint[" : "bit[") +
+              Twine(integer.getWidth()) + "]")
+          .str();
+    }
+    return type.isF64() ? "float[64]" : "";
+  }
+
+  [[nodiscard]] static bool hasSubroutineSignature(func::FuncOp function) {
+    return function.getNumResults() <= 1 &&
+           llvm::all_of(function.getArgumentTypes(),
+                        [](Type type) {
+                          if (auto array = dyn_cast<MemRefType>(type)) {
+                            return array.getRank() >= 1 &&
+                                   array.getRank() <= 7 &&
+                                   (array.hasStaticShape() ||
+                                    std::cmp_equal(array.getNumDynamicDims(),
+                                                   array.getRank())) &&
+                                   !array.getMemorySpace() &&
+                                   !scalarKind(array.getElementType()).empty();
+                          }
+                          return !subroutineType(type).empty();
+                        }) &&
+           llvm::all_of(function.getResultTypes(), [](Type type) {
+             return !subroutineType(type).empty();
+           });
+  }
+
+  [[nodiscard]] bool hasClassicalBody(func::FuncOp helper) {
+    if (helper
+            .walk([](Operation* operation) {
+              return operation->getName().getDialectNamespace() == "qc" ||
+                             isa<memref::AllocOp>(operation)
+                         ? WalkResult::interrupt()
+                         : WalkResult::advance();
+            })
+            .wasInterrupted()) {
+      return false;
+    }
+    llvm::SaveAndRestore functionGuard(function, helper);
+    llvm::SaveAndRestore assignmentsGuard(
+        arrayAssignments_, DenseMap<Operation*, ArrayAssignment>{});
+    llvm::SaveAndRestore elidedGuard(elidedArrayOps_, DenseSet<Operation*>{});
+    collectArrayAssignments();
+    return !helper
+                .walk([&](memref::AllocaOp allocation) {
+                  return elidedArrayOps_.contains(allocation)
+                             ? WalkResult::advance()
+                             : WalkResult::interrupt();
+                })
+                .wasInterrupted();
+  }
+
   [[nodiscard]] LogicalResult emit(llvm::raw_ostream& sourceStream) {
     if (failed(preflight())) {
       return failure();
@@ -219,8 +279,11 @@ public:
     if (version2_ && failed(prepareVersion2())) {
       return failure();
     }
-    for (auto gate : gateFunctions_) {
-      if (failed(emitGateDefinition(gate))) {
+    for (auto helper : helperFunctions_) {
+      llvm::SaveAndRestore globalsGuard(hasNonOutputGlobals_);
+      if (failed(subroutineNames_.contains(helper)
+                     ? emitSubroutineDefinition(helper)
+                     : emitGateDefinition(helper))) {
         return failure();
       }
     }
@@ -331,8 +394,9 @@ private:
   DenseMap<Value, std::string> valueNames;
   DenseSet<Value> returnedRegisters;
   SmallVector<ProgramOutput> outputs;
-  SmallVector<func::FuncOp> gateFunctions_;
+  SmallVector<func::FuncOp> helperFunctions_;
   DenseMap<Operation*, std::string> gateNames_;
+  DenseMap<Operation*, std::string> subroutineNames_;
   SymbolTableCollection symbolTables_;
   llvm::StringSet<> usedNames;
   llvm::StringSet<> externalGateNames_;
@@ -358,7 +422,43 @@ private:
   int64_t numArrayElements_ = 0;
   DenseMap<Operation*, ArrayAssignment> arrayAssignments_;
   DenseSet<Operation*> elidedArrayOps_;
+  DenseSet<Value> readonlyArguments_;
   DenseMap<Value, DenseElementsAttr> arrayInitializers_;
+
+  [[nodiscard]] bool isReadonlyArray(Value argument) {
+    SmallVector<Value> worklist{argument};
+    DenseSet<Value> visited;
+    while (!worklist.empty()) {
+      auto value = worklist.pop_back_val();
+      if (!visited.insert(value).second) {
+        continue;
+      }
+      for (OpOperand& use : value.getUses()) {
+        auto* user = use.getOwner();
+        if (isa<memref::LoadOp, memref::DimOp, memref::RankOp>(user)) {
+          continue;
+        }
+        if (auto copy = dyn_cast<memref::CopyOp>(user);
+            copy && use.getOperandNumber() == 0) {
+          continue;
+        }
+        if (isa<memref::SubViewOp, memref::ReinterpretCastOp, memref::CastOp>(
+                user)) {
+          worklist.push_back(user->getResult(0));
+          continue;
+        }
+        if (auto call = dyn_cast<func::CallOp>(user)) {
+          auto callee = resolveSubroutineCallee(call);
+          if (callee && readonlyArguments_.contains(
+                            callee.getArgument(use.getOperandNumber()))) {
+            continue;
+          }
+        }
+        return false;
+      }
+    }
+    return true;
+  }
 
   static constexpr size_t MAX_EXPRESSION_NESTING = 256;
   static constexpr size_t MAX_EXPRESSION_WORK = 4096;
@@ -498,6 +598,9 @@ private:
       auto type = cast<MemRefType>(value.getType());
       SmallVector<OpFoldResult> offsets(type.getRank(),
                                         builder.getIndexAttr(0));
+      if (auto allocation = value.getDefiningOp<memref::AllocaOp>()) {
+        return HyperrectangularSlice(offsets, allocation.getMixedSizes());
+      }
       SmallVector<OpFoldResult> sizes;
       for (const auto extent : type.getShape()) {
         sizes.push_back(builder.getIndexAttr(extent));
@@ -611,6 +714,8 @@ private:
         for (auto* user : views[index].getUsers()) {
           if (auto view = dyn_cast<memref::SubViewOp>(user)) {
             views.push_back(view);
+          } else if (isa<memref::DimOp>(user)) {
+            continue;
           } else if (auto copy = dyn_cast<memref::CopyOp>(user)) {
             if (root(copy.getSource()) == alloc &&
                 root(copy.getTarget()) == alloc) {
@@ -743,9 +848,34 @@ private:
     return target != nullptr && gateNames_.contains(target) ? target : nullptr;
   }
 
+  [[nodiscard]] func::FuncOp resolveSubroutineCallee(func::CallOp call) {
+    auto target = symbolTables_.lookupNearestSymbolFrom<func::FuncOp>(
+        call, call.getCalleeAttr());
+    return target && subroutineNames_.contains(target) ? target : nullptr;
+  }
+
   [[nodiscard]] LogicalResult prepareFunctions() {
+    auto* context = moduleOp.getContext();
+    DialectRegistry registry;
+    arith::registerValueBoundsOpInterfaceExternalModels(registry);
+    memref::registerValueBoundsOpInterfaceExternalModels(registry);
+    context->appendDialectRegistry(registry);
+    if (moduleOp
+            .walk([&](memref::CastOp castOp) {
+              if (!memref::CastOp::canFoldIntoConsumerOp(castOp)) {
+                std::ignore =
+                    fail(castOp, "array casts that assert shape or layout "
+                                 "are not supported");
+                return WalkResult::interrupt();
+              }
+              return WalkResult::advance();
+            })
+            .wasInterrupted()) {
+      return failure();
+    }
     const CallGraph callGraph(moduleOp);
     DenseSet<CallGraphNode*> gates;
+    DenseSet<CallGraphNode*> subroutines;
     bool needsInlining = false;
     for (auto component =
              llvm::scc_iterator<CallGraphNode*,
@@ -758,7 +888,7 @@ private:
       }
       auto* current = node->getCallableRegion()->getParentOp();
       if (component.hasCycle()) {
-        return fail(current, "recursive gate function calls are not supported");
+        return fail(current, "recursive function calls are not supported");
       }
       if (current != function) {
         auto gate = dyn_cast<func::FuncOp>(current);
@@ -772,7 +902,15 @@ private:
               return gates.contains(edge.getTarget());
             })) {
           gates.insert(node);
-          gateFunctions_.push_back(gate);
+          helperFunctions_.push_back(gate);
+        } else if (!version2_ && gate.isPrivate() && !gate.isExternal() &&
+                   gate.getBody().hasOneBlock() &&
+                   hasSubroutineSignature(gate) && hasClassicalBody(gate) &&
+                   llvm::all_of(*node, [&](const CallGraphNode::Edge& edge) {
+                     return subroutines.contains(edge.getTarget());
+                   })) {
+          subroutines.insert(node);
+          helperFunctions_.push_back(gate);
         } else {
           needsInlining = true;
         }
@@ -789,27 +927,22 @@ private:
     if (!needsInlining && !needsArrayNormalization) {
       return success();
     }
-    auto* context = moduleOp.getContext();
     if (needsInlining) {
-      for (auto gate : gateFunctions_) {
-        gate.setNoInline(true);
+      for (auto helper : helperFunctions_) {
+        helper.setNoInline(true);
       }
-      DialectRegistry registry;
-      func::registerInlinerExtension(registry);
-      LLVM::registerInlinerInterface(registry);
-      context->appendDialectRegistry(registry);
+      DialectRegistry inlinerRegistry;
+      func::registerInlinerExtension(inlinerRegistry);
+      LLVM::registerInlinerInterface(inlinerRegistry);
+      context->appendDialectRegistry(inlinerRegistry);
       PassManager manager(context);
-      // Keep gate definitions and structured loops while expanding other
-      // helpers.
+      // Keep supported definitions while expanding other helpers.
       manager.addPass(createInlinerPass({}, [](OpPassManager&) {}));
       if (failed(manager.run(moduleOp))) {
         return failure();
       }
     }
     if (needsArrayNormalization) {
-      DialectRegistry registry;
-      arith::registerValueBoundsOpInterfaceExternalModels(registry);
-      context->appendDialectRegistry(registry);
       context->getOrLoadDialect<affine::AffineDialect>();
       RewritePatternSet patterns(context);
       memref::populateComposeSubViewPatterns(patterns, context);
@@ -943,28 +1076,39 @@ private:
       return failure();
     }
 
-    for (auto current : gateFunctions_) {
+    for (auto current : helperFunctions_) {
       if (checkRegions(current).wasInterrupted()) {
         return failure();
       }
       const auto requested = current.getName();
+      const bool isSubroutine = hasSubroutineSignature(current);
       const bool preserveName =
           openqasm::frontend::isValidIdentifier(requested) &&
           (!version2_ || llvm::isLower(requested.front())) &&
           openqasm::frontend::lookupGate(requested) == nullptr &&
+          (!isSubroutine ||
+           !openqasm::frontend::detail::getMathFunctionKind(requested)) &&
           usedNames.insert(requested).second;
-      gateNames_.try_emplace(current, preserveName
-                                          ? requested.str()
-                                          : uniqueName("gate", nextHelper));
+      auto& names = isSubroutine ? subroutineNames_ : gateNames_;
+      names.try_emplace(
+          current, preserveName
+                       ? requested.str()
+                       : uniqueName(isSubroutine ? "def" : "gate", nextHelper));
+      for (Value argument : current.getArguments()) {
+        if (isa<MemRefType>(argument.getType()) && isReadonlyArray(argument)) {
+          readonlyArguments_.insert(argument);
+        }
+      }
     }
     const auto hasInvalidCall = [&](func::FuncOp current) {
       return current
           .walk([&](Operation* operation) {
             if (isa<func::CallOp, qc::CallOp>(operation) &&
-                resolveGateCallee(operation) == nullptr) {
-              std::ignore =
-                  fail(operation,
-                       "call does not target an exportable gate function");
+                resolveGateCallee(operation) == nullptr &&
+                (!isa<func::CallOp>(operation) ||
+                 !resolveSubroutineCallee(cast<func::CallOp>(operation)))) {
+              std::ignore = fail(operation,
+                                 "call does not target an exportable function");
               return WalkResult::interrupt();
             }
             return WalkResult::advance();
@@ -972,7 +1116,7 @@ private:
           .wasInterrupted();
     };
     if (hasInvalidCall(function) ||
-        llvm::any_of(gateFunctions_, hasInvalidCall)) {
+        llvm::any_of(helperFunctions_, hasInvalidCall)) {
       return failure();
     }
     for (Operation& operation : moduleOp.getBody()->getOperations()) {
@@ -1054,7 +1198,7 @@ private:
     return success();
   }
 
-  [[nodiscard]] LogicalResult collectProgramShape() {
+  [[nodiscard]] LogicalResult collectProgramShape(bool entryPoint = true) {
     // Debug names must yield to declared registers, regardless of operation
     // order.
     function.walk([&](Operation* operation) {
@@ -1068,10 +1212,12 @@ private:
     if (!returnOp) {
       return fail(function, "entry block must end in func.return");
     }
-    for (auto value : returnOp.getOperands()) {
-      if (isa<cbit::RegisterType>(value.getType()) &&
-          !returnedRegisters.insert(value).second) {
-        return fail(returnOp, "repeated register results are not supported");
+    if (entryPoint) {
+      for (auto value : returnOp.getOperands()) {
+        if (isa<cbit::RegisterType>(value.getType()) &&
+            !returnedRegisters.insert(value).second) {
+          return fail(returnOp, "repeated register results are not supported");
+        }
       }
     }
 
@@ -1239,6 +1385,9 @@ private:
       return failure();
     }
 
+    if (!entryPoint) {
+      return success();
+    }
     for (const auto [index, value] : llvm::enumerate(returnOp.getOperands())) {
       if (isa<cbit::RegisterType>(value.getType())) {
         const auto found = resources.find(value);
@@ -1318,7 +1467,7 @@ private:
     return emitDimension(emitDimension, 0);
   }
 
-  [[nodiscard]] LogicalResult emitDeclarations() {
+  [[nodiscard]] LogicalResult emitDeclarations(bool entryPoint = true) {
     if (version2_) {
       for (auto value : resourceOrder) {
         const auto& resource = resources.at(value);
@@ -1330,8 +1479,10 @@ private:
       }
       return success();
     }
-    for (auto argument : function.getArguments()) {
-      *output << "input float[64] " << valueNames.at(argument) << ";\n";
+    if (entryPoint) {
+      for (auto argument : function.getArguments()) {
+        *output << "input float[64] " << valueNames.at(argument) << ";\n";
+      }
     }
     for (auto value : resourceOrder) {
       const auto& resource = resources.at(value);
@@ -1420,6 +1571,61 @@ private:
     definitionOutput << "}\n";
     definitionOutput.flush();
 
+    gateDefinitions_.push_back(std::move(definition));
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult emitSubroutineDefinition(func::FuncOp helper) {
+    std::string definition;
+    llvm::raw_string_ostream definitionStream(definition);
+    raw_indented_ostream definitionOutput(definitionStream);
+    definitionOutput << "def " << subroutineNames_.at(helper) << '(';
+    llvm::SaveAndRestore resourcesGuard(resources, DenseMap<Value, Resource>{});
+    llvm::SaveAndRestore orderGuard(resourceOrder, SmallVector<Value>{});
+    SmallVector<std::string> parameters;
+    for (Value argument : helper.getArguments()) {
+      auto name = uniqueName("arg", nextScalar);
+      if (auto array = dyn_cast<MemRefType>(argument.getType())) {
+        std::string type =
+            readonlyArguments_.contains(argument) ? "readonly " : "mutable ";
+        type += "array[" + scalarKind(array.getElementType());
+        if (array.hasStaticShape()) {
+          for (auto extent : array.getShape()) {
+            type += ", " + std::to_string(extent);
+          }
+        } else {
+          type += ", #dim = " + std::to_string(array.getRank());
+        }
+        type += "] ";
+        type += name;
+        parameters.push_back(std::move(type));
+        resources.try_emplace(argument, Resource{
+                                            .kind = ResourceKind::Array,
+                                            .name = std::move(name),
+                                        });
+        continue;
+      }
+      parameters.push_back(subroutineType(argument.getType()) + " " + name);
+      valueNames[argument] = std::move(name);
+    }
+    definitionOutput << llvm::join(parameters, ", ") << ')';
+    if (helper.getNumResults() != 0) {
+      definitionOutput << " -> " << subroutineType(helper.getResultTypes()[0]);
+    }
+    definitionOutput << " {\n";
+    definitionOutput.indent();
+    llvm::SaveAndRestore outputGuard(output, &definitionOutput);
+    llvm::SaveAndRestore functionGuard(function, helper);
+    if (failed(collectProgramShape(false))) {
+      return failure();
+    }
+    if (failed(emitDeclarations(false)) ||
+        failed(emitBlock(helper.getBody().front()))) {
+      return failure();
+    }
+    definitionOutput.unindent();
+    definitionOutput << "}\n";
+    definitionOutput.flush();
     gateDefinitions_.push_back(std::move(definition));
     return success();
   }
@@ -1554,9 +1760,9 @@ private:
     }
     if (isa<arith::ConstantOp, bufferization::MaterializeInDestinationOp,
             cbit::LoadOp, cbit::ReadOp, cbit::AllocOp, memref::LoadOp,
-            memref::AllocaOp, memref::SubViewOp, memref::ReinterpretCastOp,
-            memref::AllocOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
-            qc::StaticOp>(&operation)) {
+            memref::AllocaOp, memref::SubViewOp, memref::CastOp,
+            memref::ReinterpretCastOp, memref::AllocOp, memref::DeallocOp,
+            qc::AllocOp, qc::DeallocOp, qc::StaticOp>(&operation)) {
       return success();
     }
     if (isInlineExpressionOperation(operation)) {
@@ -1662,6 +1868,25 @@ private:
       return emitReturn(returnOp);
     }
     if (auto call = dyn_cast<func::CallOp>(&operation)) {
+      if (auto callee = resolveSubroutineCallee(call)) {
+        SmallVector<std::string> arguments;
+        for (Value argument : call.getOperands()) {
+          auto expression = isa<MemRefType>(argument.getType())
+                                ? emitArraySelection(argument)
+                                : emitSubroutineValue(argument);
+          if (failed(expression)) {
+            return failure();
+          }
+          arguments.push_back(std::move(*expression));
+        }
+        auto expression = subroutineNames_.at(callee) + '(' +
+                          llvm::join(arguments, ", ") + ')';
+        if (call.getNumResults() != 0 && !call.getResult(0).use_empty()) {
+          return materialize(call.getResult(0), std::move(expression));
+        }
+        *output << expression << ";\n";
+        return success();
+      }
       auto emitted = emitFunctionCall(call, call.getOperands());
       if (failed(emitted)) {
         return failure();
@@ -1774,9 +1999,9 @@ private:
     const auto name = operation.getName().getStringRef();
     return (isa<memref::LoadOp>(&operation) &&
             !isa<qc::QubitType>(operation.getResult(0).getType())) ||
-           isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp, cbit::LoadOp,
-               cbit::ReadOp, arith::SelectOp, arith::ExtSIOp, arith::ExtUIOp,
-               arith::TruncIOp, arith::ShRSIOp>(&operation) ||
+           isa<memref::DimOp, arith::ConstantOp, arith::CmpIOp, arith::CmpFOp,
+               cbit::LoadOp, cbit::ReadOp, arith::SelectOp, arith::ExtSIOp,
+               arith::ExtUIOp, arith::TruncIOp, arith::ShRSIOp>(&operation) ||
            !binaryOperator(name).empty() || name == "arith.negf" ||
            name == "math.absf" || name == "arith.remf" ||
            name == "llvm.intr.fshl" || name == "llvm.intr.fshr" ||
@@ -1901,7 +2126,8 @@ private:
     for (auto [dimension, index] : llvm::enumerate(indices)) {
       if (auto constant = getConstantInteger(index);
           constant &&
-          (*constant < 0 || *constant >= type.getDimSize(dimension))) {
+          (*constant < 0 || (!type.isDynamicDim(dimension) &&
+                             *constant >= type.getDimSize(dimension)))) {
         return failExpression(index, "constant array index is out of bounds");
       }
       auto text = emitExpression(index);
@@ -1914,10 +2140,42 @@ private:
   }
 
   [[nodiscard]] FailureOr<std::string> emitArraySelection(Value array) {
+    while (auto castOp = array.getDefiningOp<memref::CastOp>()) {
+      array = castOp.getSource();
+    }
     if (const auto resource = resources.find(array);
         resource != resources.end() &&
         resource->second.kind == ResourceKind::Array) {
       return resource->second.name;
+    }
+    if (auto empty = array.getDefiningOp<memref::ReinterpretCastOp>()) {
+      auto type = empty.getType();
+      auto sourceType = cast<MemRefType>(empty.getSource().getType());
+      const auto resource = resources.find(empty.getSource());
+      if (!type.hasStaticShape() || !sourceType.hasStaticShape() ||
+          !llvm::is_contained(type.getShape(), int64_t{0}) ||
+          resource == resources.end() ||
+          resource->second.kind != ResourceKind::Array) {
+        return failExpression(array, "unsupported empty array view");
+      }
+      SmallVector<std::string> subscripts;
+      int64_t retained = 0;
+      for (auto extent : sourceType.getShape()) {
+        if (retained < type.getRank() && type.getDimSize(retained) <= extent &&
+            (type.getDimSize(retained) == 0) == (extent == 0)) {
+          const auto size = type.getDimSize(retained++);
+          subscripts.push_back(
+              size == extent ? ":" : "0:" + std::to_string(size - 1));
+        } else if (extent != 0) {
+          subscripts.emplace_back("0");
+        } else {
+          return failExpression(array, "cannot represent empty array view");
+        }
+      }
+      if (retained != type.getRank()) {
+        return failExpression(array, "cannot represent empty array view");
+      }
+      return resource->second.name + "[" + llvm::join(subscripts, ", ") + "]";
     }
     auto view = array.getDefiningOp<memref::SubViewOp>();
     if (!view) {
@@ -1927,7 +2185,8 @@ private:
     if (resource == resources.end() ||
         resource->second.kind != ResourceKind::Array) {
       return failExpression(
-          array, "array view must refer to an entry-block allocation");
+          array,
+          "array view must refer to an allocation or borrowed parameter");
     }
     const auto text = [&](OpFoldResult value) -> FailureOr<std::string> {
       if (auto constant = getConstantIntValue(value)) {
@@ -1946,6 +2205,11 @@ private:
       }
       if (dropped.test(dimension)) {
         subscripts.push_back(std::move(*first));
+        continue;
+      }
+      if (view.getSourceType().getDimSize(dimension) == 0 &&
+          isConstantIntValue(offset, 0) && isConstantIntValue(size, 0)) {
+        subscripts.emplace_back(":");
         continue;
       }
       auto count = text(size);
@@ -1980,6 +2244,14 @@ private:
     const auto type = value.getType();
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
+    }
+    if (auto dimension = value.getDefiningOp<memref::DimOp>()) {
+      auto array = emitArraySelection(dimension.getSource());
+      auto index = getConstantInteger(dimension.getIndex());
+      if (failed(array) || !index) {
+        return failExpression(value, "array dimension must be a constant");
+      }
+      return "sizeof(" + *array + ", " + std::to_string(*index) + ")";
     }
     if (auto load = value.getDefiningOp<memref::LoadOp>()) {
       if (load.getOperation() != expressionConsumer &&
@@ -2584,7 +2856,9 @@ private:
     return success();
   }
 
-  [[nodiscard]] LogicalResult materialize(Value value) {
+  [[nodiscard]] LogicalResult
+  materialize(Value value,
+              std::optional<std::string> expression = std::nullopt) {
     if (auto select = value.getDefiningOp<arith::SelectOp>();
         select && value.getType().isF64()) {
       auto condition = emitExpression(select.getCondition());
@@ -2615,10 +2889,16 @@ private:
         wide ? FailureOr<std::string>(
                    (Twine("bit[") + Twine(integer.getWidth()) + "]").str())
              : localType(value);
-    auto expression = emitExpression(value, wide ? ExpressionContext::BitVector
-                                                 : ExpressionContext::Scalar);
-    if (failed(type) || failed(expression)) {
+    if (failed(type)) {
       return failure();
+    }
+    if (!expression) {
+      auto emitted = emitExpression(value, wide ? ExpressionContext::BitVector
+                                                : ExpressionContext::Scalar);
+      if (failed(emitted)) {
+        return failure();
+      }
+      expression = std::move(*emitted);
     }
     if (value.getDefiningOp<cbit::ReadOp>() && integer.getWidth() > 1 &&
         !wide) {
@@ -3070,6 +3350,21 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitReturn(func::ReturnOp returnOp) {
+    if (subroutineNames_.contains(function)) {
+      if (returnOp->getParentOp() != function) {
+        return fail(returnOp, "nested subroutine returns are not supported");
+      }
+      *output << "return";
+      if (returnOp.getNumOperands() != 0) {
+        auto expression = emitSubroutineValue(returnOp.getOperand(0));
+        if (failed(expression)) {
+          return failure();
+        }
+        *output << ' ' << *expression;
+      }
+      *output << ";\n";
+      return success();
+    }
     for (const auto [index, value] : llvm::enumerate(returnOp.getOperands())) {
       if (isa<cbit::RegisterType>(value.getType())) {
         continue;
@@ -3085,6 +3380,18 @@ private:
       *output << outputs[index].name << " = " << *expression << ";\n";
     }
     return success();
+  }
+
+  [[nodiscard]] FailureOr<std::string> emitSubroutineValue(Value value) {
+    const auto integer = dyn_cast<IntegerType>(value.getType());
+    const bool wide = integer && integer.getWidth() > 64;
+    auto expression = emitExpression(value, wide ? ExpressionContext::BitVector
+                                                 : ExpressionContext::Scalar);
+    if (failed(expression)) {
+      return failure();
+    }
+    return wide ? *expression
+                : subroutineType(value.getType()) + "(" + *expression + ")";
   }
 
   [[nodiscard]] FailureOr<std::string> emitGateParameter(Value value) {

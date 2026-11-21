@@ -1909,7 +1909,7 @@ TEST(CompilerQDMIAdapterTest, TerminalReadoutAllowsIndependentGates) {
   }
 }
 
-TEST(CompilerQDMIAdapterTest, RejectsClassicalCallsInTerminalReadout) {
+TEST(CompilerQDMIAdapterTest, PreservesClassicalWritesBeforeTerminalReadout) {
   const auto context = mlir::createCompilerContext();
   auto moduleOp = mlir::parseSourceString<mlir::ModuleOp>(R"mlir(module {
     func.func private @write(%c: !cbit.reg<2>) {
@@ -1936,8 +1936,11 @@ TEST(CompilerQDMIAdapterTest, RejectsClassicalCallsInTerminalReadout) {
       llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
   auto compiled = mlir::CompiledProgram::serialize(std::move(*program), device,
                                                    QDMI_PROGRAM_FORMAT_QASM3);
-  ASSERT_FALSE(static_cast<bool>(compiled));
-  llvm::consumeError(compiled.takeError());
+  MQT_ASSERT_SUCCESS(compiled);
+  auto job = llvm::cantFail(
+      device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 1));
+  ASSERT_TRUE(llvm::cantFail(job.wait()));
+  EXPECT_EQ(llvm::cantFail(job.getShots()), std::vector<std::string>{"01"});
 }
 
 TEST(CompilerQDMIAdapterTest, PreservesGeneralCallsAfterMeasurement) {

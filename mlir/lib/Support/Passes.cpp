@@ -346,6 +346,10 @@ void populateQCCleanupPipeline(OpPassManager& pm) {
 void populateQCOCleanupPipeline(OpPassManager& pm, bool removeUnusedValues) {
   pm.addPass(mlir::mqt::createSimplifyClassicalControl());
   pm.addPass(mqt::createPromoteClassicalMemory());
+  if (removeUnusedValues) {
+    // Fold promoted call operands before removing dead quantum yields.
+    pm.addPass(createSCCPPass());
+  }
   pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(createCanonicalizerPass(
       CanonicalizerPassOptions{.cseBetweenIterations = true}));

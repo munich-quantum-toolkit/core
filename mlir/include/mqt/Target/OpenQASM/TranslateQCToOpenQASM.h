@@ -25,13 +25,12 @@ class TargetEnvironment;
 
 namespace qc {
 
-/// Consume a QC module and translate it to portable OpenQASM.
+/// Consume a QC module and translate it to portable OpenQASM 3.
 ///
-/// Non-gate helpers are inlined and array views normalized in the supplied
-/// module. Gate definitions and supported structured control flow are
-/// preserved. Static sites use physical references. The module is consumed
-/// even on failure. Translation is buffered: the
-/// output stream is unchanged if the module cannot be translated.
+/// Export preserves classical subroutines, gate definitions, and supported
+/// structured control flow. Other helpers are inlined and array views
+/// normalized. Static sites use physical references. Translation consumes the
+/// module even on failure and writes to the output stream only on success.
 LogicalResult
 translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
                        llvm::raw_ostream& output,
