@@ -18,7 +18,6 @@ target_sources(
     FILES ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/ResultLayout.h)
 
 add_library(MQTQDMIRuntime STATIC QDMIReadout.cpp)
-mqt_llvm_target_disable_rtti(MQTQDMIRuntime)
 set_target_properties(MQTQDMIRuntime PROPERTIES POSITION_INDEPENDENT_CODE ON)
 target_include_directories(MQTQDMIRuntime PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>")
 target_link_libraries(

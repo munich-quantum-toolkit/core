@@ -86,12 +86,12 @@ Readout readout(const qdmi::Job& job, size_t width, size_t shots,
   };
   auto loaded = load(samples);
   if (!loaded) {
-    llvm::handleAllErrors(
-        loaded.takeError(), [](const llvm::ErrorInfoBase& error) {
-          if (error.convertToErrorCode() != std::errc::not_supported) {
-            throw std::runtime_error(error.message());
-          }
-        });
+    auto error = loaded.takeError();
+    const auto message = llvm::toStringWithoutConsuming(error);
+    // Consume the QDMI status inside LLVM so readout can keep C++ RTTI.
+    if (llvm::errorToErrorCode(std::move(error)) != std::errc::not_supported) {
+      throw std::runtime_error(message);
+    }
   } else if (!loaded->outcomes.empty()) {
     return std::move(*loaded);
   }
