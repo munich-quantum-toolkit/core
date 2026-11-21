@@ -1512,9 +1512,9 @@ private:
   std::pair<Layout<QubitIndex>, std::optional<Score>>
   generateLayout(ArrayRef<WireIterator> wires, func::FuncOp func,
                  Environment& env) {
-    const auto greedy = generateGreedyLayout(Wires(wires), env);
+    auto greedy = generateGreedyLayout(Wires(wires), env);
     if (greedy && greedy->second) {
-      return {greedy->first, std::nullopt};
+      return {std::move(greedy->first), std::nullopt};
     }
 
     env.prepareNativeCosts(func);
@@ -1531,21 +1531,32 @@ private:
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
 
-    if (greedy) {
-      trials.emplace_back(greedy->first);
-    }
-
-    if (trials.size() < ntrials) {
-      trials.emplace_back(Layout<QubitIndex>::identity(env.target.numSites()));
-
-      auto rng = makeMt19937(env.seed);
-      for (size_t i = trials.size(); i < ntrials; ++i) {
-        trials.emplace_back(Layout<QubitIndex>::random(
-            env.target.numSites(), env.target.numSites(), rng()));
+    {
+      // The reserved trial slots keep these borrowed permutations stable.
+      DenseSet<ArrayRef<QubitIndex>> starts;
+      const auto addStart = [&](Layout<QubitIndex> layout) {
+        auto& trial = trials.emplace_back(std::move(layout));
+        if (!starts.insert(trial.layout.getProgramToHardware()).second) {
+          trials.pop_back();
+        }
+      };
+      if (greedy) {
+        addStart(std::move(greedy->first));
+      }
+      if (trials.size() < ntrials) {
+        const size_t firstRandom = trials.size() + 1;
+        addStart(Layout<QubitIndex>::identity(env.target.numSites()));
+        auto rng = makeMt19937(env.seed);
+        for (size_t i = firstRandom; i < ntrials; ++i) {
+          addStart(Layout<QubitIndex>::random(env.target.numSites(),
+                                              env.target.numSites(), rng()));
+        }
       }
     }
 
-    assert(ntrials == trials.size());
+    if (trials.size() == 1 && niterations == 0) {
+      return {std::move(trials.front().layout), std::nullopt};
+    }
 
     Block& block = func.getFunctionBody().front();
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {

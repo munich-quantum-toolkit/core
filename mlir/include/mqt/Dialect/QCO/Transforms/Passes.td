@@ -393,57 +393,38 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Queue, visited-map, allocator, and linear fallback workspace overhead are
     additional. Each concurrent trial reuses this bounded storage across its
     searches and releases it when the trial finishes. Final SWAP insertion uses
-    separate storage after the trials finish. Target distance caches and
-    O(number of sites) wire, layout, and optional native-cost state for each
-    live region are separate; this is not a process memory limit. Candidate scoring
-    does not clone IR or execute native-synthesis passes. A shared immutable
-    table holds at most 1024 precomputed numerical native counts (about 264 KiB
-    of payload plus indexing). Each live region's tracker caches up to 64
-    additional counts (about 17 KiB). Exact matrix, entangler, and compilation
-    seed matches preserve numerical results; misses use normal analysis.
+    separate storage after the trials finish. Target distance caches, wire
+    layouts, and native-cost tracking use additional memory. Concurrent trials
+    share precomputed Weyl coordinates for repeated two-qubit matrices and
+    keep their own numerical caches.
 
-    To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
-    each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
-    made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
-    potentially find a more optimal solution. This behavior is controlled by the `niterations` parameter.
+    For straight-line scalar interactions and scalar `scf.for` loops with
+    positive static trip counts, the pass first checks the identity layout.
+    Nested loops contribute interaction weights according to their trip counts.
+    For disjoint paths and isolated program qubits, the pass also tries to
+    embed all paths along a single walk on the target. The walk prefers
+    neighbors with fewer unused edges. A complete direct placement skips
+    routing trials. Otherwise the greedy layout places frequently interacting
+    qubits near each other. Other control flow and
+    zero or unknown trip counts use identity and random starts.
 
-    Programs with supported control flow keep the identity layout immediately
-    when all two-qubit interactions are already adjacent on the target.
-    This avoids constructing and refining alternative layouts.
+    The `ntrials` option sets the number of starting layouts to generate.
+    The pass tries the greedy layout when available, then identity if a slot
+    remains, and fills the rest of the slots with seeded random layouts.
+    It refines each distinct starting layout once. Each trial performs up to
+    `niterations` rounds of forward and backward routing, stopping when both
+    the layout and wire cursors repeat at the end of a round. With zero
+    rounds the starting layouts are compared directly.
 
-    Otherwise, the pass option `ntrials` determines the number of initial refinement trials:
-    a greedy layout when available, then identity if a slot remains, and random
-    layouts for the remaining slots. Every trial uses up to `niterations`
-    refinement rounds, stopping when a round leaves both the layout and wire
-    cursors unchanged. Final scoring starts from the original wire roots; zero
-    scores the initial layouts directly.
-    The defaults are at least eight trials and two refinement rounds. The trial
-    count uses the number of available logical CPUs reported by LLVM, taking CPU
-    affinity into account, with a minimum of eight. Disabling multithreading
-    runs the same trials sequentially; it does not reduce the trial count.
-    If compiled with multi-threading on, these trials will be executed in parallel.
-    Set both `ntrials` and `seed` explicitly for reproducible results across
-    machines with different CPU counts.
+    The default is two refinement rounds. The default trial count is the
+    number of logical CPUs available to LLVM, with a minimum of eight.
+    Disabling multithreading runs the same trials sequentially. Set both
+    `ntrials` and `seed` for reproducible choices across machines.
 
-    For programs with two-qubit interactions, the pass also constructs an
-    interaction-weighted greedy layout. Statically counted scalar-qubit
-    `scf.for` loops contribute their body interactions weighted by the trip
-    count, including nested loops. Zero or unknown trip counts and other control
-    flow keep the identity/random fallback. Layout costs use saturating weights;
-    routing restores the layout at loop boundaries.
-    For disjoint interaction paths and isolated qubits, it first tries to place
-    them along one path through the target sites. The walk prefers neighbors
-    with fewer unused edges and accepts only a complete placement; it does not
-    backtrack. A complete path placement needs no routing and skips layout
-    trials, as does an executable identity layout. Other interaction graphs and
-    failed walks use the weighted greedy layout, which places frequently
-    interacting qubits nearby, starting at a central target site. This layout
-    occupies the first trial slot.
-
-    With an explicit native operation set and a usable entangler basis, each
-    candidate is scored by a read-only forward traversal of original gates and
-    virtual SWAPs. The estimate shares native support, operand direction, and
-    numerical decomposition with native synthesis. It composes constant runs on
+    For a target with a usable native entangler basis, the pass scores candidate layouts with a read-only
+    forward traversal of original gates and virtual SWAPs. The estimate shares
+    native support, operand direction, and numerical decomposition with
+    native synthesis. It composes constant runs on
     each physical pair, including intervening constant single-qubit gates, and
     preserves supported operations unless fusion reduces two-qubit count.
     Immediate inverse pairs do not break an earlier pending run. Other pair
