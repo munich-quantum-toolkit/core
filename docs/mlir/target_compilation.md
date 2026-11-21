@@ -57,9 +57,11 @@ execution capabilities. For native synthesis, pass the circuit's width as
 
 Discrete targets, including Clifford+T, accept circuits whose gates are already
 native. Routing lowers SWAPs to CX gates. Reversing a CX requires H on both
-sites. Gates that remain non-native after decomposition require a supported
-synthesis basis. MQT Core does not approximate arbitrary rotations with
-Clifford+T gates.
+sites. On Clifford+T targets, MQT Core can decompose constant Pauli rotations
+and phase gates exactly when their angles are multiples of π/4 and the required
+gates are available on the chosen sites. Single-controlled rotations and phase
+gates require multiples of π/2. Lowering other non-native rotation angles
+requires a continuous synthesis basis.
 
 A list or tuple of one input kind returns results in input order. Typed MLIR
 inputs are consumed unless `copy=True`; source text and Qiskit circuits remain
