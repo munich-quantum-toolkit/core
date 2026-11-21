@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
+#include <system_error>
 #include <utility>
 
 namespace mqt::runtime {
@@ -84,18 +85,17 @@ Readout readout(const qdmi::Job& job, size_t width, size_t shots,
     return result;
   };
   auto loaded = load(samples);
-  if (!loaded || loaded->outcomes.empty()) {
-    const auto firstError = loaded ? "" : llvm::toString(loaded.takeError());
-    loaded = load(!samples);
-    if (!loaded) {
-      throw std::runtime_error("Cannot read QDMI results; " +
-                               std::string(samples ? "shots: " : "counts: ") +
-                               firstError +
-                               (samples ? "; counts: " : "; shots: ") +
-                               llvm::toString(loaded.takeError()));
+  if (!loaded) {
+    auto error = loaded.takeError();
+    const auto message = llvm::toStringWithoutConsuming(error);
+    // Consume the QDMI status inside LLVM so readout can keep C++ RTTI.
+    if (llvm::errorToErrorCode(std::move(error)) != std::errc::not_supported) {
+      throw std::runtime_error(message);
     }
+  } else if (!loaded->outcomes.empty()) {
+    return std::move(*loaded);
   }
-  auto result = std::move(*loaded);
+  auto result = unwrap(load(!samples));
   require(!result.outcomes.empty(),
           "QDMI returned no samples for a nonempty job.");
   return result;
