@@ -16,6 +16,8 @@
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
+
 #include <optional>
 
 namespace mlir {
@@ -23,9 +25,18 @@ class ModuleOp;
 class Operation;
 class RewritePatternSet;
 class RewriterBase;
+class Value;
 } // namespace mlir
 
 namespace mlir::qco::decomposition {
+
+/// A borrowed site lookup. The callable must outlive the fusion or pattern set.
+using SingleQubitSiteLookup =
+    function_ref<std::optional<CompilerTarget::SiteId>(Value)>;
+
+/// Check the actual site when the run has been placed.
+bool supportsSingleQubitGate(const CompilerTarget& target, Operation* gate,
+                             std::optional<CompilerTarget::SiteId> site);
 
 /// Combine rotations with a common generator before native lowering.
 ///
@@ -41,7 +52,8 @@ class SingleQubitRunFusion {
 public:
   SingleQubitRunFusion(const CompilerTarget::SynthesisBasis& basis,
                        const CompilerTarget* target,
-                       GreedyRewriteConfig config = {});
+                       GreedyRewriteConfig config = {},
+                       SingleQubitSiteLookup siteFor = nullptr);
 
   /// Ignore non-heads; compose runtime runs before their constant segments.
   LogicalResult apply(Operation* operation);
@@ -50,6 +62,7 @@ private:
   CompilerTarget::SynthesisBasis basis_;
   const CompilerTarget* target_;
   GreedyRewriteConfig config_;
+  SingleQubitSiteLookup siteFor_;
   std::optional<FrozenRewritePatternSet> runtimePatterns_;
 };
 
@@ -60,7 +73,8 @@ private:
 /// @p basis when no target is supplied.
 void populateFuseSingleQubitUnitaryRunsPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
-    const CompilerTarget* target = nullptr);
+    const CompilerTarget* target = nullptr,
+    SingleQubitSiteLookup siteFor = nullptr);
 
 /// Populates patterns that compose profitable parameterized single-qubit runs.
 ///
@@ -71,7 +85,8 @@ void populateFuseSingleQubitUnitaryRunsPatterns(
 /// bodies and standalone fusion without a target.
 void populateParameterizedSingleQubitRunCompositionPatterns(
     RewritePatternSet& patterns, const CompilerTarget::SynthesisBasis& basis,
-    const CompilerTarget* target = nullptr);
+    const CompilerTarget* target = nullptr,
+    SingleQubitSiteLookup siteFor = nullptr);
 
 /// Merge Z rotations through diagonal gates on native RZ or equatorial targets.
 ///

@@ -2652,9 +2652,10 @@ TEST_F(TargetSynthesisTest,
 
 TEST_F(TargetSynthesisTest, TargetNativeSingleQubitFusionRequiresImprovement) {
   const auto target = valid(
-      Target::create(1, Connectivity::allToAll(),
+      Target::create(2, Connectivity::allToAll(),
                      NativeOperations::fromOperations({
-                         valid(OperationCapability::create("h", 1, 0)),
+                         valid(OperationCapability::create(
+                             "h", 1, 0, {valid(SiteTuple::create({0}))})),
                          valid(OperationCapability::create("x", 1, 0)),
                          valid(OperationCapability::create("sx", 1, 0)),
                          valid(OperationCapability::create("rz", 1, 1)),
@@ -2664,8 +2665,8 @@ TEST_F(TargetSynthesisTest, TargetNativeSingleQubitFusionRequiresImprovement) {
     const auto circuit = [longRun](QCOProgramBuilder& builder) {
       auto qubit = builder.staticQubit(0);
       qubit = builder.h(qubit);
+      qubit = builder.rz(0.3, qubit);
       if (longRun) {
-        qubit = builder.rz(0.3, qubit);
         qubit = builder.h(qubit);
         qubit = builder.rz(0.4, qubit);
         qubit = builder.h(qubit);
@@ -2674,19 +2675,23 @@ TEST_F(TargetSynthesisTest, TargetNativeSingleQubitFusionRequiresImprovement) {
       return llvm::SmallVector<Value>{};
     };
     auto expected = build(circuit);
-    auto synthesized = build(circuit);
-    ASSERT_TRUE(mlir::succeeded(runTargetPass(
-        *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
-    ASSERT_TRUE(mlir::succeeded(runTargetPass(
-        *synthesized, target, mlir::qco::createVerifyTargetConformance())));
-    if (longRun) {
-      EXPECT_LT(countOps<mlir::qco::UnitaryOpInterface>(*synthesized) -
-                    countOps<GPhaseOp>(*synthesized),
-                6U);
-    } else {
-      EXPECT_EQ(countOps<HOp>(*synthesized), 1U);
+    for (const bool standalone : {false, true}) {
+      auto synthesized = build(circuit);
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target,
+          standalone ? mlir::qco::createFuseSingleQubitUnitaryRuns(target)
+                     : mlir::qco::createTargetNativeSynthesis())));
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createVerifyTargetConformance())));
+      if (longRun) {
+        EXPECT_LT(countOps<mlir::qco::UnitaryOpInterface>(*synthesized) -
+                      countOps<GPhaseOp>(*synthesized),
+                  6U);
+      } else {
+        EXPECT_EQ(countOps<HOp>(*synthesized), 1U);
+      }
+      expectEquivalent(expected, synthesized);
     }
-    expectEquivalent(expected, synthesized);
   }
 }
 

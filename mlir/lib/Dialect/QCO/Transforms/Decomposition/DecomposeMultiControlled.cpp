@@ -18,13 +18,11 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
-#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
-#include "mqt/Dialect/QCO/Utils/WireIterator.h"
+#include "mqt/Dialect/QCO/Transforms/StaticSites.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/Pauli.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h" // IWYU pragma: keep (Passes.h.inc)
-#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -1520,78 +1518,6 @@ synthesizeControlledSwap(OpBuilder& builder, Location loc, ValueRange controls,
 //===----------------------------------------------------------------------===//
 // Patterns and pass
 //===----------------------------------------------------------------------===//
-
-namespace {
-
-// Cache backward paths so native gate chains do not retrace their prefixes.
-class StaticSites final : public RewriterBase::Listener {
-public:
-  std::optional<CompilerTarget::SiteId> lookup(Value value) {
-    SmallVector<Value> path;
-    const auto site = [&]() -> std::optional<CompilerTarget::SiteId> {
-      while (true) {
-        if (const auto known = sites_.find(value); known != sites_.end()) {
-          return known->second;
-        }
-        path.push_back(value);
-        if (auto site = value.getDefiningOp<StaticOp>()) {
-          return site.getIndex();
-        }
-        // Entry sites follow verified positional wires; final target
-        // conformance still checks every branch join and loop backedge.
-        if (auto argument = dyn_cast<BlockArgument>(value)) {
-          auto* parent = argument.getOwner()->getParentOp();
-          if (auto loop = dyn_cast<scf::ForOp>(parent)) {
-            value = loop.getTiedLoopInit(argument)->get();
-          } else if (auto loop = dyn_cast<scf::WhileOp>(parent)) {
-            auto inputs = argument.getOwner() == loop.getBeforeBody()
-                              ? loop.getInits()
-                              : loop.getConditionOp().getArgs();
-            value = inputs[argument.getArgNumber()];
-          } else if (auto branch = dyn_cast<IfOp>(parent)) {
-            value = branch.getQubits()[argument.getArgNumber()];
-          } else if (auto branch = dyn_cast<IndexSwitchOp>(parent)) {
-            value = branch.getTargets()[argument.getArgNumber()];
-          } else {
-            return std::nullopt;
-          }
-          continue;
-        }
-        if (auto loop = value.getDefiningOp<scf::WhileOp>()) {
-          const auto result = cast<OpResult>(value).getResultNumber();
-          auto argument = traceQubitArgument(
-              *loop.getBeforeBody(), loop.getConditionOp().getArgs()[result]);
-          if (failed(argument)) {
-            return std::nullopt;
-          }
-          value = loop.getInits()[*argument];
-          continue;
-        }
-        WireIterator iterator(value);
-        --iterator;
-        if (iterator == std::default_sentinel) {
-          return std::nullopt;
-        }
-        value = iterator.qubit();
-      }
-    }();
-    if (site) {
-      for (Value visited : path) {
-        sites_.try_emplace(visited, *site);
-      }
-    }
-    return site;
-  }
-
-  void notifyOperationModified(Operation*) override { sites_.clear(); }
-  void notifyOperationErased(Operation*) override { sites_.clear(); }
-  void notifyBlockErased(Block*) override { sites_.clear(); }
-
-private:
-  DenseMap<Value, CompilerTarget::SiteId> sites_;
-};
-
-} // namespace
 
 static bool isWithinTargetNativeUnitary(UnitaryOpInterface op,
                                         const CompilerTarget* target,

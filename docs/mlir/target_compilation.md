@@ -208,9 +208,10 @@ baseline.
 
 When a target is created from a QDMI device, it records the reported gate
 placements and calibration. Some gates may be available only on particular
-sites. Synthesis requires a common basis of single-qubit gates and a supported
-entangling gate across the routing edges; the compiler also checks each emitted
-operation at its assigned sites.
+sites. A native gate can run at a supported placement even if the target lacks a
+complete synthesis basis. For general decomposition, the compiler needs a common
+single-qubit basis and at least one entangler available on every routing edge.
+It checks each emitted operation at its assigned sites.
 
 This interface supports circuit-model devices, but not neutral-atom zone models.
 The bundled SC targets describe hardware for compilation and do not execute
