@@ -820,6 +820,11 @@ static void collectScalarRegisters(ModuleOp moduleOp, LoweringState& state) {
           return;
         }
         deallocation = dealloc;
+      } else if (auto store = dyn_cast<memref::StoreOp>(user)) {
+        // Preflight checked the source register and rejected unequal constants.
+        if (!getConstantIntValue(store.getIndices().front())) {
+          return;
+        }
       } else if (!isa<memref::LoadOp>(user)) {
         return;
       }
@@ -840,8 +845,8 @@ static void collectScalarRegisters(ModuleOp moduleOp, LoweringState& state) {
       for (auto* consumer : load->getUsers()) {
         if (consumer->getBlock() != block ||
             !consumer->isBeforeInBlock(deallocation) ||
-            !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp>(
-                consumer)) {
+            !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp,
+                 memref::StoreOp>(consumer)) {
           return;
         }
       }
