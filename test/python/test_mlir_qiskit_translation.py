@@ -1529,8 +1529,10 @@ def test_custom_gate_export_drops_unreferenced_functions() -> None:
     """Drop helper definitions that the exported circuit does not use."""
     program = QCProgram.from_mlir_str(
         """module {
-  func.func private @unused(%q: !qc.qubit) attributes {mqt.unitary} {
-    qc.x %q : !qc.qubit
+  func.func private @unused_scalar(i32) -> i32
+  func.func private @opaque(!qc.qubit)
+  func.func private @unused(%q: !qc.qubit) {
+    func.call @opaque(%q) : (!qc.qubit) -> ()
     return
   }
   func.func @main() attributes {mqt.entry_point} {
@@ -4807,6 +4809,8 @@ def test_qiskit_native_opaque_gate_has_no_invented_definition() -> None:
         QCProgram.from_qiskit(circuit)
     program = QCProgram.from_qiskit(circuit, native=True)
     assert "func.func private" in program.ir
+    with pytest.raises(RuntimeError, match="Opaque native calls require QPY"):
+        program.to_qiskit(copy=True)
     with pytest.raises(ValueError, match="callee must have a body"):
         sample(program.copy(), shots=1)
     source = program.to_openqasm3().source
