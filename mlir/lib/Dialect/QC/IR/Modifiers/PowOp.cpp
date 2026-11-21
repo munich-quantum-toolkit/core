@@ -75,35 +75,6 @@ static void replaceWithPhaseGate(double angle, PowOp op, Value target,
 
 namespace {
 
-/// pow(1.0) { U } → U
-struct InlinePow1 final : OpRewritePattern<PowOp> {
-  using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(PowOp op,
-                                PatternRewriter& rewriter) const override {
-    const auto exponent = op.getExponentValue();
-    if (!exponent ||
-        std::abs(*exponent - 1.0) > PARAMETER_COMPARISON_TOLERANCE) {
-      return failure();
-    }
-    mqt::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
-    return success();
-  }
-};
-
-/// pow(0.0) { U } → identity (no-op)
-struct ErasePow0 final : OpRewritePattern<PowOp> {
-  using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(PowOp op,
-                                PatternRewriter& rewriter) const override {
-    const auto exponent = op.getExponentValue();
-    if (!exponent || std::abs(*exponent) > PARAMETER_COMPARISON_TOLERANCE) {
-      return failure();
-    }
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
 /// pow(p) with p < 0 → pow(-p) { inv(q) { U } }
 struct NegPowToInvPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -597,8 +568,10 @@ LogicalResult PowOp::verify() {
 
 void PowOp::getLoweringPatterns(RewritePatternSet& results,
                                 MLIRContext* context) {
-  results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
-              MoveCtrlOutsidePow, NegPowToInvPow>(context);
+  results.add(mqt::foldTrivialPower<UnitaryOpInterface, PowOp>);
+  results
+      .add<FoldPowIntoGate, MergeNestedPow, MoveCtrlOutsidePow, NegPowToInvPow>(
+          context);
   getCanonicalizationPatterns(results, context);
 }
 
