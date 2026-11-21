@@ -159,7 +159,7 @@ build = [
 ]
 catalyst = [ "mqt-core[catalyst]" ]
 cpp-lint = [
-  "cpp-linter==1.15.1",
+  "cpp-linter==1.16.0",
   "nanobind~=3.1.0",
 ]
 test-base = [

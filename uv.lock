@@ -775,15 +775,15 @@ wheels = [
 
 [[package]]
 name = "cpp-linter"
-version = "1.15.1"
+version = "1.16.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "git-bot-feedback" },
     { name = "pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f7/95/92fc8d6f4b4c133124c36775d3775652bf00ed0890a5f3ad1a63183f789b/cpp_linter-1.15.1.tar.gz", hash = "sha256:56619a8e626975c7ef60789c8dd8d4d4c3f14a8c9f55a65ea851f4d28fe10199", size = 2532532, upload-time = "2026-10-23T07:56:11.47Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/bf/e5/07aaca9fd90c774fc3697ebfc1b4d5e736b2363b6ade2baf4e9470ad16c8/cpp_linter-1.16.0.tar.gz", hash = "sha256:830f1b82137fa77c70c5abde48fb115e6d10c140e1857b0bbb2688ff6bfd438b", size = 2562877, upload-time = "2026-11-10T02:17:14.7Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c6/17/d8c68649a583d488668135e191cbba161eae76f2dec5224ed3f22693a870/cpp_linter-1.15.1-py3-none-any.whl", hash = "sha256:707f505b6f182fa543663089317c6e2022b175483b389bbf1d96ab6ac636492c", size = 39741, upload-time = "2026-10-23T07:56:10.173Z" },
+    { url = "https://files.pythonhosted.org/packages/fd/58/ca42c024c73a6a5fd2d9e49b6ddc483704ee80499eb3fbc95636532b141b/cpp_linter-1.16.0-py3-none-any.whl", hash = "sha256:8c9aa396c6a52204cad83f7e3dabd4e20fde2511114c6a05f71640a3db6b0d6a", size = 39912, upload-time = "2026-11-10T02:17:12.887Z" },
 ]
 
 [[package]]
@@ -1796,7 +1796,7 @@ dependencies = [
 
 [package.optional-dependencies]
 catalyst = [
-    { name = "pennylane-catalyst", marker = "(python_full_version < '3.15' and platform_machine == 'arm64' and sys_platform == 'darwin') or (python_full_version < '3.15' and platform_machine == 'aarch64' and sys_platform == 'linux') or (python_full_version < '3.15' and platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "pennylane-catalyst", marker = "python_full_version < '3.15' and ((platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux'))" },
 ]
 pennylane = [
     { name = "pennylane" },
@@ -1883,7 +1883,7 @@ test-base = [
 requires-dist = [
     { name = "nanobind-backend", specifier = ">=1" },
     { name = "pennylane", marker = "extra == 'pennylane'", specifier = ">=0.45.1,<1" },
-    { name = "pennylane-catalyst", marker = "(python_full_version < '3.15' and platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'catalyst') or (python_full_version < '3.15' and platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'catalyst') or (python_full_version < '3.15' and platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'catalyst')", specifier = ">=0.15,<1" },
+    { name = "pennylane-catalyst", marker = "python_full_version < '3.15' and ((platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'catalyst') or (platform_machine == 'aarch64' and sys_platform == 'linux' and extra == 'catalyst') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'catalyst'))", specifier = ">=0.15,<1" },
     { name = "qiskit", marker = "extra == 'qiskit'", specifier = ">=2.5,<3" },
 ]
 provides-extras = ["catalyst", "pennylane", "qiskit"]
@@ -1897,7 +1897,7 @@ build = [
 ]
 catalyst = [{ name = "mqt-core", extras = ["catalyst"], editable = "." }]
 cpp-lint = [
-    { name = "cpp-linter", specifier = "==1.15.1" },
+    { name = "cpp-linter", specifier = "==1.16.0" },
     { name = "nanobind", specifier = "~=3.1.0" },
 ]
 dev = [
