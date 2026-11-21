@@ -37,7 +37,7 @@ struct RealNumber;
 class RealNumberUniqueTable {
   /// Initial power-of-two bucket count.
   static constexpr size_t NBUCKET = 65536U;
-  static constexpr size_t MAX_BUCKETS = 1048576U;
+  static constexpr size_t MAX_BUCKETS = 4194304U;
 
   /// The initial garbage collection limit.
   ///
