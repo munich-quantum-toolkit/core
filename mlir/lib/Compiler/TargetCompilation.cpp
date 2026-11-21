@@ -282,14 +282,6 @@ protected:
       return;
     }
     const auto& target = environment_.target();
-    if (target.nativeOperationsKind() ==
-            CompilerTarget::NativeOperations::Kind::Explicit &&
-        !target.synthesisBasis()) {
-      getOperation().emitError(
-          "target compilation requires a single-qubit synthesis basis");
-      signalPassFailure();
-      return;
-    }
     if (failed(mqt::verifyQuantumAllocations(getOperation()))) {
       signalPassFailure();
       return;
@@ -547,7 +539,11 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   const auto& target = environment.target();
   populateTargetPreparationCleanup(pm);
   pm.addPass(qco::createCombineControlledGates(target));
-  pm.addPass(mqt::createSimplifyQuantum());
+  // Discrete targets may not support the gates produced by composition.
+  const auto& basis = target.synthesisBasis();
+  if (basis) {
+    pm.addPass(mqt::createSimplifyQuantum());
+  }
   // Eliminate identity loops before unrolling applies its clone budget.
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createSCCPPass());
@@ -560,8 +556,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createFuseTwoQubitGates(target));
   // U fusion shrinks runs before routing. Other bases can expand symbolic
   // runs, so emit them once during native synthesis, after cleanup.
-  if (const auto basis = target.synthesisBasis();
-      basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
+  if (basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   // Keep native controlled U bodies; distribute other composites for lowering.
@@ -592,14 +587,16 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   const auto& target = environment.target();
   populateTargetPreparationCleanup(pm);
   pm.addPass(qco::createCombineControlledGates(target));
-  pm.addPass(mqt::createSimplifyQuantum());
+  const auto& basis = target.synthesisBasis();
+  if (basis) {
+    pm.addPass(mqt::createSimplifyQuantum());
+  }
   // Remove identity branches before checking payload control-flow support.
   pm.addPass(createCanonicalizerPass());
   pm.addPass(qco::createLegalizeControlFlow());
   populateDecompositionAndPlacement(pm, target);
   pm.addPass(qco::createFuseTwoQubitGates(target));
-  if (const auto basis = target.synthesisBasis();
-      basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
+  if (basis && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
     pm.addPass(qco::createFuseSingleQubitUnitaryRuns(target));
   }
   pm.addPass(mqt::createUnrollModifiers());
