@@ -3569,9 +3569,9 @@ TEST_F(TargetSynthesisTest, RuntimePauliRotationsShareNativeSynthesisAndCosts) {
 TEST_F(TargetSynthesisTest, CommutingPauliRunsPreservePhaseAndNativeBounds) {
   for (const auto& [body, expectedEntanglers] : {
            std::pair{R"mlir(
-             %u0, %u1 = qco.rzx(%a) %q0, %q1 : !qco.qubit, !qco.qubit
+             %u0, %u1 = qco.rzx(%offset) %q0, %q1 : !qco.qubit, !qco.qubit
              %v1, %v0 = qco.ryy(%b) %u1, %u0 : !qco.qubit, !qco.qubit
-             %out0, %out1 = qco.rzx(%offset) %v0, %v1 : !qco.qubit, !qco.qubit
+             %out0, %out1 = qco.rzx(%a) %v0, %v1 : !qco.qubit, !qco.qubit
            )mlir",
                      2U},
            std::pair{R"mlir(
