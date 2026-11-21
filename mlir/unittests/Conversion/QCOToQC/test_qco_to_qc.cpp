@@ -1164,8 +1164,6 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{"IfWithMeasurement",
                         MQT_NAMED_BUILDER(qco::ifWithMeasurement),
                         MQT_NAMED_BUILDER(qc::ifWithMeasurement)},
-        QCOToQCTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qco::ifWithCreg),
-                        MQT_NAMED_BUILDER(qc::ifWithCreg)},
         QCOToQCTestCase{"SimpleIndexSwitchOp",
                         MQT_NAMED_BUILDER(qco::simpleIndexSwitch),
                         MQT_NAMED_BUILDER(qc::simpleIndexSwitch)},

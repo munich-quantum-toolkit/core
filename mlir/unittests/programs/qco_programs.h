@@ -1444,7 +1444,6 @@ SmallVector<Value> ifWithMeasurementCompleteTensorState(QCOProgramBuilder& b);
 /// Creates a circuit with an if operation conditioned on a bit loaded from a
 /// classical bit register.
 SmallVector<Value> ifWithCreg(QCOProgramBuilder& b);
-SmallVector<Value> ifWithCregCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation with one qubit and one register.
 Value ifOneQubitOneTensor(QCOProgramBuilder& b);

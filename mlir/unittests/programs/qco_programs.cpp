@@ -4241,10 +4241,6 @@ SmallVector<Value> ifWithMeasurementCompleteTensorState(QCOProgramBuilder& b) {
   return {c0, c1};
 }
 
-SmallVector<Value> ifWithCregCompleteTensorState(QCOProgramBuilder& b) {
-  return simpleIfCompleteTensorState(b);
-}
-
 Value ifOneQubitOneTensor(QCOProgramBuilder& b) {
   auto q0 = b.allocQubit();
   auto t0 = b.allocQubitRegister(1);
