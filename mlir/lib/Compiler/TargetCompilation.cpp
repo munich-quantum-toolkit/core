@@ -75,7 +75,7 @@ placementTarget(const CompilerTarget& target) {
     }
   }
   std::set<CompilerTarget::Coupling> virtualPairs;
-  forEachVirtualCZ(target, placeable, [&](auto a, auto b, auto, bool) {
+  forEachVirtualCZ(target, [&](auto a, auto b, auto, bool) {
     virtualPairs.emplace(a, b);
     virtualPairs.emplace(b, a);
     edges.emplace(a, b);

@@ -1502,6 +1502,12 @@ ArrayRef<CompilerTarget::Coupling> CompilerTarget::couplings() const noexcept {
   return storage_->couplings;
 }
 
+bool CompilerTarget::arePhysicallyCoupled(SiteId a, SiteId b) const {
+  const auto source = vertexForSite(a);
+  const auto target = vertexForSite(b);
+  return source && target && areAdjacent(*source, *target);
+}
+
 bool CompilerTarget::areAdjacent(size_t source, size_t target) const {
   assert(source < numSites() && target < numSites() &&
          "Compiler target vertex is out of range");

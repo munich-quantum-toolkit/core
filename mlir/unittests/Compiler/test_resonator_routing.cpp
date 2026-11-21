@@ -61,7 +61,7 @@ const std::vector<Scenario> SCENARIOS{
         "Reversed",
         {5, 17},
         {{5, 2}, {17, 2}},
-        {{2, 5}, {2, 17}},
+        {{2, 5}, {2, 17}, {5, 2}, {17, 2}},
         BELL_SOURCE,
         2,
         true,
@@ -103,7 +103,8 @@ const std::vector<Scenario> SCENARIOS{
 
 } // namespace
 
-static CompilerTarget starTarget(const Scenario& scenario) {
+static CompilerTarget starTarget(const Scenario& scenario,
+                                 bool directCoupling = false) {
   using Capability = CompilerTarget::OperationCapability;
   using Tuple = CompilerTarget::SiteTuple;
   std::vector<Tuple> unary;
@@ -119,6 +120,12 @@ static CompilerTarget starTarget(const Scenario& scenario) {
     }
     return result;
   };
+  std::vector<CompilerTarget::Coupling> couplings{
+      {5, 2}, {17, 2}, {17, 3}, {19, 3}, {4, 2},
+  };
+  if (directCoupling) {
+    couplings.emplace_back(5, 17);
+  }
   return llvm::cantFail(CompilerTarget::create(
       "star",
       {
@@ -129,8 +136,7 @@ static CompilerTarget starTarget(const Scenario& scenario) {
           llvm::cantFail(CompilerTarget::Site::create(17, "QB2")),
           llvm::cantFail(CompilerTarget::Site::create(19, "QB3")),
       },
-      CompilerTarget::Connectivity::fromCouplings(
-          {{5, 2}, {17, 2}, {17, 3}, {19, 3}, {4, 2}}),
+      CompilerTarget::Connectivity::fromCouplings(couplings),
       CompilerTarget::NativeOperations::fromOperations({
           llvm::cantFail(Capability::create("r", 1, 2, unary)),
           llvm::cantFail(Capability::create("measure", 1, 0, unary)),
@@ -256,6 +262,25 @@ TEST(ResonatorRouting, RawAdaptiveQIRSchedulesReadoutAfterMoves) {
   EXPECT_LT(lastMove, firstMeasure);
 }
 
+TEST(ResonatorPlacement, RequiresPhysicalCouplingsForBothRouteLegs) {
+  auto source = llvm::cantFail(QCProgram::fromOpenQASMString(BELL_SOURCE));
+  // Of the two placeable qubits, only site 17 is coupled to CR2 (site 3).
+  for (const bool missingMove : {false, true}) {
+    SCOPED_TRACE(missingMove);
+    auto scenario = SCENARIOS.front();
+    scenario.moves = {{missingMove ? 5 : 17, 3}};
+    scenario.czs = {{missingMove ? 17 : 5, 3}};
+    const TargetEnvironment environment(
+        starTarget(scenario), llvm::cantFail(PayloadSpecification::create(
+                                  {.id = "iqm-json"}, {}, true)));
+    auto placement =
+        createTargetCompilationEnvironment(source.module(), environment);
+    ASSERT_TRUE(static_cast<bool>(placement))
+        << llvm::toString(placement.takeError());
+    EXPECT_EQ(placement->target().numSites(), 1U);
+  }
+}
+
 TEST(ResonatorRouting, LowersStaticQCThroughTextualPassPipeline) {
   auto program = llvm::cantFail(QCProgram::fromOpenQASMString(
       "OPENQASM 3; include \"stdgates.inc\"; bit[2] c; cz $5,$17; "
@@ -267,8 +292,26 @@ TEST(ResonatorRouting, LowersStaticQCThroughTextualPassPipeline) {
       succeeded(runPassPipeline(program.module(), "mqt-lower-resonator-cz")));
   EXPECT_EQ(program.str(), source);
 
+  auto reverse = program.copy();
+  auto scenario = SCENARIOS.front();
+  scenario.czs = {{17, 5}};
+  const TargetEnvironment reversedTarget(
+      starTarget(scenario, true),
+      llvm::cantFail(
+          PayloadSpecification::forProgramFormat(ProgramFormat::IQMJSON)));
+  ASSERT_TRUE(succeeded(runPassPipeline(
+      reverse.module(), "mqt-lower-resonator-cz", {}, &reversedTarget, true)));
+  auto direct = llvm::cantFail(
+      CompiledProgram::serialize(std::move(reverse), reversedTarget));
+  const auto native = llvm::cantFail(llvm::json::parse(direct.payload()));
+  const auto& directCZ =
+      *native.getAsObject()->getArray("instructions")->front().getAsObject();
+  EXPECT_EQ(directCZ.getString("name"), "cz");
+  EXPECT_EQ(*directCZ.getArray("locus"), (llvm::json::Array{"QB2", "QB1"}));
+
+  scenario.czs.clear(); // CZ is native on every physical coupling.
   const TargetEnvironment environment(
-      starTarget(SCENARIOS.front()),
+      starTarget(scenario),
       llvm::cantFail(
           PayloadSpecification::forProgramFormat(ProgramFormat::IQMJSON)));
   ASSERT_TRUE(succeeded(runPassPipeline(

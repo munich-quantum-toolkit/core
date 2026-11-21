@@ -458,6 +458,9 @@ public:
   /// Return sorted canonical undirected couplings in target site IDs.
   [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
 
+  /// Return whether two target site IDs share a physical coupling.
+  [[nodiscard]] bool arePhysicallyCoupled(SiteId a, SiteId b) const;
+
   /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;
 
