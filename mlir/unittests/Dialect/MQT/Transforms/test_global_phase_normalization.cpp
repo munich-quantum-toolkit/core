@@ -346,9 +346,6 @@ TEST_F(GlobalPhaseNormalizationTest,
     OpBuilder builder(context.get());
     builder.setInsertionPointToStart(moduleOp->getBody());
     const auto loc = moduleOp->getLoc();
-    auto function = func::FuncOp::create(builder, loc, "test",
-                                         builder.getFunctionType({}, {}));
-    builder.setInsertionPointToStart(function.addEntryBlock());
     constexpr int phaseCount = 4000;
     for (int i = 0; i < phaseCount; ++i) {
       Value lhs;
@@ -364,12 +361,11 @@ TEST_F(GlobalPhaseNormalizationTest,
       auto angle = arith::MulFOp::create(builder, loc, lhs, rhs);
       qco::GPhaseOp::create(builder, loc, angle.getResult());
     }
-    func::ReturnOp::create(builder, loc);
     ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     // Fold constant contributions without creating a dead accumulation tree.
-    EXPECT_TRUE(function.getBody().getOps<arith::AddFOp>().empty());
-    auto phases = llvm::to_vector(function.getBody().getOps<qco::GPhaseOp>());
+    EXPECT_TRUE(moduleOp->getBody()->getOps<arith::AddFOp>().empty());
+    auto phases = llvm::to_vector(moduleOp->getBody()->getOps<qco::GPhaseOp>());
     ASSERT_EQ(phases.size(), 1);
     EXPECT_TRUE(phases.front().getTheta().getDefiningOp<arith::ConstantOp>());
     expectFoldableGlobalPhase(
@@ -1098,19 +1094,17 @@ TEST_F(GlobalPhaseNormalizationTest, KeepsLastContributionBeforeMeasurements) {
       pm.addPass(createQCToQCO());
       ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
     }
-    ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    Operation* phase = nullptr;
-    moduleOp->walk([&](Operation* op) {
-      if (isa<qc::GPhaseOp, qco::GPhaseOp>(op)) {
-        ASSERT_EQ(phase, nullptr);
-        phase = op;
-      }
-    });
-    ASSERT_NE(phase, nullptr);
-    EXPECT_TRUE((isa<qc::MeasureOp, qco::MeasureOp>(phase->getNextNode())));
-    ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
-    EXPECT_TRUE((isa<qc::MeasureOp, qco::MeasureOp>(phase->getNextNode())));
+    for (int i = 0; i < 2; ++i) {
+      ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+      auto phases = llvm::make_filter_range(
+          function.getBody().front(),
+          [](Operation& op) { return isa<qc::GPhaseOp, qco::GPhaseOp>(op); });
+      ASSERT_TRUE(llvm::hasSingleElement(phases));
+      EXPECT_TRUE(
+          (isa<qc::MeasureOp, qco::MeasureOp>(phases.begin()->getNextNode())));
+    }
   }
 }
 
