@@ -7369,13 +7369,20 @@ TEST_F(CompilerPipelineTest,
           llvm::cantFail(OperationCapability::create("gphase", 0, 1)),
           llvm::cantFail(OperationCapability::create("sqrt_iswap", 2, 0)),
       })));
-  ASSERT_TRUE(mlir::succeeded(program->compileForTarget(
-      TargetEnvironment(target, makePayloadSpecification()))));
+  const TargetEnvironment environment(
+      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  ProgramFormat::OpenQASM3)));
+  ASSERT_TRUE(mlir::succeeded(program->compileForTarget(environment)));
   ASSERT_TRUE(succeeded(verify(program->module())));
   size_t count = 0;
   program->module().walk([&](mlir::qco::XXPlusYYOp) { ++count; });
   EXPECT_GT(count, 0U);
   EXPECT_LE(count, 4U);
+  auto qc = std::move(*program).intoQC();
+  MQT_ASSERT_SUCCESS(qc);
+  auto output = std::move(*qc).intoOpenQASM3(&environment);
+  MQT_ASSERT_SUCCESS(output);
+  EXPECT_EQ(StringRef(output->source()).count("sqrt_iswap "), count);
 }
 
 // Test: all-to-all target compilation uses compact placement.
