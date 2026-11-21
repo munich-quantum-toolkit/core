@@ -2656,6 +2656,8 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
       %angles = arith.constant dense<[1.5707963267948966, 1.5707963267948966, 0.0, 0.0]> : tensor<4xf64>
       %control = memref.load %refs[%zero] : memref<2x!qc.qubit>
       %target = memref.load %refs[%one] : memref<2x!qc.qubit>
+      %alias = memref.load %refs[%one] : memref<2x!qc.qubit>
+      qc.barrier %target, %control, %alias : !qc.qubit, !qc.qubit, !qc.qubit
       scf.for %i = %zero to %four step %one {
         %angle = tensor.extract %angles[%i] : tensor<4xf64>
         qc.ctrl(%control) targets (%q = %target) {
@@ -2677,6 +2679,8 @@ TEST(OpenQASM3EmissionTest, PreservesControlledGatesAndAngleTables) {
   ASSERT_TRUE(succeeded(repeated));
   EXPECT_EQ(*emitted, *repeated);
   EXPECT_TRUE(emitted->starts_with("OPENQASM 3.1;\n"));
+  EXPECT_NE(emitted->find("barrier _mqt_q0[1], _mqt_q0[0];"),
+            std::string::npos);
   EXPECT_NE(emitted->find("for int "), std::string::npos);
   EXPECT_EQ(emitted->find("array["), std::string::npos);
   auto restored = qc::translateOpenQASMToQC(*emitted, &context);
