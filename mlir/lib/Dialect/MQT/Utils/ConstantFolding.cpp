@@ -11,15 +11,22 @@
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/Dialect.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <optional>
@@ -49,13 +56,92 @@ std::optional<double> valueToDouble(Value value) {
   return attributeToDouble(attr);
 }
 
-Attribute valueToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
+// Fold a detached operation: dialect folders may rewrite it in place.
+static Attribute foldWithInputs(Operation* op, ValueRange inputs,
+                                ArrayRef<Attribute> attributes) {
+  OwningOpRef<Operation*> copy(Operation::create(
+      op->getLoc(), op->getName(), op->getResultTypes(), inputs,
+      op->getRawDictionaryAttrs(), op->getPropertiesStorage(), {}, 0));
+  SmallVector<OpFoldResult, 1> results;
+  if (!isSpeculatable(copy.get()) || failed(copy->fold(attributes, results)) ||
+      results.size() != 1) {
+    return {};
+  }
+  if (auto attr = dyn_cast_if_present<Attribute>(results.front())) {
+    return attr;
+  }
+  // Identity folds return one of the detached operands.
+  auto value = dyn_cast_if_present<Value>(results.front());
+  const auto found = llvm::find(inputs, value);
+  return found == inputs.end() ? Attribute{}
+                               : attributes[found - inputs.begin()];
+}
+
+static Attribute
+foldConstantOperation(Operation* op, Block& arguments,
+                      const DenseMap<Value, Attribute>& cache) {
+  SmallVector<Attribute> attributes;
+  for (auto [index, operand] : llvm::enumerate(op->getOperands())) {
+    attributes.push_back(cache.lookup(operand));
+    if (index == arguments.getNumArguments()) {
+      arguments.addArgument(operand.getType(), op->getLoc());
+    } else {
+      arguments.getArgument(index).setType(operand.getType());
+    }
+  }
+  // Most folders use only the operand attributes. Stand-in arguments keep the
+  // source use lists untouched and avoid creating constant operations.
+  if (auto attr = foldWithInputs(
+          op, arguments.getArguments().take_front(attributes.size()),
+          attributes)) {
+    return attr;
+  }
+
+  // Some folders and speculation checks inspect the defining operations.
+  Block constants;
+  OpBuilder builder(op->getContext());
+  builder.setInsertionPointToEnd(&constants);
+  SmallVector<Value> inputs;
+  for (auto [operand, attr] : llvm::zip_equal(op->getOperands(), attributes)) {
+    auto* def = operand.getDefiningOp();
+    Operation* literal = nullptr;
+    if (def != nullptr && def->hasTrait<OpTrait::ConstantLike>()) {
+      literal = builder.clone(*def);
+    } else {
+      if (def != nullptr && def->getDialect() != op->getDialect()) {
+        literal = def->getDialect()->materializeConstant(
+            builder, attr, operand.getType(), op->getLoc());
+      }
+      if (literal == nullptr) {
+        literal = op->getDialect()->materializeConstant(
+            builder, attr, operand.getType(), op->getLoc());
+      }
+    }
+    if (literal == nullptr) {
+      return {};
+    }
+    inputs.push_back(literal->getResult(0));
+  }
+  return foldWithInputs(op, inputs, attributes);
+}
+
+static Attribute evaluateConstant(Value value,
+                                  DenseMap<Value, Attribute>* sharedCache) {
+  if (isa<BlockArgument>(value)) {
+    return sharedCache != nullptr ? sharedCache->lookup(value) : Attribute{};
+  }
+  Attribute literal;
+  if (matchPattern(value, m_Constant(&literal))) {
+    return literal;
+  }
+  // Start small for one-shot unary and binary expressions.
+  DenseMap<Value, Attribute> localCache(sharedCache != nullptr ? 0 : 4);
+  auto& cache = sharedCache != nullptr ? *sharedCache : localCache;
   if (const auto found = cache.find(value); found != cache.end()) {
     return found->second;
   }
   SmallVector<std::pair<Value, unsigned>> stack{{value, 0}};
-  SmallVector<Attribute> operands;
-  SmallVector<OpFoldResult, 1> results;
+  Block arguments;
   while (!stack.empty()) {
     auto [current, nextOperand] = stack.back();
     Operation* operation = current.getDefiningOp();
@@ -69,7 +155,9 @@ Attribute valueToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
         continue;
       }
       if (operation == nullptr || operation->getNumRegions() != 0 ||
-          !isPure(operation)) {
+          operation->getNumResults() != 1 ||
+          operation->getNumSuccessors() != 0 ||
+          !isMemoryEffectFree(operation)) {
         return {};
       }
     }
@@ -84,46 +172,22 @@ Attribute valueToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
       continue;
     }
 
-    operands.clear();
-    for (Value operand : operation->getOperands()) {
-      operands.push_back(cache.lookup(operand));
-    }
-    results.clear();
-    if (failed(operation->fold(operands, results)) || results.size() != 1) {
+    Attribute folded = foldConstantOperation(operation, arguments, cache);
+    if (!folded) {
       return {};
     }
-    if (auto attr = dyn_cast_if_present<Attribute>(results.front())) {
-      cache[current] = attr;
-    } else if (auto replacement = dyn_cast_if_present<Value>(results.front())) {
-      // Identity folds can return an existing value outside the operands.
-      const auto found = cache.find(replacement);
-      if (found == cache.end()) {
-        stack.emplace_back(replacement, 0);
-        continue;
-      }
-      if (!found->second) {
-        return {};
-      }
-      cache[current] = found->second;
-    } else {
-      return {};
-    }
+    cache[current] = folded;
     stack.pop_back();
   }
   return cache.lookup(value);
 }
 
+Attribute valueToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
+  return evaluateConstant(value, &cache);
+}
+
 Attribute valueToConstantAttr(Value value) {
-  if (isa<BlockArgument>(value)) {
-    return {};
-  }
-  Attribute literal;
-  if (matchPattern(value, m_Constant(&literal))) {
-    return literal;
-  }
-  // Start small for unary and binary expressions.
-  DenseMap<Value, Attribute> cache(4);
-  return valueToConstantAttr(value, cache);
+  return evaluateConstant(value, nullptr);
 }
 
 std::optional<double> valueToConstantDouble(Value value) {
