@@ -18,6 +18,8 @@
 #include "qdmi/client.h"
 #include "qdmi/types.h"
 
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 
 #include <algorithm>
@@ -41,6 +43,8 @@
 #include <vector>
 
 namespace qdmi {
+class Job;
+
 /// Identifies one of QDMI's implementation-defined custom slots.
 ///
 /// The same selector is used for custom device, site, operation, and
@@ -147,8 +151,26 @@ queuePositionFromResult(const int result, const size_t queuePosition) {
   return std::optional<size_t>{std::move(queuePosition)};
 }
 
-[[nodiscard]] llvm::Expected<std::vector<std::string>>
-parseShots(std::string_view shots, size_t numShots);
+/// Owns the provider's SHOTS payload and its validated number of rows.
+struct PackedShots {
+  std::vector<std::byte> bytes;
+  size_t count = 0;
+
+  [[nodiscard]] static llvm::Expected<PackedShots>
+  parse(std::vector<std::byte> bytes, size_t count);
+
+  /// Split the payload lazily, including empty shots.
+  [[nodiscard]] auto rows() const {
+    llvm::StringRef payload;
+    if (count != 0) {
+      payload = {reinterpret_cast<const char*>(bytes.data()), bytes.size() - 1};
+    }
+    return llvm::split(payload, ',');
+  }
+};
+
+[[nodiscard]] llvm::Expected<PackedShots> getPackedShots(const Job& job,
+                                                         size_t programIndex);
 
 template <custom_property_value T, typename Query>
 [[nodiscard]] llvm::Expected<std::optional<T>>
@@ -583,7 +605,6 @@ struct SessionConfig {
   std::optional<std::string> custom5;
 };
 
-class Job;
 class Site;
 class Device;
 class Operation;

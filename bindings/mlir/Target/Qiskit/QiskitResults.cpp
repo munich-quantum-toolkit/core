@@ -76,8 +76,9 @@ static Results readout(const qdmi::Job& job, size_t width, size_t shots,
                        bool memory) {
   Results result;
   if (memory) {
+    const auto packed = unwrap(qdmi::detail::getPackedShots(job, programIndex));
     auto logical = decoded(runtime::decodeOrderedShots(
-        unwrap(job.getShots(programIndex)), width, shots, layout));
+        packed.rows(), packed.count, width, shots, layout));
     result = {std::move(logical.outcomes), std::move(logical.order)};
     for (auto& [bits, count] : result.counts) {
       bits = hexadecimal(bits);

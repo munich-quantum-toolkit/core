@@ -13,13 +13,14 @@
 #include "mqt/Compiler/ResultLayout.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Error.h"
 
 #include <cstddef>
 #include <optional>
 #include <string>
 #include <utility>
-#include <vector>
 
 namespace mqt::runtime {
 
@@ -33,11 +34,9 @@ struct Readout {
 };
 
 /// Decode distinct raw outcomes once, merging equal logical outcomes.
-///
-/// Preserve shot order without materializing a logical string for every shot.
 [[nodiscard]] llvm::Expected<Readout>
-decodeOrderedShots(const std::vector<std::string>& samples,
-                   std::optional<size_t> width, size_t shots,
+decodeOrderedShots(const llvm::iterator_range<llvm::SplittingIterator>& rows,
+                   size_t rowCount, std::optional<size_t> width, size_t shots,
                    const std::optional<mlir::ResultLayout>& layout);
 
 } // namespace mqt::runtime

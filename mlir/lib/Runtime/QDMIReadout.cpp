@@ -59,14 +59,15 @@ Readout readout(const qdmi::Job& job, size_t width, size_t shots,
   const auto load = [&](bool loadSamples) -> llvm::Expected<Readout> {
     Readout result;
     if (loadSamples) {
-      auto values = job.getShots(programIndex);
+      auto values = qdmi::detail::getPackedShots(job, programIndex);
       if (!values) {
         return values.takeError();
       }
-      if (values->empty()) {
+      if (values->count == 0) {
         return result;
       }
-      return unwrap(decodeOrderedShots(*values, width, shots, layout));
+      return unwrap(decodeOrderedShots(values->rows(), values->count, width,
+                                       shots, layout));
     }
     auto counts = job.getCounts(programIndex);
     if (!counts) {

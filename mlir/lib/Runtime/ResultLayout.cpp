@@ -14,8 +14,10 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/iterator_range.h"
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
@@ -137,10 +139,10 @@ decodeShots(std::vector<std::string> samples, std::optional<size_t> width,
 namespace mqt::runtime {
 
 llvm::Expected<Readout>
-decodeOrderedShots(const std::vector<std::string>& samples,
-                   std::optional<size_t> width, size_t shots,
+decodeOrderedShots(const llvm::iterator_range<llvm::SplittingIterator>& rows,
+                   size_t rowCount, std::optional<size_t> width, size_t shots,
                    const std::optional<mlir::ResultLayout>& layout) {
-  if (samples.size() != shots) {
+  if (rowCount != shots) {
     return llvm::createStringError(
         "Invalid QDMI SHOTS result: incorrect shot total");
   }
@@ -148,10 +150,10 @@ decodeOrderedShots(const std::vector<std::string>& samples,
   result.order.reserve(shots);
   llvm::DenseMap<llvm::StringRef, size_t> rawIndices;
   llvm::StringMap<size_t> logicalIndices;
-  for (const auto& bits : samples) {
+  for (const auto bits : rows) {
     auto [raw, inserted] = rawIndices.try_emplace(bits, 0);
     if (inserted) {
-      auto decoded = mlir::decodeSample(bits, width, layout);
+      auto decoded = mlir::decodeSample(bits.str(), width, layout);
       if (!decoded) {
         return decoded.takeError();
       }
