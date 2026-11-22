@@ -8014,6 +8014,27 @@ TEST_F(CompilerPipelineTest, GateSetSynthesisPreservesOwnedWireOrder) {
   EXPECT_TRUE(succeeded(again.cleanup()));
   EXPECT_EQ(again.inspect().numQubits, 4);
   expectFullUnitaryEqual(expected->module(), again.module(), 4);
+
+  auto fresh = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func private @prepare() -> !qco.qubit
+    func.func @main() attributes {mqt.entry_point} {
+      %q = func.call @prepare() : () -> !qco.qubit
+      %idle = func.call @prepare() : () -> !qco.qubit
+      qco.sink %idle : !qco.qubit
+      %prepared = qco.x %q : !qco.qubit
+      %reg = qtensor.from_elements %prepared : tensor<1x!qco.qubit>
+      qtensor.dealloc %reg : tensor<1x!qco.qubit>
+      return
+    }
+  })mlir");
+  MQT_ASSERT_SUCCESS(fresh);
+  attachTargetEnvironment(fresh->module(), environment);
+  auto qc = std::move(*fresh).intoQC();
+  ASSERT_TRUE(succeeded(qc));
+  EXPECT_EQ(qc->operationCounts().at("qc.dealloc"), 2U);
+  auto restored = std::move(*qc).intoQCO();
+  ASSERT_TRUE(succeeded(restored));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(restored->module())));
 }
 
 } // namespace mqt::test::compiler

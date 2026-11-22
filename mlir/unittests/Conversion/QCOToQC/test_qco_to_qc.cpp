@@ -1189,7 +1189,7 @@ TEST(QCOToQCRegressionTest, RetainsOwnedProgramTensorAfterCleanup) {
                   func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
-  for (const auto* shape : {"4", "?"}) {
+  auto parseProgram = [&](StringRef body) {
     const auto source = llvm::formatv(R"mlir(
 module attributes {{mqt.target_env = #mqt.target_env<
     compilation_target = #mqt.compilation_target<sites = [],
@@ -1199,16 +1199,23 @@ module attributes {{mqt.target_env = #mqt.target_env<
         format = <id = "openqasm", version = "3.0", profile = "", encoding = text>,
         capabilities = [], optional_capabilities_known = false>>} {{
   func.func @main() attributes {{mqt.entry_point} {{
-    %size = arith.constant 4 : index
-    %reg = qtensor.alloc(%size) : tensor<{0}x!qco.qubit>
-    qtensor.dealloc %reg : tensor<{0}x!qco.qubit>
+    {0}
     return
   }
 }
 )mlir",
-                                      shape)
+                                      body)
                             .str();
-    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    return parseSourceString<ModuleOp>(source, &context);
+  };
+  for (const auto* shape : {"4", "?"}) {
+    auto moduleOp = parseProgram(llvm::formatv(R"mlir(
+      %size = arith.constant 4 : index
+      %reg = qtensor.alloc(%size) : tensor<{0}x!qco.qubit>
+      qtensor.dealloc %reg : tensor<{0}x!qco.qubit>
+    )mlir",
+                                               shape)
+                                     .str());
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
     ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
@@ -1219,5 +1226,29 @@ module attributes {{mqt.target_env = #mqt.target_env<
     EXPECT_EQ(qubits, 4);
     EXPECT_EQ(releases, 4);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  }
+  for (const bool placed : {false, true}) {
+    auto moduleOp =
+        parseProgram(llvm::formatv(R"mlir(
+      %zero = arith.constant 0 : index
+      %q = {0} : !qco.qubit
+      %tensor = qtensor.from_elements %q : tensor<1x!qco.qubit>
+      %rest, %cell = qtensor.extract %tensor[%zero] : tensor<1x!qco.qubit>
+      qco.sink %cell : !qco.qubit
+      qtensor.dealloc %rest : tensor<1x!qco.qubit>
+    )mlir",
+                                   placed ? "qco.static 0" : "qco.alloc")
+                         .str());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    if (placed) {
+      ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+      EXPECT_TRUE(moduleOp->lookupSymbol<func::FuncOp>("main")
+                      .getOps<qc::DeallocOp>()
+                      .empty());
+    } else {
+      EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+    }
   }
 }
