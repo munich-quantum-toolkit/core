@@ -118,19 +118,16 @@ static WorkerBudget& workerBudget() {
   return budget;
 }
 
-static size_t reserveSamplingWorkers(size_t requested, size_t shots) {
-  if (shots == 0) {
-    return 0;
-  }
+static size_t reserveSamplingWorkers(size_t requested, size_t held = 0) {
   auto& budget = workerBudget();
-  const size_t limit =
-      std::min(shots, requested == 0 ? budget.limit : requested);
-  const size_t granted = std::min(limit, budget.limit);
   std::unique_lock lock(budget.mutex);
-  budget.available.wait(
-      lock, [&] { return budget.limit - budget.active >= granted; });
-  budget.active += granted;
-  return granted;
+  // Once a sampler has a slot, it can run all its streams with that grant.
+  if (held == 0) {
+    budget.available.wait(lock, [&] { return budget.active < budget.limit; });
+  }
+  const size_t extra = std::min(requested - held, budget.limit - budget.active);
+  budget.active += extra;
+  return held + extra;
 }
 
 static void releaseSamplingWorkers(size_t count) {
@@ -3130,18 +3127,17 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
               const DDArgumentBindings& argumentBindings,
               std::vector<std::string>* shotResults,
               DDSamplingState* retainedState, const DDExecutionOptions& options,
-              size_t workers, bool collectCounts,
+              size_t requestedWorkers, bool collectCounts,
               function_ref<size_t(size_t)> requestWorkers) {
   if (retainedState != nullptr) {
     *retainedState = {};
   }
   if (shotResults != nullptr) {
     shotResults->clear();
-    shotResults->reserve(shots);
   }
-  size_t grant = reserveSamplingWorkers(1, shots);
+  size_t workers = shots == 0 ? 0 : reserveSamplingWorkers(1);
   const auto release =
-      llvm::make_scope_exit([&] { releaseSamplingWorkers(grant); });
+      llvm::make_scope_exit([&] { releaseSamplingWorkers(workers); });
   auto packageResult = dd::Package::create(0);
   if (!packageResult) {
     return func.emitError(llvm::toString(packageResult.takeError()));
@@ -3158,6 +3154,9 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
   }
   if (shots == 0) {
     return std::map<std::string, size_t>{};
+  }
+  if (shotResults != nullptr) {
+    shotResults->reserve(shots);
   }
   if (!plan->dynamic) {
     bool adaptive = false;
@@ -3180,27 +3179,24 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
     return sampleBranches(func, *dd, shots, rng, *prepared, *plan, *regions,
                           shotResults, options, collectCounts);
   }
-  if (workers == 0) {
+  if (requestedWorkers == 0) {
     // Keep small jobs serial and bound repeated prefix work per package.
-    workers = std::clamp(shots / 256, size_t{1}, size_t{8});
+    requestedWorkers = std::clamp(shots / 256, size_t{1}, size_t{8});
   }
-  workers = std::min(workers, shots);
-  const size_t requested = workers;
-  if (!func.getContext()->isMultithreadingEnabled()) {
-    workers = 1;
+  requestedWorkers = std::min(requestedWorkers, shots);
+  if (requestedWorkers > 1 && func.getContext()->isMultithreadingEnabled()) {
+    workers = reserveSamplingWorkers(requestedWorkers, workers);
   }
-  if (workers > 1) {
-    releaseSamplingWorkers(std::exchange(grant, 0));
-    grant = reserveSamplingWorkers(workers, shots);
-    workers = requestWorkers && grant > 1 ? requestWorkers(grant) : grant;
-    if (workers == 0 || workers > grant) {
+  if (requestWorkers && workers > 1) {
+    const size_t accepted = requestWorkers(workers);
+    if (accepted == 0 || accepted > workers) {
       return func.emitError()
-             << "sampling worker grant must be between 1 and " << grant;
+             << "sampling worker grant must be between 1 and " << workers;
     }
-    releaseSamplingWorkers(grant - workers);
-    grant = workers;
+    releaseSamplingWorkers(workers - accepted);
+    workers = accepted;
   }
-  const size_t streamCount = seed != 0 ? requested : workers;
+  const size_t streamCount = seed != 0 ? requestedWorkers : workers;
   if (streamCount == 1) {
     return sampleImpl(func, *dd, shots, rng, *prepared, shotResults, nullptr,
                       *plan, options, collectCounts, /*forceDynamic=*/true);
