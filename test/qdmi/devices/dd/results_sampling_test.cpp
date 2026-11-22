@@ -574,8 +574,12 @@ define void @setup() {
   ret void
 }
 declare void @__quantum__rt__int_record_output(i64, ptr)
-define i64 @main() #0 {
+define internal void @flip() alwaysinline {
   call void @__quantum__qis__x__body(ptr null)
+  ret void
+}
+define i64 @main() #0 {
+  call void @flip()
   call void @__quantum__qis__swap__body(ptr null, ptr inttoptr (i64 2 to ptr))
   call void @__quantum__qis__mz__body(ptr null, ptr null)
   call void @__quantum__qis__mz__body(ptr inttoptr (i64 2 to ptr), ptr inttoptr (i64 1 to ptr))

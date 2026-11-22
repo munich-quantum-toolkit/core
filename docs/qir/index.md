@@ -422,12 +422,12 @@ random-number generator, and output settings. QIR jobs can therefore execute
 concurrently without sharing measurements or output records. DDSIM records
 result bits directly and formats textual records only when capture is enabled.
 
-For sampling programs that cannot use terminal sampling, the JIT runs LLVM's O1
-module simplification pipeline with automatic loop unrolling disabled. Inlining
-and loop simplification reduce repeated classical work. State extraction and
-programs eligible for terminal sampling skip this pipeline. Exported QIR uses
-profile-preserving cleanup, including promotion of local classical storage to
-SSA values. The JIT simplifies its private module before native code generation.
+The JIT checks for terminal sampling before native code generation. When the
+first check fails, it simplifies the sampling program with LLVM's O1 module
+pipeline and checks again. Inlining a helper can expose a terminal circuit.
+Automatic loop unrolling is disabled. State extraction skips this O1 pipeline.
+Exported QIR uses profile-preserving cleanup, including promotion of local
+classical storage to SSA values.
 
 ### Sampling and state extraction
 
@@ -435,9 +435,10 @@ Sampling supports Base and Adaptive formats. For either profile with an acyclic,
 unconditional entry path, constant gate arguments, terminal Z measurements and
 scalar result records, DDSIM prepares the DD once and samples it for all shots.
 The runtime preserves repeated or reordered results, constant numeric records,
-and tuple or array headers. Classical memory accesses, helper calls, conditional
-branches, resets, dynamic resources, global destructors, Boolean output records,
-and generic controlled argument arrays exclude this terminal optimization.
+and tuple or array headers. Classical memory accesses, helper calls, or
+conditional branches that survive simplification exclude this terminal
+optimization. Resets, dynamic resources, global destructors, Boolean output
+records, and generic controlled argument arrays also exclude it.
 
 With capture disabled, `JitSession::sampleCounts` can group shots by measurement
 outcomes and replay deterministic prefixes for sibling paths. After
