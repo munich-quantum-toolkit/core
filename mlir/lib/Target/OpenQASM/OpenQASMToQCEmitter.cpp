@@ -152,22 +152,28 @@ public:
       return nullptr;
     }
     auto entry = cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp());
+    SmallVector<DictionaryAttr> attrs;
+    SmallVector<Location> locations;
     for (const auto id : program.inputs) {
       const auto& input = program.scalars[id];
-      const auto index = entry.getNumArguments();
-      auto attrs = builder.getDictionaryAttr({
+      attrs.push_back(builder.getDictionaryAttr({
           builder.getNamedAttr(
               mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
               builder.getStringAttr(input.name)),
-      });
-      if (failed(entry.insertArgument(index, builder.getF64Type(), attrs,
-                                      getLocation(input.location)))) {
-        emitError(getLocation(input.location))
-            << "OpenQASM QC emission error: cannot create input '" << input.name
-            << "'";
-        return nullptr;
-      }
-      scalarValues[id] = entry.getArgument(index);
+      }));
+      locations.push_back(getLocation(input.location));
+    }
+    if (failed(entry.insertArguments(
+            SmallVector<unsigned>(attrs.size(), 0U),
+            SmallVector<Type>(attrs.size(), builder.getF64Type()), attrs,
+            locations))) {
+      emitError(entry.getLoc(),
+                "OpenQASM QC emission error: cannot create inputs");
+      return nullptr;
+    }
+    for (auto [id, argument] :
+         llvm::zip_equal(program.inputs, entry.getArguments())) {
+      scalarValues[id] = argument;
     }
     // Semantic analysis requires gate definitions to precede their callers.
     for (const auto& gate : program.gates) {
