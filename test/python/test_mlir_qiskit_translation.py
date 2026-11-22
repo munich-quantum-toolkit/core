@@ -4764,6 +4764,30 @@ def test_invalid_named_qubit_register_export_is_rejected(size: int, name: str, e
         program.to_qiskit()
 
 
+@pytest.mark.parametrize(("slots", "error"), [((1, 0), "consecutive qubits"), ((0, 1), "must not overlap")])
+def test_invalid_named_quantum_register_spans(slots: tuple[int, int], error: str) -> None:
+    """Reject reversed wires and overlap with the physical target register."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_mlir_str(f"""module {{
+  func.func @main() attributes {{mqt.entry_point}} {{
+    %q0 = qc.static 0 : !qc.qubit
+    %q1 = qc.static 1 : !qc.qubit
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %reg = memref.alloca() {{mqt.register_name = "pair"}} : memref<2x!qc.qubit>
+    memref.store %q{slots[0]}, %reg[%c0] : memref<2x!qc.qubit>
+    memref.store %q{slots[1]}, %reg[%c1] : memref<2x!qc.qubit>
+    return
+  }}
+}}""")
+    with pytest.raises(RuntimeError, match=error):
+        program.to_qiskit(target=target)
+
+
 @pytest.mark.parametrize("native", [False, True])
 def test_qiskit_nested_switch_captures_noncontiguous_block_bits(*, native: bool) -> None:
     """Block-local register membership need not partition its captured operands."""
