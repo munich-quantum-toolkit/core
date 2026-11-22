@@ -615,6 +615,8 @@ TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
 
   EXPECT_EQ(target.connectivityKind(), Connectivity::Kind::Explicit);
   EXPECT_EQ(target.couplings(), (llvm::ArrayRef<Coupling>{{2, 7}, {2, 11}}));
+  EXPECT_FALSE(target.supports(GateKind::CZ, {11, 7}));
+  EXPECT_TRUE(target.supports(GateKind::CZ, {11, 2}));
   EXPECT_EQ(target.vertexForSite(7), 0);
   EXPECT_EQ(target.vertexForSite(2), 1);
   EXPECT_EQ(target.vertexForSite(11), 2);
@@ -785,6 +787,11 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
   expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 2}}),
                                NativeOperations::unrestricted()),
                 "Compiler target topology references an unknown site");
+  const auto cz = valid(OperationCapability::create(
+      "cz", 2, 0, {valid(SiteTuple::create({2, 0}))}));
+  expectInvalid(Target::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                               NativeOperations::fromOperations({cz})),
+                "native operation 'cz' on sites 2, 0 requires a coupling");
   expectInvalid(Target::create(3, Connectivity::fromCouplings({{0, 1}}),
                                NativeOperations::unrestricted()),
                 "Compiler target topology must be connected");
@@ -854,6 +861,21 @@ TEST(CompilerTargetTest, DistinguishesOperationSupport) {
   EXPECT_FALSE(variadic.supportsOperation("rxx", 4, 0));
   EXPECT_TRUE(variadic.supportsOperation("id", 1, 0));
   EXPECT_TRUE(variadic.supportsOperation("i", 1, 0));
+}
+
+TEST(CompilerTargetTest, ResolvesSpellingWithCoverageOnEveryCoupling) {
+  const auto cx =
+      valid(OperationCapability::create("cx", 2, 0,
+                                        {
+                                            valid(SiteTuple::create({0, 1})),
+                                            valid(SiteTuple::create({1, 0})),
+                                            valid(SiteTuple::create({1, 2})),
+                                            valid(SiteTuple::create({2, 1})),
+                                        }));
+  const auto target =
+      valid(Target::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                           NativeOperations::fromOperations({cx})));
+  EXPECT_TRUE(target.findOperation("x", 2, {}, std::nullopt, 1).capability);
 }
 
 TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
@@ -1439,8 +1461,7 @@ TEST(CompilerTargetTest, RecognizesSquareRootISwapParametersAndPlacements) {
       EXPECT_EQ(target.supports(GateKind::SQRTISWAP, {0, 1}),
                 supported && global);
       EXPECT_EQ(target.supports(GateKind::SQRTISWAP, {2, 1}), supported);
-      EXPECT_EQ(target.supports(GateKind::SQRTISWAP, {0, 2}),
-                supported && global);
+      EXPECT_FALSE(target.supports(GateKind::SQRTISWAP, {0, 2}));
       ASSERT_TRUE(target.synthesisBasis());
       EXPECT_EQ(target.synthesisBasis()->entangler.has_value(), supported);
       EXPECT_EQ(target.synthesisEntanglers().size(), supported ? 1 : 0);

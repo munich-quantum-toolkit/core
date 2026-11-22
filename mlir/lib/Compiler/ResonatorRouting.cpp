@@ -36,11 +36,24 @@
 #include "llvm/ADT/StringRef.h"
 
 #include <array>
-#include <cstdint>
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace mlir {
+
+// Return whether a symmetric CZ needs its operands reversed at these sites.
+static std::optional<bool> reverseNativeCZ(const CompilerTarget& target,
+                                           CompilerTarget::SiteId a,
+                                           CompilerTarget::SiteId b) {
+  if (target.supports(CompilerTarget::GateKind::CZ, std::array{a, b})) {
+    return false;
+  }
+  if (target.supports(CompilerTarget::GateKind::CZ, std::array{b, a})) {
+    return true;
+  }
+  return std::nullopt;
+}
 
 void forEachVirtualCZ(
     const CompilerTarget& target, ArrayRef<CompilerTarget::SiteId> sites,
@@ -60,22 +73,14 @@ void forEachVirtualCZ(
       if (!placeable.contains(a) || placeable.contains(r)) {
         continue;
       }
-      for (const auto& cz : target.operations()) {
-        if (cz.canonicalName() != "cz" ||
-            cz.arity() !=
-                CompilerTarget::OperationCapability::Arity::fixed(2) ||
-            cz.numParameters() != 0) {
-          continue;
-        }
-        for (const auto& pair : cz.siteTuples()) {
-          const bool first = pair.sites()[0] == r;
-          const auto b = pair.sites()[first ? 1 : 0];
-          if (pair.sites()[first ? 0 : 1] == r && a != b &&
-              placeable.contains(b)) {
-            visit(a, b, r, first);
+      target.forEachNeighbour(*target.vertexForSite(r), [&](size_t vertex) {
+        const auto b = target.siteForVertex(vertex);
+        if (a != b && placeable.contains(b)) {
+          if (auto reverse = reverseNativeCZ(target, b, r)) {
+            visit(a, b, r, *reverse);
           }
         }
-      }
+      });
     }
   }
 }
@@ -93,9 +98,6 @@ static void insertResonatorMoves(ModuleOp moduleOp,
   forEachVirtualCZ(target, placeable, [&](auto a, auto b, auto r, bool first) {
     routes.try_emplace({a, b}, r, first);
   });
-  if (routes.empty()) {
-    return;
-  }
   func::FuncOp move;
   OpBuilder builder(moduleOp.getContext());
   moduleOp.walk([&](qc::CtrlOp ctrl) {
@@ -106,12 +108,15 @@ static void insertResonatorMoves(ModuleOp moduleOp,
     }
     auto a = ctrl.getControl(0).getDefiningOp<qc::StaticOp>();
     auto b = ctrl.getTarget(0).getDefiningOp<qc::StaticOp>();
-    if (!a || !b ||
-        target.supports(CompilerTarget::GateKind::CZ,
-                        std::array<int64_t, 2>{
-                            static_cast<int64_t>(a.getIndex()),
-                            static_cast<int64_t>(b.getIndex()),
-                        })) {
+    if (!a || !b) {
+      return;
+    }
+    if (auto reverse =
+            reverseNativeCZ(target, static_cast<SiteId>(a.getIndex()),
+                            static_cast<SiteId>(b.getIndex()))) {
+      if (*reverse) {
+        ctrl->setOperands({b.getResult(), a.getResult()});
+      }
       return;
     }
     auto route = routes.find({a.getIndex(), b.getIndex()});
@@ -147,7 +152,9 @@ static void insertResonatorMoves(ModuleOp moduleOp,
     func::CallOp::create(builder, ctrl.getLoc(), move, ValueRange{m, r});
     ctrl.erase();
   });
-  scheduleTerminalReadout(moduleOp);
+  if (!routes.empty()) {
+    scheduleTerminalReadout(moduleOp);
+  }
 }
 
 namespace {

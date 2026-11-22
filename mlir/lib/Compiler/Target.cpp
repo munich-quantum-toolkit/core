@@ -658,6 +658,10 @@ struct CompilerTarget::Storage {
           std::optional<DurationUnit> targetDurationUnit);
 
   [[nodiscard]] llvm::Error initialize(bool deviceConstraints);
+  [[nodiscard]] bool containsCoupling(SiteId a, SiteId b) const {
+    return std::ranges::binary_search(couplings, Coupling{std::minmax(a, b)});
+  }
+  [[nodiscard]] bool permitsPlacement(ArrayRef<SiteId> placement) const;
   void computeDistances(size_t source, MutableArrayRef<size_t> row) const;
 
   [[nodiscard]] bool supportsOperation(
@@ -727,6 +731,19 @@ void CompilerTarget::Storage::computeDistances(
       worklist.emplace_back(neighbour);
     }
   }
+}
+
+bool CompilerTarget::Storage::permitsPlacement(
+    ArrayRef<SiteId> placement) const {
+  if (placement.size() == 2 &&
+      connectivityKind == Connectivity::Kind::Explicit) {
+    return containsCoupling(placement[0], placement[1]);
+  }
+  return llvm::all_of(llvm::enumerate(placement), [&](const auto& entry) {
+    const auto [index, site] = entry;
+    return site >= 0 && (sites.empty() || siteToVertex.contains(site)) &&
+           !llvm::is_contained(placement.take_front(index), site);
+  });
 }
 
 llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
@@ -818,11 +835,18 @@ llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
       }
       for (const auto& siteTuple : operation.siteTuples()) {
         auto tupleSites = siteTuple.sites();
-        if (llvm::any_of(tupleSites, [&](const auto site) {
+        if (llvm::any_of(tupleSites, [&](SiteId site) {
               return !siteToVertex.contains(site);
             })) {
           return invalidTarget("Compiler target operation site tuple "
                                "references an unknown site");
+        }
+        if (tupleSites.size() == 2 &&
+            connectivityKind == Connectivity::Kind::Explicit &&
+            !containsCoupling(tupleSites[0], tupleSites[1])) {
+          return invalidTarget(Twine("native operation '") + operation.name() +
+                               "' on sites " + Twine(tupleSites[0]) + ", " +
+                               Twine(tupleSites[1]) + " requires a coupling");
         }
         if (!everySite) {
           supportedSites.insert(tupleSites);
@@ -866,13 +890,19 @@ llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
       continue;
     }
     size_t count = 1;
-    for (size_t i = 0; i < operation.arity().value(); ++i) {
-      auto next = llvm::checkedMulUnsigned(count, sites.size() - i);
-      if (!next) {
-        count = 0;
-        break;
+    if (connectivityKind == Connectivity::Kind::Explicit &&
+        operation.arity().value() == 2) {
+      // Each undirected coupling has two ordered placements.
+      count = 2 * couplings.size();
+    } else {
+      for (size_t i = 0; i < operation.arity().value(); ++i) {
+        auto next = llvm::checkedMulUnsigned(count, sites.size() - i);
+        if (!next) {
+          count = 0;
+          break;
+        }
+        count = *next;
       }
-      count = *next;
     }
     if (count == 0) {
       continue;
@@ -964,16 +994,9 @@ bool CompilerTarget::Storage::supportsOperation(
       (orderedSites && orderedSites->size() != arity)) {
     return false;
   }
-  if (orderedSites) {
-    for (const auto [index, site] : llvm::enumerate(*orderedSites)) {
-      if (site < 0 || (!sites.empty() && !siteToVertex.contains(site)) ||
-          llvm::is_contained(orderedSites->take_front(index), site)) {
-        return false;
-      }
-    }
-  }
   if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
-    return !operationName.trim().empty();
+    return !operationName.trim().empty() &&
+           (!orderedSites || permitsPlacement(*orderedSites));
   }
   auto found = capabilities.find(operationName);
   if (found == capabilities.end()) {
@@ -988,8 +1011,10 @@ bool CompilerTarget::Storage::supportsOperation(
                                  OperationCapability::Arity::Kind::Variadic) &&
            operation.arity().accepts(arity) &&
            (!numParameters || operation.numParameters() == *numParameters) &&
-           (!orderedSites || operationSites[index].empty() ||
-            operationSites[index].contains(*orderedSites)) &&
+           (!orderedSites ||
+            (operationSites[index].empty()
+                 ? permitsPlacement(*orderedSites)
+                 : operationSites[index].contains(*orderedSites))) &&
            (capabilityFilter ? capabilityFilter(operation)
                              : matchesParameters(operation, parameterAt));
   });

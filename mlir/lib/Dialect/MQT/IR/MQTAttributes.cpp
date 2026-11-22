@@ -29,6 +29,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -337,19 +338,16 @@ LogicalResult CompilationTargetAttr::verify(
     return emitError()
            << "compiler target couplings require explicit connectivity";
   }
+  llvm::SmallDenseSet<std::pair<int64_t, int64_t>> edges;
   if (connectivity == ConnectivityKind::Explicit) {
-    llvm::SmallDenseSet<std::pair<int64_t, int64_t>> seen;
     for (const CouplingAttr coupling : couplings) {
-      auto source = coupling.getSource();
-      auto target = coupling.getTarget();
+      const auto source = coupling.getSource();
+      const auto target = coupling.getTarget();
       if (!siteIds.contains(source) || !siteIds.contains(target)) {
         return emitError()
                << "compiler target coupling references an unknown site";
       }
-      if (target < source) {
-        std::swap(source, target);
-      }
-      if (!seen.insert({source, target}).second) {
+      if (!edges.insert(std::minmax(source, target)).second) {
         return emitError() << "compiler target contains a duplicate coupling";
       }
     }
@@ -374,11 +372,19 @@ LogicalResult CompilationTargetAttr::verify(
                             "count";
     }
     for (const SiteTupleAttr siteTuple : operation.getSiteTuples()) {
-      if (llvm::any_of(siteTuple.getSites(), [&](const int64_t site) {
+      auto tuple = siteTuple.getSites();
+      if (llvm::any_of(tuple, [&](const int64_t site) {
             return !siteIds.contains(site);
           })) {
         return emitError() << "compiler target operation site tuple references "
                               "an unknown site";
+      }
+      if (connectivity == ConnectivityKind::Explicit && tuple.size() == 2 &&
+          !edges.contains(std::minmax(tuple[0], tuple[1]))) {
+        return emitError() << "native operation '"
+                           << operation.getName().getValue() << "' on sites "
+                           << tuple[0] << ", " << tuple[1]
+                           << " requires a coupling";
       }
     }
   }
