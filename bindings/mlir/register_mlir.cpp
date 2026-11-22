@@ -1266,6 +1266,9 @@ executeQIRInput(nb::handle program, size_t shots, uint64_t seed) {
 [[nodiscard]] static std::map<std::string, size_t>
 sample(PythonInputTypes& types, const nb::handle program, size_t shots,
        uint64_t seed) {
+  if (shots == 0) {
+    return {};
+  }
   if (auto job = executeQIRInput(program, shots, seed)) {
     const nb::gil_scoped_release release;
     return unwrap(job->getCounts());
@@ -2746,7 +2749,11 @@ LLVM bitcode.)pb");
           "feedback are unsupported.")
       .def(
           "sample",
-          [](const mlir::QIRProgram& self, size_t shots, uint64_t seed) {
+          [](const mlir::QIRProgram& self, size_t shots,
+             uint64_t seed) -> std::map<std::string, size_t> {
+            if (shots == 0) {
+              return {};
+            }
             auto job = executeQIRProgram(self, shots, seed);
             const nb::gil_scoped_release release;
             return unwrap(job.getCounts());
