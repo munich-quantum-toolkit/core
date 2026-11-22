@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from pennylane.typing import Result, ResultBatch
 
     from mqt.core.mlir import CompiledProgram
+    from mqt.core.typing import QDMISessionParameters
 
 
 @pytest.mark.parametrize("installed", ["0.14.1", "0.15.0rc1", "1.0.0rc1", "1.0.0"])
@@ -53,7 +54,7 @@ def test_validates_configuration_and_width() -> None:
     with pytest.raises(PennyLaneConfigurationError, match="unknown"):
         QDMIDevice(
             "mqt.ddsim.default",
-            session_parameters={"unknown": "value"},  # ty: ignore[invalid-argument-type, invalid-key]
+            session_parameters=cast("QDMISessionParameters", {"unknown": "value"}),
         )
     with pytest.raises(PennyLaneConfigurationError, match="wires were requested"):
         QDMIDevice(device=provider, wires=provider.qubits_num() + 1)
