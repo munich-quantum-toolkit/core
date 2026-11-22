@@ -449,6 +449,10 @@ public:
   /// If the target supports measurement, require readout on these sites too.
   [[nodiscard]] std::vector<SiteId> placeableSites() const;
 
+  /// Return candidate sites that support a complete single-qubit basis.
+  [[nodiscard]] std::vector<SiteId>
+  singleQubitSynthesisSites(llvm::ArrayRef<SiteId> candidates) const;
+
   /// Return target site identifiers in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<SiteId> siteIds() const noexcept;
 

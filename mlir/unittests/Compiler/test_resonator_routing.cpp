@@ -342,19 +342,27 @@ TEST(ResonatorPlacement, RejectsDisjointGateAndReadoutSites) {
 TEST(ResonatorPlacement, KeepsLargestConnectedComponentAndDropsOversizedGates) {
   using Capability = CompilerTarget::OperationCapability;
   using Tuple = CompilerTarget::SiteTuple;
+  const auto sitesExcept = [](int64_t missing) {
+    std::vector<Tuple> tuples;
+    for (int64_t site = 0; site < 6; ++site) {
+      if (site != missing) {
+        tuples.push_back(llvm::cantFail(Tuple::create({site})));
+      }
+    }
+    return tuples;
+  };
+  // Readout excludes 3. Removing site 1 (missing SX) splits the larger
+  // component, leaving 4 and 5 as the only connected calibrated pair.
   const auto target = llvm::cantFail(CompilerTarget::create(
-      4, CompilerTarget::Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
+      6,
+      CompilerTarget::Connectivity::fromCouplings(
+          {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
       CompilerTarget::NativeOperations::fromOperations({
-          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("rz", 1, 1)),
+          llvm::cantFail(Capability::create("sx", 1, 0, sitesExcept(1))),
           llvm::cantFail(Capability::create("cx", 2, 0)),
           llvm::cantFail(Capability::create("ccx", 3, 0)),
-          llvm::cantFail(
-              Capability::create("measure", 1, 0,
-                                 {
-                                     llvm::cantFail(Tuple::create({0})),
-                                     llvm::cantFail(Tuple::create({2})),
-                                     llvm::cantFail(Tuple::create({3})),
-                                 })),
+          llvm::cantFail(Capability::create("measure", 1, 0, sitesExcept(3))),
       })));
   TargetEnvironment environment(
       target,
@@ -365,9 +373,8 @@ TEST(ResonatorPlacement, KeepsLargestConnectedComponentAndDropsOversizedGates) {
           "qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c=measure q;")),
       ProgramFormat::QC, environment);
   ASSERT_TRUE(static_cast<bool>(output)) << llvm::toString(output.takeError());
-  std::get<QCProgram>(*output).module().walk([](qc::StaticOp op) {
-    EXPECT_TRUE(op.getIndex() == 2 || op.getIndex() == 3);
-  });
+  EXPECT_EQ(std::get<QCProgram>(*output).inspect().staticQubits,
+            (std::vector<uint64_t>{4, 5}));
 }
 
 TEST(ResonatorPlacement, RequiresCompilerTargetableUnarySignature) {

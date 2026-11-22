@@ -672,6 +672,8 @@ struct CompilerTarget::Storage {
       std::optional<ArrayRef<SiteId>> orderedSites = std::nullopt,
       AngleSupport angles = AngleSupport::Fixed,
       function_ref<bool(const OperationCapability&)> filter = nullptr) const;
+  [[nodiscard]] std::optional<SynthesisBasis>
+  resolveSingleQubitBasis(std::optional<ArrayRef<SiteId>> locus) const;
   [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis();
   [[nodiscard]] bool coversAllSites(const OperationCapability& operation) const;
 
@@ -1039,71 +1041,57 @@ bool CompilerTarget::Storage::supportsGate(
 }
 
 std::optional<CompilerTarget::SynthesisBasis>
-CompilerTarget::Storage::resolveSynthesisBasis() {
-  const auto supportsOnSites =
-      [&](StringRef name, size_t arity, size_t parameters,
-          std::optional<ArrayRef<SiteId>> sites, bool variadicOnly,
-          function_ref<std::optional<double>(size_t)> parameterAt = nullptr,
-          function_ref<bool(const OperationCapability&)> filter = nullptr) {
-        return supportsOperation(
-            name, arity, parameters, sites, variadicOnly, nullptr,
-            [&](const auto& operation) {
-              return coversAllSites(operation) &&
-                     (filter ? filter(operation)
-                             : matchesParameters(operation, parameterAt));
-            });
-      };
-  const auto supportsEveryPlacement =
-      [&](StringRef operationName, size_t arity, size_t numParameters,
-          bool variadicOnly = false,
-          std::optional<GateKind> gate = std::nullopt,
-          AngleSupport angles = AngleSupport::Fixed) {
-        return supportsOnSites(
-            operationName, arity, numParameters, std::nullopt, variadicOnly,
-            nullptr, [&](const auto& operation) {
-              return gate ? matchesSynthesisParameters(operation, *gate, angles)
-                          : matchesParameters(operation, nullptr);
-            });
-      };
-  const auto supportsOnEverySite = [&](GateKind gate) {
-    return supportsGate(
-        gate, std::nullopt, AngleSupport::Fixed,
-        [&](const auto& operation) { return coversAllSites(operation); });
+CompilerTarget::Storage::resolveSingleQubitBasis(
+    std::optional<ArrayRef<SiteId>> locus) const {
+  const auto coversLocus = [&](const OperationCapability& operation) {
+    return locus.has_value() || coversAllSites(operation);
   };
+  const auto supports = [&](GateKind gate) {
+    return supportsGate(gate, locus, AngleSupport::Fixed, coversLocus);
+  };
+  const auto supportsRotation =
+      [&](StringRef name, size_t numParameters,
+          function_ref<std::optional<double>(size_t)> parameterAt = nullptr) {
+        return supportsOperation(name, 1, numParameters, locus, false, nullptr,
+                                 [&](const auto& operation) {
+                                   return coversLocus(operation) &&
+                                          matchesParameters(operation,
+                                                            parameterAt);
+                                 });
+      };
   std::optional<SingleQubitBasis> singleQubit;
   std::optional<QuarterTurnGates> quarterTurnGates;
   bool hasHalfTurn = true;
-  const bool hasRZ = supportsOnEverySite(GateKind::RZ);
-  const bool phaseRotation = !hasRZ && supportsEveryPlacement("p", 1, 1);
+  const bool hasRZ = supports(GateKind::RZ);
+  const bool phaseRotation = !hasRZ && supportsRotation("p", 1);
   const bool hasZRotation = hasRZ || phaseRotation;
-  if (supportsOnEverySite(GateKind::U)) {
+  if (supports(GateKind::U)) {
     singleQubit = SingleQubitBasis::U;
-  } else if (supportsOnEverySite(GateKind::RX) && hasZRotation) {
+  } else if (supports(GateKind::RX) && hasZRotation) {
     singleQubit = SingleQubitBasis::ZXZ;
-  } else if (supportsOnEverySite(GateKind::SX) && hasZRotation) {
+  } else if (supports(GateKind::SX) && hasZRotation) {
     singleQubit = SingleQubitBasis::ZSXX;
-    hasHalfTurn = supportsOnEverySite(GateKind::X);
-  } else if (supportsOnEverySite(GateKind::R)) {
+    hasHalfTurn = supports(GateKind::X);
+  } else if (supports(GateKind::R)) {
     singleQubit = SingleQubitBasis::R;
-  } else if (supportsOnEverySite(GateKind::RX) &&
-             supportsOnEverySite(GateKind::RY)) {
+  } else if (supports(GateKind::RX) && supports(GateKind::RY)) {
     singleQubit = SingleQubitBasis::XYX;
-  } else if (supportsOnEverySite(GateKind::RY) && hasZRotation) {
+  } else if (supports(GateKind::RY) && hasZRotation) {
     singleQubit = SingleQubitBasis::ZYZ;
   } else if (hasZRotation) {
     for (const auto gate : {GateKind::RX, GateKind::RY, GateKind::R}) {
       // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
       const auto specification = std::ranges::find(GATE_SPECIFICATIONS, gate,
                                                    &GateSpecification::kind);
-      const auto supportsRotation = [&](double angle) {
-        return supportsOnSites(
-            specification->name, 1, specification->numParameters, std::nullopt,
-            false, [angle](size_t parameter) {
+      const auto supportsFixedRotation = [&](double angle) {
+        return supportsRotation(
+            specification->name, specification->numParameters,
+            [angle](size_t parameter) {
               return std::optional{parameter == 0 ? angle : 0.};
             });
       };
       for (double quarter : {std::numbers::pi / 2., -std::numbers::pi / 2.}) {
-        if (!supportsRotation(quarter)) {
+        if (!supportsFixedRotation(quarter)) {
           continue;
         }
         quarterTurnGates = {
@@ -1111,10 +1099,10 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
             .quarterTurnAngle = quarter,
             .halfTurnAngle = std::nullopt,
         };
-        hasHalfTurn = gate != GateKind::RY && supportsOnEverySite(GateKind::X);
+        hasHalfTurn = gate != GateKind::RY && supports(GateKind::X);
         if (!hasHalfTurn) {
           for (double half : {std::numbers::pi, -std::numbers::pi}) {
-            if (supportsRotation(half)) {
+            if (supportsFixedRotation(half)) {
               quarterTurnGates->halfTurnAngle = half;
               hasHalfTurn = true;
               break;
@@ -1133,8 +1121,8 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
   if (!singleQubit &&
       llvm::all_of(std::array{std::numbers::pi, std::numbers::pi / 2.},
                    [&](double angle) {
-                     return supportsOnSites(
-                         "r", 1, 2, std::nullopt, false,
+                     return supportsRotation(
+                         "r", 2,
                          [angle](size_t parameter) -> std::optional<double> {
                            return parameter == 0 ? std::optional{angle}
                                                  : std::nullopt;
@@ -1146,50 +1134,55 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
     return std::nullopt;
   }
 
-  const auto supportsOnEveryCoupling =
-      [&](GateKind gate, AngleSupport angles = AngleSupport::Fixed) {
-        if (!sites.empty() && sites.size() < 2) {
+  return SynthesisBasis{
+      .singleQubit = *singleQubit,
+      .entangler = std::nullopt,
+      .quarterTurnGates = quarterTurnGates,
+      .hasHalfTurn = hasHalfTurn,
+      .phaseRotation = phaseRotation,
+  };
+}
+
+std::optional<CompilerTarget::SynthesisBasis>
+CompilerTarget::Storage::resolveSynthesisBasis() {
+  auto result = resolveSingleQubitBasis(std::nullopt);
+  if (!result) {
+    return std::nullopt;
+  }
+  const auto supportsOnEveryCoupling = [&](GateKind gate,
+                                           AngleSupport angles =
+                                               AngleSupport::Fixed) {
+    if (!sites.empty() && sites.size() < 2) {
+      return false;
+    }
+    if (supportsGate(gate, std::nullopt, angles, [&](const auto& operation) {
+          return coversAllSites(operation);
+        })) {
+      return true;
+    }
+    if (sites.empty()) {
+      return false;
+    }
+    const auto supportsPair = [&](SiteId source, SiteId target) {
+      const std::array forward{source, target};
+      const std::array reverse{target, source};
+      return supportsGate(gate, forward, angles) ||
+             supportsGate(gate, reverse, angles);
+    };
+    if (connectivityKind == Connectivity::Kind::Explicit) {
+      return llvm::all_of(couplings, [&](const auto& coupling) {
+        return supportsPair(coupling.first, coupling.second);
+      });
+    }
+    for (size_t source = 0; source < siteIds.size(); ++source) {
+      for (size_t target = source + 1; target < siteIds.size(); ++target) {
+        if (!supportsPair(siteIds[source], siteIds[target])) {
           return false;
         }
-        if ((gate == GateKind::CX && supportsEveryPlacement("x", 2, 0, true)) ||
-            (gate == GateKind::CZ && supportsEveryPlacement("z", 2, 0, true)) ||
-            (gate == GateKind::SQRTISWAP &&
-             supportsEveryPlacement("sqrt_iswap", 2, 0))) {
-          return true;
-        }
-        // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
-        const auto specification = std::ranges::find(GATE_SPECIFICATIONS, gate,
-                                                     &GateSpecification::kind);
-        assert(specification != GATE_SPECIFICATIONS.end() &&
-               "unknown compiler target gate");
-        if (supportsEveryPlacement(specification->name, specification->arity,
-                                   specification->numParameters, false, gate,
-                                   angles)) {
-          return true;
-        }
-        if (sites.empty()) {
-          return false;
-        }
-        const auto supportsPair = [&](SiteId source, SiteId target) {
-          const std::array forward{source, target};
-          const std::array reverse{target, source};
-          return supportsGate(gate, forward, angles) ||
-                 supportsGate(gate, reverse, angles);
-        };
-        if (connectivityKind == Connectivity::Kind::Explicit) {
-          return llvm::all_of(couplings, [&](const auto& coupling) {
-            return supportsPair(coupling.first, coupling.second);
-          });
-        }
-        for (size_t source = 0; source < siteIds.size(); ++source) {
-          for (size_t target = source + 1; target < siteIds.size(); ++target) {
-            if (!supportsPair(siteIds[source], siteIds[target])) {
-              return false;
-            }
-          }
-        }
-        return true;
-      };
+      }
+    }
+    return true;
+  };
 
   constexpr std::array entanglerPreference{
       GateKind::RXX, GateKind::RYY,   GateKind::RZX,
@@ -1215,14 +1208,10 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
   for (const auto gate : entanglerPreference) {
     addEntangler(gate, AngleSupport::Fixed);
   }
-  return SynthesisBasis{
-      .singleQubit = *singleQubit,
-      .entangler =
-          entanglers.empty() ? std::nullopt : std::optional{entanglers.front()},
-      .quarterTurnGates = quarterTurnGates,
-      .hasHalfTurn = hasHalfTurn,
-      .phaseRotation = phaseRotation,
-  };
+  if (!entanglers.empty()) {
+    result->entangler = entanglers.front();
+  }
+  return result;
 }
 
 llvm::Expected<CompilerTarget>
@@ -1497,6 +1486,25 @@ std::vector<SiteId> CompilerTarget::placeableSites() const {
   std::vector<SiteId> result;
   for (const auto site : siteIds()) {
     if (unary.contains(site) && (measured.empty() || measured.contains(site))) {
+      result.push_back(site);
+    }
+  }
+  return result;
+}
+
+std::vector<SiteId>
+CompilerTarget::singleQubitSynthesisSites(ArrayRef<SiteId> candidates) const {
+  // Uniform capabilities cannot yield a local basis if the global one failed.
+  if (!synthesisBasis() && llvm::none_of(operations(), [&](const auto& op) {
+        return op.arity().accepts(1) && !storage_->coversAllSites(op);
+      })) {
+    return {};
+  }
+  std::vector<SiteId> result;
+  for (const auto site : candidates) {
+    if (vertexForSite(site) &&
+        (synthesisBasis() ||
+         storage_->resolveSingleQubitBasis(ArrayRef(&site, 1)))) {
       result.push_back(site);
     }
   }

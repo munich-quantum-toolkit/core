@@ -38,12 +38,14 @@
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/EquivalenceClasses.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
+#include <cinttypes>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -57,25 +59,24 @@
 namespace mlir {
 
 static llvm::Expected<CompilerTarget>
-placementTarget(const CompilerTarget& target) {
-  auto placeable = target.placeableSites();
-  if (placeable.empty()) {
-    return llvm::createStringError(
-        std::errc::invalid_argument,
-        "no site supports the operations required for qubit placement");
-  }
+projectPlacementTarget(const CompilerTarget& target,
+                       ArrayRef<CompilerTarget::SiteId> computational,
+                       ArrayRef<CompilerTarget::SiteId> placeable) {
   if (placeable.size() == target.numSites()) {
     return target;
   }
+  DenseSet<CompilerTarget::SiteId> selected(placeable.begin(), placeable.end());
   std::set<CompilerTarget::Coupling> edges;
   for (const auto& edge : target.couplings()) {
-    if (llvm::is_contained(placeable, edge.first) &&
-        llvm::is_contained(placeable, edge.second)) {
+    if (selected.contains(edge.first) && selected.contains(edge.second)) {
       edges.insert(edge);
     }
   }
   std::set<CompilerTarget::Coupling> virtualPairs;
-  forEachVirtualCZ(target, placeable, [&](auto a, auto b, auto, bool) {
+  forEachVirtualCZ(target, computational, [&](auto a, auto b, auto, bool) {
+    if (!selected.contains(a) || !selected.contains(b)) {
+      return;
+    }
     virtualPairs.emplace(a, b);
     virtualPairs.emplace(b, a);
     edges.emplace(a, b);
@@ -101,31 +102,31 @@ placementTarget(const CompilerTarget& target) {
         }
       }
     }
-    std::erase_if(placeable, [&](auto site) {
-      return !components.isEquivalent(largest, site);
-    });
+    for (const auto site : placeable) {
+      if (!components.isEquivalent(largest, site)) {
+        selected.erase(site);
+      }
+    }
     std::erase_if(edges, [&](const auto& edge) {
-      return !llvm::is_contained(placeable, edge.first) ||
-             !llvm::is_contained(placeable, edge.second);
+      return !selected.contains(edge.first) || !selected.contains(edge.second);
     });
   }
   std::vector<CompilerTarget::Site> sites;
   for (const auto& site : target.sites()) {
-    if (llvm::is_contained(placeable, site.id())) {
+    if (selected.contains(site.id())) {
       sites.push_back(site);
     }
   }
   using Capability = CompilerTarget::OperationCapability;
   std::vector<Capability> operations;
   for (const auto& op : target.operations()) {
-    if (op.arity().value() > placeable.size()) {
+    if (op.arity().value() > selected.size()) {
       continue;
     }
     std::vector<CompilerTarget::SiteTuple> tuples;
     for (const auto& tuple : op.siteTuples()) {
-      if (llvm::all_of(tuple.sites(), [&](auto site) {
-            return llvm::is_contained(placeable, site);
-          })) {
+      if (llvm::all_of(tuple.sites(),
+                       [&](auto site) { return selected.contains(site); })) {
         tuples.push_back(tuple);
       }
     }
@@ -141,7 +142,7 @@ placementTarget(const CompilerTarget& target) {
   }
   std::vector<CompilerTarget::SiteTuple> virtualCZs;
   for (const auto& [a, b] : virtualPairs) {
-    if (llvm::is_contained(placeable, a) && llvm::is_contained(placeable, b)) {
+    if (selected.contains(a) && selected.contains(b)) {
       virtualCZs.push_back(
           llvm::cantFail(CompilerTarget::SiteTuple::create({a, b})));
     }
@@ -165,17 +166,51 @@ placementTarget(const CompilerTarget& target) {
                                                 native, target.durationUnit());
 }
 
+static llvm::Expected<CompilerTarget>
+placementTarget(const CompilerTarget& target) {
+  const auto candidates = target.placeableSites();
+  if (candidates.empty()) {
+    return llvm::createStringError(
+        std::errc::invalid_argument,
+        "no site supports the operations required for qubit placement");
+  }
+  auto projected = projectPlacementTarget(target, candidates, candidates);
+  if (!projected || projected->synthesisBasis()) {
+    return projected;
+  }
+  // Removing an incompletely calibrated site can split the routing graph.
+  // Reconsider the original candidates before selecting a connected component.
+  const auto calibrated = target.singleQubitSynthesisSites(candidates);
+  if (calibrated.empty() || calibrated.size() == candidates.size()) {
+    return projected;
+  }
+  return projectPlacementTarget(target, candidates, calibrated);
+}
+
 llvm::Expected<TargetEnvironment>
 createTargetCompilationEnvironment(ModuleOp moduleOp,
                                    const TargetEnvironment& environment) {
   if (!environment.target().hasDeviceConstraints()) {
     return environment;
   }
-  auto routing = QuantumProgramAnalysis(moduleOp).info().numQubits == 0
+  const QuantumProgramAnalysis program(moduleOp);
+  auto routing = program.info().numQubits == 0
                      ? llvm::Expected<CompilerTarget>(environment.target())
                      : placementTarget(environment.target());
   if (!routing) {
     return routing.takeError();
+  }
+  if (routing->numSites() < environment.target().numSites()) {
+    for (const auto index : program.info().staticQubits) {
+      const auto site = static_cast<CompilerTarget::SiteId>(index);
+      if (environment.target().vertexForSite(site) &&
+          !routing->vertexForSite(site)) {
+        return llvm::createStringError(std::errc::invalid_argument,
+                                       "static site %" PRIu64
+                                       " is unavailable for qubit placement",
+                                       index);
+      }
+    }
   }
   return TargetEnvironment(*routing, environment.payloadSpecification());
 }
