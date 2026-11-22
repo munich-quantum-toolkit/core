@@ -43,7 +43,6 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/DialectConversion.h"
-#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
 
@@ -544,11 +543,8 @@ protected:
       signalPassFailure();
       return;
     }
-    // Discard folded descriptor operations before enforcing Base's subset.
-    PassManager cleanup(ctx);
-    cleanup.addPass(createCanonicalizerPass());
-    if (failed(cleanup.run(moduleOp)) || failed(verifyBaseInstructions(main)) ||
-        failed(finalizeQIRMetadata(moduleOp, "base", *payload, run))) {
+    if (failed(finalizeQIRMetadata(moduleOp, "base", *payload, run)) ||
+        failed(verifyBaseInstructions(main))) {
       signalPassFailure();
     }
   }

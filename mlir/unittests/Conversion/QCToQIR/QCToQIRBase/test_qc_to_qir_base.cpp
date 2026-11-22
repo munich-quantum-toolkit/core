@@ -730,7 +730,6 @@ TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
   ASSERT_TRUE(succeeded(modifierLowering.run(*program)));
   ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(program.get())));
   ASSERT_TRUE(::mqt::test::verifyQIRTestStage(*program, "Converted QIR"));
-  ASSERT_TRUE(runQIRCleanupPipeline(program.get(), false).succeeded());
 
   auto reference = ::mqt::test::buildMLIRProgram(
       context.get(), referenceBuilder, qir::QIRProgramBuilder::Profile::Base);

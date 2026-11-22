@@ -14,6 +14,7 @@ add_mlir_library(
   LINK_LIBS
   PRIVATE
   MLIRAnalysis
+  MLIRTransforms
   MLIRLLVMDialect
   MLIRMQTDialect
   MLIRQIRUtils

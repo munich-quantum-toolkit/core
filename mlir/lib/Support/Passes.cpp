@@ -52,11 +52,6 @@
 
 using namespace mlir;
 
-static void addSimplificationPasses(OpPassManager& pm) {
-  pm.addPass(createCanonicalizerPass());
-  pm.addPass(createCSEPass());
-}
-
 LogicalResult
 runWithPassManager(ModuleOp mod,
                    const function_ref<void(OpPassManager&)> populatePasses,
@@ -359,16 +354,9 @@ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeUnusedValues) {
   }
 }
 
-void populateQIRCleanupPipeline(OpPassManager& pm, bool useAdaptive) {
-  addSimplificationPasses(pm);
-  pm.addPass(createMem2Reg());
-  pm.addPass(qir::createQIRCleanupPass());
-  pm.addPass(createRemoveDeadValuesPass());
-  pm.addPass(qir::createQIRSetAttributesAndMetadata({useAdaptive}));
-}
-
 void populateJeffCleanupPipeline(OpPassManager& pm) {
-  addSimplificationPasses(pm);
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
 

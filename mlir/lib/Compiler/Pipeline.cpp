@@ -537,7 +537,7 @@ FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
     return failure();
   }
   auto qir = std::move(qc).intoQIR(profile, environment);
-  if (failed(qir) || failed(qir->cleanup())) {
+  if (failed(qir)) {
     return failure();
   }
   if (output == ProgramFormat::IQMJSON) {
