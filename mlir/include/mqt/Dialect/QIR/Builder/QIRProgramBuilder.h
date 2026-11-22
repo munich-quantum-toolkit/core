@@ -100,18 +100,12 @@ public:
   /// `__quantum__rt__initialize`. Must be called before adding operations.
   void initialize();
 
-  /// Initialize the builder and prepare for program construction with specified
-  /// return types.
-  ///
-  /// @param returnType The return type for the main function
-  ///
-  /// Creates a main function with an entry_point attribute. Must be called
-  /// before adding operations.
+  /// Initialize the entry point with an explicit return type.
+  /// Finalizing an executable QIR program requires i64.
   void initialize(Type returnType);
 
-  /// Modify the return type of the main function after initialization.
-  ///
-  /// @param returnType The new return type for the main function
+  /// Change the entry point return type during construction.
+  /// The type must be i64 when the program is finalized.
   void retype(Type returnType);
 
   //===--------------------------------------------------------------------===//
@@ -1062,9 +1056,7 @@ public:
   /// ownership of the module to the caller. The builder should not be used
   /// after calling this method.
   ///
-  /// The return value must have the type indicated by the function signature of
-  /// the main function, which returns an `i64` by default and can be modified
-  /// by passing different arguments to the `initialize()` method.
+  /// QIR entry points must return an i64 exit code.
   ///
   /// @return The constructed module, or empty if verification or QIR metadata
   /// generation fails.

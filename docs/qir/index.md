@@ -341,8 +341,12 @@ that retain their classical zero initialization.
 
 Measurements and CBit allocations must be in the entry function. A returned
 scalar measurement can share Result storage with a register only when constant
-store indices exclude overwriting its slot. The C++ QIR builder requires dynamic
-qubits to be allocated before control flow.
+store indices exclude overwriting its slot.
+
+When using the C++ QIR builder directly, allocate dynamic qubits before control
+flow. Finalization requires an `i64` exit code and rejects Base operations that
+need runtime storage, such as a gate that packs its controls into an array.
+Choose Adaptive for those gates.
 
 Authored QIR can return explicit exit codes and use scalar output-recording
 APIs. These runtime features do not extend the supported QC-to-QIR entry

@@ -42,6 +42,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/LLVMContext.h"
@@ -201,6 +202,10 @@ TEST_F(QIRTest, BuilderReturnsEmptyModuleOnVerificationFailure) {
   ScopedDiagnosticHandler diagnostics(context.get(),
                                       [](Diagnostic&) { return success(); });
   EXPECT_FALSE(builder.finalize(builder.doubleConstant(0.0)));
+  EXPECT_FALSE(
+      QIRProgramBuilder::build(context.get(), [](QIRProgramBuilder& b) {
+        return b.doubleConstant(0.0);
+      }));
 }
 
 TEST_F(QIRTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
@@ -560,9 +565,11 @@ TEST_F(QIRTest, MetadataDeclaresResourceCapacities) {
           context.get(),
           [&](QIRProgramBuilder& builder) {
             for (const auto index : testCase.indices) {
-              auto qubit = builder.staticQubit(index);
-              builder.x(qubit);
-              builder.measure(qubit, index);
+              builder.x(builder.staticQubit(index));
+            }
+            for (auto index : llvm::SetVector<int64_t>(
+                     testCase.indices.begin(), testCase.indices.end())) {
+              builder.measure(builder.staticQubit(index), index);
             }
             return builder.intConstant(0);
           },
@@ -910,7 +917,7 @@ TEST_F(QIRTest, AdaptiveBuilderSelectsControlledSpecializationsByArity) {
       module->lookupSymbol<LLVM::LLVMFuncOp>("__quantum__qis__r__body"));
 }
 
-TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
+TEST_F(QIRTest, BaseBuilderRejectsOperationsOutsideProfile) {
   auto module = QIRProgramBuilder::build(
       context.get(),
       [](QIRProgramBuilder& builder) {
@@ -923,23 +930,16 @@ TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
       },
       QIRProgramBuilder::Profile::Base);
 
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_RX_CTL));
-  auto main = getMainFunction(module.get());
-  ASSERT_TRUE(main);
-  const auto passthrough = main->getAttrOfType<ArrayAttr>("passthrough");
-  ASSERT_TRUE(passthrough);
-  EXPECT_TRUE(llvm::is_contained(
-      passthrough,
-      ArrayAttr::get(context.get(),
-                     {StringAttr::get(context.get(), "qir_profiles"),
-                      StringAttr::get(context.get(), "base_profile")})));
-  EXPECT_TRUE(llvm::is_contained(
-      passthrough,
-      ArrayAttr::get(context.get(),
-                     {StringAttr::get(context.get(), "required_num_qubits"),
-                      StringAttr::get(context.get(), "8")})));
+  EXPECT_FALSE(module);
+  EXPECT_FALSE(QIRProgramBuilder::build(
+      context.get(),
+      [](QIRProgramBuilder& builder) {
+        auto qubit = builder.allocQubit();
+        builder.measure(qubit, 0);
+        builder.x(qubit);
+        return builder.intConstant(0);
+      },
+      QIRProgramBuilder::Profile::Base));
 }
 
 TEST_F(QIRTest, UsesTranslationCompatibleModuleFlagWidths) {
