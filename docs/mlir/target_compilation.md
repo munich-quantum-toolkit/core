@@ -263,9 +263,12 @@ placeable. Targets with unrestricted native-operation support allow every site.
 
 A candidate site need not support every operation in the circuit or be connected
 to every other candidate. Target preparation can narrow this set to a connected
-subset; synthesis and target-conformance checks enforce the required gate
-support. When excluding sites from an explicit topology, preparation keeps the
-largest connected component, including any
+subset. If that subset lacks a common single-qubit synthesis basis, preparation
+excludes candidates that cannot support any complete single-qubit basis and
+tries placement once more. Missing optional gates do not exclude a site.
+Synthesis and target-conformance checks enforce the required gate support. When
+excluding sites from an explicit topology, preparation keeps the largest
+connected component, including any
 [virtual resonator connections](#resonator-mediated-compilation). Only the
 retained sites count toward the available qubit capacity.
 
