@@ -4880,6 +4880,10 @@ private:
           afterThenInitialized[scalar] && afterElseInitialized[scalar];
       scalarGenerations[scalar] =
           std::max(afterThenGenerations[scalar], afterElseGenerations[scalar]);
+      if (afterThenGenerations[scalar] == beforeGenerations[scalar] &&
+          afterElseGenerations[scalar] == beforeGenerations[scalar]) {
+        continue;
+      }
       if (afterThenAffineScalarValues[scalar] &&
           afterElseAffineScalarValues[scalar] &&
           sameAffineValue(*afterThenAffineScalarValues[scalar],
