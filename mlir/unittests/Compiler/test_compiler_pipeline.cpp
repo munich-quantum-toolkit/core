@@ -2032,13 +2032,19 @@ TEST_F(CompilerPipelineTest, QIRReceiverRangePromotesMinimumVersion) {
     const auto payload = llvm::cantFail(PayloadSpecification::create(
         {.id = "qir", .version = version, .profile = "base"}));
     attachTargetEnvironment(
-        input->module(), TargetEnvironment(makeUnrestrictedTarget(), payload));
-    auto result = std::move(*input).intoQIR(QIRProfile::Base);
+        input->module(),
+        TargetEnvironment(
+            makeUnrestrictedTarget(),
+            llvm::cantFail(PayloadSpecification::create(
+                {.id = "qir", .version = ">=2.2,<3", .profile = "base"}))));
+    const TargetEnvironment environment(makeUnrestrictedTarget(), payload);
+    auto result = std::move(*input).intoQIR(QIRProfile::Base, &environment);
     if (StringRef(version) == ">=2.2,<3") {
       EXPECT_TRUE(failed(result));
       continue;
     }
     MQT_ASSERT_SUCCESS(result);
+    ASSERT_TRUE(succeeded(result->cleanup()));
     auto ir = std::move(*result).intoLLVMIR();
     MQT_ASSERT_SUCCESS(ir);
     EXPECT_TRUE(StringRef(*ir).contains(StringRef(version) == ">=2.1,<3"

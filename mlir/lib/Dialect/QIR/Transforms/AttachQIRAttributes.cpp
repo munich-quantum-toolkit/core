@@ -142,7 +142,7 @@ private:
   LogicalResult setMetadata(LLVM::LLVMFuncOp& main, const Metadata& metadata,
                             IRRewriter& rewriter) {
     auto m = getOperation();
-    unsigned minorVersion = metadata.useArrays || metadata.useDynamicQubit ||
+    uint32_t minorVersion = metadata.useArrays || metadata.useDynamicQubit ||
                                     metadata.useDynamicResult
                                 ? 1
                                 : 0;

@@ -53,8 +53,7 @@ def test_snapshot_properties_variants_and_opaque_operations(monkeypatch: pytest.
         [CompilerTarget.Site(0, t1=100), CompilerTarget.Site(2, t2=200), CompilerTarget.Site(5)],
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            capability("prx", 1, 2, [[0]]),
-            capability("r", 1, 2, [[2]]),
+            capability("prx", 1, 2, [[0], [2]]),
             capability("gphase", 0, 1),
             capability("measure", 1, 0, [[0], [2], [5]]),
             capability("mcx", CompilerTarget.OperationArity.variadic(2), 0),

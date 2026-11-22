@@ -457,7 +457,8 @@ protected:
     const auto run = [&](OpPassManager& pm) {
       return runPipeline(pm, moduleOp);
     };
-    auto payload = prepareQIRTarget(moduleOp, "base", run,
+    LoweringState state;
+    auto payload = prepareQIRTarget(moduleOp, "base", state, run,
                                     environment ? &*environment : nullptr);
     if (failed(payload)) {
       signalPassFailure();
@@ -468,12 +469,8 @@ protected:
 
     target.addLegalDialect<LLVM::LLVMDialect>();
 
-    LoweringState state;
-
     // Stage 1.0: Prepare classical result registers
-    if (failed(
-            prepareClassicalResults(moduleOp, state, false, false,
-                                    environment ? &*environment : nullptr))) {
+    if (failed(prepareClassicalResults(moduleOp, state))) {
       signalPassFailure();
       return;
     }

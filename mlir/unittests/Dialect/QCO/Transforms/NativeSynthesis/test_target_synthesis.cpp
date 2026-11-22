@@ -3092,7 +3092,7 @@ TEST_F(TargetSynthesisTest,
 
 TEST_F(TargetSynthesisTest, ZFramesRequireUnrestrictedRZOnEverySite) {
   for (const std::string support :
-       {"uniform", "aliases", "partial", "fixed", "unrestricted"}) {
+       {"uniform", "sitewise", "partial", "fixed", "unrestricted"}) {
     SCOPED_TRACE(support);
     std::vector operations{
         valid(OperationCapability::create("r", 1, 2)),
@@ -3104,15 +3104,14 @@ TEST_F(TargetSynthesisTest, ZFramesRequireUnrestrictedRZOnEverySite) {
           "rz", 1, 1, {}, std::nullopt, std::nullopt,
           support == "fixed" ? std::vector<std::optional<double>>{0.37}
                              : std::vector<std::optional<double>>{})));
-    } else if (support == "aliases" || support == "partial") {
+    } else if (support == "sitewise" || support == "partial") {
       for (const Target::SiteId site : {0, 1}) {
         if (support == "partial" && site == 1) {
           continue;
         }
-        operations.push_back(valid(
-            OperationCapability::create("rz_site_" + std::to_string(site), 1, 1,
-                                        {valid(SiteTuple::create({site}))},
-                                        std::nullopt, std::nullopt, {}, "rz")));
+        operations.push_back(valid(OperationCapability::create(
+            "native_rz", 1, 1, {valid(SiteTuple::create({site}))}, std::nullopt,
+            std::nullopt, {}, "rz")));
       }
     }
     const auto target = valid(

@@ -1297,28 +1297,6 @@ TEST(CompilerQDMIAdapterTest, EmitsOnlyAdvertisedNativeNames) {
       }
     }
   }
-  for (const auto* unusable : {"U", "u3", "MEASURE"}) {
-    const auto target = llvm::cantFail(CompilerTarget::create(
-        1, CompilerTarget::Connectivity::allToAll(),
-        CompilerTarget::NativeOperations::fromOperations({
-            llvm::cantFail(CompilerTarget::OperationCapability::create(
-                unusable, 1, std::string_view(unusable) == "MEASURE" ? 0 : 3)),
-            llvm::cantFail(
-                CompilerTarget::OperationCapability::create("u", 1, 3)),
-            llvm::cantFail(
-                CompilerTarget::OperationCapability::create("measure", 1, 0)),
-        })));
-    const mlir::TargetEnvironment environment(
-        target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
-                    QDMI_PROGRAM_FORMAT_QASM3)));
-    auto compiled = mlir::CompiledProgram::compile(
-        mlir::OpenQASMProgram("OPENQASM 3; include \"stdgates.inc\"; "
-                              "qubit q; h q; bit c = measure q;"),
-        environment);
-    MQT_ASSERT_SUCCESS(compiled);
-    EXPECT_NE(compiled->payload().find("u("), std::string::npos);
-    EXPECT_NE(compiled->payload().find("measure $0"), std::string::npos);
-  }
   for (const auto* name : {"u2", "cu3"}) {
     const bool controlled = std::string_view(name) == "cu3";
     const std::string gate =
@@ -1453,7 +1431,7 @@ TEST(CompilerQDMIAdapterTest, RejectsScalarQIROutputs) {
   }
 }
 
-TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
+TEST(CompilerQDMIAdapterTest, PreservesNativeGateNamesThroughExport) {
   auto program = mlir::QCProgram::fromMLIRString(R"mlir(module {
     func.func @main() attributes {mqt.entry_point} {
       %q0 = qc.static 0 : !qc.qubit
@@ -1471,24 +1449,20 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
       3, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
           llvm::cantFail(CompilerTarget::OperationCapability::create(
-              "cx", 2, 0,
-              {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1}))})),
-          llvm::cantFail(CompilerTarget::OperationCapability::create(
               "cnot", 2, 0,
               {
+                  llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1})),
                   llvm::cantFail(CompilerTarget::SiteTuple::create({1, 2})),
               })),
       })));
-  mlir::attachTargetEnvironment(
-      program->module(),
-      mlir::TargetEnvironment(
-          target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
-                      QDMI_PROGRAM_FORMAT_QIRBASESTRING))));
-  auto qasm = program->copy().intoOpenQASM3();
+  const mlir::TargetEnvironment environment(
+      target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                  QDMI_PROGRAM_FORMAT_QIRBASESTRING)));
+  auto qasm = program->copy().intoOpenQASM3(&environment);
   ASSERT_TRUE(mlir::succeeded(qasm));
-  EXPECT_NE(qasm->source().find("cx $0, $1;"), std::string::npos);
+  EXPECT_NE(qasm->source().find("cnot $0, $1;"), std::string::npos);
   EXPECT_NE(qasm->source().find("cnot $1, $2;"), std::string::npos);
-  auto qir = std::move(*program).intoQIR(mlir::QIRProfile::Base);
+  auto qir = std::move(*program).intoQIR(mlir::QIRProfile::Base, &environment);
   ASSERT_TRUE(mlir::succeeded(qir));
   auto references =
       mlir::parseSourceString<mlir::ModuleOp>(R"mlir(module {
@@ -1506,7 +1480,7 @@ TEST(CompilerQDMIAdapterTest, SelectsNativeAliasesByOrderedPlacement) {
     ASSERT_TRUE(mlir::succeeded(qir->cleanup()));
     auto text = qir->copy().intoLLVMIR();
     ASSERT_TRUE(mlir::succeeded(text));
-    EXPECT_NE(text->find("call void @__quantum__qis__cx__body"),
+    EXPECT_EQ(text->find("call void @__quantum__qis__cx__body"),
               std::string::npos);
     EXPECT_NE(text->find("call void @__quantum__qis__cnot__body"),
               std::string::npos);

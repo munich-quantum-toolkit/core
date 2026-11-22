@@ -832,6 +832,29 @@ llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
     }
   }
 
+  const auto sameSignature = [](const OperationCapability& a,
+                                const OperationCapability& b) {
+    return a.arity() == b.arity() && a.numParameters() == b.numParameters() &&
+           a.fixedParameters() == b.fixedParameters();
+  };
+  for (const auto& family : capabilities) {
+    SmallVector<const OperationCapability*, 1> signatures;
+    for (const auto index : family.second) {
+      const auto& op = operations[index];
+      const auto* const match =
+          llvm::find_if(signatures, [&](const auto* other) {
+            return sameSignature(*other, op);
+          });
+      if (match == signatures.end()) {
+        signatures.push_back(&op);
+      } else if ((*match)->name() != op.name()) {
+        return invalidTarget("Conflicting native names for " +
+                             op.canonicalName() + ": " + (*match)->name() +
+                             " and " + op.name());
+      }
+    }
+  }
+
   allSiteCoverage.resize(operations.size());
   std::vector<bool> coverageComputed(operations.size());
   for (const auto& [index, operation] : llvm::enumerate(operations)) {
@@ -868,10 +891,7 @@ llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
     bool unrestricted = false;
     for (const auto candidateIndex : found->second) {
       const auto& candidate = operations[candidateIndex];
-      if (candidate.name() != operation.name() ||
-          candidate.arity() != operation.arity() ||
-          candidate.numParameters() != operation.numParameters() ||
-          candidate.fixedParameters() != operation.fixedParameters() ||
+      if (!sameSignature(candidate, operation) ||
           candidate.parameterBounds() != operation.parameterBounds()) {
         continue;
       }

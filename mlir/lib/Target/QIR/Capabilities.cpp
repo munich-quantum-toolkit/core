@@ -23,6 +23,8 @@
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/VersionTuple.h"
 
+#include <cstdint>
+
 namespace mlir::qir {
 
 LogicalResult validateCapabilities(ModuleOp moduleOp,
@@ -54,7 +56,7 @@ LogicalResult validateCapabilities(ModuleOp moduleOp,
       if (key == "qir_minor_version" &&
           (!payload.versionRange() ||
            !payload.versionRange()->contains(llvm::VersionTuple(
-               2, static_cast<unsigned>(
+               2, static_cast<uint32_t>(
                       cast<IntegerAttr>(flag.getValue()).getInt()))))) {
         return moduleOp.emitError(
             "QIR version is outside the target payload range");

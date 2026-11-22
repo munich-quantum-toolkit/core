@@ -1251,19 +1251,13 @@ TEST(CompilerTargetTest, SiteCoverageDoesNotCombineDifferentNativeGates) {
   const auto first = valid(OperationCapability::create(
       "rx", 1, 1, {valid(SiteTuple::create({0}))}, std::nullopt, std::nullopt,
       {std::numbers::pi / 2.}));
-  for (const auto& second : {
-           valid(OperationCapability::create(
-               "rx", 1, 1, {valid(SiteTuple::create({1}))}, std::nullopt,
-               std::nullopt, {-std::numbers::pi / 2.})),
-           valid(OperationCapability::create(
-               "rx90", 1, 1, {valid(SiteTuple::create({1}))}, std::nullopt,
-               std::nullopt, {std::numbers::pi / 2.}, "rx")),
-       }) {
-    const auto target = valid(
-        Target::create(2, Connectivity::allToAll(),
-                       NativeOperations::fromOperations({rz, first, second})));
-    EXPECT_FALSE(target.synthesisBasis());
-  }
+  const auto second = valid(OperationCapability::create(
+      "rxm90", 1, 1, {valid(SiteTuple::create({1}))}, std::nullopt,
+      std::nullopt, {-std::numbers::pi / 2.}, "rx"));
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({rz, first, second})));
+  EXPECT_FALSE(target.synthesisBasis());
 }
 
 TEST(CompilerTargetTest, KeepsUnsupportedRXAnglesNativeWithoutSynthesis) {
@@ -1654,6 +1648,13 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
   EXPECT_TRUE(target.supports(gphase));
   EXPECT_TRUE(target.supports(cx, {10, 20}));
   EXPECT_FALSE(target.supports(cx, {20, 10}));
+  operations.push_back(valid(OperationCapability::create(
+      "cx", 2, 0, {valid(SiteTuple::create({20, 10}))})));
+  expectInvalid(
+      Target::create({valid(Site::create(10)), valid(Site::create(20))},
+                     Connectivity::allToAll(),
+                     NativeOperations::fromOperations(operations)),
+      "Conflicting native names for cx: cnot and cx");
   EXPECT_TRUE(target.supports(measure, {10}));
   EXPECT_TRUE(target.supports(reset, {10}));
   EXPECT_FALSE(target.supports(nullptr));
