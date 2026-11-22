@@ -39,6 +39,7 @@ def test_compiled_qir_preserves_phase_and_program(output: OutputFormat) -> None:
     assert set(counts) == {"10", "11"}
     assert abs(counts["11"] - 512) < 6 * np.sqrt(1024 / 4)
     assert sample(program, shots=1024, seed=71) == counts
+    assert program.sample(shots=0) == {}
     assert str(program) == before
 
 
@@ -56,6 +57,7 @@ def test_base_payload_order(*, bitcode: bool) -> None:
 def test_adaptive_feedback_and_reset(*, bitcode: bool) -> None:
     """Feedback samples agree analytically and cannot yield a coherent state."""
     payload = (ROOT / "feedback.bc").read_bytes() if bitcode else (ROOT / "feedback.ll").read_text()
+    assert sample(payload, shots=0) == {}
     counts = sample(payload, shots=1024, seed=71)
     assert set(counts) == {"000", "011"}
     assert abs(counts["011"] - 512) < 6 * np.sqrt(1024 / 4)
