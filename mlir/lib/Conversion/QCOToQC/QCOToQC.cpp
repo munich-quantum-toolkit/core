@@ -67,11 +67,6 @@ enum class AllocationMode : std::uint8_t {
   Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
-struct ConversionRequirements {
-  AllocationMode allocationMode = AllocationMode::Unset;
-  bool needsWireOrigins = false;
-};
-
 /// Track function argument positions and the module's allocation mode.
 ///
 /// Dynamic qubits require deallocation at sinks; static qubits do not. Mixed
@@ -104,22 +99,11 @@ private:
 };
 } // namespace
 
-/// Determine allocation mode and required wire checks before conversion.
-[[nodiscard]] static FailureOr<ConversionRequirements>
-collectConversionRequirements(ModuleOp moduleOp) {
-  ConversionRequirements requirements;
+/// Determine whether the module's qubit references own their allocations.
+[[nodiscard]] static FailureOr<AllocationMode>
+getAllocationMode(ModuleOp moduleOp) {
+  auto mode = AllocationMode::Unset;
   auto result = moduleOp.walk([&](Operation* op) {
-    if (!requirements.needsWireOrigins) {
-      if (isa<qtensor::ExtractOp, qtensor::InsertOp>(op)) {
-        requirements.needsWireOrigins = true;
-      } else if (op->getNumRegions() != 0 &&
-                 !isa<ModuleOp, qco::UnitaryOpInterface>(op)) {
-        auto function = dyn_cast<func::FuncOp>(op);
-        requirements.needsWireOrigins =
-            !function ||
-            !getQuantumArgumentIndices(function.getArgumentTypes()).empty();
-      }
-    }
     const auto requested = isa<qco::StaticOp>(op) ? AllocationMode::Static
                            : isa<qco::AllocOp, qtensor::AllocOp>(op)
                                ? AllocationMode::Dynamic
@@ -127,19 +111,18 @@ collectConversionRequirements(ModuleOp moduleOp) {
     if (requested == AllocationMode::Unset) {
       return WalkResult::advance();
     }
-    if (requirements.allocationMode != AllocationMode::Unset &&
-        requirements.allocationMode != requested) {
+    if (mode != AllocationMode::Unset && mode != requested) {
       op->emitOpError("cannot mix static and dynamic qubit allocation modes "
                       "in QCO program");
       return WalkResult::interrupt();
     }
-    requirements.allocationMode = requested;
+    mode = requested;
     return WalkResult::advance();
   });
   if (result.wasInterrupted()) {
     return failure();
   }
-  return requirements;
+  return mode;
 }
 
 /// Move a region, replace its block arguments with @p replacementValues,
@@ -274,32 +257,27 @@ public:
 
 /// Prove slot identity before lowering tensors to references.
 [[nodiscard]] static LogicalResult
-verifyTensorSlots(ModuleOp moduleOp, const DenseMap<Value, Value>& origins) {
+verifyTensorSlot(qtensor::InsertOp insert,
+                 const DenseMap<Value, Value>& origins) {
   const auto origin = [&](Value value) {
     auto known = origins.lookup(value);
     return known ? known : value;
   };
-  auto result = moduleOp.walk([&](qtensor::InsertOp insert) {
-    auto extract =
-        origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
-    if (!extract || origin(extract.getTensor()) != origin(insert.getDest())) {
-      insert.emitOpError(
-          "must restore the extracted qubit to its original register slot");
-      return WalkResult::interrupt();
-    }
-    auto source = extract.getIndex();
-    auto dest = insert.getIndex();
-    if (!isEqualConstantIntOrValue(source, dest) &&
-        !ValueBoundsConstraintSet::compare(source, ValueBoundsConstraintSet::EQ,
-                                           dest)) {
-      insert.emitOpError(
-          "cannot prove restoration to the original register slot; reuse the "
-          "extraction index or an equivalent affine expression");
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  });
-  return success(!result.wasInterrupted());
+  auto extract = origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
+  if (!extract || origin(extract.getTensor()) != origin(insert.getDest())) {
+    return insert.emitOpError(
+        "must restore the extracted qubit to its original register slot");
+  }
+  auto source = extract.getIndex();
+  auto dest = insert.getIndex();
+  if (!isEqualConstantIntOrValue(source, dest) &&
+      !ValueBoundsConstraintSet::compare(source, ValueBoundsConstraintSet::EQ,
+                                         dest)) {
+    return insert.emitOpError(
+        "cannot prove restoration to the original register slot; reuse the "
+        "extraction index or an equivalent affine expression");
+  }
+  return success();
 }
 
 [[nodiscard]] static LogicalResult
@@ -364,6 +342,37 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
     return WalkResult::advance();
   });
   return success(!calls.wasInterrupted());
+}
+
+[[nodiscard]] static LogicalResult verifyConversionInput(ModuleOp moduleOp,
+                                                         LoweringState& state) {
+  DenseMap<Value, Value> origins;
+  TensorLifetimeAnalysis lifetimes;
+  if (failed(verifyLinearity(moduleOp, origins)) ||
+      failed(collectFunctionQubitArguments(moduleOp, state, lifetimes))) {
+    return failure();
+  }
+  auto result = moduleOp.walk([&](Operation* op) {
+    if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+      return failed(verifyTensorSlot(insert, origins)) ? WalkResult::interrupt()
+                                                       : WalkResult::advance();
+    }
+    if (isa<qtensor::FromElementsOp>(op) &&
+        state.allocationMode != AllocationMode::Static &&
+        !mqt::preservesProgramQubits(op)) {
+      op->emitOpError("QCO-to-QC requires static qubits in tensors of "
+                      "existing qubits; run placement before conversion");
+      return WalkResult::interrupt();
+    }
+    if (auto alloc = dyn_cast<qtensor::AllocOp>(op);
+        alloc && !lifetimes.isComplete(alloc.getResult())) {
+      alloc.emitOpError("QCO-to-QC requires all dynamic tensor slots to be "
+                        "restored before region exit or deallocation");
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return success(!result.wasInterrupted());
 }
 
 namespace {
@@ -1067,43 +1076,13 @@ protected:
     MLIRContext* context = &getContext();
     auto moduleOp = getOperation();
 
-    const auto requirements = collectConversionRequirements(moduleOp);
-    if (failed(requirements)) {
+    const auto mode = getAllocationMode(moduleOp);
+    if (failed(mode)) {
       signalPassFailure();
       return;
     }
-    LoweringState state(requirements->allocationMode);
-    // Flat owned circuits without register accesses have no wire checks.
-    if (requirements->needsWireOrigins) {
-      DenseMap<Value, Value> origins;
-      if (failed(collectWireOrigins(moduleOp, origins)) ||
-          failed(verifyTensorSlots(moduleOp, origins))) {
-        signalPassFailure();
-        return;
-      }
-    }
-    TensorLifetimeAnalysis lifetimes;
-    if (failed(collectFunctionQubitArguments(moduleOp, state, lifetimes))) {
-      signalPassFailure();
-      return;
-    }
-    const auto tensors = moduleOp.walk([&](Operation* op) {
-      if (isa<qtensor::FromElementsOp>(op) &&
-          requirements->allocationMode != AllocationMode::Static &&
-          !mqt::preservesProgramQubits(op)) {
-        op->emitOpError("QCO-to-QC requires static qubits in tensors of "
-                        "existing qubits; run placement before conversion");
-        return WalkResult::interrupt();
-      }
-      if (auto alloc = dyn_cast<qtensor::AllocOp>(op);
-          alloc && !lifetimes.isComplete(alloc.getResult())) {
-        alloc.emitOpError("QCO-to-QC requires all dynamic tensor slots to be "
-                          "restored before region exit or deallocation");
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    });
-    if (tensors.wasInterrupted()) {
+    LoweringState state(*mode);
+    if (failed(verifyConversionInput(moduleOp, state))) {
       signalPassFailure();
       return;
     }

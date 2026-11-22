@@ -309,8 +309,7 @@ QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
 FailureOr<QCProgram> QCOProgram::intoQC() && {
   auto storage = std::move(*this).releaseStorage();
   auto moduleOp = *storage.mod;
-  if (failed(qco::verifyLinearity(moduleOp)) ||
-      failed(runWithPassManager(
+  if (failed(runWithPassManager(
           moduleOp,
           [](OpPassManager& pm) {
             pm.addPass(createQCOToQC());
