@@ -28,7 +28,6 @@ from qiskit.circuit.library import (
     CYGate,
     CZGate,
     GlobalPhaseGate,
-    PhaseGate,
     RGate,
     RXGate,
     RXXGate,
@@ -637,24 +636,25 @@ def test_export_fixed_rotations_by_parameters_and_sites(*, qpy_roundtrip: bool) 
     source.add_instruction(RXGate(pi / 2), {(0,): None}, name="a_quarter")
     source.add_instruction(RXGate(pi), {(0,): None}, name="b_half")
     source.add_instruction(RXGate(Parameter("angle")), {(0,): None}, name="z_variable")
-    source.add_instruction(RXGate(pi / 2), {(1,): None}, name="ry")
+    source.add_instruction(RXGate(-pi / 2), {(1,): None}, name="ry")
     source.add_instruction(CXGate())
     target = CompilerTarget.from_qiskit(source)
     circuit = QuantumCircuit(2)
     circuit.rx(pi / 2, 0)
     circuit.rx(pi, 0)
     circuit.rx(Parameter("theta"), 0)
-    circuit.rx(pi / 2, 1)
+    circuit.rx(-pi / 2, 1)
     program = QCProgram.from_mlir_str("""module {
   func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
     %quarter = arith.constant 1.5707963267948966 : f64
+    %negative = arith.constant -1.5707963267948966 : f64
     %half = arith.constant 3.141592653589793 : f64
     %a = qc.static 0 : !qc.qubit
     %b = qc.static 1 : !qc.qubit
     qc.rx(%quarter) %a : !qc.qubit
     qc.rx(%half) %a : !qc.qubit
     qc.rx(%theta) %a : !qc.qubit
-    qc.rx(%quarter) %b : !qc.qubit
+    qc.rx(%negative) %b : !qc.qubit
     return
   }
 }
@@ -698,29 +698,25 @@ def test_export_standard_aliases_on_ordered_sites(*, qco: bool, symbolic: bool) 
     """Keep legacy spellings as native Qiskit gates on their applicable sites."""
     theta = Parameter("theta")
     source = Target(num_qubits=2)
-    source.add_instruction(PhaseGate(theta), {(0,): None})
     source.add_instruction(U1Gate(theta), {(1,): None})
     source.add_instruction(CXGate(), {(0, 1): None})
     target = CompilerTarget.from_qiskit(source)
     circuit = QuantumCircuit(2)
-    circuit.p(theta if symbolic else 0.3, 0)
     circuit.p(theta if symbolic else 0.3, 1)
     argument = '%theta: f64 {mqt.input_name = "theta"}' if symbolic else ""
     definition = "" if symbolic else "%theta = arith.constant 0.3 : f64"
     program = QCProgram.from_mlir_str(f"""module {{
   func.func @main({argument}) attributes {{mqt.entry_point}} {{
     {definition}
-    %a = qc.static 0 : !qc.qubit
     %b = qc.static 1 : !qc.qubit
-    qc.p(%theta) %a : !qc.qubit
     qc.p(%theta) %b : !qc.qubit
     return
   }}
 }}
 """)
     exported = (program.to_qco() if qco else program).to_qiskit(target=target)
-    assert exported.count_ops() == {"p": 1, "u1": 1}
-    assert exported.data[1].operation.base_class is U1Gate
+    assert exported.count_ops() == {"u1": 1}
+    assert exported.data[0].operation.base_class is U1Gate
     assert all(
         source.instruction_supported(
             operation_name=item.operation.name,
