@@ -2769,11 +2769,14 @@ static void validateCircuit(const ExportedCircuit& circuit,
         }
       }
     }
-    if (instruction.kind != ExportedInstruction::Kind::ControlFlow) {
+    llvm::StringRef capability;
+    if (instruction.kind == ExportedInstruction::Kind::ControlFlow) {
+      capability = controlFlowCapability(instruction.controlFlow->kind);
+    } else if (instruction.kind == ExportedInstruction::Kind::Store) {
+      capability = mlir::ProgramCapability::CLASSICAL_ASSIGNMENT;
+    } else {
       continue;
     }
-    const auto capability =
-        controlFlowCapability(instruction.controlFlow->kind);
     if (payload != nullptr && !capability.empty() &&
         llvm::none_of(payload->capabilities(), [&](const auto& supported) {
           return supported.id == capability && supported.value == 0;
@@ -2781,8 +2784,10 @@ static void validateCircuit(const ExportedCircuit& circuit,
       throw std::runtime_error("Qiskit output requires target capability '" +
                                capability.str() + "'");
     }
-    for (const auto& block : instruction.controlFlow->blocks) {
-      validateCircuit(block, translation, payload, calledGates);
+    if (instruction.controlFlow) {
+      for (const auto& block : instruction.controlFlow->blocks) {
+        validateCircuit(block, translation, payload, calledGates);
+      }
     }
   }
 }

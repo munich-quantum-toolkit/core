@@ -3324,22 +3324,23 @@ public:
     using Capability = mlir::ProgramCapability;
     const auto circuit = nb::module_::import_("qiskit.circuit");
     std::vector<Capability> capabilities;
+    const auto supports = [&](const char* name, const char* type) {
+      return target.is_none() ||
+             (nb::cast<bool>(
+                  target.attr("operation_names").attr("__contains__")(name)) &&
+              target.attr("operation_from_name")(name).is(circuit.attr(type)));
+    };
     for (const auto& [name, type, kind] : {
              std::tuple{"if_else", "IfElseOp", ControlFlowKind::IfElse},
              std::tuple{"for_loop", "ForLoopOp", ControlFlowKind::For},
              std::tuple{"while_loop", "WhileLoopOp", ControlFlowKind::While},
              std::tuple{"switch_case", "SwitchCaseOp", ControlFlowKind::Switch},
          }) {
-      if (target.is_none() ||
-          (nb::cast<bool>(
-               target.attr("operation_names").attr("__contains__")(name)) &&
-           target.attr("operation_from_name")(name).is(circuit.attr(type)))) {
+      if (supports(name, type)) {
         capabilities.push_back({.id = controlFlowCapability(kind).str()});
       }
     }
-    if (target.is_none() ||
-        nb::cast<bool>(
-            target.attr("operation_names").attr("__contains__")("store"))) {
+    if (supports("store", "Store")) {
       capabilities.push_back({.id = Capability::CLASSICAL_ASSIGNMENT.str()});
     }
     return unwrap(mlir::PayloadSpecification::create(

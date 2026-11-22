@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, assert_type, cast
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit, qpy, transpile
-from qiskit.circuit import Barrier, Gate, Measure, Parameter, Reset, library
+from qiskit.circuit import Barrier, Gate, Measure, Parameter, Reset, Store, library
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import IfElseOp, WhileLoopOp
 from qiskit.circuit.library import (
@@ -269,6 +269,7 @@ def test_compile_program_qiskit_typed_input(*, copy: bool, control_flow: bool) -
         "for int i in [0:2] { x q[0]; } c[1] = measure q[0]; c[0] = measure q[1];"
     )
     backend = GenericBackendV2(3, basis_gates=["sx", "x", "rz", "cx"], control_flow=control_flow, seed=1)
+    backend.target.add_instruction(Store, name="store")
     compiled = compile_program(source, target=backend, copy=copy)
     assert isinstance(compiled, QuantumCircuit)
 
@@ -283,6 +284,7 @@ def test_compile_program_qiskit_typed_input(*, copy: bool, control_flow: bool) -
 def test_compile_program_qiskit_static_switch(*, control_flow: bool) -> None:
     """Compile switches on static qubits for backends with switch support."""
     backend = GenericBackendV2(2, basis_gates=["u", "cx"], control_flow=control_flow, seed=1)
+    backend.target.add_instruction(Store, name="store")
     source = """OPENQASM 3.1;
 include "stdgates.inc";
 output bit[2] c;
@@ -307,6 +309,7 @@ c[1] = measure $1;
     [
         ("while_loop", OutputFormat.QISKIT),
         ("if_else", OutputFormat.QISKIT),
+        ("store", OutputFormat.QISKIT),
         (None, OutputFormat.QISKIT),
         ("while_loop", OutputFormat.OPENQASM3),
         (None, OutputFormat.OPENQASM3),
@@ -319,6 +322,7 @@ def test_compile_program_qiskit_control_flow(unsupported: str | None, output: Ou
     target.add_instruction(UGate(Parameter("a"), Parameter("b"), Parameter("c")))
     target.add_instruction(XGate())
     target.add_instruction(Measure())
+    target.add_instruction(XGate() if unsupported == "store" else Store, name="store")
     for name, operation in [("while_loop", WhileLoopOp), ("if_else", IfElseOp)]:
         if name != unsupported:
             target.add_instruction(operation, name=name)
@@ -335,7 +339,9 @@ def test_compile_program_qiskit_control_flow(unsupported: str | None, output: Ou
 
     if unsupported or output == OutputFormat.QIR_BASE:
         copy = output != OutputFormat.QIR_BASE
-        diagnostic = "forward-branching" if unsupported == "if_else" else "scf.while"
+        diagnostic = {"if_else": "forward-branching", "store": "classical-assignment"}.get(
+            unsupported or "", "scf.while"
+        )
         with pytest.raises(RuntimeError, match=diagnostic):
             compile_program(source, target=target, output=output, copy=copy)
         assert source.is_valid is copy
