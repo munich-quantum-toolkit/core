@@ -3095,13 +3095,12 @@ private:
 
   [[nodiscard]] std::optional<double> constantGateParameter(Value value) {
     return mqt::attributeToDouble(
-        mqt::valueToConstantAttr(value, constantParameters_));
+        mqt::foldToConstantAttr(value, constantParameters_));
   }
 
   [[nodiscard]] FailureOr<std::string> emitGateParameter(Value value) {
     if (version2_ && !gateNames_.contains(function)) {
-      if (auto constant =
-              mqt::valueToConstantAttr(value, constantParameters_)) {
+      if (auto constant = mqt::foldToConstantAttr(value, constantParameters_)) {
         return emitConstant(constant, value.getLoc());
       }
       return failExpression(
