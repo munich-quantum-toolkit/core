@@ -174,9 +174,9 @@ public:
   /// The reported name is retained verbatim while @ref canonicalName identifies
   /// its compiler operation. By default it is derived from the reported name;
   /// an explicit override describes named instances such as rx_90. Operations
-  /// with no site tuples are generally applicable. A nonempty list gives all
-  /// supported ordered placements. Missing tuple calibration values inherit
-  /// the operation defaults.
+  /// with no site tuples accept any valid placement. A two-site placement must
+  /// be a coupling. A nonempty list restricts operand order and placement.
+  /// Missing tuple calibration values inherit the operation defaults.
   class OperationCapability {
   public:
     using ParameterBounds = std::pair<double, double>;
@@ -537,8 +537,8 @@ public:
   /// Select an executable spelling accepted by the optional format filter.
   ///
   /// Prefer named controlled operations, then variadic base operations. Unknown
-  /// sites require unrestricted placement. The capability is null for
-  /// unsupported operations and unrestricted native-operation sets.
+  /// sites require support at every legal ordered placement. The capability is
+  /// null for unsupported operations and unrestricted native-operation sets.
   [[nodiscard]] OperationMatch
   findOperation(llvm::StringRef name, size_t arity,
                 llvm::ArrayRef<std::optional<double>> parameters,

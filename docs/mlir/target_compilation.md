@@ -220,9 +220,10 @@ QDMI target snapshots omit the unsupported IQM dynamic primitives `cc_prx` and
 `measure_ff`.
 
 Use `CompilerTarget.SiteTuple` to attach duration or fidelity to a placement;
-plain tuples represent placements without calibration. Routing uses undirected
-adjacency, and synthesis checks the supported operand directions on each site.
-Branch exits and loop backedges must retain compatible physical sites.
+plain tuples represent placements without calibration. A native operation on two
+sites requires a coupling. With no listed placements, it is available on every
+coupling in either order. A list specifies the supported ordered pairs. Branch
+exits and loop backedges must retain compatible physical sites.
 
 ### Native single-qubit gates
 

@@ -410,6 +410,12 @@ TEST_F(MQTIRTest, RejectsInvalidTargetLeaves) {
 
 TEST_F(MQTIRTest, RejectsInvalidCompilationTargets) {
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
+      sites = [<id = 0>, <id = 1>, <id = 2>], connectivity = explicit,
+      couplings = [<source = 0, target = 1>, <source = 1, target = 2>],
+      native_operations = explicit, operations = [<name = "cz",
+          arity = #mqt.operation_arity<kind = fixed, value = 2>,
+          num_parameters = 0, site_tuples = [<[2, 0]>]>]>)mlir"));
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
       name = "", sites = [<id = 0>], connectivity = all_to_all,
       couplings = [], native_operations = unrestricted, operations = []>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
