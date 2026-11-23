@@ -322,7 +322,7 @@ def test_compile_program_qiskit_control_flow(unsupported: str | None, output: Ou
     target.add_instruction(UGate(Parameter("a"), Parameter("b"), Parameter("c")))
     target.add_instruction(XGate())
     target.add_instruction(Measure())
-    target.add_instruction(XGate() if unsupported == "store" else Store, name="store")
+    target.add_instruction(SXGate() if unsupported == "store" else Store, name="store")
     for name, operation in [("while_loop", WhileLoopOp), ("if_else", IfElseOp)]:
         if name != unsupported:
             target.add_instruction(operation, name=name)

@@ -137,12 +137,12 @@ uvx nox --non-interactive -s docs
 
 Adapter tests must also inspect native spellings, radians, placements, and
 rules.
-[devices]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-devices.html
-[gates]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-submit-tasks.html
-[dynamic]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-experimental-capabilities.html
-[verbatim]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-constructing-circuit.html#verbatim-compilation
-[qiskit-target]: https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.transpiler.Target
-[pennylane-capabilities]: https://github.com/PennyLaneAI/pennylane/blob/master/pennylane/devices/capabilities.py
-[pennylane-decomposition]: https://github.com/PennyLaneAI/pennylane/blob/master/pennylane/devices/preprocess.py
-[cudaq-backend]: https://nvidia.github.io/cuda-quantum/latest/using/extending/backend.html
-[qdk-native]: https://learn.microsoft.com/en-us/azure/quantum/neutral-atom-noise-models
+[devices]: <https://docs.aws.amazon.com/braket/latest/developerguide/braket-devices.html>
+[gates]: <https://docs.aws.amazon.com/braket/latest/developerguide/braket-submit-tasks.html>
+[dynamic]: <https://docs.aws.amazon.com/braket/latest/developerguide/braket-experimental-capabilities.html>
+[verbatim]: <https://docs.aws.amazon.com/braket/latest/developerguide/braket-constructing-circuit.html#verbatim-compilation>
+[qiskit-target]: <https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.transpiler.Target>
+[pennylane-capabilities]: <https://github.com/PennyLaneAI/pennylane/blob/master/pennylane/devices/capabilities.py>
+[pennylane-decomposition]: <https://github.com/PennyLaneAI/pennylane/blob/master/pennylane/devices/preprocess.py>
+[cudaq-backend]: <https://nvidia.github.io/cuda-quantum/latest/using/extending/backend.html>
+[qdk-native]: <https://learn.microsoft.com/en-us/azure/quantum/neutral-atom-noise-models>
