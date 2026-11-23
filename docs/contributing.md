@@ -614,8 +614,8 @@ finding the cause of certain failures:
   frequently provide helpful suggestions on how to fix the warnings.
 
 - If the docs job in **CI** fails, inspect its build log. The **🚦 Check**
-  includes documentation validation. The separate Read the Docs status reports
-  publication errors.
+  includes documentation validation. For upload errors, inspect the
+  **Publish documentation** workflow run.
 
 (maintaining-changelog-upgrade-guide)=
 

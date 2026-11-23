@@ -456,7 +456,8 @@ show `0.0.0.dev<PR number>`. Main and release tags use the version derived from
 Git history. The shared change detector selects the docs job for the aggregate
 **🚦 Check**. After CI finishes, a separate workflow publishes the HTML and
 offline ZIP to [Read the Docs][rtd-direct-upload] if the PR, branch, or tag
-still points to the build commit.
+still points to the build commit. On Read the Docs, `latest` follows `main` and
+`stable` follows the highest `vMAJOR.MINOR.PATCH` tag.
 
 [rtd-direct-upload]: https://docs.readthedocs.com/platform/stable/guides/build/direct-upload.html
 
