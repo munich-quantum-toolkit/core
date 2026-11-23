@@ -4,10 +4,10 @@
   minimumReleaseAge: "7 days",
   extends: [
     "config:recommended",
+    "github>munich-quantum-toolkit/templates:cmake",
     ":gitSignOff",
     "helpers:pinGitHubActionDigestsToSemver",
     ":automergeDigest",
-    ":automergeStableNonMajor",
     ":combinePatchMinorReleases",
     ":configMigration",
     ":enablePreCommit",
@@ -16,6 +16,7 @@
   ],
   enabledManagers: [
     "cargo",
+    "custom.regex",
     "github-actions",
     "npm",
     "pep621",
@@ -60,10 +61,10 @@
       commitMessagePrefix: "⬆\uFE0F\uD83D\uDD12\uFE0F",
     },
     {
-      description: "Group and auto-merge all patch updates",
+      description: "Group and auto-merge patch updates outside 0.0.x",
       groupName: "patch updates",
       matchUpdateTypes: ["patch"],
-      matchCurrentVersion: "!/^0\.0/",
+      matchCurrentVersion: "!/^[vV]?0[.]0/",
       commitMessagePrefix: "⬆\uFE0F\uD83E\uDE79",
       automerge: true,
     },
@@ -71,7 +72,7 @@
       description: "Group and auto-merge minor updates of stable dependencies",
       groupName: "minor stable updates",
       matchUpdateTypes: ["minor"],
-      matchCurrentVersion: "!/^0\./",
+      matchCurrentVersion: "!/^[vV]?0[.]/",
       matchPackageNames: [
         "!munich-quantum-toolkit/*",
         "!munich-quantum-software/*",
@@ -94,6 +95,13 @@
       matchDatasources: ["pypi"],
       matchPackageNames: ["mqt*"],
       minimumReleaseAge: null,
+    },
+    {
+      description: "Review FetchContent updates individually",
+      matchManagers: ["custom.regex"],
+      matchFileNames: ["cmake/ExternalDependencies.cmake"],
+      groupName: null,
+      automerge: false,
     },
   ],
 }
