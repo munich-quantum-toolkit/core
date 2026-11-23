@@ -1,0 +1,15 @@
+name: Documentation
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  docs:
+    # Temporary PR #522 pin; replace with a released commit before merging.
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@a52d66a9ae6961047a1bfa2733c4d28e8b49b752 # zizmor: ignore[stale-action-refs]
+    with:
+      apt-packages: doxygen
+    permissions:
+      contents: read

@@ -5,6 +5,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 permissions: {}
 
 jobs:
@@ -12,6 +16,6 @@ jobs:
     name: Run
     runs-on: ubuntu-slim
     permissions:
-      contents: write
+      contents: write # Update the draft release
     steps:
       - uses: release-drafter/release-drafter@d1a19e60e81a7e650d00a7de9277f87e439117ea # v7.11.0

@@ -451,6 +451,15 @@ Ordinary code fences document configuration or interfaces without executing
 them. Give figures descriptive alternative text and preserve full contracts in
 linked references when they would interrupt a tutorial.
 
+CI builds PR previews with a shallow checkout. The installed package and docs
+show `0.0.0.dev<PR number>`. Main and release tags use the version derived from
+Git history. The shared change detector selects the docs job for the aggregate
+**🚦 Check**. After CI finishes, a separate workflow publishes the HTML and
+offline ZIP to [Read the Docs][rtd-direct-upload] if the PR, branch, or tag
+still points to the build commit.
+
+[rtd-direct-upload]: https://docs.readthedocs.com/platform/stable/guides/build/direct-upload.html
+
 ## MLIR
 
 These rules apply to MLIR dialects, transforms, tools, and bindings. MQT Core is
