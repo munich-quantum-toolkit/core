@@ -65,7 +65,9 @@ finite value. Multiple instructions of the same gate, such as `RXGate(pi / 2)`
 and `RXGate(pi)`, retain their distinct target names and placements. The
 compiler uses canonical gate names; `to_qiskit(target=target)` selects the
 target name by gate, parameters, and ordered sites. This also preserves legacy
-spellings such as `u1` and `u3`.
+spellings such as `u1` and `u3`. The custom `gpi` and `gpi2` aliases are
+supported when their definitions match the corresponding fixed-angle R gates,
+including global phase.
 
 Routing connectivity is undirected and comes from the retained two-qubit gates.
 Gate applicability keeps its original qubit order. The target needs a known,
@@ -73,7 +75,7 @@ positive qubit count and a connected routing graph. Global phase is always
 allowed as circuit metadata.
 
 By default, unrepresentable gates are omitted with a warning. This includes
-custom gates, unsupported angle bounds, renamed measurement or reset, open
+other custom gates, unsupported angle bounds, renamed measurement or reset, open
 controls, and controlled gates other than CX, CY, and CZ. Bounded RXX, RYY, RZX,
 and RZZ gates are retained with the conservative interval `[0, pi/2]` when the
 target accepts that entire interval; see

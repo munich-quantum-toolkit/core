@@ -922,7 +922,7 @@ def test_native_r_capabilities(name: str, *, symbolic: bool) -> None:
         actual = exported.assign_parameters({phi: 0.37}) if symbolic else exported
         expected = circuit.assign_parameters({phi: 0.37}) if symbolic else circuit
         assert np.allclose(Operator(actual).data, Operator(expected).data)
-    gate.definition.global_phase += 0.37
+    gate.definition.global_phase += 1e-12
     with pytest.raises(ValueError, match="custom"):
         CompilerTarget.from_qiskit(source, operation_names=[name])
 
@@ -974,6 +974,15 @@ def test_native_r_names_require_exact_definitions(name: str) -> None:
     source.add_instruction(gate, name="renamed")
     with pytest.raises(ValueError, match="custom"):
         CompilerTarget.from_qiskit(source, operation_names=["renamed"])
+
+    opaque = Target(num_qubits=1)
+    opaque.add_instruction(Gate(name, 1, [0.25]))
+    opaque.add_instruction(library.XGate())
+    with pytest.warns(UserWarning, match="custom"):
+        converted = CompilerTarget.from_qiskit(opaque)
+    assert {operation.name for operation in converted.operations} == {"x", "gphase"}
+    with pytest.raises(ValueError, match="custom"):
+        CompilerTarget.from_qiskit(opaque, operation_names=[name])
 
 
 @pytest.mark.parametrize("angle", [0.3, Parameter("theta")])
