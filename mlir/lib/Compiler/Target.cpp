@@ -1761,7 +1761,8 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
       if (supports(body.getBaseSymbol(), controlled.getNumQubits(),
                    body.getNumParams(),
                    /*variadicOnly=*/true, [&](size_t index) {
-                     return mqt::valueToDouble(body.getParameter(index));
+                     return mqt::valueToConstantDouble(
+                         body.getParameter(index));
                    })) {
         return true;
       }
