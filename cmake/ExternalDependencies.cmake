@@ -43,19 +43,22 @@ if(MSVC AND TARGET capnp)
 endif()
 
 if(BUILD_MQT_CORE_TESTS)
-  set(GTEST_VERSION 1.18.0 CACHE STRING "Google Test version")
+  set(GTEST_VERSION 1.18.0 CACHE STRING "Minimum installed GoogleTest version")
+  # renovate: datasource=github-tags depName=google/googletest
+  set(GTEST_REV
+      "063de7e9578f82b369302001269680b4b1553359" # tag=v1.18.0
+      CACHE STRING "GoogleTest source revision")
   fetchcontent_declare(
     googletest
-    URL https://github.com/google/googletest/archive/refs/tags/v${GTEST_VERSION}.tar.gz
+    URL https://github.com/google/googletest/archive/${GTEST_REV}.tar.gz
     EXCLUDE_FROM_ALL
     FIND_PACKAGE_ARGS ${GTEST_VERSION} NAMES GTest)
   list(APPEND FETCH_PACKAGES googletest)
 endif()
 
 set(QDMI_MINIMUM_VERSION 1.4.0 CACHE STRING "Minimum QDMI version")
-set(QDMI_VERSION 1.4.0 CACHE STRING "QDMI version")
-set(QDMI_REV
-    "6db03d83ad602aaa9fe928b5c3fc5cce84b10061" # v1.4.0
+# Use QDMI develop for the exported CMake target version.
+set(QDMI_REV "d336c4ca6e972201f49b834da7d57dcb550f59f7"
     CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
     CACHE STRING "QDMI repository owner (change when using a fork)")
@@ -63,8 +66,7 @@ cmake_dependent_option(INSTALL_QDMI "Install QDMI library" ON "MQT_CORE_INSTALL"
 fetchcontent_declare(
   qdmi
   GIT_REPOSITORY https://github.com/${QDMI_REPO_OWNER}/qdmi.git
-  GIT_TAG ${QDMI_REV}
-  FIND_PACKAGE_ARGS ${QDMI_MINIMUM_VERSION})
+  GIT_TAG ${QDMI_REV})
 list(APPEND FETCH_PACKAGES qdmi)
 
 fetchcontent_makeavailable(${FETCH_PACKAGES})
