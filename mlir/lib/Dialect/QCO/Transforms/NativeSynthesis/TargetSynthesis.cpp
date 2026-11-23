@@ -12,7 +12,6 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
-#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -498,13 +497,10 @@ static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
                                          RewriterBase* rewriter = nullptr) {
   IRRewriter defaultRewriter(moduleOp.getContext());
   auto& activeRewriter = rewriter != nullptr ? *rewriter : defaultRewriter;
-  if (failed(mqt::normalizeGlobalPhases(moduleOp, activeRewriter))) {
-    return failure();
+  if (target.supportsOperation("gphase", 0, 1)) {
+    return mqt::normalizeGlobalPhases(moduleOp, activeRewriter);
   }
-  if (!target.supportsOperation("gphase", 0, 1)) {
-    mqt::dropGlobalPhases(moduleOp, activeRewriter);
-  }
-  return success();
+  return mqt::normalizeAndDropEntryPhase(moduleOp, activeRewriter);
 }
 
 static bool isOperandSwapInvariant(UnitaryOpInterface unitary) {

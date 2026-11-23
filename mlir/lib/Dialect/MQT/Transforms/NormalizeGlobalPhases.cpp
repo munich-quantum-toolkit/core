@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/Angles.h"
@@ -171,9 +172,13 @@ struct PhaseContribution final {
 
 class GlobalPhaseNormalizer final {
 public:
-  explicit GlobalPhaseNormalizer(RewriterBase& rewriter) : rewriter(rewriter) {}
+  GlobalPhaseNormalizer(RewriterBase& rewriter, Operation* entryToDrop)
+      : rewriter(rewriter), entryToDrop_(entryToDrop) {}
 
-  void normalize(Region& region) { normalizeRegion(region); }
+  LogicalResult run(ModuleOp moduleOp) {
+    normalizeRegion(moduleOp.getRegion());
+    return success();
+  }
 
 private:
   [[nodiscard]] std::optional<double> getConstantAngle(Value angle) {
@@ -205,7 +210,8 @@ private:
       return factorControl(ctrl, hoistBefore);
     }
     if (op->hasTrait<OpTrait::IsIsolatedFromAbove>()) {
-      GlobalPhaseNormalizer isolated(rewriter);
+      GlobalPhaseNormalizer isolated(rewriter,
+                                     op == entryToDrop_ ? op : nullptr);
       for (auto& nested : op->getRegions()) {
         isolated.normalizeRegion(nested);
       }
@@ -309,6 +315,9 @@ private:
     SmallVector<PhaseContribution> contributions;
     SmallVector<Operation*> directPhases;
     auto insertionPoint = block.end();
+    const bool discard = extractionBoundary == nullptr &&
+                         entryToDrop_ != nullptr &&
+                         entryToDrop_->isAncestor(block.getParentOp());
 
     for (auto& op : llvm::make_early_inc_range(block.without_terminator())) {
       auto* current = &op;
@@ -322,6 +331,10 @@ private:
       }
       std::optional<PhaseContribution> phase;
       if (isa<qc::GPhaseOp, qco::GPhaseOp>(op)) {
+        if (discard) {
+          rewriter.eraseOp(&op);
+          continue;
+        }
         auto angle = op.getOperand(0);
         const auto constant = getConstantAngle(angle);
         // Leave invalid expressions for dead-code removal or diagnostics.
@@ -340,7 +353,7 @@ private:
           (next == block.begin() || &*std::prev(next) != current)) {
         insertionPoint = next;
       }
-      if (!phase) {
+      if (!phase || discard) {
         continue;
       }
       insertionPoint = next;
@@ -391,6 +404,7 @@ private:
   }
 
   RewriterBase& rewriter;
+  Operation* entryToDrop_;
   // Scalar values retain their meaning; each isolated scope owns its cache.
   DenseMap<Value, Attribute> constants_;
 };
@@ -415,9 +429,12 @@ LogicalResult normalizeGlobalPhases(ModuleOp moduleOp) {
 }
 
 LogicalResult normalizeGlobalPhases(ModuleOp moduleOp, RewriterBase& rewriter) {
-  GlobalPhaseNormalizer normalizer(rewriter);
-  normalizer.normalize(moduleOp.getRegion());
-  return success();
+  return GlobalPhaseNormalizer(rewriter, nullptr).run(moduleOp);
+}
+
+LogicalResult normalizeAndDropEntryPhase(ModuleOp moduleOp,
+                                         RewriterBase& rewriter) {
+  return GlobalPhaseNormalizer(rewriter, getEntryPoint(moduleOp)).run(moduleOp);
 }
 
 } // namespace mlir::mqt

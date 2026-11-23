@@ -1156,10 +1156,11 @@ TEST_F(GlobalPhaseNormalizationTest, DropsOnlyFinalProgramPhases) {
 
 TEST_F(GlobalPhaseNormalizationTest, DropPreservesObservableControlledPhase) {
   auto moduleOp = parse(R"mlir(
-    func.func @main() attributes {mqt.entry_point} {
+    func.func @main(%unusedAngle: f64) attributes {mqt.entry_point} {
       %q = qc.static 0 : !qc.qubit
       %global = arith.constant 0.4 : f64
       %relative = arith.constant 0.6 : f64
+      qc.gphase(%unusedAngle)
       qc.gphase(%global)
       qc.h %q : !qc.qubit
       qc.ctrl(%q) targets () {
@@ -1174,9 +1175,13 @@ TEST_F(GlobalPhaseNormalizationTest, DropPreservesObservableControlledPhase) {
   ASSERT_TRUE(moduleOp);
   PassManager pm(context.get());
   pm.addPass(createQCToQCO());
-  pm.addPass(mlir::mqt::createDropGlobalPhases());
-  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+  IRRewriter rewriter(context.get());
+  ASSERT_TRUE(
+      succeeded(mlir::mqt::normalizeAndDropEntryPhase(*moduleOp, rewriter)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(
+      moduleOp->lookupSymbol<func::FuncOp>("main").getArgument(0).use_empty());
   auto package = llvm::cantFail(dd::Package::create(1));
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
   auto result = qco::buildFunctionality(function, *package);

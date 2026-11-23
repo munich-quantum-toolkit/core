@@ -19,7 +19,6 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
-#include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
@@ -206,11 +205,10 @@ public:
       return failure();
     }
     if (version2_) {
-      if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
+      IRRewriter rewriter(moduleOp.getContext());
+      if (failed(mqt::normalizeAndDropEntryPhase(moduleOp, rewriter))) {
         return failure();
       }
-      IRRewriter rewriter(moduleOp.getContext());
-      mqt::dropGlobalPhases(moduleOp, rewriter);
     }
     if (failed(collectProgramShape())) {
       return failure();
