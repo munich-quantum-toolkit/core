@@ -637,9 +637,7 @@ extern "C" int TEST_SESSION_QDMI_device_job_get_results(
                        sizeRet);
   }
   if (job->programs.size() == 1 && result == QDMI_JOB_RESULT_HIST_KEYS) {
-    return queryString(
-        parameter(job->session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3), size,
-        value, sizeRet);
+    return queryBytes(job->customParameters.front(), size, value, sizeRet);
   }
   if (job->programs.size() == 1 && result == QDMI_JOB_RESULT_HIST_VALUES) {
     return queryValue(size_t{5}, size, value, sizeRet);
