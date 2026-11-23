@@ -96,13 +96,29 @@ def StaticOp : QCOOp<"static", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// Measurement and Reset Operations
+// Measurement, Delay, and Reset Operations
 //===----------------------------------------------------------------------===//
 
+class SingleQubitWireOp<string mnemonic, list<Trait> traits = []>
+    : QCOOp<mnemonic, !listconcat([WireOpInterface], traits)> {
+  let extraClassDeclaration = [{
+    Value getInputQubit(size_t i) { return getInputQubits()[i]; }
+    OperandRange getInputQubits() { return getOperation()->getOperands(); }
+    Value getOutputQubit(size_t i) { return getOutputQubits()[i]; }
+    ResultRange getOutputQubits() { return getOperation()->getResults().take_front(1); }
+    Value getInputForOutput(Value output) {
+      return output == getQubitOut() ? getQubitIn() : Value{};
+    }
+    Value getOutputForInput(Value input) {
+      return input == getQubitIn() ? getQubitOut() : Value{};
+    }
+  }];
+}
+
 def MeasureOp
-    : QCOOp<"measure", [Pure, WireOpInterface,
-                        DeclareOpInterfaceMethods<
-                            OpAsmOpInterface, ["getAsmResultNames"]>]> {
+    : SingleQubitWireOp<
+          "measure", [Pure, DeclareOpInterfaceMethods<
+                                OpAsmOpInterface, ["getAsmResultNames"]>]> {
   let summary = "Measure a qubit in the computational basis";
   let description = [{
         Measures a qubit in the computational (Z) basis, collapsing the state
@@ -119,22 +135,26 @@ def MeasureOp
   let assemblyFormat = [{
         $qubit_in `:` type($qubit_in) attr-dict
     }];
-  let extraClassDeclaration = [{
-    Value getInputQubit(size_t i) { return getInputQubits()[i]; }
-    OperandRange getInputQubits() { return getOperation()->getOperands(); }
-    Value getOutputQubit(size_t i) { return getOutputQubits()[i]; }
-    ResultRange getOutputQubits() { return getResults().take_front(1); }
-    Value getInputForOutput(Value output) {
-      return output == getQubitOut() ? getQubitIn() : Value{};
-    }
-    Value getOutputForInput(Value input) {
-      return input == getQubitIn() ? getQubitOut() : Value{};
-    }
-  }];
 }
 
-def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure,
-                              WireOpInterface]> {
+def DelayOp : SingleQubitWireOp<"delay", [SameOperandsAndResultType]> {
+  let summary = "Idle a qubit for a constant duration";
+  let description = [{
+    The result continues the input wire after the specified idle interval.
+    Gates on this wire must respect that interval. Independent wires can
+    progress concurrently. Clock ticks (`dt`) use an unsigned 64-bit integer.
+    SI durations use a finite, nonnegative floating-point value.
+  }];
+  let arguments = (ins Arg<QubitType, "the idle qubit", [MemWrite]>:$qubit_in,
+      AnyAttrOf<[UI64Attr, F64Attr]>:$duration, StrAttr:$unit);
+  let results = (outs QubitType:$qubit_out);
+  let assemblyFormat =
+      "$qubit_in $duration $unit attr-dict `:` type($qubit_in)";
+  let hasVerifier = 1;
+}
+
+def ResetOp : SingleQubitWireOp<"reset", [Idempotent, SameOperandsAndResultType,
+                                          Pure]> {
   let summary = "Reset a qubit to |0⟩ state";
   let description = [{
         Resets a qubit to the |0⟩ state, regardless of its current state,
@@ -150,18 +170,6 @@ def ResetOp : QCOOp<"reset", [Idempotent, SameOperandsAndResultType, Pure,
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
   let hasFolder = 1;
-  let extraClassDeclaration = [{
-    Value getInputQubit(size_t i) { return getInputQubits()[i]; }
-    OperandRange getInputQubits() { return getOperation()->getOperands(); }
-    Value getOutputQubit(size_t i) { return getOutputQubits()[i]; }
-    ResultRange getOutputQubits() { return getOperation()->getResults(); }
-    Value getInputForOutput(Value output) {
-      return output == getQubitOut() ? getQubitIn() : Value{};
-    }
-    Value getOutputForInput(Value input) {
-      return input == getQubitIn() ? getQubitOut() : Value{};
-    }
-  }];
 }
 
 //===----------------------------------------------------------------------===//

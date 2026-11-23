@@ -2015,7 +2015,7 @@ private:
                   }
                   return env.target.areAdjacent(indices[0], indices[1]);
                 })
-                .Case([](ResetOp) { return true; })
+                .template Case<ResetOp, DelayOp>([](auto) { return true; })
                 .Case([&](MeasureOp m) {
                   if (Direction == WireDirection::Backward) {
                     return true;

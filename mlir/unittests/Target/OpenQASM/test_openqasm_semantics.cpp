@@ -900,6 +900,43 @@ TEST(OpenQASMFrontendTest, AcceptsWideBarrierWithUnrelatedAffineOperand) {
   FAIL() << "expected a barrier";
 }
 
+TEST(OpenQASMFrontendTest, PreservesTicksInScientificAndDecimalLiterals) {
+  const auto result = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 3; delay[9.007199254740993e15dt] $0; delay[.5 µs] $0;");
+  ASSERT_TRUE(result) << result.diagnostics.front().message;
+  const auto& statements = result.program->statements;
+  ASSERT_EQ(statements.size(), 2);
+  const auto& ticks =
+      std::get<openqasm::frontend::DelayStatement>(statements.front().data);
+  const auto& time =
+      std::get<openqasm::frontend::DelayStatement>(statements.back().data);
+  EXPECT_EQ(std::get<uint64_t>(ticks.duration), 9007199254740993ULL);
+  EXPECT_EQ(time.unit, "us");
+  EXPECT_EQ(std::get<double>(time.duration), 0.5);
+}
+
+TEST(OpenQASMFrontendTest, DiagnosesUnsupportedDelayForms) {
+  constexpr auto cases =
+      std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
+          {"OPENQASM 2.0; qreg q[1]; delay[1dt] q[0];", "requires OpenQASM 3"},
+          {"OPENQASM 3; qubit[2] q; delay[1ns] q;", "single qubit"},
+          {"OPENQASM 3; delay[1ps] $0;", "literal delay duration"},
+          {"OPENQASM 3; delay[1.5dt] $0;", "unsigned 64-bit integer"},
+          {
+              "OPENQASM 3; delay[18446744073709551616dt] $0;",
+              "unsigned 64-bit integer",
+          },
+      });
+  for (const auto& [source, diagnostic] : cases) {
+    SCOPED_TRACE(source.str());
+    const auto result = openqasm::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(result);
+    ASSERT_FALSE(result.diagnostics.empty());
+    EXPECT_NE(result.diagnostics.front().message.find(diagnostic.str()),
+              std::string::npos);
+  }
+}
+
 TEST(OpenQASMFrontendTest, RejectsDuplicateBarrierQubits) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       "OPENQASM 3.1; qubit q; barrier q, q;",

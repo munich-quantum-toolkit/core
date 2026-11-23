@@ -35,6 +35,25 @@
 
 namespace mlir::mqt {
 
+LogicalResult verifyDelayDuration(Operation* op, Attribute value,
+                                  StringRef unit) {
+  if (unit == "dt") {
+    if (!isa<IntegerAttr>(value)) {
+      return op->emitOpError("requires integer clock ticks");
+    }
+    return success();
+  }
+  const auto duration = dyn_cast<FloatAttr>(value);
+  if ((unit != "s" && unit != "ms" && unit != "us" && unit != "ns" &&
+       unit != "ps") ||
+      !duration || !duration.getValue().isFinite() ||
+      duration.getValueAsDouble() < 0) {
+    return op->emitOpError(
+        "requires a finite nonnegative duration in s, ms, us, ns or ps");
+  }
+  return success();
+}
+
 std::optional<double>
 parameterToConstantDouble(const FloatParameter& parameter) {
   if (const auto* scalar = std::get_if<double>(&parameter)) {

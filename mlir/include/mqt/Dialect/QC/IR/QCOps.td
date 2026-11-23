@@ -100,7 +100,7 @@ def StaticOp : QCOp<"static", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// Measurement and Reset Operations
+// Measurement, Delay, and Reset Operations
 //===----------------------------------------------------------------------===//
 
 def MeasureOp : QCOp<"measure", [DeclareOpInterfaceMethods<
@@ -124,7 +124,7 @@ def MeasureOp : QCOp<"measure", [DeclareOpInterfaceMethods<
 }
 
 def DelayOp : QCOp<"delay"> {
-  let summary = "Idle a physical qubit for a constant duration";
+  let summary = "Idle a qubit for a constant duration";
   let description = [{
     Clock ticks (`dt`) use an unsigned 64-bit integer. SI durations use a
     finite, nonnegative floating-point value and the specified time unit.

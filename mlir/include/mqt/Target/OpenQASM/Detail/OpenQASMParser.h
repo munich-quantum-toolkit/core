@@ -18,6 +18,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -26,8 +27,11 @@
 #include "llvm/Support/SMLoc.h"
 #include "llvm/Support/SaveAndRestore.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <utility>
@@ -152,6 +156,8 @@ private:
       return parseBarrier();
     case TokenKind::Reset:
       return parseReset();
+    case TokenKind::Delay:
+      return parseDelay();
     case TokenKind::Measure:
       return parseMeasure();
     case TokenKind::If:
@@ -873,6 +879,63 @@ private:
       return failure();
     }
     return sink.reset(loc, *operand);
+  }
+
+  [[nodiscard]] LogicalResult parseDelay() {
+    const auto loc = current().loc;
+    advance(); // delay
+    if (failed(expect(TokenKind::LBracket))) {
+      return failure();
+    }
+    const auto& amount = current();
+    const bool integer = amount.kind == TokenKind::IntegerLiteral;
+    auto unit = peek().identifier;
+    if (unit == "µs") {
+      unit = "us";
+    }
+    if ((!integer && amount.kind != TokenKind::FloatLiteral) ||
+        (unit != "dt" && unit != "ns" && unit != "us" && unit != "ms" &&
+         unit != "s") ||
+        (integer &&
+         amount.spelling.find_first_not_of("0123456789_") != StringRef::npos) ||
+        !std::all_of(amount.spelling.end(), peek().loc.getPointer(),
+                     [](char ch) { return ch == ' ' || ch == '\t'; })) {
+      return sink.error(amount.loc,
+                        "expected a literal delay duration with a time unit");
+    }
+    SyntaxDelay delay{.unit = unit};
+    if (unit == "dt") {
+      const auto ticks = amount.exactUnsignedValue();
+      if (!ticks) {
+        return sink.error(
+            amount.loc,
+            "delay in dt requires an unsigned 64-bit integer value");
+      }
+      delay.duration = *ticks;
+    } else if (amount.wideInteger) {
+      llvm::SmallString<32> digits;
+      llvm::copy_if(amount.spelling, std::back_inserter(digits),
+                    [](char ch) { return ch != '_'; });
+      double value = 0;
+      if (StringRef(digits).getAsDouble(value) || !std::isfinite(value)) {
+        return sink.error(amount.loc, "delay duration is too large");
+      }
+      delay.duration = value;
+    } else {
+      delay.duration =
+          integer ? static_cast<double>(amount.intValue) : amount.floatValue;
+    }
+    advance(); // amount
+    advance(); // unit
+    if (failed(expect(TokenKind::RBracket))) {
+      return failure();
+    }
+    auto operand = parseGateOperand();
+    if (failed(operand) || failed(expect(TokenKind::Semicolon))) {
+      return failure();
+    }
+    delay.operand = *operand;
+    return sink.delay(loc, delay);
   }
 
   //===--- Barrier ------------------------------------------------------===//

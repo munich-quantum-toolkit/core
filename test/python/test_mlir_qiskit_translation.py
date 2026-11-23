@@ -5228,6 +5228,9 @@ def test_serialize_native_delays(program_format: ProgramFormat) -> None:
     else:
         assert isinstance(program.payload, str)
         assert f"delay[{ticks}dt] $1;\nc[0] = measure $1;\ndelay[3.25ns] $1;\nc[1] = measure $0;" in program.payload
+        restored = QCProgram.from_openqasm_str(program.payload).to_qco().to_qiskit()
+        delays = [item.operation.duration for item in restored if item.name == "delay"]
+        assert delays == [ticks, expr.lift(Duration.ns(3.25))]
     assert program.result_width == 2
     assert program.result_layout is None
     circuit.delay(1, 0)

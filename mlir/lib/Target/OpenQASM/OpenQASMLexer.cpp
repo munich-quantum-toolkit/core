@@ -14,15 +14,20 @@
 
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/ConvertUTF.h"
+#include "llvm/Support/Error.h"
 
 #include <cctype>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <optional>
 #include <utility>
 
@@ -105,6 +110,7 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("output", TokenKind::Output)
       .Case("barrier", TokenKind::Barrier)
       .Case("reset", TokenKind::Reset)
+      .Case("delay", TokenKind::Delay)
       .Case("measure", TokenKind::Measure)
       .Case("if", TokenKind::If)
       .Case("else", TokenKind::Else)
@@ -136,8 +142,34 @@ decodeCodePoint(const char* position, const char* end) {
       .Cases({"end", "return"}, TokenKind::UnsupportedKeyword)
       .Cases({"pragma", "readonly", "mutable"}, TokenKind::UnsupportedKeyword)
       .Cases({"complex", "void", "stretch"}, TokenKind::UnsupportedKeyword)
-      .Cases({"durationof", "delay", "im"}, TokenKind::UnsupportedKeyword)
+      .Cases({"durationof", "im"}, TokenKind::UnsupportedKeyword)
       .Default(TokenKind::Identifier);
+}
+
+std::optional<uint64_t> Token::exactUnsignedValue() const {
+  if (kind == TokenKind::IntegerLiteral && !wideInteger) {
+    return intValue;
+  }
+  if (kind != TokenKind::FloatLiteral) {
+    return std::nullopt;
+  }
+  // Binary128 represents every uint64_t exactly, including integer-valued
+  // decimal or scientific literals that lose precision in binary64.
+  llvm::SmallString<32> digits;
+  llvm::copy_if(spelling, std::back_inserter(digits),
+                [](char ch) { return ch != '_'; });
+  APFloat number(APFloat::IEEEquad());
+  const auto status = llvm::expectedToOptional(
+      number.convertFromString(digits, APFloat::rmNearestTiesToEven));
+  llvm::APSInt ticks(64);
+  bool exact = false;
+  if (status != APFloat::opOK ||
+      number.convertToInteger(ticks, APFloat::rmTowardZero, &exact) !=
+          APFloat::opOK ||
+      !exact) {
+    return std::nullopt;
+  }
+  return ticks.getZExtValue();
 }
 
 StringRef describe(const TokenKind kind) {

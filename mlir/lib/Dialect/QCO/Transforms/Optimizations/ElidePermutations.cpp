@@ -815,7 +815,12 @@ static LogicalResult elidePermutations(ModuleOp moduleOp, bool terminalOnly) {
   // needs special handling only when it contains a SWAP, observes its inputs,
   // or captures quantum values that no region argument carries.
   RegionEffects effects;
-  moduleOp.walk([&](Operation* op) {
+  auto scan = moduleOp.walk([&](Operation* op) {
+    // An elided SWAP can remove timing dependencies between its two wires,
+    // including those introduced by a call.
+    if (isa<DelayOp>(op)) {
+      return WalkResult::interrupt();
+    }
     for (auto input : op->getOperands()) {
       if (!isLinearQubitType(input.getType())) {
         continue;
@@ -837,7 +842,11 @@ static LogicalResult elidePermutations(ModuleOp moduleOp, bool terminalOnly) {
       }
       known |= flags;
     }
+    return WalkResult::advance();
   });
+  if (scan.wasInterrupted()) {
+    return success();
+  }
   SmallVector<int64_t> output;
   IRRewriter rewriter(moduleOp.getContext());
   for (auto function : moduleOp.getOps<func::FuncOp>()) {

@@ -227,6 +227,32 @@ TEST_F(ElidePermutationsTest, TracksReinsertedTensorSlots) {
   }
 }
 
+TEST_F(ElidePermutationsTest, SwapOrdersTheOtherWireAfterADelay) {
+  auto program = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %a = qco.alloc : !qco.qubit
+      %b = qco.alloc : !qco.qubit
+      %timed = qco.delay %a 32 : ui64 "dt" : !qco.qubit
+      %sa, %sb = qco.swap %timed, %b : !qco.qubit, !qco.qubit
+      %x = qco.x %sb : !qco.qubit
+      qco.sink %sa : !qco.qubit
+      qco.sink %x : !qco.qubit
+      return
+    }
+  })mlir",
+                                             &context_);
+  ASSERT_TRUE(program);
+  ASSERT_NO_FATAL_FAILURE(rewrite(*program));
+  auto entry = mlir::mqt::getEntryPoint(*program);
+  auto swaps = entry.getOps<SWAPOp>();
+  ASSERT_FALSE(swaps.empty());
+  auto swap = *swaps.begin();
+  EXPECT_TRUE(swap.getQubit0In().getDefiningOp<DelayOp>());
+  auto gates = entry.getOps<XOp>();
+  ASSERT_FALSE(gates.empty());
+  EXPECT_EQ((*gates.begin()).getQubitIn(), swap.getQubit1Out());
+}
+
 TEST_F(ElidePermutationsTest, TerminalModePreservesEarlierRouting) {
   for (const auto* boundary : {
            R"mlir(%next = qco.h %sa : !qco.qubit)mlir",

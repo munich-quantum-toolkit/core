@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, assert_type, cast
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit, qpy, transpile
-from qiskit.circuit import Barrier, Gate, Measure, Parameter, Reset, Store, library
+from qiskit.circuit import Barrier, Delay, Duration, Gate, Measure, Parameter, Reset, Store, library
 from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import IfElseOp, WhileLoopOp
 from qiskit.circuit.library import (
@@ -378,7 +378,15 @@ def test_backend_and_global_operations() -> None:
     assert converted.name == backend.name
     assert CompilerTarget.from_qiskit(backend, name="renamed").name == "renamed"
     assert converted.connectivity_kind == CompilerTarget.ConnectivityKind.ALL_TO_ALL
-    assert {operation.name for operation in converted.operations} == {"sx", "rz", "cx", "measure", "reset", "gphase"}
+    assert {operation.name for operation in converted.operations} == {
+        "sx",
+        "rz",
+        "cx",
+        "measure",
+        "reset",
+        "delay",
+        "gphase",
+    }
 
     source = Target(num_qubits=3)
     source.add_instruction(CXGate())
@@ -391,6 +399,45 @@ def test_backend_and_global_operations() -> None:
     for name in ("x", "rz", "if_else"):
         with pytest.raises(ValueError, match="no native gate applicability"):
             CompilerTarget.from_qiskit(source, operation_names=["cx", name])
+
+
+def test_compile_explicit_delay() -> None:
+    """Compile a timed wire and enforce its native placement."""
+    target = Target(num_qubits=2)
+    target.add_instruction(CXGate())
+    target.add_instruction(XGate())
+    target.add_instruction(Measure())
+    target.add_instruction(SXGate())
+    target.add_instruction(RZGate(Parameter("theta")))
+    target.add_instruction(Delay(Parameter("t")), {(0,): None})
+    circuit = QuantumCircuit(1, 1)
+    circuit.x(0)
+    circuit.delay(32, 0, unit="ns")
+    circuit.x(0)
+    circuit.measure(0, 0)
+
+    compiled = compile_program(circuit, target=target, output=OutputFormat.QISKIT)
+    assert [item.name for item in compiled] == ["x", "delay", "x", "measure"]
+    assert compiled.data[1].operation.duration == expr.lift(Duration.ns(32))
+    assert all(compiled.find_bit(item.qubits[0]).index == 0 for item in compiled)
+    assert sample(circuit, shots=4, seed=1) == {"0": 4}
+
+    with pytest.raises(RuntimeError, match="delay"):
+        compile_program("OPENQASM 3; delay[32ns] $1;", target=target, output=OutputFormat.QISKIT)
+    fixed = Target(num_qubits=1)
+    fixed.add_instruction(Delay(32, unit="ns"))
+    with pytest.raises(ValueError, match="parameter constraints"):
+        CompilerTarget.from_qiskit(fixed, operation_names=["delay"])
+
+
+def test_global_delay_on_sparse_target() -> None:
+    """Global timing support preserves the physical address space of the gates."""
+    target = Target(num_qubits=3)
+    target.add_instruction(CXGate(), {(0, 2): None, (2, 0): None})
+    target.add_instruction(Delay(Parameter("t")))
+    snapshot = CompilerTarget.from_qiskit(target)
+    assert [site.id for site in snapshot.sites] == [0, 2]
+    assert snapshot.supports_operation("delay", 1, 1, sites=[2])
 
 
 def test_fixed_parameter_constraints() -> None:

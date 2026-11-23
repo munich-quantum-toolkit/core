@@ -1642,11 +1642,8 @@ private:
         return fail(delay, "delay requires OpenQASM 3");
       }
       const auto ticks = dyn_cast<IntegerAttr>(delay.getDuration());
-      const auto amount =
-          ticks ? static_cast<double>(ticks.getValue().getZExtValue())
-                : cast<FloatAttr>(delay.getDuration()).getValueAsDouble();
       if (failed(checkNativeNonUnitary(delay, "delay", delay.getQubit(),
-                                       {amount}))) {
+                                       {std::nullopt}))) {
         return failure();
       }
       auto qubit = emitQubit(delay.getQubit());
@@ -1660,6 +1657,7 @@ private:
         // OpenQASM's smallest SI duration literal is a nanosecond.
         auto unit = delay.getUnit();
         auto literal = cast<FloatAttr>(delay.getDuration());
+        const auto amount = std::abs(literal.getValueAsDouble());
         if (unit == "ps") {
           const double ns = amount / 1000;
           if (ns == 0 && amount != 0) {
@@ -1668,6 +1666,8 @@ private:
           }
           literal = FloatAttr::get(literal.getType(), ns);
           unit = "ns";
+        } else if (literal.getValue().isNegZero()) {
+          literal = FloatAttr::get(literal.getType(), 0.0);
         }
         auto text = emitConstant(literal, delay.getLoc());
         if (failed(text)) {

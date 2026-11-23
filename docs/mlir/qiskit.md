@@ -59,15 +59,15 @@ target = CompilerTarget.from_qiskit(backend)
 ```
 
 A backend supplies the default target name; pass `name` to override it. Qiskit
-standard gates, measurement, reset, and their ordered qubit placements become
-native capabilities. Each parameter slot can be unrestricted or fixed to one
-finite value. Multiple instructions of the same gate, such as `RXGate(pi / 2)`
-and `RXGate(pi)`, retain their distinct target names and placements. The
-compiler uses canonical gate names; `to_qiskit(target=target)` selects the
-target name by gate, parameters, and ordered sites. This also preserves legacy
-spellings such as `u1` and `u3`. The custom `gpi` and `gpi2` aliases are
-supported when their definitions match the corresponding fixed-angle R gates,
-including global phase.
+standard gates, measurement, reset, delay, and their ordered qubit placements
+become native capabilities. Each parameter slot can be unrestricted or fixed to
+one finite value. Multiple instructions of the same gate, such as
+`RXGate(pi / 2)` and `RXGate(pi)`, retain their distinct target names and
+placements. The compiler uses canonical gate names; `to_qiskit(target=target)`
+selects the target name by gate, parameters, and ordered sites. This also
+preserves legacy spellings such as `u1` and `u3`. The custom `gpi` and `gpi2`
+aliases are supported when their definitions match the corresponding fixed-angle
+R gates, including global phase.
 
 Routing connectivity is undirected and comes from the retained two-qubit gates.
 Gate applicability keeps its original qubit order. The target needs a known,
@@ -75,11 +75,11 @@ positive qubit count and a connected routing graph. Global phase is always
 allowed as circuit metadata.
 
 By default, unrepresentable gates are omitted with a warning. This includes
-other custom gates, unsupported angle bounds, renamed measurement or reset, open
-controls, and controlled gates other than CX, CY, and CZ. Bounded RXX, RYY, RZX,
-and RZZ gates are retained with the conservative interval `[0, pi/2]` when the
-target accepts that entire interval; see
-{doc}`target compilation <target_compilation>`. Delay, barrier, classical
+other custom gates, unsupported angle bounds, fixed-duration delays, renamed
+measurement, reset, or delay instructions, open controls, and controlled gates
+other than CX, CY, and CZ. Bounded RXX, RYY, RZX, and RZZ gates are retained
+with the conservative interval `[0, pi/2]` when the target accepts that entire
+interval; see {doc}`target compilation <target_compilation>`. Barrier, classical
 control flow, and operations with no applicable qubits are omitted without a
 warning. Pass `operation_names` to retain a subset; every selected name must be
 representable. Calibration, timing, and scheduling data are not copied. A
@@ -113,7 +113,7 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 | ----------------------------------------------------------------------- | -------------------- | ---------------------------------- |
 | Standard gates, constructible numeric modifiers, and global phase       | Supported            | Supported                          |
 | Other finite numeric modifiers                                          | Supported            | Rejected                           |
-| Measurement, reset, and barriers with labels                            | Supported            | Supported                          |
+| Measurement, reset, single-qubit delays, and barriers with labels       | Supported            | Supported                          |
 | Canonical named registers and leading loose bits                        | Supported            | Explicit registers                 |
 | Custom Gates with finite, acyclic definitions                           | Reusable functions   | Custom Gates                       |
 | Generic instructions with finite, acyclic definitions                   | Recursively expanded | Expanded operations                |
@@ -132,6 +132,11 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 | Dense numeric unitaries up to eight qubits                              | Supported            | Supported                          |
 | Empty registers, root aliases, or interleaved root membership           | Rejected             | Rejected                           |
 | Complete transpiler layout metadata                                     | Preserved            | Reconstructed when still valid     |
+
+A single-qubit `Delay` with a literal duration is supported before and after
+placement. Gates on that wire stay ordered around the delay. Integer clock ticks
+retain their exact count. SI durations retain their unit in QPY. Schedule with
+Qiskit when the execution requires explicit start times or idle padding.
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
@@ -342,6 +347,3 @@ Qiskit's
 and may change between minor releases. Forward minor compatibility is
 optimistic: an incompatible native ABI can crash the process. Use a tested
 Qiskit minor in environments that require a fixed compatibility baseline.
-
-Delay instructions are unsupported because the compiler does not represent their
-timing semantics.

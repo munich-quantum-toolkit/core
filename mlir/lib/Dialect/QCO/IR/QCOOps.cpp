@@ -36,6 +36,10 @@
 using namespace mlir;
 using namespace mlir::qco;
 
+LogicalResult DelayOp::verify() {
+  return mqt::verifyDelayDuration(*this, getDuration(), getUnit());
+}
+
 namespace {
 
 struct QCOInlinerInterface final : DialectInlinerInterface {
