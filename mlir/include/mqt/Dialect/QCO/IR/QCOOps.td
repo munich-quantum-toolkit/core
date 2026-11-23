@@ -217,7 +217,6 @@ def GPhaseOp
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "gphase"; }
         [[nodiscard]] static Matrix1x1 unitaryMatrix(double theta);
-        [[nodiscard]] std::optional<Matrix1x1> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$theta)>];
@@ -520,7 +519,6 @@ def RXOp
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "rx"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
-        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -550,7 +548,6 @@ def RYOp
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "ry"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
-        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -580,7 +577,6 @@ def RZOp
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "rz"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
-        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -610,7 +606,6 @@ def POp
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "p"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta);
-        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -642,7 +637,6 @@ def ROp
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "r"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta, double phi);
-        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -675,7 +669,6 @@ def U2Op
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "u2"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double phi, double lambda);
-        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -710,7 +703,6 @@ def UOp
         [[nodiscard]] static StringRef getBaseSymbol() { return "u"; }
         [[nodiscard]] static Matrix2x2 unitaryMatrix(double theta, double phi,
                                                      double lambda);
-        [[nodiscard]] std::optional<Matrix2x2> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit_in,
@@ -854,7 +846,6 @@ def RXXOp
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "rxx"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
-        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -887,7 +878,6 @@ def RYYOp
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "ryy"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
-        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -920,7 +910,6 @@ def RZXOp
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzx"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
-        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -953,7 +942,6 @@ def RZZOp
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "rzz"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta);
-        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -986,7 +974,6 @@ def XXPlusYYOp : QCOOp<"xx_plus_yy", traits = [UnitaryOpInterface,
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_plus_yy"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta, double beta);
-        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
@@ -1020,7 +1007,6 @@ def XXMinusYYOp : QCOOp<"xx_minus_yy", traits = [UnitaryOpInterface,
 
         [[nodiscard]] static StringRef getBaseSymbol() { return "xx_minus_yy"; }
         [[nodiscard]] static Matrix4x4 unitaryMatrix(double theta, double beta);
-        [[nodiscard]] std::optional<Matrix4x4> getUnitaryMatrix();
     }];
 
   let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,

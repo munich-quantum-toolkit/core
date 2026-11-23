@@ -21,7 +21,6 @@
 
 #include <cmath>
 #include <numbers>
-#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -104,13 +103,4 @@ void U2Op::getOptimizationPatterns(RewritePatternSet& results,
 
 Matrix2x2 U2Op::unitaryMatrix(double phi, double lambda) {
   return UOp::unitaryMatrix(std::numbers::pi / 2.0, phi, lambda);
-}
-
-std::optional<Matrix2x2> U2Op::getUnitaryMatrix() {
-  const auto phi = valueToDouble(getPhi());
-  const auto lambda = valueToDouble(getLambda());
-  if (!phi || !lambda) {
-    return std::nullopt;
-  }
-  return unitaryMatrix(*phi, *lambda);
 }

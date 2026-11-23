@@ -22,7 +22,6 @@
 
 #include <cmath>
 #include <numbers>
-#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -123,14 +122,4 @@ void UOp::getOptimizationPatterns(RewritePatternSet& results,
 
 Matrix2x2 UOp::unitaryMatrix(double theta, double phi, double lambda) {
   return {.data = computeUMatrix(theta, phi, lambda)};
-}
-
-std::optional<Matrix2x2> UOp::getUnitaryMatrix() {
-  const auto theta = valueToDouble(getTheta());
-  const auto phi = valueToDouble(getPhi());
-  const auto lambda = valueToDouble(getLambda());
-  if (!theta || !phi || !lambda) {
-    return std::nullopt;
-  }
-  return unitaryMatrix(*theta, *phi, *lambda);
 }

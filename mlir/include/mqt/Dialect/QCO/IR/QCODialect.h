@@ -19,6 +19,11 @@
 
 #include "llvm/ADT/STLExtras.h"
 
+#include <array>
+#include <cmath>
+#include <optional>
+#include <tuple>
+
 #define DIALECT_NAME_QCO "qco"
 
 //===----------------------------------------------------------------------===//
@@ -148,13 +153,31 @@ public:
     }
 
     [[nodiscard]] bool hasCompileTimeKnownUnitaryMatrix() {
-      if constexpr (P == 0) {
-        return true;
-      } else {
-        return llvm::all_of(this->getParameters(), [](Value param) {
-          return mlir::mqt::valueToDouble(param).has_value();
-        });
+      return P == 0 || getConstantParameters().has_value();
+    }
+
+    /// Compute the standard gate matrix when its parameters fold to finite
+    /// values.
+    [[nodiscard]] auto getUnitaryMatrix()
+      requires(P > 0)
+    {
+      const auto parameters = getConstantParameters();
+      return parameters ? std::optional{std::apply(ConcreteType::unitaryMatrix,
+                                                   *parameters)}
+                        : std::nullopt;
+    }
+
+  private:
+    [[nodiscard]] std::optional<std::array<double, P>> getConstantParameters() {
+      std::array<double, P> parameters{};
+      for (auto [i, operand] : llvm::enumerate(getParameters())) {
+        const auto value = mqt::valueToConstantDouble(operand);
+        if (!value || !std::isfinite(*value)) {
+          return std::nullopt;
+        }
+        parameters[i] = *value;
       }
+      return parameters;
     }
   };
 };

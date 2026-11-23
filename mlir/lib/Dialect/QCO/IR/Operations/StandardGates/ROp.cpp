@@ -24,7 +24,6 @@
 #include <cmath>
 #include <complex>
 #include <numbers>
-#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -107,13 +106,4 @@ Matrix2x2 ROp::unitaryMatrix(double theta, double phi) {
   const auto m01 = -std::conj(m10);
   return Matrix2x2::fromElements(c, m01,  // row 0
                                  m10, c); // row 1
-}
-
-std::optional<Matrix2x2> ROp::getUnitaryMatrix() {
-  const auto theta = valueToDouble(getTheta());
-  const auto phi = valueToDouble(getPhi());
-  if (!theta || !phi) {
-    return std::nullopt;
-  }
-  return unitaryMatrix(*theta, *phi);
 }

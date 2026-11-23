@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
@@ -21,7 +21,6 @@
 
 #include <cmath>
 #include <complex>
-#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -47,11 +46,4 @@ Matrix2x2 RXOp::unitaryMatrix(const double theta) {
   const auto offDiag = -1i * std::sin(theta / 2);
   return Matrix2x2::fromElements(diag, offDiag,  // row 0
                                  offDiag, diag); // row 1
-}
-
-std::optional<Matrix2x2> RXOp::getUnitaryMatrix() {
-  if (const auto theta = valueToDouble(getTheta())) {
-    return unitaryMatrix(*theta);
-  }
-  return std::nullopt;
 }

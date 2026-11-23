@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
@@ -21,7 +21,6 @@
 
 #include <cmath>
 #include <complex>
-#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -53,11 +52,4 @@ Matrix4x4 RXXOp::unitaryMatrix(const double theta) {
                                  m0, mc, ms, m0,  // row 1
                                  m0, ms, mc, m0,  // row 2
                                  ms, m0, m0, mc); // row 3
-}
-
-std::optional<Matrix4x4> RXXOp::getUnitaryMatrix() {
-  if (const auto theta = valueToDouble(getTheta())) {
-    return unitaryMatrix(*theta);
-  }
-  return std::nullopt;
 }

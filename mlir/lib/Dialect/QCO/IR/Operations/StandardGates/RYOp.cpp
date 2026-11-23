@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
@@ -20,7 +20,6 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include <cmath>
-#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -44,11 +43,4 @@ Matrix2x2 RYOp::unitaryMatrix(const double theta) {
   const auto m01 = -std::sin(theta / 2);
   return Matrix2x2::fromElements(m00, m01,   // row 0
                                  -m01, m00); // row 1
-}
-
-std::optional<Matrix2x2> RYOp::getUnitaryMatrix() {
-  if (const auto theta = valueToDouble(getTheta())) {
-    return unitaryMatrix(*theta);
-  }
-  return std::nullopt;
 }
