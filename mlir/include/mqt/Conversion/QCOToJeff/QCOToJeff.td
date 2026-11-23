@@ -27,12 +27,14 @@ def QCOToJeff : Pass<"qco-to-jeff", "mlir::ModuleOp"> {
     residual runtime safety assertions are rejected. Array lengths must fit
     signed i32. Mutable array arguments in helpers remain unsupported.
 
-    `qco.static` exports as `jeff.qubit_alloc`; static site indices and
-    `mqt.layout` metadata are not preserved. Exchange programs before device
-    mapping.
+    Static qubits share one fixed-size register marked by `mqt.static_qubits`
+    metadata. Its size is one greater than the largest static site ID, and
+    constant register indices retain the site IDs through binary interchange.
+    `mqt.layout` metadata is not preserved.
   }];
 
   let dependentDialects = ["mlir::func::FuncDialect", "mlir::jeff::JeffDialect",
+                           "mlir::qtensor::QTensorDialect",
                            "mlir::arith::ArithDialect",
                            "mlir::affine::AffineDialect",
                            "mlir::linalg::LinalgDialect",

@@ -175,6 +175,10 @@ possible extension. The conversion currently supports:
 - Source-level function input names. Restored programs can list and bind named
   `f64` parameters. Binary interchange preserves names, but not Qiskit parameter
   identities or parameter-vector grouping.
+- Static qubit site IDs. Export uses one fixed-size qubit register with
+  `mqt.static_qubits` metadata and constant indices equal to the site IDs. Its
+  size is one greater than the largest site ID; import restores the referenced
+  sites.
 
 The following limits affect interchange:
 
@@ -187,8 +191,6 @@ The following limits affect interchange:
   format supports forward branching but not native multiway branching. `to_jeff`
   and target-independent `compile_program` with `OutputFormat.JEFF` do not
   perform this target legalization.
-- Export converts physical static qubits to allocations, so static site IDs do
-  not survive the round trip. Exchange programs before device mapping.
 - Only selected custom operations and Pauli-product rotations are supported.
 - Unitary calls inside quantum modifiers need expansion before export. The
   default compiler pipeline performs modifier preparation. A direct pass

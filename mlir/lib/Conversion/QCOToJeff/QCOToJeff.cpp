@@ -19,6 +19,7 @@
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Support/IntegerExpressions.h"
@@ -70,6 +71,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringSwitch.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -148,6 +150,43 @@ static LogicalResult serializeInputNames(func::FuncOp function) {
       return failure();
     }
   }
+  return success();
+}
+
+/// Use static site IDs as indices into one marked register.
+static LogicalResult groupStaticQubits(ModuleOp moduleOp) {
+  SmallVector<StaticOp> qubits;
+  moduleOp.walk([&](StaticOp op) { qubits.push_back(op); });
+  if (qubits.empty()) {
+    return success();
+  }
+  int64_t size = 0;
+  for (auto qubit : qubits) {
+    if (qubit.getIndex() >= std::numeric_limits<int32_t>::max()) {
+      return qubit.emitError(
+          "static site index exceeds the jeff register size limit");
+    }
+    size = std::max(size, static_cast<int64_t>(qubit.getIndex()) + 1);
+  }
+
+  OpBuilder builder(qubits.front());
+  auto loc = qubits.front().getLoc();
+  auto length = arith::ConstantIndexOp::create(builder, loc, size);
+  auto allocation = qtensor::AllocOp::create(builder, loc, length);
+  Value tensor = allocation.getResult();
+  for (auto qubit : qubits) {
+    builder.setInsertionPoint(qubit);
+    auto offset = arith::ConstantIndexOp::create(
+        builder, qubit.getLoc(), static_cast<int64_t>(qubit.getIndex()));
+    auto extract =
+        qtensor::ExtractOp::create(builder, qubit.getLoc(), tensor, offset);
+    qubit.getQubit().replaceAllUsesWith(extract.getResult());
+    tensor = extract.getOutTensor();
+    qubit.erase();
+  }
+  allocation->setAttr("mqt.static_qubits", builder.getUnitAttr());
+  builder.setInsertionPoint(allocation->getBlock()->getTerminator());
+  qtensor::DeallocOp::create(builder, loc, tensor);
   return success();
 }
 
@@ -1199,14 +1238,36 @@ struct ConvertQTensorAllocOp final
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
-                                               op.getOperation()))) {
+    const bool isStatic = op->hasAttr("mqt.static_qubits");
+    if (failed(getState().ensureAllocationMode(
+            isStatic ? AllocationMode::Static : AllocationMode::Dynamic,
+            op.getOperation()))) {
       return failure();
+    }
+    ArrayAttr metadata;
+    if (isStatic) {
+      auto payload = jeff::serializeTextMetadata(op.getLoc(), "");
+      if (failed(payload)) {
+        return failure();
+      }
+      metadata = rewriter.getArrayAttr({
+          rewriter.getDictionaryAttr({
+              rewriter.getNamedAttr(
+                  "name", rewriter.getStringAttr("mqt.static_qubits")),
+              rewriter.getNamedAttr("value", *payload),
+          }),
+      });
     }
     auto qregType =
         jeff::QuregType::get(rewriter.getContext(), op.getType().getShape()[0]);
-    rewriter.replaceOpWithNewOp<jeff::QuregAllocOp>(op, qregType,
-                                                    adaptor.getSize());
+    auto allocation = jeff::QuregAllocOp::create(rewriter, op.getLoc(),
+                                                 qregType, adaptor.getSize());
+    if (metadata &&
+        failed(jeff::setMetadata(allocation.getOperation(), metadata))) {
+      rewriter.eraseOp(allocation);
+      return failure();
+    }
+    rewriter.replaceOp(op, allocation.getQreg());
     return success();
   }
 };
@@ -1260,25 +1321,6 @@ struct ConvertQCOAllocOpToJeff final : StatefulOpConversionPattern<AllocOp> {
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
-                                               op.getOperation()))) {
-      return failure();
-    }
-    rewriter.replaceOpWithNewOp<jeff::QubitAllocOp>(op);
-    return success();
-  }
-};
-
-/// Converts qco.static to jeff.qubit_alloc
-///
-/// jeff has no static-qubit representation. This conversion allocates a
-/// dynamic qubit and discards the static index, so hardware placement is lost.
-struct ConvertQCOStaticOpToJeff final : StatefulOpConversionPattern<StaticOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(StaticOp op, OpAdaptor /*adaptor*/,
-                  ConversionPatternRewriter& rewriter) const override {
-    if (failed(getState().ensureAllocationMode(AllocationMode::Static,
                                                op.getOperation()))) {
       return failure();
     }
@@ -2183,6 +2225,10 @@ protected:
     auto moduleOp = getOperation();
     // `jeff` has no qubit layout metadata.
     moduleOp->removeAttr(mqt::kLayoutAttr);
+    if (failed(qco::verifyLinearity(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     const auto modifiers = moduleOp.walk([](Operation* op) {
       if (!isa<CtrlOp, InvOp, PowOp>(op)) {
         return WalkResult::advance();
@@ -2310,6 +2356,10 @@ protected:
       signalPassFailure();
       return;
     }
+    if (failed(groupStaticQubits(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     QCOToJeffTypeConverter typeConverter(context);
@@ -2396,10 +2446,9 @@ protected:
                  ConvertCBitReadOpToJeff, ConvertCBitWriteOpToJeff,
                  ConvertQTensorAllocOp, ConvertQTensorExtractOp,
                  ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
-                 ConvertQCOAllocOpToJeff, ConvertQCOStaticOpToJeff,
-                 ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
-                 ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff>(
-        typeConverter, context, &state);
+                 ConvertQCOAllocOpToJeff, ConvertQCOSinkOpToJeff,
+                 ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
+                 ConvertQCOGPhaseOpToJeff>(typeConverter, context, &state);
 
     using JK = JeffKind;
     using PP = PPRPaulis;
