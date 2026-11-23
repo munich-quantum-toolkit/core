@@ -122,6 +122,25 @@ void QCDialect::initialize() {
 // Interfaces
 //===----------------------------------------------------------------------===//
 
+LogicalResult DelayOp::verify() {
+  const auto unit = getUnit();
+  if (unit == "dt") {
+    if (!isa<IntegerAttr>(getDuration())) {
+      return emitOpError("requires integer clock ticks");
+    }
+    return success();
+  }
+  const auto duration = dyn_cast<FloatAttr>(getDuration());
+  if ((unit != "s" && unit != "ms" && unit != "us" && unit != "ns" &&
+       unit != "ps") ||
+      !duration || !duration.getValue().isFinite() ||
+      duration.getValueAsDouble() < 0) {
+    return emitOpError(
+        "requires a finite nonnegative duration in s, ms, us, ns or ps");
+  }
+  return success();
+}
+
 LogicalResult mlir::qc::verifyDistinctQubitOperands(Operation* op,
                                                     ValueRange operands) {
   if (operands.size() < 2) {

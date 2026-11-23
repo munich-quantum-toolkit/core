@@ -1443,8 +1443,9 @@ private:
         isa<memref::LoadOp, memref::AllocOp, memref::AllocaOp, memref::StoreOp,
             memref::CopyOp, bufferization::MaterializeInDestinationOp,
             tensor::ExtractOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
-            qc::StaticOp, qc::MeasureOp, qc::ResetOp, qc::BarrierOp, scf::IfOp,
-            scf::IndexSwitchOp, ub::PoisonOp, arith::SelectOp>(&operation)) {
+            qc::StaticOp, qc::MeasureOp, qc::ResetOp, qc::DelayOp,
+            qc::BarrierOp, scf::IfOp, scf::IndexSwitchOp, ub::PoisonOp,
+            arith::SelectOp>(&operation)) {
       return false;
     }
     if (auto loop = dyn_cast<scf::ForOp>(&operation)) {
@@ -1635,6 +1636,47 @@ private:
     }
     if (auto measurement = dyn_cast<qc::MeasureOp>(&operation)) {
       return emitMeasurement(measurement);
+    }
+    if (auto delay = dyn_cast<qc::DelayOp>(&operation)) {
+      if (version2_) {
+        return fail(delay, "delay requires OpenQASM 3");
+      }
+      const auto ticks = dyn_cast<IntegerAttr>(delay.getDuration());
+      const auto amount =
+          ticks ? static_cast<double>(ticks.getValue().getZExtValue())
+                : cast<FloatAttr>(delay.getDuration()).getValueAsDouble();
+      if (failed(checkNativeNonUnitary(delay, "delay", delay.getQubit(),
+                                       {amount}))) {
+        return failure();
+      }
+      auto qubit = emitQubit(delay.getQubit());
+      if (failed(qubit)) {
+        return failure();
+      }
+      *output << "delay[";
+      if (ticks) {
+        *output << ticks.getValue().getZExtValue() << "dt";
+      } else {
+        // OpenQASM's smallest SI duration literal is a nanosecond.
+        auto unit = delay.getUnit();
+        auto literal = cast<FloatAttr>(delay.getDuration());
+        if (unit == "ps") {
+          const double ns = amount / 1000;
+          if (ns == 0 && amount != 0) {
+            return fail(delay,
+                        "delay is too small for an OpenQASM duration literal");
+          }
+          literal = FloatAttr::get(literal.getType(), ns);
+          unit = "ns";
+        }
+        auto text = emitConstant(literal, delay.getLoc());
+        if (failed(text)) {
+          return failure();
+        }
+        *output << *text << unit;
+      }
+      *output << "] " << *qubit << ";\n";
+      return success();
     }
     if (auto reset = dyn_cast<qc::ResetOp>(&operation)) {
       if (failed(checkNativeNonUnitary(reset, "reset", reset.getQubit()))) {
@@ -3178,7 +3220,8 @@ private:
   }
 
   [[nodiscard]] LogicalResult
-  checkNativeNonUnitary(Operation* operation, StringRef name, Value qubit) {
+  checkNativeNonUnitary(Operation* operation, StringRef name, Value qubit,
+                        ArrayRef<std::optional<double>> parameters = {}) {
     if (!nativeTarget_) {
       return success();
     }
@@ -3187,7 +3230,7 @@ private:
       sites.push_back(static_cast<CompilerTarget::SiteId>(physical.getIndex()));
     }
     const auto match = nativeTarget_->findOperation(
-        name, 1, {},
+        name, 1, parameters,
         sites.empty() ? std::nullopt
                       : std::optional<ArrayRef<CompilerTarget::SiteId>>(sites),
         0,

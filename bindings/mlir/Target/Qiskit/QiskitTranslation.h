@@ -216,6 +216,11 @@ struct StandardGateMapping {
   [[nodiscard]] bool operator==(const StandardGateMapping&) const = default;
 };
 
+struct DelayDuration {
+  std::variant<uint64_t, double> value;
+  std::string unit;
+};
+
 struct Instruction {
   OperationKind kind = OperationKind::Unknown;
   std::string name;
@@ -227,6 +232,7 @@ struct Instruction {
   /// Output position i carries input position permutation[i].
   std::optional<std::vector<uint32_t>> permutation = std::nullopt;
   std::optional<std::string> barrierLabel = std::nullopt;
+  std::unique_ptr<DelayDuration> delay;
 };
 
 enum class ClassicalType : uint8_t {
@@ -424,6 +430,7 @@ public:
                              const std::vector<GateModifier>& modifiers) = 0;
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
+  virtual void addDelay(uint32_t qubit, const DelayDuration& duration) = 0;
   virtual void addBarrier(const std::vector<uint32_t>& qubits,
                           const std::optional<std::string>& label) = 0;
   virtual void addStore(ClassicalTarget target,

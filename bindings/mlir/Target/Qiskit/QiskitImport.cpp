@@ -82,6 +82,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt::bindings::qiskit {
@@ -2137,8 +2138,19 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
                            controlFlowDepth, variables);
       break;
     }
-    case OperationKind::Delay:
-      throw std::runtime_error("Qiskit delay instructions are not supported");
+    case OperationKind::Delay: {
+      const auto& delay = *instruction.delay;
+      mlir::Attribute duration;
+      if (const auto* ticks = std::get_if<uint64_t>(&delay.value)) {
+        duration = builder.getIntegerAttr(builder.getIntegerType(64, false),
+                                          llvm::APInt(64, *ticks));
+      } else {
+        duration = builder.getF64FloatAttr(std::get<double>(delay.value));
+      }
+      mlir::qc::DelayOp::create(builder, getQubit(instruction.qubits.front()),
+                                duration, builder.getStringAttr(delay.unit));
+      break;
+    }
     case OperationKind::Unknown:
       translateDefinition(index, instruction);
       break;
@@ -2906,7 +2918,8 @@ void validateCircuit(const CircuitReader& circuit,
       break;
     }
     case OperationKind::Delay:
-      throw std::runtime_error("Qiskit delay instructions are not supported");
+      requireArity(instruction, 1, 0);
+      break;
     }
   }
 }

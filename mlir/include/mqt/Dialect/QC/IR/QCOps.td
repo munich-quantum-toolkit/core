@@ -123,6 +123,18 @@ def MeasureOp : QCOp<"measure", [DeclareOpInterfaceMethods<
     }];
 }
 
+def DelayOp : QCOp<"delay"> {
+  let summary = "Idle a physical qubit for a constant duration";
+  let description = [{
+    Clock ticks (`dt`) use an unsigned 64-bit integer. SI durations use a
+    finite, nonnegative floating-point value and the specified time unit.
+  }];
+  let arguments = (ins QubitArg<QubitType, "the idle qubit">:$qubit,
+      AnyAttrOf<[UI64Attr, F64Attr]>:$duration, StrAttr:$unit);
+  let assemblyFormat = "$qubit $duration $unit attr-dict `:` type($qubit)";
+  let hasVerifier = 1;
+}
+
 def ResetOp : QCOp<"reset"> {
   let summary = "Reset a qubit to |0⟩ state";
   let description = [{

@@ -28,6 +28,7 @@ from qiskit.circuit import (
     Barrier,
     Clbit,
     ControlModifier,
+    Duration,
     Gate,
     Instruction,
     InverseModifier,
@@ -5186,6 +5187,52 @@ def test_measurement_free_source_submission() -> None:
     job = submit_program(circuit, target="mqt.ddsim.default", num_shots=3)
     assert job.wait()
     assert job.get_shots() == ["0"] * 3
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QPY, ProgramFormat.QASM3, ProgramFormat.QASM2])
+def test_serialize_native_delays(program_format: ProgramFormat) -> None:
+    """Retain the duration, placement, and order of scheduled native instructions."""
+    target = CompilerTarget(
+        "timed",
+        [CompilerTarget.Site(0), CompilerTarget.Site(1)],
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("delay", 1, 1, site_tuples=[[1]]),
+            CompilerTarget.OperationCapability("measure", 1, 0, site_tuples=[[0], [1]]),
+        ]),
+    )
+    environment = TargetEnvironment(target, PayloadSpecification.from_program_format(program_format))
+    circuit = QuantumCircuit(2, 2)
+    ticks = 2**53 + 1
+    circuit.delay(ticks, 1)
+    circuit.measure(1, 0)
+    circuit.delay(3250, 1, unit="ps")
+    circuit.measure(0, 1)
+    if program_format == ProgramFormat.QASM2:
+        with pytest.raises((RuntimeError, ValueError), match="delay requires OpenQASM 3"):
+            serialize_program(circuit, target=environment)
+        return
+    program = serialize_program(circuit, target=environment)
+    if program_format == ProgramFormat.QPY:
+        assert isinstance(program.payload, bytes)
+        (restored,) = qpy.load(BytesIO(program.payload))
+        assert [(item.name, restored.find_bit(item.qubits[0]).index) for item in restored] == [
+            ("delay", 1),
+            ("measure", 1),
+            ("delay", 1),
+            ("measure", 0),
+        ]
+        assert restored.data[0].operation.duration == ticks
+        assert restored.data[0].operation.unit == "dt"
+        assert restored.data[2].operation.duration == expr.lift(Duration.ps(3250))
+    else:
+        assert isinstance(program.payload, str)
+        assert f"delay[{ticks}dt] $1;\nc[0] = measure $1;\ndelay[3.25ns] $1;\nc[1] = measure $0;" in program.payload
+    assert program.result_width == 2
+    assert program.result_layout is None
+    circuit.delay(1, 0)
+    with pytest.raises((RuntimeError, ValueError), match="cannot be emitted as native"):
+        serialize_program(circuit, target=environment)
 
 
 @pytest.mark.parametrize("program_format", [ProgramFormat.QPY, ProgramFormat.QASM3])

@@ -31,6 +31,7 @@
 #include <qiskit.h> // Must precede the extension function table.
 #include <qiskit/funcs_py.h>
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
@@ -59,6 +60,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 // Qiskit's generated extension-table macros expand to C function-pointer casts
@@ -1075,7 +1077,42 @@ public:
   instruction(const size_t index, const bool opaque = false) const override {
     const auto kind = instructionKind(index);
     if (kind == OperationKind::Delay) {
-      return {.kind = kind, .name = "delay"};
+      const auto operation = pythonOperation(index);
+      auto unit = nb::cast<std::string>(operation.attr("unit"));
+      nb::object value = operation.attr("duration");
+      if (unit == "expr") {
+        if (!nb::isinstance(
+                value, nb::module_::import_("qiskit.circuit.classical.expr")
+                           .attr("Value"))) {
+          throw std::runtime_error("Qiskit delay requires a duration literal");
+        }
+        const auto literal = value.attr("value");
+        unit = nb::cast<std::string>(literal.attr("unit")());
+        value = literal.attr("value")();
+      }
+      DelayDuration duration{.unit = unit};
+      if (unit == "dt") {
+        uint64_t ticks = 0;
+        if (!nb::try_cast(value, ticks)) {
+          throw std::runtime_error(
+              "Qiskit delay requires constant unsigned clock ticks");
+        }
+        duration.value = ticks;
+      } else {
+        double amount = 0;
+        if (!nb::try_cast(value, amount) || !std::isfinite(amount) ||
+            amount < 0) {
+          throw std::runtime_error(
+              "Qiskit delay requires a finite nonnegative duration");
+        }
+        duration.value = amount;
+      }
+      return {
+          .kind = kind,
+          .name = "delay",
+          .qubits = pythonInstructionBits(index, "qubits"),
+          .delay = std::make_unique<DelayDuration>(std::move(duration)),
+      };
     }
     if (kind == OperationKind::ControlFlow) {
       return {.kind = kind, .name = "control_flow"};
@@ -2681,6 +2718,35 @@ public:
 
   void addReset(const uint32_t qubit) override {
     checkExitCode(qk_circuit_reset(circuit_, qubit), "adding reset");
+  }
+
+  void addDelay(const uint32_t qubit, const DelayDuration& duration) override {
+    if (target_ != nullptr &&
+        target_->nativeOperationsKind() ==
+            mlir::CompilerTarget::NativeOperations::Kind::Explicit) {
+      const mlir::CompilerTarget::SiteId site = qubit;
+      const auto value =
+          std::visit([](auto amount) { return static_cast<double>(amount); },
+                     duration.value);
+      if (target_->findOperation("delay", 1, {value}, llvm::ArrayRef(site))
+              .capability == nullptr) {
+        throw std::runtime_error(
+            "target operation cannot be emitted as native Qiskit delay");
+      }
+    }
+    if (const auto* ticks = std::get_if<uint64_t>(&duration.value)) {
+      pythonCircuit_.attr("delay")(*ticks, qubit, "dt");
+    } else {
+      // QPY preserves SI units in typed duration literals.
+      const auto literal =
+          nb::module_::import_("qiskit.circuit")
+              .attr("Duration")
+              .attr(duration.unit.c_str())(std::get<double>(duration.value));
+      const auto expression =
+          nb::module_::import_("qiskit.circuit.classical.expr")
+              .attr("lift")(literal);
+      pythonCircuit_.attr("delay")(expression, qubit);
+    }
   }
 
   void addBarrier(const std::vector<uint32_t>& qubits,
