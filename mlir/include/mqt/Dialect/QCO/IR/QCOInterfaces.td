@@ -17,7 +17,7 @@ include "mlir/IR/OpBase.td"
 
 def WireOpInterface : OpInterface<"WireOpInterface"> {
   let description = [{
-    Describes Core's correspondence between an operation's input and output
+    Describes MQT Core's correspondence between an operation's input and output
     wires, independently of whether the operation is unitary. The input and
     output ranges have matching
     types and correspond positionally. A value may be a scalar qubit or a

@@ -255,6 +255,12 @@ struct SyntaxReset {
   Operand operand;
 };
 
+struct SyntaxDelay {
+  Operand operand;
+  std::variant<uint64_t, double> duration;
+  StringRef unit;
+};
+
 struct SyntaxBarrier {
   std::vector<Operand> operands;
 };
@@ -316,9 +322,9 @@ using SyntaxStatementData =
     std::variant<SyntaxStandardLibraryInclude, SyntaxScalarDeclaration,
                  SyntaxArrayDeclaration, SyntaxAssignment,
                  SyntaxQubitDeclaration, SyntaxBitDeclaration,
-                 SyntaxMeasurement, SyntaxReset, SyntaxBarrier, SyntaxGateCall,
-                 SyntaxGateDefinition, SyntaxIf, SyntaxFor, SyntaxWhile,
-                 SyntaxSwitch, SyntaxBreak, SyntaxContinue>;
+                 SyntaxMeasurement, SyntaxReset, SyntaxDelay, SyntaxBarrier,
+                 SyntaxGateCall, SyntaxGateDefinition, SyntaxIf, SyntaxFor,
+                 SyntaxWhile, SyntaxSwitch, SyntaxBreak, SyntaxContinue>;
 
 struct SyntaxStatement {
   SMLoc location;
@@ -383,6 +389,7 @@ public:
   [[nodiscard]] LogicalResult
   measure(SMLoc location, const BitReference* target, const Operand& source);
   [[nodiscard]] LogicalResult reset(SMLoc location, const Operand& operand);
+  [[nodiscard]] LogicalResult delay(SMLoc location, SyntaxDelay delay);
   [[nodiscard]] LogicalResult barrier(SMLoc location,
                                       ArrayRef<Operand> operands);
   [[nodiscard]] LogicalResult gateCall(const GateCall& call);

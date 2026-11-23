@@ -773,6 +773,20 @@ struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
   }
 };
 
+struct ConvertQCODelayOp final : OpConversionPattern<qco::DelayOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::DelayOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto qubit = adaptor.getQubitIn();
+    qc::DelayOp::create(rewriter, op.getLoc(), qubit, op.getDuration(),
+                        op.getUnitAttr());
+    rewriter.replaceOp(op, qubit);
+    return success();
+  }
+};
+
 struct ConvertQCOResetOp final : OpConversionPattern<qco::ResetOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1120,9 +1134,9 @@ protected:
     });
 
     // Register operation conversion patterns that do not need state tracking
-    patterns.add<ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOUnitaryOp,
-                 ConvertQTensorExtractOp, ConvertQTensorInsertOp,
-                 ConvertQCOAllocOp, ConvertQCOStaticOp,
+    patterns.add<ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCODelayOp,
+                 ConvertQCOUnitaryOp, ConvertQTensorExtractOp,
+                 ConvertQTensorInsertOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
                  ConvertQCOGateToQC<qco::GPhaseOp, qc::GPhaseOp, 0, 1>>(
         typeConverter, context);
 

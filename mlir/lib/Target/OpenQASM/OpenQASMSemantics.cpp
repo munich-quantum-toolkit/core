@@ -3471,6 +3471,24 @@ private:
                                analyzeMeasurement(statement.location, data));
             destination.push_back(analyzed);
             return success();
+          } else if constexpr (std::is_same_v<T, SyntaxDelay>) {
+            if (program.openQASM2) {
+              return fail(statement.location, "delay requires OpenQASM 3");
+            }
+            MQT_OQ3_TRY_ASSIGN(qubits, resolveQubitOperand(data.operand));
+            if (qubits.size() != 1) {
+              return fail(data.operand.location,
+                          "delay requires a single qubit");
+            }
+            MQT_OQ3_TRY_ASSIGN(
+                analyzed,
+                addStatement(statement.location, DelayStatement{
+                                                     .qubit = qubits.front(),
+                                                     .duration = data.duration,
+                                                     .unit = data.unit.str(),
+                                                 }));
+            destination.push_back(analyzed);
+            return success();
           } else if constexpr (std::is_same_v<T, SyntaxReset>) {
             MQT_OQ3_TRY_ASSIGN(analyzed,
                                analyzeReset(statement.location, data));

@@ -169,7 +169,7 @@ MQT Core QDMI driver can load external device libraries through
 The C++ QDMI library provides classes for driver sessions, devices, sites,
 operations, and jobs. Each object keeps its driver session alive for as long as
 the object's handle is needed. The library uses the QDMI Client interface and
-does not depend on Core's builtin driver implementation. The Python module
+does not depend on MQT Core's builtin driver implementation. The Python module
 exposes the same entities through {py:mod}`mqt.core.qdmi`.
 
 Native device opening, property queries, job calls, and compiler-target

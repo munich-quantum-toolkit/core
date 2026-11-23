@@ -731,8 +731,8 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
           (isOwnedBufferElement(qubit) ||
            (load && load.getMemref().getDefiningOp<memref::AllocaOp>()));
       if (!consumesReference &&
-          !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, func::CallOp,
-               memref::StoreOp>(user)) {
+          !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, qc::DelayOp,
+               func::CallOp, memref::StoreOp>(user)) {
         return user->emitOpError("cannot consume or return a register-backed "
                                  "qubit reference");
       }
@@ -866,7 +866,7 @@ static void collectScalarRegisters(ModuleOp moduleOp, LoweringState& state) {
         if (consumer->getBlock() != block ||
             !consumer->isBeforeInBlock(deallocation) ||
             !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp,
-                 memref::StoreOp>(consumer)) {
+                 qc::DelayOp, memref::StoreOp>(consumer)) {
           return;
         }
       }
@@ -1348,6 +1348,24 @@ struct ConvertQCMeasureOp final : LoweringPattern<qc::MeasureOp> {
 
     rewriter.replaceOp(op, qcoOp.getResult());
 
+    return success();
+  }
+};
+
+struct ConvertQCDelayOp final : LoweringPattern<qc::DelayOp> {
+  using LoweringPattern::LoweringPattern;
+
+  LogicalResult matchAndRewrite(qc::DelayOp op,
+                                PatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto inputs = op->getOperands();
+    auto materialized = materializeQubits(state, op, inputs, rewriter);
+    auto delay =
+        qco::DelayOp::create(rewriter, op.getLoc(), materialized.values.front(),
+                             op.getDuration(), op.getUnitAttr());
+    commitQubits(state, op, inputs, delay->getResults(), materialized,
+                 rewriter);
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -1892,14 +1910,15 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
   auto* qcDialect = ctx->getLoadedDialect<qc::QCDialect>();
   auto* memrefDialect = ctx->getLoadedDialect<memref::MemRefDialect>();
   RewritePatternSet patterns(ctx);
-  patterns.add<
-      ConvertQCDeallocOp, ConvertQCMeasureOp, ConvertQCResetOp,
-      ConvertQCUnitaryOp, ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCInvOp,
-      ConvertQCPowOp, ConvertQCYieldOp, ConvertSCFForOp, ConvertSCFWhileOp,
-      ConvertSCFIfOp, ConvertSCFIndexSwitchOp, ConvertSCFYieldOp,
-      ConvertSCFConditionOp, ConvertFuncReturnOp, ConvertMemRefAllocOp,
-      ConvertMemRefAllocaOp, ConvertMemRefStoreOp, ConvertMemRefDeallocOp,
-      ConvertFuncOp, ConvertFuncCallOp, ConvertQCCallOp>(ctx, &state);
+  patterns
+      .add<ConvertQCDeallocOp, ConvertQCMeasureOp, ConvertQCResetOp,
+           ConvertQCDelayOp, ConvertQCUnitaryOp, ConvertQCBarrierOp,
+           ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCPowOp, ConvertQCYieldOp,
+           ConvertSCFForOp, ConvertSCFWhileOp, ConvertSCFIfOp,
+           ConvertSCFIndexSwitchOp, ConvertSCFYieldOp, ConvertSCFConditionOp,
+           ConvertFuncReturnOp, ConvertMemRefAllocOp, ConvertMemRefAllocaOp,
+           ConvertMemRefStoreOp, ConvertMemRefDeallocOp, ConvertFuncOp,
+           ConvertFuncCallOp, ConvertQCCallOp>(ctx, &state);
   patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(ctx,
                                                                       &state);
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \

@@ -350,7 +350,7 @@ public:
   [[nodiscard]] FailureOr<IQMJSONProgram>
   intoIQMJSON(const CompilerTarget& target) &&;
 
-  /// Return Core's static gate count of the entry-point IR.
+  /// Return MQT Core's static gate count of the entry-point IR.
   ///
   /// Unitary operations, measurements, and resets each count once. Barriers
   /// are excluded. Each modifier or call counts once without expanding its
@@ -513,7 +513,7 @@ public:
   /// Consume this program and convert it to `jeff` MLIR.
   [[nodiscard]] FailureOr<JeffProgram> intoJeff() &&;
 
-  /// Return Core's static entry-point gate count.
+  /// Return MQT Core's static entry-point gate count.
   ///
   /// Uses the rules of QCProgram::numGates().
   [[nodiscard]] size_t numGates() const;

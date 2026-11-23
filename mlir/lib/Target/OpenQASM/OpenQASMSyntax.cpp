@@ -170,6 +170,11 @@ LogicalResult SyntaxBuilder::reset(SMLoc location, const Operand& operand) {
   return success();
 }
 
+LogicalResult SyntaxBuilder::delay(SMLoc location, SyntaxDelay delay) {
+  std::ignore = addStatement(location, delay);
+  return success();
+}
+
 LogicalResult SyntaxBuilder::barrier(SMLoc location,
                                      ArrayRef<Operand> operands) {
   std::ignore =

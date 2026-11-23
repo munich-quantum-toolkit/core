@@ -402,7 +402,8 @@ static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
       for (auto output : operation->getResults()) {
         sites.try_emplace(output, std::nullopt);
       }
-    } else if (isa<UnitaryOpInterface, ResetOp, MeasureOp>(operation)) {
+    } else if (isa<UnitaryOpInterface, ResetOp, MeasureOp, DelayOp>(
+                   operation)) {
       if (propagate(operation->getOperands(), operation->getResults())
               .wasInterrupted()) {
         return WalkResult::interrupt();
@@ -1013,7 +1014,7 @@ void NativeCostTracker::append(Operation* operation,
     for (size_t vertex : vertices) {
       depths_[vertex] = depth;
     }
-    if (isa<MeasureOp, ResetOp>(operation) &&
+    if (isa<MeasureOp, ResetOp, DelayOp>(operation) &&
         !target_.supports(operation, sites)) {
       available_ = false;
     }
@@ -1731,6 +1732,8 @@ protected:
         }
         arity = unitary.getNumQubits();
         parameterCount = unitary.getNumParams();
+      } else if (isa<DelayOp>(operation)) {
+        parameterCount = 1;
       } else if (!isa<MeasureOp, ResetOp>(operation)) {
         return WalkResult::advance();
       }

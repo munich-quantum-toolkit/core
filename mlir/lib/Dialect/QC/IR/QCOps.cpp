@@ -122,6 +122,10 @@ void QCDialect::initialize() {
 // Interfaces
 //===----------------------------------------------------------------------===//
 
+LogicalResult DelayOp::verify() {
+  return mqt::verifyDelayDuration(*this, getDuration(), getUnit());
+}
+
 LogicalResult mlir::qc::verifyDistinctQubitOperands(Operation* op,
                                                     ValueRange operands) {
   if (operands.size() < 2) {

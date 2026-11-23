@@ -74,7 +74,7 @@ generation.
 
 ## Inspect the canonical instance specification and manifest
 
-An **instance specification** is Core's JSON input for selecting a benchmark
+An **instance specification** is MQT Core's JSON input for selecting a benchmark
 family and its parameters. It may omit documented defaults; the canonical form
 shown below includes every resolved default. Reading a specification creates a
 benchmark instance without generating or executing its program.
@@ -566,7 +566,7 @@ before the transform and measurement.
 
 A {term}`semiclassical QFT` replaces controlled gates before measurement with
 single-qubit gates and classical feedback. This does not by itself require qubit
-reuse. Core's benchmark also prepares its input one bit at a time, so its
+reuse. MQT Core's benchmark also prepares its input one bit at a time, so its
 semiclassical implementation can measure, reset, and reuse a single qubit. Both
 methods produce `qubits` output bits and use the same reference distribution;
 `qubits` is the transform width, not necessarily the number of qubits needed by
@@ -580,7 +580,7 @@ measures, resets, and reuses one query qubit with measurement feedback,
 following the
 [iterative phase-estimation construction](https://arxiv.org/abs/quant-ph/0610214).
 The controlled unitary powers extract information about the eigenphase, while
-the feedback implements a semiclassical inverse QFT. At eight-bit precision
+the feedback implements a semiclassical inverse QFT. At eight-bit precision MQT
 Core's two methods use nine and two qubits, respectively.
 
 ```{code-cell} ipython3

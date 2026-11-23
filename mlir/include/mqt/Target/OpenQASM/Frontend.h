@@ -381,6 +381,12 @@ struct ResetStatement {
   std::vector<QubitReference> qubits;
 };
 
+struct DelayStatement {
+  QubitReference qubit;
+  std::variant<uint64_t, double> duration;
+  std::string unit;
+};
+
 struct BarrierStatement {
   std::vector<QubitReference> qubits;
 };
@@ -422,14 +428,13 @@ struct SwitchStatement {
   std::vector<StatementId> defaultStatements;
 };
 
-using StatementData =
-    std::variant<DeclarationStatement, ScalarDeclarationStatement,
-                 ArrayDeclarationStatement, ArrayAssignmentStatement,
-                 ArrayCopyStatement, ScalarAssignmentStatement,
-                 BitAssignmentStatement, BitVectorAssignmentStatement,
-                 GateApplication, MeasurementStatement, ResetStatement,
-                 BarrierStatement, IfStatement, ForStatement, WhileStatement,
-                 SwitchStatement, BreakStatement, ContinueStatement>;
+using StatementData = std::variant<
+    DeclarationStatement, ScalarDeclarationStatement, ArrayDeclarationStatement,
+    ArrayAssignmentStatement, ArrayCopyStatement, ScalarAssignmentStatement,
+    BitAssignmentStatement, BitVectorAssignmentStatement, GateApplication,
+    MeasurementStatement, ResetStatement, DelayStatement, BarrierStatement,
+    IfStatement, ForStatement, WhileStatement, SwitchStatement, BreakStatement,
+    ContinueStatement>;
 
 struct Statement {
   StatementData data;

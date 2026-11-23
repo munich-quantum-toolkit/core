@@ -1792,6 +1792,9 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
                           unitary.getParameter(index));
                     });
   }
+  if (isa<qco::DelayOp>(operation)) {
+    return supports("delay", 1, 1);
+  }
   if (isa<qco::MeasureOp>(operation)) {
     return supports("measure", 1, 0);
   }

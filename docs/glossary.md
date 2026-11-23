@@ -3,8 +3,8 @@
 # Glossary
 
 Use this glossary to look up recurring quantum-computing and compiler terms.
-General definitions are separate from Core-specific behavior. API objects and
-benchmark schemas are explained in their owning guides and references.
+Entries give the general definition and explain how MQT Core uses the term where
+relevant. The guides and references describe API objects and benchmark schemas.
 
 For general MLIR terminology, see the [MLIR glossary][mlir-glossary]. The linked
 guides explain how the concepts fit together in a program.
@@ -47,7 +47,7 @@ physical qubit
 
 target site
   A hardware location, such as a physical qubit or computational resonator.
-  Core represents these locations by site IDs in a compiler target; see
+  MQT Core represents these locations by site IDs in a compiler target; see
   [placement and routing](mlir/target_compilation.md#placement-and-routing)
   for how sites are selected.
 
@@ -55,7 +55,7 @@ computational resonator
   In [IQM devices](https://docs.iqm.tech/iqm-client/user_guide_qiskit.html#computational-resonators),
   a resonator that temporarily stores quantum states and mediates operations
   between qubits. See the [MOVE compilation guide](mlir/target_compilation.md#resonator-mediated-compilation)
-  for Core's supported use of resonators.
+  for MQT Core's supported use of resonators.
 
 MOVE
 MOVE gate
@@ -73,7 +73,7 @@ routing
   Inserting operations, often SWAPs, so that interacting qubits can reach
   connected device sites. Routing can change where each program qubit's state
   resides. A routing permutation records that change; its direction depends
-  on the interface. Core's maps are described in the
+  on the interface. MQT Core's maps are described in the
   [Qiskit layout reference](mlir/qiskit.md#transpiler-layouts).
 
 Pauli string
@@ -107,7 +107,7 @@ modular multiplier
   implementations can update an input register or write the result to a
   separate register. [Beauregard](https://arxiv.org/abs/quant-ph/0205095)
   describes modular multiplication for quantum order finding. See the
-  [benchmark guide](benchmarks.md#modular-multiplier) for Core's chosen circuit.
+  [benchmark guide](benchmarks.md#modular-multiplier) for MQT Core's chosen circuit.
 
 MQSC
 Munich Quantum Software Company
@@ -248,7 +248,7 @@ GPi/GPi2 gate set
   GPi applies a half turn and GPi2 a quarter turn about an axis in the Bloch
   sphere's equatorial plane. Their phase parameter selects the axis. See the
   [target reference](mlir/target_compilation.md#native-single-qubit-gates)
-  for Core's rotation representation, angle units, and global-phase convention.
+  for MQT Core's rotation representation, angle units, and global-phase convention.
 
 conversion target
   The MLIR legality rules used by a dialect conversion. It is distinct from an
@@ -273,7 +273,7 @@ dynamic
   size is constant. Allocation and qubit placement are separate concepts.
 
 static gate count
-  Core's count of quantum operations in the entry-point IR, including
+  MQT Core's count of quantum operations in the entry-point IR, including
   measurements and resets. Each branch and loop body is visited once; calls
   and modifiers each count once without expanding their bodies. Barriers are
   excluded. This metric does not count runtime executions or every MLIR
@@ -314,7 +314,7 @@ linear ownership
   silently discarded. Linear and affine type systems are used to control
   quantum resources; [Selinger and Valiron](https://arxiv.org/abs/cs/0404056)
   give an affine formulation, which permits discarding but not duplication.
-  Core's [quantum resource rules](mlir/index.md#quantum-resource-rules)
+  MQT Core's [quantum resource rules](mlir/index.md#quantum-resource-rules)
   specify its exact-use and wire correspondence requirements separately.
 ```
 
@@ -336,7 +336,7 @@ magic-state distillation
   outputs according to measurement outcomes. See
   [Bravyi and Kitaev](https://arxiv.org/abs/quant-ph/0403025) for the general
   construction and the [benchmark guide](benchmarks.md#magic-state-distillation)
-  for Core's chosen protocol and ideal-input checks.
+  for MQT Core's chosen protocol and ideal-input checks.
 
 iterative quantum phase estimation
 iterative QPE
@@ -347,7 +347,7 @@ iQPE
   earlier measurement outcomes determine later phase corrections. It combines
   phase estimation with a semiclassical inverse QFT; a semiclassical QFT alone
   does not require qubit reuse. See the
-  [QPE benchmark](benchmarks.md#quantum-phase-estimation) for Core's circuit.
+  [QPE benchmark](benchmarks.md#quantum-phase-estimation) for MQT Core's circuit.
 
 Shor's algorithm
   A factoring algorithm
@@ -385,7 +385,7 @@ semiclassical QFT
   controlled two-qubit gates. [Griffiths and Niu](https://arxiv.org/abs/quant-ph/9511007)
   describe this construction. Qubit recycling is an additional choice that
   depends on how the input is prepared; it is not part of the general
-  definition. See [Core's QFT benchmark](benchmarks.md#quantum-fourier-transform)
+  definition. See [MQT Core's QFT benchmark](benchmarks.md#quantum-fourier-transform)
   for its one-qubit implementation.
 
 W state

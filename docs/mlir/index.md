@@ -48,7 +48,7 @@ behavior. The {doc}`register tutorial <../tutorials/control_flow>` introduces
 these rules with an executable example.
 
 Quantum SSA representations have prior examples such as
-[QSSA](https://arxiv.org/abs/2109.02409). The rules below specify Core's
+[QSSA](https://arxiv.org/abs/2109.02409). The rules below specify MQT Core's
 representation: exactly-one-use and positional wire correspondence are distinct
 requirements. `WireOpInterface` pairs the first quantum input with the first
 quantum output, and so on; use counts alone do not establish that relation.

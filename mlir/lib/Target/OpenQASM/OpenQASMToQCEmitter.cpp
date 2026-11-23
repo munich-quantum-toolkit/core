@@ -421,6 +421,10 @@ private:
                   return qubit.kind == frontend::QubitReferenceKind::Hardware;
                 });
               }
+              if constexpr (std::is_same_v<T, frontend::DelayStatement>) {
+                return data.qubit.kind ==
+                       frontend::QubitReferenceKind::Hardware;
+              }
               return false;
             },
             statement.data);
@@ -1748,6 +1752,23 @@ private:
               }
               builder.reset(resolveQubit(qubit, gateQubits, indices.front()));
             }
+          } else if constexpr (std::is_same_v<T, frontend::DelayStatement>) {
+            const auto indices = emitQubitIndices({data.qubit});
+            if (emissionBudget.isExhausted()) {
+              return;
+            }
+            Attribute duration;
+            if (const auto* ticks = std::get_if<uint64_t>(&data.duration)) {
+              duration = builder.getIntegerAttr(
+                  builder.getIntegerType(64, false), APInt(64, *ticks));
+            } else {
+              duration =
+                  builder.getF64FloatAttr(std::get<double>(data.duration));
+            }
+            qc::DelayOp::create(
+                builder, loc,
+                resolveQubit(data.qubit, gateQubits, indices.front()), duration,
+                builder.getStringAttr(data.unit));
           } else if constexpr (std::is_same_v<T, frontend::BarrierStatement>) {
             const auto indices = emitQubitIndices(data.qubits);
             if (emissionBudget.isExhausted()) {

@@ -159,12 +159,12 @@ struct QubitMap {
     return it->second;
   }
 
-  LogicalResult remapUnitary(UnitaryOpInterface unitary) {
+  LogicalResult remapWires(WireOpInterface wires) {
     for (auto [in, out] :
-         llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
+         llvm::zip_equal(wires.getInputQubits(), wires.getOutputQubits())) {
       const auto q = lookup(in);
       if (!q) {
-        return unitary.emitError()
+        return wires.emitError()
                << "qubit SSA value is not mapped for QCO DD construction";
       }
       bind(out, *q);
@@ -481,7 +481,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
     return success();
   }
   if (isa<BarrierOp>(op)) {
-    return walk.qubits->remapUnitary(unitary);
+    return walk.qubits->remapWires(unitary);
   }
   DynamicMatrix local;
   if (auto power = dyn_cast<PowOp>(op)) {
@@ -517,7 +517,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
     return op->emitError(llvm::toString(matrix.takeError()));
   }
   state = walk.dd->applyOperation(*matrix, state);
-  return walk.qubits->remapUnitary(unitary);
+  return walk.qubits->remapWires(unitary);
 }
 
 template <typename StateDD>
@@ -581,7 +581,7 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
     matrix = *result;
   }
   state = walk.dd->applyOperation(matrix, state);
-  return walk.qubits->remapUnitary(unitary);
+  return walk.qubits->remapWires(unitary);
 }
 
 static LogicalResult validateReturn(func::ReturnOp returnOp,
@@ -1921,6 +1921,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         return storeRegister(store, *walk.classical);
       })
       .Case([](memref::DeallocOp) { return success(); })
+      .Case([&](DelayOp delay) { return walk.qubits->remapWires(delay); })
       .Case([&](MeasureOp measureOp) -> LogicalResult {
         if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
           return measureOp.emitError()

@@ -397,7 +397,7 @@ def test_backend_serialization_without_supported_formats() -> None:
     ],
 )
 def test_backend_qasm_serialization(formats: list[ProgramFormat], expected: ProgramFormat) -> None:
-    """Core preserves operations in each advertised OpenQASM format."""
+    """MQT Core preserves operations in each advertised OpenQASM format."""
     circuit = QuantumCircuit(2)
     circuit.h(0)
     circuit.cx(0, 1)

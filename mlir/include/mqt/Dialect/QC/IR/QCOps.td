@@ -100,7 +100,7 @@ def StaticOp : QCOp<"static", [Pure]> {
 }
 
 //===----------------------------------------------------------------------===//
-// Measurement and Reset Operations
+// Measurement, Delay, and Reset Operations
 //===----------------------------------------------------------------------===//
 
 def MeasureOp : QCOp<"measure", [DeclareOpInterfaceMethods<
@@ -121,6 +121,18 @@ def MeasureOp : QCOp<"measure", [DeclareOpInterfaceMethods<
   let assemblyFormat = [{
         $qubit `:` type($qubit) `->` type($result) attr-dict
     }];
+}
+
+def DelayOp : QCOp<"delay"> {
+  let summary = "Idle a qubit for a constant duration";
+  let description = [{
+    Clock ticks (`dt`) use an unsigned 64-bit integer. SI durations use a
+    finite, nonnegative floating-point value and the specified time unit.
+  }];
+  let arguments = (ins QubitArg<QubitType, "the idle qubit">:$qubit,
+      AnyAttrOf<[UI64Attr, F64Attr]>:$duration, StrAttr:$unit);
+  let assemblyFormat = "$qubit $duration $unit attr-dict `:` type($qubit)";
+  let hasVerifier = 1;
 }
 
 def ResetOp : QCOp<"reset"> {

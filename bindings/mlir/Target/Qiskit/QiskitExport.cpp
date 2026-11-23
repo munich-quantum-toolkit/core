@@ -80,6 +80,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt::bindings::qiskit {
@@ -99,6 +100,7 @@ struct ExportedInstruction {
     CustomGate,
     Measure,
     Reset,
+    Delay,
     Barrier,
     Unitary,
     Store,
@@ -109,6 +111,7 @@ struct ExportedInstruction {
   std::string customGate;
   std::vector<uint32_t> qubits;
   std::optional<std::string> barrierLabel = std::nullopt;
+  std::unique_ptr<DelayDuration> delay;
   uint32_t clbit = 0;
   std::vector<Parameter> parameters;
   std::vector<std::complex<double>> matrix;
@@ -2657,6 +2660,22 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         });
         continue;
       }
+      if (auto delay = llvm::dyn_cast<mlir::qc::DelayOp>(operation)) {
+        DelayDuration duration{.unit = delay.getUnit().str()};
+        if (const auto ticks =
+                llvm::dyn_cast<mlir::IntegerAttr>(delay.getDuration())) {
+          duration.value = ticks.getValue().getZExtValue();
+        } else {
+          duration.value = llvm::cast<mlir::FloatAttr>(delay.getDuration())
+                               .getValueAsDouble();
+        }
+        circuit.instructions.push_back({
+            .kind = ExportedInstruction::Kind::Delay,
+            .qubits = mapQubits(delay.getQubit(), state.qubits),
+            .delay = std::make_unique<DelayDuration>(std::move(duration)),
+        });
+        continue;
+      }
       if (auto reset = llvm::dyn_cast<mlir::qc::ResetOp>(operation)) {
         circuit.instructions.push_back({
             .kind = ExportedInstruction::Kind::Reset,
@@ -2829,6 +2848,9 @@ static void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer) {
       break;
     case ExportedInstruction::Kind::Measure:
       writer.addMeasure(instruction.qubits.at(0), instruction.clbit);
+      break;
+    case ExportedInstruction::Kind::Delay:
+      writer.addDelay(instruction.qubits.front(), *instruction.delay);
       break;
     case ExportedInstruction::Kind::Reset:
       writer.addReset(instruction.qubits.at(0));

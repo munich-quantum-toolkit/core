@@ -31,6 +31,7 @@
 #include <qiskit.h> // Must precede the extension function table.
 #include <qiskit/funcs_py.h>
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
@@ -59,6 +60,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 // Qiskit's generated extension-table macros expand to C function-pointer casts
@@ -1075,7 +1077,42 @@ public:
   instruction(const size_t index, const bool opaque = false) const override {
     const auto kind = instructionKind(index);
     if (kind == OperationKind::Delay) {
-      return {.kind = kind, .name = "delay"};
+      const auto operation = pythonOperation(index);
+      auto unit = nb::cast<std::string>(operation.attr("unit"));
+      nb::object value = operation.attr("duration");
+      if (unit == "expr") {
+        if (!nb::isinstance(
+                value, nb::module_::import_("qiskit.circuit.classical.expr")
+                           .attr("Value"))) {
+          throw std::runtime_error("Qiskit delay requires a duration literal");
+        }
+        const auto literal = value.attr("value");
+        unit = nb::cast<std::string>(literal.attr("unit")());
+        value = literal.attr("value")();
+      }
+      DelayDuration duration{.unit = unit};
+      if (unit == "dt") {
+        uint64_t ticks = 0;
+        if (!nb::try_cast(value, ticks)) {
+          throw std::runtime_error(
+              "Qiskit delay requires constant unsigned clock ticks");
+        }
+        duration.value = ticks;
+      } else {
+        double amount = 0;
+        if (!nb::try_cast(value, amount) || !std::isfinite(amount) ||
+            amount < 0) {
+          throw std::runtime_error(
+              "Qiskit delay requires a finite nonnegative duration");
+        }
+        duration.value = amount;
+      }
+      return {
+          .kind = kind,
+          .name = "delay",
+          .qubits = pythonInstructionBits(index, "qubits"),
+          .delay = std::make_unique<DelayDuration>(std::move(duration)),
+      };
     }
     if (kind == OperationKind::ControlFlow) {
       return {.kind = kind, .name = "control_flow"};
@@ -2683,6 +2720,31 @@ public:
     checkExitCode(qk_circuit_reset(circuit_, qubit), "adding reset");
   }
 
+  void addDelay(const uint32_t qubit, const DelayDuration& duration) override {
+    if (target_ != nullptr &&
+        target_->nativeOperationsKind() ==
+            mlir::CompilerTarget::NativeOperations::Kind::Explicit) {
+      const mlir::CompilerTarget::SiteId site = qubit;
+      if (!target_->supportsOperation("delay", 1, 1, llvm::ArrayRef(site))) {
+        throw std::runtime_error(
+            "target operation cannot be emitted as native Qiskit delay");
+      }
+    }
+    if (const auto* ticks = std::get_if<uint64_t>(&duration.value)) {
+      pythonCircuit_.attr("delay")(*ticks, qubit, "dt");
+    } else {
+      // QPY preserves SI units in typed duration literals.
+      const auto literal =
+          nb::module_::import_("qiskit.circuit")
+              .attr("Duration")
+              .attr(duration.unit.c_str())(std::get<double>(duration.value));
+      const auto expression =
+          nb::module_::import_("qiskit.circuit.classical.expr")
+              .attr("lift")(literal);
+      pythonCircuit_.attr("delay")(expression, qubit);
+    }
+  }
+
   void addBarrier(const std::vector<uint32_t>& qubits,
                   const std::optional<std::string>& label) override {
     if (label) {
@@ -3137,9 +3199,9 @@ public:
     const auto circuit = nb::module_::import_("qiskit.circuit");
     const auto controlFlow = nb::module_::import_("qiskit.circuit.controlflow");
     const auto ignoredTypes = nb::make_tuple(
-        circuit.attr("Barrier"), circuit.attr("Delay"),
-        circuit.attr("ControlFlowOp"), controlFlow.attr("BreakLoopOp"),
-        controlFlow.attr("ContinueLoopOp"), circuit.attr("Store"));
+        circuit.attr("Barrier"), circuit.attr("ControlFlowOp"),
+        controlFlow.attr("BreakLoopOp"), controlFlow.attr("ContinueLoopOp"),
+        circuit.attr("Store"));
     const auto available = target.attr("operation_names");
     std::set<std::string> names;
     for (auto item : nb::borrow<nb::iterable>(operationNames.is_none()
@@ -3155,6 +3217,8 @@ public:
       }
     }
 
+    bool hasGlobalInstruction = false;
+    bool hasGlobalDelay = false;
     std::vector<Target::OperationCapability> operations;
     for (const auto& operationName : names) {
       const auto quotedName =
@@ -3173,8 +3237,10 @@ public:
       const auto instructionType =
           instruction.is_type() ? nb::handle(instruction) : instruction.type();
       const auto rAngle = nativeRAngle(instruction, operationName);
+      const bool isDelay = nb::isinstance(instruction, circuit.attr("Delay"));
       const auto nativeName =
-          rAngle ? std::optional<std::string>("r")
+          rAngle    ? std::optional<std::string>("r")
+          : isDelay ? std::optional<std::string>("delay")
           : nb::isinstance(instruction, circuit.attr("Measure"))
               ? std::optional<std::string>("measure")
           : nb::isinstance(instruction, circuit.attr("Reset"))
@@ -3198,12 +3264,8 @@ public:
           (instruction.is_type() ||
            nb::cast<size_t>(instruction.attr("num_qubits")) > 0)) {
         if (qargs.is_none()) {
-          const auto width = nb::cast<size_t>(target.attr("num_qubits"));
-          if (activeSites->size() != width) {
-            for (size_t site = 0; site < width; ++site) {
-              activeSites->insert(static_cast<Target::SiteId>(site));
-            }
-          }
+          hasGlobalDelay |= isDelay;
+          hasGlobalInstruction |= !isDelay;
         } else {
           for (auto tuple : nb::borrow<nb::iterable>(qargs)) {
             for (auto site : nb::borrow<nb::iterable>(tuple)) {
@@ -3231,7 +3293,8 @@ public:
                  (mlir::nativeRAlias(operationName) && !rAngle)) {
         reason = "custom or unsupported operation";
       } else if (operationName != *nativeName &&
-                 (*nativeName == "measure" || *nativeName == "reset")) {
+                 (*nativeName == "measure" || *nativeName == "reset" ||
+                  isDelay)) {
         reason = "custom operation name";
       } else {
         const nb::object parameters = instruction.attr("params");
@@ -3249,6 +3312,12 @@ public:
             }
             fixedParameters.emplace_back(number);
           }
+        }
+        // A fixed delay includes its time unit, which a numeric target
+        // parameter cannot express.
+        if (isDelay &&
+            (fixedParameters.size() != 1 || fixedParameters.front())) {
+          supported = false;
         }
         if (supported && nb::cast<bool>(target.attr("gate_has_angle_bounds")(
                              operationName))) {
@@ -3323,6 +3392,15 @@ public:
     }
     operations.push_back(unwrap(Target::OperationCapability::create(
         "gphase", Target::OperationCapability::Arity::fixed(0), 1)));
+    // A global delay applies to the sites exposed by the other instructions.
+    // It can also be the only instruction on a target.
+    if (activeSites != nullptr &&
+        (hasGlobalInstruction || (hasGlobalDelay && activeSites->empty()))) {
+      const auto width = nb::cast<size_t>(target.attr("num_qubits"));
+      for (size_t site = 0; site < width; ++site) {
+        activeSites->insert(static_cast<Target::SiteId>(site));
+      }
+    }
     return Target::NativeOperations::fromOperations(operations);
   }
 

@@ -216,9 +216,13 @@ returns an ordered list of programs. The lower-level
 
 `run()` also accepts native `QuantumCircuit` inputs. It validates their gates,
 parameters and placements, then uses {py:func}`~mqt.core.mlir.serialize_program`
-without synthesis or routing. Compiled programs retain their exact serialized
-program and result layout. Programs from another environment are checked for
-compatibility before any job in the batch is submitted.
+without synthesis or routing. For devices that advertise `delay`, native Qiskit
+circuits can be serialized to QPY or OpenQASM 3 with constant delays in device
+clock ticks or SI time units. Bind the duration before submission. Use `run()`
+directly to preserve an existing physical schedule. `compile()` can also map a
+circuit that contains explicit delays. Compiled programs retain their exact
+serialized program and result layout. Programs from another environment are
+checked for compatibility before any job in the batch is submitted.
 
 Serialized programs, result layouts, and copied circuit headers survive retries
 without reserialization. Persist all three for cross-process recovery; a remote

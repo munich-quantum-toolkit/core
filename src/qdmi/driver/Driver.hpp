@@ -507,7 +507,7 @@ public:
   /// @see QDMI_session_alloc
   int sessionAlloc(QDMI_Session* session);
 
-  /// Allocates a strict one-device session for the private Core extension.
+  /// Allocates a strict one-device session for the private MQT Core extension.
   int sessionAllocForDevice(std::string_view id,
                             const DeviceSessionConfig& config,
                             QDMI_Session* session);

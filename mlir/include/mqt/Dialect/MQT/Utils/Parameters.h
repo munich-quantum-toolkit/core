@@ -10,11 +10,13 @@
 
 #pragma once
 
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
 #include <cstdint>
@@ -22,6 +24,10 @@
 #include <variant>
 
 namespace mlir::mqt {
+
+/// Check the duration and unit of a QC or QCO delay.
+[[nodiscard]] LogicalResult
+verifyDelayDuration(Operation* op, Attribute duration, StringRef unit);
 
 /// Absolute tolerance used when comparing static operation parameters.
 inline constexpr double PARAMETER_COMPARISON_TOLERANCE = 1e-15;
