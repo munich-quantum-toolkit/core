@@ -113,7 +113,7 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 | ----------------------------------------------------------------------- | -------------------- | ---------------------------------- |
 | Standard gates, constructible numeric modifiers, and global phase       | Supported            | Supported                          |
 | Other finite numeric modifiers                                          | Supported            | Rejected                           |
-| Measurement, reset, single-qubit delays, and barriers with labels       | Supported            | Supported                          |
+| Measurement, reset, delays, and barriers with labels                    | Supported            | Supported                          |
 | Canonical named registers and leading loose bits                        | Supported            | Explicit registers                 |
 | Custom Gates with finite, acyclic definitions                           | Reusable functions   | Custom Gates                       |
 | Generic instructions with finite, acyclic definitions                   | Recursively expanded | Expanded operations                |
@@ -133,10 +133,12 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 | Empty registers, root aliases, or interleaved root membership           | Rejected             | Rejected                           |
 | Complete transpiler layout metadata                                     | Preserved            | Reconstructed when still valid     |
 
-A single-qubit `Delay` with a literal duration is supported before and after
-placement. Gates on that wire stay ordered around the delay. Integer clock ticks
-retain their exact count. SI durations retain their unit in QPY. Schedule with
-Qiskit when the execution requires explicit start times or idle padding.
+Core accepts Qiskit delays with literal durations in device ticks or SI units.
+For example, `circuit.delay(32, [0, 1], unit="dt")` inserts an independent
+32-tick wait on each of the two qubits. Core preserves each wait and its order
+relative to gates on that wire through placement. QPY retains exact integer tick
+counts and the units of SI durations. Schedule with Qiskit when execution
+requires explicit start times or idle padding.
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
