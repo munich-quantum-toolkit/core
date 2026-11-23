@@ -17,6 +17,7 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
+#include "Qiskit.h"
 #include "QiskitTranslation.h"
 #include "Result.hpp"
 
@@ -30,6 +31,7 @@
 #include <qiskit.h> // Must precede the extension function table.
 #include <qiskit/funcs_py.h>
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
@@ -58,6 +60,7 @@
 #include <tuple>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 // Qiskit's generated extension-table macros expand to C function-pointer casts
@@ -748,6 +751,7 @@ struct VersionGate {
 [[nodiscard]] static const auto& gateMap() {
   using Gate = mlir::qc::StandardGate;
   static const std::array GATES{
+      VersionGate{"global_phase", QkGate_GlobalPhase, {Gate::GPhase, 0}},
       VersionGate{"h", QkGate_H, {Gate::H, 0}},
       VersionGate{"id", QkGate_I, {Gate::Id, 0}},
       VersionGate{"x", QkGate_X, {Gate::X, 0}},
@@ -831,7 +835,8 @@ standardGateMapping(const std::string_view name) {
 /// GPI and GPI2 are target names for fixed-angle R gates with one phase.
 [[nodiscard]] static std::optional<double>
 nativeRAngle(nb::handle operation, const std::string_view name) {
-  if ((name != "gpi" && name != "gpi2") ||
+  const auto alias = mlir::nativeRAlias(name);
+  if (!alias ||
       !nb::isinstance(operation,
                       nb::module_::import_("qiskit.circuit").attr("Gate"))) {
     return std::nullopt;
@@ -841,15 +846,25 @@ nativeRAngle(nb::handle operation, const std::string_view name) {
       nb::cast<size_t>(operation.attr("num_qubits")) != 1) {
     return std::nullopt;
   }
-  const auto angle = name == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
   try {
-    auto expected = nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
-    expected.attr("r")(angle, parameters[nb::int_(0)], 0);
-    if (name == "gpi") {
-      expected.attr("global_phase") = std::numbers::pi / 2.;
+    const nb::object body = operation.attr("definition");
+    if (body.is_none() || nb::cast<size_t>(body.attr("num_qubits")) != 1U ||
+        nb::cast<size_t>(body.attr("num_clbits")) != 0U ||
+        nb::cast<size_t>(body.attr("num_vars")) != 0U ||
+        !body.attr("global_phase").equal(nb::float_(alias->globalPhase))) {
+      return std::nullopt;
     }
-    if (operation.attr("definition").equal(expected)) {
-      return angle;
+    const nb::object data = body.attr("data");
+    if (nb::len(data) == 1U) {
+      const nb::object gate = data[nb::int_(0)].attr("operation");
+      const nb::object angles = gate.attr("params");
+      if (gate.type().is(
+              nb::module_::import_("qiskit.circuit.library").attr("RGate")) &&
+          nb::len(angles) == 2U &&
+          angles[nb::int_(0)].equal(nb::float_(alias->angle)) &&
+          angles[nb::int_(1)].equal(parameters[nb::int_(0)])) {
+        return alias->angle;
+      }
     }
   } catch (const nb::python_error&) {
     // Other custom definitions use normal circuit import.
@@ -877,8 +892,8 @@ public:
       // Array-valued parameters specialize the definition, not its scalar
       // call signature. Compare those definitions in one fallback bucket.
     }
-    // ponytail: use a structural circuit hash if many same-signature Gate
-    // definitions become common.
+    // Definitions with equal signatures can have different bodies; compare
+    // them within each hash bucket.
     auto& bucket =
         definitions_[llvm::StringRef(name.data(), name.size())][parameterHash];
     for (const auto& entry : bucket) {
@@ -1036,10 +1051,11 @@ public:
       throw std::runtime_error("Qiskit initial layout must cover every qubit");
     }
     const auto count = metadata.attr("_input_qubit_count");
-    if (count.is_none()) {
-      throw std::runtime_error("Qiskit layout requires an input qubit count");
-    }
-    result.inputCount = nb::cast<int64_t>(count);
+    // Physical OpenQASM imports leave the count unset: every mapped qubit is
+    // an input, with no separately identified transpiler workspace.
+    result.inputCount = count.is_none()
+                            ? static_cast<int64_t>(result.initial.size())
+                            : nb::cast<int64_t>(count);
     if (const auto final = metadata.attr("final_layout"); !final.is_none()) {
       if (metadata.attr("_output_qubit_list").is_none()) {
         throw std::runtime_error(
@@ -1061,13 +1077,54 @@ public:
   instruction(const size_t index, const bool opaque = false) const override {
     const auto kind = instructionKind(index);
     if (kind == OperationKind::Delay) {
-      return {.kind = kind, .name = "delay"};
+      const auto operation = pythonOperation(index);
+      auto unit = nb::cast<std::string>(operation.attr("unit"));
+      nb::object value = operation.attr("duration");
+      if (unit == "expr") {
+        if (!nb::isinstance(
+                value, nb::module_::import_("qiskit.circuit.classical.expr")
+                           .attr("Value"))) {
+          throw std::runtime_error("Qiskit delay requires a duration literal");
+        }
+        const auto literal = value.attr("value");
+        unit = nb::cast<std::string>(literal.attr("unit")());
+        value = literal.attr("value")();
+      }
+      DelayDuration duration{.unit = unit};
+      if (unit == "dt") {
+        uint64_t ticks = 0;
+        if (!nb::try_cast(value, ticks)) {
+          throw std::runtime_error(
+              "Qiskit delay requires constant unsigned clock ticks");
+        }
+        duration.value = ticks;
+      } else {
+        double amount = 0;
+        if (!nb::try_cast(value, amount) || !std::isfinite(amount) ||
+            amount < 0) {
+          throw std::runtime_error(
+              "Qiskit delay requires a finite nonnegative duration");
+        }
+        duration.value = amount;
+      }
+      return {
+          .kind = kind,
+          .name = "delay",
+          .qubits = pythonInstructionBits(index, "qubits"),
+          .delay = std::make_unique<DelayDuration>(std::move(duration)),
+      };
     }
     if (kind == OperationKind::ControlFlow) {
       return {.kind = kind, .name = "control_flow"};
     }
     if (opaque && kind == OperationKind::Unknown) {
       const auto operation = pythonOperation(index);
+      if (nb::isinstance(
+              operation,
+              nb::module_::import_("qiskit.circuit").attr("ControlledGate")) &&
+          canUnwrapControl(operation)) {
+        return instruction(index, false);
+      }
       if (nb::isinstance(operation,
                          nb::module_::import_("qiskit.circuit").attr("Gate"))) {
         if (nb::cast<size_t>(operation.attr("num_qubits")) == 0U) {
@@ -1210,6 +1267,12 @@ public:
             "Qiskit Python and native parameter counts do not match");
       }
 #endif
+    }
+    if (kind == OperationKind::Barrier) {
+      const nb::object label = pythonOperation(index).attr("label");
+      if (!label.is_none()) {
+        result.barrierLabel = nb::cast<std::string>(label);
+      }
     }
     result.standardGate = standardGateMapping(result.name);
     return result;
@@ -2284,7 +2347,11 @@ private:
 
 using PythonParameterGroups = llvm::StringMap<nb::object>;
 using PythonSymbols = llvm::StringMap<nb::object>;
-using NativeGateRegistry = llvm::StringMap<nb::object>;
+struct OutputGate {
+  nb::object operation;
+  std::string nativeName;
+};
+using NativeGateRegistry = llvm::StringMap<OutputGate>;
 
 struct OutputParameters {
   PythonSymbols symbols;
@@ -2370,14 +2437,14 @@ public:
     nb::dict indices;
     for (auto [index, site] : llvm::enumerate(layout.initial)) {
       const auto bit = input[nb::int_(index)];
-      initial[bit] = nb::int_(site);
+      initial[nb::int_(site)] = bit;
       indices[bit] = nb::int_(index);
     }
     nb::object final = nb::none();
     if (layout.routing) {
       nb::dict positions;
       for (auto [site, output] : llvm::enumerate(*layout.routing)) {
-        positions[physical[site]] = nb::int_(output);
+        positions[nb::int_(output)] = physical[site];
       }
       final = transpiler.attr("Layout")(positions);
     }
@@ -2392,38 +2459,66 @@ public:
                const std::vector<Parameter>& parameters) override {
     const auto* gate = versionGate(mapping);
     std::string nativeName;
-    if (target_ != nullptr && gate != nullptr) {
-      for (const auto& operation : target_->operations()) {
+    bool fixedExchange = false;
+    if (target_ != nullptr &&
+        target_->nativeOperationsKind() ==
+            mlir::CompilerTarget::NativeOperations::Kind::Explicit) {
+      llvm::SmallVector<mlir::CompilerTarget::SiteId, 4> sites(qubits.begin(),
+                                                               qubits.end());
+      llvm::SmallVector<std::optional<double>, 4> values;
+      values.reserve(parameters.size());
+      for (const auto& parameter : parameters) {
+        const auto* number = parameter.getNumber();
+        values.push_back(number != nullptr ? std::optional{number->value}
+                                           : std::nullopt);
+      }
+      const auto compatible = [&](const auto& operation) {
         const auto* candidate = versionGate(operation.canonicalName());
-        if (candidate == nullptr || candidate->translation != mapping ||
-            !operation.arity().accepts(qubits.size()) ||
-            operation.numParameters() != parameters.size() ||
-            !std::ranges::all_of(
-                std::views::iota(size_t{0}, operation.numParameters()),
-                [&](size_t index) {
-                  const auto* actual = parameters[index].getNumber();
-                  return operation.acceptsParameter(
-                      index, actual != nullptr ? std::optional{actual->value}
-                                               : std::nullopt);
-                })) {
-          continue;
+        return candidate != nullptr &&
+               (candidate->translation == mapping ||
+                (operation.arity().kind() ==
+                     mlir::CompilerTarget::OperationCapability::Arity::Kind::
+                         Variadic &&
+                 candidate->translation ==
+                     StandardGateMapping{mapping.gate, 0}));
+      };
+      const auto& descriptor =
+          mlir::qc::getStandardGateDescriptor(mapping.gate);
+      auto selected =
+          target_->findOperation(descriptor.operationSymbol, qubits.size(),
+                                 values, sites, mapping.controls, compatible);
+      if (selected.capability == nullptr && gate != nullptr &&
+          (mapping.controls != 0 ||
+           llvm::StringRef(gate->name) != descriptor.operationSymbol)) {
+        selected = target_->findOperation(gate->name, qubits.size(), values,
+                                          sites, 0, compatible);
+      }
+      if (selected.capability == nullptr &&
+          mapping == StandardGateMapping{mlir::qc::StandardGate::XXPlusYY, 0} &&
+          values.size() == 2 && mlir::isSqrtISwap(values[0], values[1])) {
+        selected =
+            target_->findOperation("sqrt_iswap", qubits.size(), {}, sites);
+        fixedExchange = selected.capability != nullptr;
+      }
+      if (selected.capability != nullptr && !selected.genericControls) {
+        const auto& operation = *selected.capability;
+        if (!fixedExchange) {
+          gate = versionGate(operation.canonicalName());
         }
         if (const auto* named = versionGate(operation.name());
             named != nullptr && named->translation == mapping) {
-          candidate = named;
+          gate = named;
         }
-        if (operation.siteTuples().empty() ||
-            std::ranges::any_of(operation.siteTuples(), [&](const auto& tuple) {
-              return std::ranges::equal(tuple.sites(), qubits, {}, {},
-                                        [&](uint32_t qubit) {
-                                          return target_->siteForVertex(qubit);
-                                        });
-            })) {
-          gate = candidate;
-          nativeName = operation.name().str();
-          break;
-        }
+        nativeName = operation.name().str();
+      } else if (selected.capability == nullptr &&
+                 target_->hasDeviceConstraints()) {
+        throw std::runtime_error(
+            "target operation cannot be emitted as native Qiskit");
       }
+    }
+    const auto extraControls = gate == nullptr ? mapping.controls : 0;
+    if (extraControls != 0) {
+      gate = versionGate({mapping.gate, 0});
     }
     if (gate == nullptr) {
       const auto& descriptor =
@@ -2433,14 +2528,13 @@ public:
                                descriptor.operationSymbol.str() + "' with " +
                                std::to_string(mapping.controls) + " controls");
     }
-    if (qk_gate_num_qubits(gate->native) != qubits.size() ||
+    if (qk_gate_num_qubits(gate->native) + extraControls != qubits.size() ||
         qk_gate_num_params(gate->native) != parameters.size()) {
       throw std::runtime_error("Qiskit gate '" + std::string(gate->name) +
                                "' has incompatible arity");
     }
-    if (nativeName == "gpi" || nativeName == "gpi2") {
-      const auto angle =
-          nativeName == "gpi" ? std::numbers::pi : std::numbers::pi / 2.;
+    if (const auto alias = mlir::nativeRAlias(nativeName)) {
+      const auto angle = alias->angle;
       if (mapping != StandardGateMapping{mlir::qc::StandardGate::R, 0} ||
           parameters[0].getNumber() == nullptr ||
           !(std::abs(parameters[0].getNumber()->value - angle) <=
@@ -2448,24 +2542,17 @@ public:
         throw std::runtime_error("Qiskit native gate '" + nativeName +
                                  "' requires its fixed-angle R definition");
       }
-      nb::list values;
-      values.append(pythonParameter(parameters[1]));
-      auto operation = nb::module_::import_("qiskit.circuit")
-                           .attr("Gate")(nativeName, 1, values);
-      auto definition =
-          nb::module_::import_("qiskit").attr("QuantumCircuit")(1);
-      definition.attr("r")(angle, values[0], 0);
-      if (nativeName == "gpi") {
-        definition.attr("global_phase") = std::numbers::pi / 2.;
+      auto operation = nativeRGate(nativeName, pythonParameter(parameters[1]));
+      if (alias->globalPhase != 0.) {
         pythonCircuit_.attr("global_phase") =
             pythonCircuit_.attr("global_phase")
-                .attr("__sub__")(std::numbers::pi / 2.);
+                .attr("__sub__")(alias->globalPhase);
       }
-      operation.attr("definition") = definition;
       pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
       return;
     }
-    if (!nativeName.empty() && nativeName != gate->name) {
+    if (extraControls != 0 ||
+        (!nativeName.empty() && nativeName != gate->name)) {
       if (!standardGates_.is_valid()) {
         standardGates_ = nb::module_::import_("qiskit.circuit.library")
                              .attr("get_standard_gate_name_mapping")();
@@ -2478,8 +2565,22 @@ public:
         values.append(pythonParameter(parameter));
       }
       operation.attr("params") = values;
-      operation.attr("name") = nb::str(nativeName.data(), nativeName.size());
-      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      if (extraControls != 0) {
+        operation = operation.attr("control")(extraControls,
+                                              nb::arg("annotated") = false);
+      } else {
+        // QPY restores renamed standard gates under their standard names.
+        const auto circuitModule = nb::module_::import_("qiskit.circuit");
+        auto definition = circuitModule.attr("QuantumCircuit")(qubits.size());
+        definition.attr("append")(operation, definition.attr("qubits"),
+                                  nb::arg("copy") = false);
+        auto alias = circuitModule.attr("Gate")(
+            nativeName, qubits.size(), fixedExchange ? nb::list() : values);
+        alias.attr("definition") = definition;
+        operation = std::move(alias);
+      }
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits),
+                                    nb::arg("copy") = false);
       return;
     }
     if (std::ranges::all_of(parameters, [](const Parameter& parameter) {
@@ -2529,22 +2630,57 @@ public:
       throw std::runtime_error("Qiskit custom Gate '" + std::string(name) +
                                "' has no registered definition");
     }
-    const nb::object formalParameters = gate->second.attr("params");
+    if (!gate->second.nativeName.empty()) {
+      if (target_ == nullptr || !gateModifiers.empty()) {
+        throw std::runtime_error(
+            "Qiskit native gates require an explicit target and no modifiers");
+      }
+      llvm::SmallVector<mlir::CompilerTarget::SiteId, 4> sites(qubits.begin(),
+                                                               qubits.end());
+      llvm::SmallVector<std::optional<double>, 4> values;
+      values.reserve(parameters.size());
+      for (const auto& parameter : parameters) {
+        const auto* number = parameter.getNumber();
+        values.push_back(number != nullptr ? std::optional{number->value}
+                                           : std::nullopt);
+      }
+      const auto selected = target_->findOperation(
+          gate->second.nativeName, qubits.size(), values, sites);
+      if (selected.capability == nullptr) {
+        throw std::runtime_error("external gate is not native for the target");
+      }
+      if (const auto* standard =
+              versionGate(selected.capability->canonicalName())) {
+        addGate(standard->translation, qubits, parameters);
+        return;
+      }
+      nb::list actualParameters;
+      for (const auto& parameter : parameters) {
+        actualParameters.append(pythonParameter(parameter));
+      }
+      auto operation = circuitModule.attr("Gate")(
+          selected.capability->name().str(), qubits.size(), actualParameters);
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      return;
+    }
+    const nb::object formalParameters = gate->second.operation.attr("params");
     if (nb::len(formalParameters) != parameters.size()) {
       throw std::runtime_error("Qiskit custom Gate '" + std::string(name) +
                                "' has incompatible parameters");
     }
-    nb::dict parameterMap;
-    for (size_t index = 0U; index < parameters.size(); ++index) {
-      parameterMap[formalParameters[index]] =
-          pythonParameter(parameters[index]);
-    }
-    nb::object operation = gate->second;
+    nb::object operation = gate->second.operation;
     if (!parameters.empty()) {
-      operation =
-          pythonAttribute(operation.attr("definition"), "to_gate",
-                          "Qiskit custom definition cannot become a Gate")(
-              nb::arg("parameter_map") = parameterMap);
+      nb::dict parameterMap;
+      for (size_t index = 0U; index < parameters.size(); ++index) {
+        parameterMap[formalParameters[index]] =
+            pythonParameter(parameters[index]);
+      }
+      auto bound =
+          operation.attr("definition").attr("assign_parameters")(parameterMap);
+      operation = circuitModule.attr("Gate")(operation.attr("name"),
+                                             operation.attr("num_qubits"),
+                                             parameterMap.attr("values")());
+      operation.attr("definition") = std::move(bound);
     }
     if (!gateModifiers.empty()) {
       nb::list modifiers;
@@ -2584,7 +2720,40 @@ public:
     checkExitCode(qk_circuit_reset(circuit_, qubit), "adding reset");
   }
 
-  void addBarrier(const std::vector<uint32_t>& qubits) override {
+  void addDelay(const uint32_t qubit, const DelayDuration& duration) override {
+    if (target_ != nullptr &&
+        target_->nativeOperationsKind() ==
+            mlir::CompilerTarget::NativeOperations::Kind::Explicit) {
+      const mlir::CompilerTarget::SiteId site = qubit;
+      if (!target_->supportsOperation("delay", 1, 1, llvm::ArrayRef(site))) {
+        throw std::runtime_error(
+            "target operation cannot be emitted as native Qiskit delay");
+      }
+    }
+    if (const auto* ticks = std::get_if<uint64_t>(&duration.value)) {
+      pythonCircuit_.attr("delay")(*ticks, qubit, "dt");
+    } else {
+      // QPY preserves SI units in typed duration literals.
+      const auto literal =
+          nb::module_::import_("qiskit.circuit")
+              .attr("Duration")
+              .attr(duration.unit.c_str())(std::get<double>(duration.value));
+      const auto expression =
+          nb::module_::import_("qiskit.circuit.classical.expr")
+              .attr("lift")(literal);
+      pythonCircuit_.attr("delay")(expression, qubit);
+    }
+  }
+
+  void addBarrier(const std::vector<uint32_t>& qubits,
+                  const std::optional<std::string>& label) override {
+    if (label) {
+      auto operation =
+          nb::module_::import_("qiskit.circuit")
+              .attr("Barrier")(qubits.size(), nb::arg("label") = *label);
+      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      return;
+    }
     checkExitCode(qk_circuit_barrier(circuit_, qubits.data(),
                                      static_cast<uint32_t>(qubits.size())),
                   "adding barrier");
@@ -2716,7 +2885,8 @@ private:
     return result;
   }
 
-  /// Export preflight checks the expanded node/depth budgets before conversion.
+  /// Before export, check node-count and depth limits after expanding
+  /// definitions.
   ///
   /// Retain shared children so cached identities remain valid across gates.
   [[nodiscard]] nb::object
@@ -3017,34 +3187,21 @@ public:
   }
   [[nodiscard]] bool
   supportsGate(const StandardGateMapping gate) const override {
-    return versionGate(gate) != nullptr;
-  }
-
-  static nb::object targetObject(nb::handle source) {
-    auto target = nb::borrow<nb::object>(source);
-    if (nb::isinstance(
-            target,
-            nb::module_::import_("qiskit.providers").attr("BackendV2"))) {
-      target = target.attr("target");
-    }
-    if (!nb::isinstance(
-            target, nb::module_::import_("qiskit.transpiler").attr("Target"))) {
-      throw nb::type_error("Expected a Qiskit Target or BackendV2");
-    }
-    return target;
+    return versionGate(gate) != nullptr ||
+           (gate.controls != 0 && versionGate({gate.gate, 0}) != nullptr);
   }
 
   static mlir::CompilerTarget::NativeOperations
-  readOperations(nb::handle source, nb::handle operationNames,
-                 bool placements) {
+  readOperations(nb::handle target, nb::handle operationNames, bool strict,
+                 std::set<mlir::CompilerTarget::SiteId>* activeSites,
+                 std::optional<size_t> nativeWidth = std::nullopt) {
     using Target = mlir::CompilerTarget;
-    auto target = targetObject(source);
     const auto circuit = nb::module_::import_("qiskit.circuit");
     const auto controlFlow = nb::module_::import_("qiskit.circuit.controlflow");
     const auto ignoredTypes = nb::make_tuple(
-        circuit.attr("Barrier"), circuit.attr("Delay"),
-        circuit.attr("ControlFlowOp"), controlFlow.attr("BreakLoopOp"),
-        controlFlow.attr("ContinueLoopOp"), circuit.attr("Store"));
+        circuit.attr("Barrier"), circuit.attr("ControlFlowOp"),
+        controlFlow.attr("BreakLoopOp"), controlFlow.attr("ContinueLoopOp"),
+        circuit.attr("Store"));
     const auto available = target.attr("operation_names");
     std::set<std::string> names;
     for (auto item : nb::borrow<nb::iterable>(operationNames.is_none()
@@ -3053,6 +3210,15 @@ public:
       names.insert(nb::cast<std::string>(item));
     }
 
+    const auto selectedNames = names;
+    if (activeSites != nullptr) {
+      for (auto item : nb::borrow<nb::iterable>(available)) {
+        names.insert(nb::cast<std::string>(item));
+      }
+    }
+
+    bool hasGlobalInstruction = false;
+    bool hasGlobalDelay = false;
     std::vector<Target::OperationCapability> operations;
     for (const auto& operationName : names) {
       const auto quotedName =
@@ -3063,12 +3229,18 @@ public:
       }
       const auto instruction =
           target.attr("operation_from_name")(operationName);
+      if (nativeWidth && !instruction.is_type() &&
+          nb::cast<size_t>(instruction.attr("num_qubits")) > *nativeWidth) {
+        continue;
+      }
       auto qargs = target.attr("qargs_for_operation_name")(operationName);
       const auto instructionType =
           instruction.is_type() ? nb::handle(instruction) : instruction.type();
       const auto rAngle = nativeRAngle(instruction, operationName);
+      const bool isDelay = nb::isinstance(instruction, circuit.attr("Delay"));
       const auto nativeName =
-          rAngle ? std::optional<std::string>("r")
+          rAngle    ? std::optional<std::string>("r")
+          : isDelay ? std::optional<std::string>("delay")
           : nb::isinstance(instruction, circuit.attr("Measure"))
               ? std::optional<std::string>("measure")
           : nb::isinstance(instruction, circuit.attr("Reset"))
@@ -3077,11 +3249,33 @@ public:
       if ((!qargs.is_none() && nb::len(qargs) == 0) ||
           nb::issubclass(instructionType, ignoredTypes) ||
           nativeName == "gphase") {
-        if (!operationNames.is_none()) {
+        if (!operationNames.is_none() &&
+            selectedNames.contains(operationName)) {
           throw nb::value_error(("Qiskit target operation " + quotedName +
                                  " has no native gate applicability")
                                     .c_str());
         }
+        continue;
+      }
+
+      // Unsupported gates still identify physical sites, but cannot supply
+      // routing edges. Directives were excluded above.
+      if (activeSites != nullptr &&
+          (instruction.is_type() ||
+           nb::cast<size_t>(instruction.attr("num_qubits")) > 0)) {
+        if (qargs.is_none()) {
+          hasGlobalDelay |= isDelay;
+          hasGlobalInstruction |= !isDelay;
+        } else {
+          for (auto tuple : nb::borrow<nb::iterable>(qargs)) {
+            for (auto site : nb::borrow<nb::iterable>(tuple)) {
+              activeSites->insert(nb::cast<Target::SiteId>(site));
+            }
+          }
+        }
+      }
+
+      if (!selectedNames.contains(operationName)) {
         continue;
       }
 
@@ -3096,11 +3290,11 @@ public:
                   nb::cast<uint64_t>(instruction.attr("num_ctrl_qubits")))) {
         reason = "open controls";
       } else if (!nativeName ||
-                 ((operationName == "gpi" || operationName == "gpi2") &&
-                  !rAngle)) {
+                 (mlir::nativeRAlias(operationName) && !rAngle)) {
         reason = "custom or unsupported operation";
       } else if (operationName != *nativeName &&
-                 (*nativeName == "measure" || *nativeName == "reset")) {
+                 (*nativeName == "measure" || *nativeName == "reset" ||
+                  isDelay)) {
         reason = "custom operation name";
       } else {
         const nb::object parameters = instruction.attr("params");
@@ -3118,6 +3312,12 @@ public:
             }
             fixedParameters.emplace_back(number);
           }
+        }
+        // A fixed delay includes its time unit, which a numeric target
+        // parameter cannot express.
+        if (isDelay &&
+            (fixedParameters.size() != 1 || fixedParameters.front())) {
+          supported = false;
         }
         if (supported && nb::cast<bool>(target.attr("gate_has_angle_bounds")(
                              operationName))) {
@@ -3154,7 +3354,7 @@ public:
         auto message = "Cannot represent " + reason;
         message += " for ";
         message += quotedName;
-        if (!operationNames.is_none()) {
+        if (strict || !operationNames.is_none()) {
           throw nb::value_error(message.c_str());
         }
         message += "; omitting it from the compiler target";
@@ -3169,7 +3369,7 @@ public:
 
       const auto arity = nb::cast<size_t>(instruction.attr("num_qubits"));
       std::vector<Target::SiteTuple> siteTuples;
-      if (placements && !qargs.is_none()) {
+      if (activeSites != nullptr && !qargs.is_none()) {
         std::vector<std::vector<Target::SiteId>> sites;
         for (auto tuple : nb::borrow<nb::iterable>(qargs)) {
           sites.push_back(nb::cast<std::vector<Target::SiteId>>(tuple));
@@ -3192,33 +3392,48 @@ public:
     }
     operations.push_back(unwrap(Target::OperationCapability::create(
         "gphase", Target::OperationCapability::Arity::fixed(0), 1)));
+    // A global delay applies to the sites exposed by the other instructions.
+    // It can also be the only instruction on a target.
+    if (activeSites != nullptr &&
+        (hasGlobalInstruction || (hasGlobalDelay && activeSites->empty()))) {
+      const auto width = nb::cast<size_t>(target.attr("num_qubits"));
+      for (size_t site = 0; site < width; ++site) {
+        activeSites->insert(static_cast<Target::SiteId>(site));
+      }
+    }
     return Target::NativeOperations::fromOperations(operations);
   }
 
   [[nodiscard]] mlir::CompilerTarget::NativeOperations
-  importNativeOperations(nb::handle source,
-                         nb::handle operationNames) const override {
-    return readOperations(source, operationNames, false);
+  importNativeOperations(nb::handle source, nb::handle operationNames,
+                         bool strict,
+                         std::optional<size_t> nativeWidth) const override {
+    return readOperations(source, operationNames, strict, nullptr, nativeWidth);
   }
 
   [[nodiscard]] mlir::PayloadSpecification
-  payloadSpecification(nb::handle source) const override {
+  payloadSpecification(nb::handle target) const override {
     using Capability = mlir::ProgramCapability;
-    const auto target = source.is_none() ? nb::none() : targetObject(source);
     const auto circuit = nb::module_::import_("qiskit.circuit");
     std::vector<Capability> capabilities;
+    const auto supports = [&](const char* name, const char* type) {
+      return target.is_none() ||
+             (nb::cast<bool>(
+                  target.attr("operation_names").attr("__contains__")(name)) &&
+              target.attr("operation_from_name")(name).is(circuit.attr(type)));
+    };
     for (const auto& [name, type, kind] : {
              std::tuple{"if_else", "IfElseOp", ControlFlowKind::IfElse},
              std::tuple{"for_loop", "ForLoopOp", ControlFlowKind::For},
              std::tuple{"while_loop", "WhileLoopOp", ControlFlowKind::While},
              std::tuple{"switch_case", "SwitchCaseOp", ControlFlowKind::Switch},
          }) {
-      if (target.is_none() ||
-          (nb::cast<bool>(
-               target.attr("operation_names").attr("__contains__")(name)) &&
-           target.attr("operation_from_name")(name).is(circuit.attr(type)))) {
+      if (supports(name, type)) {
         capabilities.push_back({.id = controlFlowCapability(kind).str()});
       }
+    }
+    if (supports("store", "Store")) {
+      capabilities.push_back({.id = Capability::CLASSICAL_ASSIGNMENT.str()});
     }
     return unwrap(mlir::PayloadSpecification::create(
         {
@@ -3232,20 +3447,31 @@ public:
   }
 
   [[nodiscard]] mlir::CompilerTarget
-  importTarget(nb::handle source, nb::handle operationNames,
-               const std::optional<std::string>& name) const override {
+  importTarget(nb::handle target, nb::handle operationNames,
+               const std::optional<std::string>& name,
+               bool strict) const override {
     using Target = mlir::CompilerTarget;
-    auto target = targetObject(source);
-    auto targetName = name;
-    if (!targetName && !source.is(target)) {
-      targetName = nb::cast<std::string>(source.attr("name"));
-    }
     size_t numQubits = 0;
     if (!nb::try_cast(target.attr("num_qubits"), numQubits) || numQubits == 0) {
       throw nb::value_error(
           "Qiskit target must have a known positive qubit count");
     }
-    const auto nativeOperations = readOperations(target, operationNames, true);
+    std::set<Target::SiteId> activeSites;
+    const auto nativeOperations =
+        readOperations(target, operationNames, strict, &activeSites);
+    std::vector<Target::Site> sites;
+    sites.reserve(activeSites.size());
+    for (const auto site : activeSites) {
+      if (site < 0 || std::cmp_greater_equal(site, numQubits)) {
+        throw nb::value_error(
+            "Qiskit target placement exceeds its address width");
+      }
+      sites.push_back(unwrap(Target::Site::create(site)));
+    }
+    numQubits = sites.size();
+    if (numQubits == 0) {
+      throw nb::value_error("Qiskit target has no addressable quantum sites");
+    }
     std::set<Target::Coupling> couplings;
     bool allToAll = numQubits == 1;
     for (const auto& capability : nativeOperations.operations()) {
@@ -3271,22 +3497,20 @@ public:
             : Target::Connectivity::fromCouplings(std::vector<Target::Coupling>(
                   couplings.begin(), couplings.end()));
     return unwrap(
-        targetName ? Target::create(*targetName, numQubits, connectivity,
-                                    nativeOperations)
-                   : Target::create(numQubits, connectivity, nativeOperations));
+        name ? Target::create(*name, sites, connectivity, nativeOperations)
+             : Target::create(sites, connectivity, nativeOperations));
   }
 
   [[nodiscard]] std::unique_ptr<CircuitWriter>
   createCircuit(const uint32_t looseQubits, const uint32_t looseClbits,
                 const mlir::CompilerTarget* target) const override {
-    if (target != nullptr &&
-        std::ranges::none_of(target->operations(), [](const auto& operation) {
-          return operation.name() != operation.canonicalName();
-        })) {
-      target = nullptr;
-    }
     return std::make_unique<NativeCircuitWriter>(looseQubits, looseClbits,
                                                  parameters_, gates_, target);
+  }
+
+  void registerNativeGate(std::string_view symbol,
+                          std::string_view name) override {
+    gates_->try_emplace(symbol, OutputGate{.nativeName = std::string(name)});
   }
 
   void registerCustomGate(std::string_view symbol, std::string_view name,
@@ -3314,7 +3538,8 @@ public:
                     .attr("Gate")(nb::str(name.data(), name.size()),
                                   circuit.attr("num_qubits"), parameters);
     gate.attr("definition") = circuit;
-    gates_->try_emplace(symbol, std::move(gate));
+    gates_->try_emplace(
+        symbol, OutputGate{.operation = std::move(gate), .nativeName = {}});
   }
 
 private:

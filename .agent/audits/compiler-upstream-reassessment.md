@@ -71,5 +71,4 @@ dynamic-size physical placement, or loop-aware routing algorithm is introduced.
 
 The [placement audit](compiler-placement-reassessment.md) records the final
 native, Python, lint, and documentation checks. Native regressions cover the
-retained compiler contracts. The final ponytail review also removed unused
-conversion state and memref exceptions that served only runtime ownership masks.
+retained compiler contracts.

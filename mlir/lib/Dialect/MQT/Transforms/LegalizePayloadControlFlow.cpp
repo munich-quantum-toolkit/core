@@ -11,9 +11,11 @@
 #include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 
 #include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
 #include "mlir/AsmParser/AsmParser.h"
@@ -22,12 +24,15 @@
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/DialectConversion.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/Error.h"
 
@@ -65,12 +70,17 @@ PayloadControlSupport::read(ModuleOp moduleOp,
     return std::nullopt;
   }
 
-  PayloadControlSupport support;
-  const auto& payload = explicitPayload
-                            ? *explicitPayload
-                            : analysis.environment().payloadSpecification();
+  auto support = forPayload(
+      explicitPayload ? *explicitPayload
+                      : analysis.environment().payloadSpecification());
   support.indexedQubits_ =
       !explicitPayload && analysis.environment().supportsIndexedQubits();
+  return support;
+}
+
+PayloadControlSupport
+PayloadControlSupport::forPayload(const PayloadSpecification& payload) {
+  PayloadControlSupport support;
   for (const ProgramCapability& capability : payload.capabilities()) {
     const auto feature =
         llvm::StringSwitch<std::optional<PayloadControlFeature>>(capability.id)
@@ -105,17 +115,104 @@ PayloadControlSupport::get(PayloadControlFeature feature) const {
   return groups_[static_cast<size_t>(feature)];
 }
 
+static bool isRegisterRead(Value value) {
+  return value.getDefiningOp<cbit::ReadOp>() ||
+         value.getDefiningOp<cbit::LoadOp>() ||
+         value.getDefiningOp<qc::MeasureOp>() ||
+         value.getDefiningOp<qco::MeasureOp>();
+}
+
+static bool isRegisterEquality(Value condition) {
+  if (isRegisterRead(condition) && condition.getType().isInteger(1)) {
+    return true;
+  }
+  if (auto compare = condition.getDefiningOp<arith::CmpIOp>()) {
+    if (compare.getPredicate() != arith::CmpIPredicate::eq) {
+      return false;
+    }
+    return (isRegisterRead(compare.getLhs()) &&
+            matchPattern(compare.getRhs(), m_Constant())) ||
+           (isRegisterRead(compare.getRhs()) &&
+            matchPattern(compare.getLhs(), m_Constant()));
+  }
+  if (auto negate = condition.getDefiningOp<arith::XOrIOp>();
+      negate && condition.getType().isInteger(1)) {
+    return (isRegisterRead(negate.getLhs()) &&
+            matchPattern(negate.getRhs(), m_One())) ||
+           (isRegisterRead(negate.getRhs()) &&
+            matchPattern(negate.getLhs(), m_One()));
+  }
+  return false;
+}
+
+bool PayloadControlSupport::coversBranch(Operation* operation,
+                                         Value condition) const {
+  return coversBranch(operation, condition, controlDepth(operation));
+}
+
+bool PayloadControlSupport::coversBranch(Operation* operation, Value condition,
+                                         uint64_t depth) const {
+  if (!coversDepth(PayloadControlFeature::ForwardBranching, depth)) {
+    return false;
+  }
+  const auto& group = get(PayloadControlFeature::ForwardBranching);
+  if (group.requiresRegisterEquality && !isRegisterEquality(condition)) {
+    return false;
+  }
+  if (group.maxConditionWidth) {
+    SmallVector<Value> pending{condition};
+    llvm::DenseSet<Value> visited;
+    while (!pending.empty()) {
+      const auto value = pending.pop_back_val();
+      if (!visited.insert(value).second) {
+        continue;
+      }
+      if (auto integer = dyn_cast<IntegerType>(value.getType());
+          integer && integer.getWidth() > *group.maxConditionWidth) {
+        return false;
+      }
+      if (auto* producer = value.getDefiningOp();
+          producer != nullptr && !isRegisterRead(value)) {
+        llvm::append_range(pending, producer->getOperands());
+      }
+    }
+  }
+  if (group.unitaryOnlyBranches &&
+      operation
+          ->walk([](Operation* nested) {
+            return isa<qc::MeasureOp, qc::ResetOp, qco::MeasureOp, qco::ResetOp,
+                       cbit::StoreOp, cbit::WriteOp>(nested)
+                       ? WalkResult::interrupt()
+                       : WalkResult::advance();
+          })
+          .wasInterrupted()) {
+    return false;
+  }
+  return true;
+}
+
 bool PayloadControlSupport::coversDepth(PayloadControlFeature feature,
                                         Operation* operation) const {
+  return coversDepth(feature, controlDepth(operation));
+}
+
+bool PayloadControlSupport::coversDepth(PayloadControlFeature feature,
+                                        uint64_t depth) const {
   const CapabilityGroup& group = get(feature);
-  return group.usable && (!group.maxNestingDepth ||
-                          controlDepth(operation) <= *group.maxNestingDepth);
+  return group.usable &&
+         (!group.maxNestingDepth || depth <= *group.maxNestingDepth);
 }
 
 bool PayloadControlSupport::coversIteration(
     PayloadControlFeature feature, Operation* operation,
     const std::optional<llvm::APInt>& tripCount) const {
-  if (!coversDepth(feature, operation)) {
+  return coversIteration(feature, controlDepth(operation), tripCount);
+}
+
+bool PayloadControlSupport::coversIteration(
+    PayloadControlFeature feature, uint64_t depth,
+    const std::optional<llvm::APInt>& tripCount) const {
+  if (!coversDepth(feature, depth)) {
     return false;
   }
   const CapabilityGroup& group = get(feature);
@@ -127,7 +224,12 @@ bool PayloadControlSupport::coversIteration(
 
 bool PayloadControlSupport::coversMultiwayBranching(Operation* operation,
                                                     uint64_t caseCount) const {
-  if (!coversDepth(PayloadControlFeature::MultiwayBranching, operation)) {
+  return coversMultiwayBranching(controlDepth(operation), caseCount);
+}
+
+bool PayloadControlSupport::coversMultiwayBranching(uint64_t depth,
+                                                    uint64_t caseCount) const {
+  if (!coversDepth(PayloadControlFeature::MultiwayBranching, depth)) {
     return false;
   }
   const CapabilityGroup& group = get(PayloadControlFeature::MultiwayBranching);
@@ -193,6 +295,20 @@ void PayloadControlSupport::applyConstraint(CapabilityGroup& group,
     group.usable = false;
     return;
   }
+  if (feature == PayloadControlFeature::ForwardBranching) {
+    if (id == ProgramConstraint::MAX_CONDITION_WIDTH) {
+      group.maxConditionWidth = value;
+      return;
+    }
+    if (id == ProgramConstraint::REQUIRES_REGISTER_EQUALITY && value == 1U) {
+      group.requiresRegisterEquality = true;
+      return;
+    }
+    if (id == ProgramConstraint::UNITARY_ONLY_BRANCHES && value == 1U) {
+      group.unitaryOnlyBranches = true;
+      return;
+    }
+  }
   if (id == ProgramConstraint::MAX_NESTING_DEPTH) {
     group.maxNestingDepth = value;
     return;
@@ -222,8 +338,7 @@ std::optional<llvm::APInt> getExactConstantTripCount(scf::ForOp loop) {
 
 [[nodiscard]] static bool isLegal(scf::IfOp operation,
                                   const PayloadControlSupport& support) {
-  return support.coversDepth(PayloadControlFeature::ForwardBranching,
-                             operation);
+  return support.coversBranch(operation, operation.getCondition());
 }
 
 [[nodiscard]] static bool isLegal(scf::ForOp operation,
@@ -334,6 +449,15 @@ void populatePayloadControlFlowPatternsAndLegality(
     return !isa<BranchOpInterface, RegionBranchOpInterface>(operation);
   });
   patterns.add<LowerSCFIndexSwitch>(patterns.getContext(), support);
+}
+
+LogicalResult legalizePayloadControlFlow(ModuleOp moduleOp,
+                                         const PayloadSpecification& payload) {
+  auto support = PayloadControlSupport::forPayload(payload);
+  ConversionTarget target(*moduleOp.getContext());
+  RewritePatternSet patterns(moduleOp.getContext());
+  populatePayloadControlFlowPatternsAndLegality(target, patterns, support);
+  return applyPartialConversion(moduleOp, target, std::move(patterns));
 }
 
 namespace {

@@ -8,7 +8,6 @@
       "description": "Default configuration. Uses the Ninja generator",
       "generator": "Ninja",
       "cacheVariables": {
-        "MLIR_DIR": "$env{MLIR_DIR}",
         "CMAKE_UNITY_BUILD": "ON"
       }
     },
@@ -17,8 +16,7 @@
       "inherits": "base",
       "displayName": "Debug config",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "LLVM_ENABLE_ASSERTIONS": "ON"
+        "CMAKE_BUILD_TYPE": "Debug"
       }
     },
     {
@@ -35,6 +33,7 @@
       "displayName": "Coverage config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS_DEBUG": "-g1",
         "ENABLE_COVERAGE": "ON"
       }
     },

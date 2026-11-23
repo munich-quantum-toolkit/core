@@ -135,9 +135,7 @@ probes reject mixed inputs, iterators, nesting, incorrect keyword types, and
 unknown keywords. Ruff checks the generated stubs.
 
 A compiled mutation selecting every output from the first source was detected by
-the retained mixed-format test. One Ponytail review covered the connected
-compiler/sample/submit paths; specialist critique also checked type precedence
-and stub compatibility.
+the retained mixed-format test.
 
 After rebasing on upstream `c8dcc7f775`, the optimized editable build and 1,181
 compiler, Qiskit, QDMI-compilation, DD, and QIR-runner tests passed. Existing

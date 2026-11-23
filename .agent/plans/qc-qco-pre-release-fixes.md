@@ -21,8 +21,8 @@ Unsupported changes produce a usage diagnostic. Carry full tensors when changing
 the set of extracted slots. This prevents region-local indices from escaping
 without hoisting a branch-specific index.
 
-Scalar if/switch overloads delegate to their range counterparts. The Ponytail
-review removed 46 lines of duplicated region construction and the unused
+Scalar if/switch overloads delegate to their range counterparts. Shared region
+construction replaces duplicated scalar implementations and their
 single-argument preparation helper. The register snapshot is local to each
 structured operation; ordinary gate tracking remains unchanged.
 

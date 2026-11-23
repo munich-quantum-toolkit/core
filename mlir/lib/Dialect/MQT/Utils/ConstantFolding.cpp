@@ -11,7 +11,11 @@
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 
 #include "mlir/IR/Attributes.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/Dialect.h"
+#include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Matchers.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/Operation.h"
@@ -20,6 +24,8 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
 #include <optional>
@@ -49,13 +55,90 @@ std::optional<double> valueToDouble(Value value) {
   return attributeToDouble(attr);
 }
 
-Attribute valueToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
+static Value constantOperand(OpBuilder& builder, Operation* op, Value operand,
+                             Attribute attr) {
+  auto* def = operand.getDefiningOp();
+  if (def != nullptr && def->hasTrait<OpTrait::ConstantLike>()) {
+    return builder.clone(*def)->getResult(0);
+  }
+  auto materialize = [&](Dialect* dialect) {
+    return dialect->materializeConstant(builder, attr, operand.getType(),
+                                        op->getLoc());
+  };
+  auto* producer = def != nullptr ? def->getDialect() : nullptr;
+  if (producer != nullptr && producer != op->getDialect()) {
+    if (auto* literal = materialize(producer)) {
+      return literal->getResult(0);
+    }
+  }
+  if (auto* literal = materialize(op->getDialect())) {
+    return literal->getResult(0);
+  }
+  // A folder can use the attribute even if neither dialect has a literal.
+  return builder.getInsertionBlock()->addArgument(operand.getType(),
+                                                  op->getLoc());
+}
+
+static Attribute foldWithAttributes(Operation* op,
+                                    ArrayRef<Attribute> attributes) {
+  SmallVector<OpFoldResult, 1> results;
+  if (!isSpeculatable(op) || failed(op->fold(attributes, results)) ||
+      results.size() != 1) {
+    return {};
+  }
+  if (auto attr = dyn_cast<Attribute>(results.front())) {
+    return attr;
+  }
+  Value replacement = cast<Value>(results.front());
+  for (auto [operand, attr] : llvm::zip_equal(op->getOperands(), attributes)) {
+    if (operand == replacement) {
+      return attr;
+    }
+  }
+  return {};
+}
+
+static Attribute foldConstantOperation(Operation* op,
+                                       DenseMap<Value, Attribute>& cache,
+                                       bool allowInPlace) {
+  if (allowInPlace) {
+    const auto attributes =
+        llvm::map_to_vector(op->getOperands(), [&](Value operand) {
+          return cache.lookup(operand);
+        });
+    if (auto attr = foldWithAttributes(op, attributes)) {
+      return attr;
+    }
+  }
+
+  Block scratch;
+  OpBuilder builder(op->getContext());
+  builder.setInsertionPointToEnd(&scratch);
+  IRMapping mapping;
+  SmallVector<Attribute> attributes;
+  for (Value operand : op->getOperands()) {
+    // An in-place fold can introduce operands outside the cached expression.
+    auto attr = valueToConstantAttr(operand, cache);
+    if (!attr) {
+      return {};
+    }
+    attributes.push_back(attr);
+    if (!mapping.contains(operand)) {
+      mapping.map(operand, constantOperand(builder, op, operand, attr));
+    }
+  }
+
+  // A dialect may fold in place. The clone has no uses of source values.
+  Operation* copy = builder.clone(*op, mapping);
+  return foldWithAttributes(copy, attributes);
+}
+
+static Attribute evaluate(Value value, DenseMap<Value, Attribute>& cache,
+                          bool allowInPlace) {
   if (const auto found = cache.find(value); found != cache.end()) {
     return found->second;
   }
   SmallVector<std::pair<Value, unsigned>> stack{{value, 0}};
-  SmallVector<Attribute> operands;
-  SmallVector<OpFoldResult, 1> results;
   while (!stack.empty()) {
     auto [current, nextOperand] = stack.back();
     Operation* operation = current.getDefiningOp();
@@ -69,7 +152,9 @@ Attribute valueToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
         continue;
       }
       if (operation == nullptr || operation->getNumRegions() != 0 ||
-          !isPure(operation)) {
+          operation->getNumResults() != 1 ||
+          operation->getNumSuccessors() != 0 ||
+          !isMemoryEffectFree(operation)) {
         return {};
       }
     }
@@ -84,33 +169,22 @@ Attribute valueToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
       continue;
     }
 
-    operands.clear();
-    for (Value operand : operation->getOperands()) {
-      operands.push_back(cache.lookup(operand));
-    }
-    results.clear();
-    if (failed(operation->fold(operands, results)) || results.size() != 1) {
+    Attribute folded = foldConstantOperation(operation, cache, allowInPlace);
+    if (!folded) {
       return {};
     }
-    if (auto attr = dyn_cast_if_present<Attribute>(results.front())) {
-      cache[current] = attr;
-    } else if (auto replacement = dyn_cast_if_present<Value>(results.front())) {
-      // Identity folds can return an existing value outside the operands.
-      const auto found = cache.find(replacement);
-      if (found == cache.end()) {
-        stack.emplace_back(replacement, 0);
-        continue;
-      }
-      if (!found->second) {
-        return {};
-      }
-      cache[current] = found->second;
-    } else {
-      return {};
-    }
+    cache[current] = folded;
     stack.pop_back();
   }
   return cache.lookup(value);
+}
+
+Attribute valueToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
+  return evaluate(value, cache, /*allowInPlace=*/false);
+}
+
+Attribute foldToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
+  return evaluate(value, cache, /*allowInPlace=*/true);
 }
 
 Attribute valueToConstantAttr(Value value) {

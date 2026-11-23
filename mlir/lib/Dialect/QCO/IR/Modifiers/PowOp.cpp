@@ -152,8 +152,8 @@ struct FoldFixedGatePow final : OpRewritePattern<PowOp> {
         loc, exponent, constantFromScalar(rewriter, loc, scale));
     Value result;
     if (isa<XOp, YOp, HOp, SXOp, SXdgOp>(gate.getOperation())) {
-      Value phase = arith::MulFOp::create(
-          rewriter, loc, angle, constantFromScalar(rewriter, loc, 0.5));
+      Value phase = rewriter.createOrFold<arith::MulFOp>(
+          loc, angle, constantFromScalar(rewriter, loc, 0.5));
       GPhaseOp::create(rewriter, loc, phase);
       if (isa<HOp>(gate.getOperation())) {
         qubit = RYOp::create(rewriter, loc, qubit, -std::numbers::pi / 4.);
@@ -168,39 +168,6 @@ struct FoldFixedGatePow final : OpRewritePattern<PowOp> {
       result = POp::create(rewriter, loc, qubit, angle);
     }
     replacePowResults(op, gate, result, rewriter);
-    return success();
-  }
-};
-
-/// pow(1.0) { U } → inline U
-struct InlinePow1 final : OpRewritePattern<PowOp> {
-  using OpRewritePattern::OpRewritePattern;
-  LogicalResult matchAndRewrite(PowOp op,
-                                PatternRewriter& rewriter) const override {
-    const auto exponent = op.getExponentValue();
-    if (!exponent ||
-        std::abs(*exponent - 1.0) > PARAMETER_COMPARISON_TOLERANCE) {
-      return failure();
-    }
-
-    mqt::inlineModifierBody(op, *op.getBody(), op.getInputQubits(), rewriter);
-    return success();
-  }
-};
-
-/// pow(0.0) { U } → identity (pass-through)
-struct ErasePow0 final : OpRewritePattern<PowOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(PowOp op,
-                                PatternRewriter& rewriter) const override {
-    const auto exponent = op.getExponentValue();
-    if (!exponent || std::abs(*exponent) > PARAMETER_COMPARISON_TOLERANCE) {
-      return failure();
-    }
-
-    // pow(0) is the identity: thread the input qubits straight to the results.
-    rewriter.replaceOp(op, op.getQubitsIn());
     return success();
   }
 };
@@ -557,8 +524,8 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
                     return mqt::getValueFromBlockArgument(input,
                                                           op.getQubitsIn());
                   });
-              auto replacement =
-                  BarrierOp::create(rewriter, op.getLoc(), inputs);
+              auto replacement = BarrierOp::create(rewriter, op.getLoc(),
+                                                   inputs, gate.getLabelAttr());
               replacePowResults(op, gate, replacement.getOutputQubits(),
                                 rewriter);
               return success();
@@ -697,8 +664,9 @@ LogicalResult PowOp::verifyRegions() {
 
 void PowOp::getLoweringPatterns(RewritePatternSet& results,
                                 MLIRContext* context) {
-  results.add<InlinePow1, ErasePow0, FoldPowIntoGate, MergeNestedPow,
-              MoveCtrlOutsidePow, NegPowToInvPow, FoldFixedGatePow>(context);
+  results.add(mqt::foldTrivialPower<UnitaryOpInterface, PowOp>);
+  results.add<FoldPowIntoGate, MergeNestedPow, MoveCtrlOutsidePow,
+              NegPowToInvPow, FoldFixedGatePow>(context);
   getCanonicalizationPatterns(results, context);
 }
 
@@ -738,12 +706,12 @@ std::optional<DynamicMatrix> PowOp::getUnitaryMatrix(double p) {
   const auto raiseToPow =
       [p](const DynamicMatrix& u) -> std::optional<DynamicMatrix> {
     // U^1 = U (no computation needed)
-    if (std::abs(p - 1.0) < PARAMETER_COMPARISON_TOLERANCE) {
+    if (p == 1.) {
       return u;
     }
 
     // U^0 = I
-    if (std::abs(p) < PARAMETER_COMPARISON_TOLERANCE) {
+    if (p == 0.) {
       return DynamicMatrix::identity(u.cols());
     }
 

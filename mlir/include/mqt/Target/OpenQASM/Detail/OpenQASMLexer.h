@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <iterator>
+#include <optional>
 
 namespace mlir::openqasm::frontend::detail {
 
@@ -42,6 +43,7 @@ enum class TokenKind : uint8_t {
   Output,
   Barrier,
   Reset,
+  Delay,
   Measure,
   If,
   Else,
@@ -135,6 +137,9 @@ struct Token {
   uint64_t intValue = 0;
   double floatValue = 0.0;
   bool wideInteger = false; ///< True when an integer literal exceeds `uint64_t`
+
+  /// Return the exact integer value of a numeric literal when it fits.
+  [[nodiscard]] std::optional<uint64_t> exactUnsignedValue() const;
 };
 
 /// A zero-copy lexer over an OpenQASM source buffer.

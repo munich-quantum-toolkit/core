@@ -84,6 +84,7 @@ struct QCToQCOTestCase {
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
   ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
   bool expectsCompleteTensorState = false;
+  bool checkReverse = false;
 };
 
 class QCToQCOTest : public testing::TestWithParam<QCToQCOTestCase> {
@@ -322,13 +323,16 @@ TEST_F(QCToQCORegressionTest, PreservesForResultsWithQuantumState) {
 module {
   func.func @main() -> i1 attributes {mqt.entry_point} {
     %qc = qc.alloc : !qc.qubit
-    %c0 = arith.constant 0 : index
-    %c1 = arith.constant 1 : index
-    %true = arith.constant true
-    %loop = scf.for %i = %c0 to %c1 step %c1
-        iter_args(%flag = %true) -> (i1) {
-      qc.h %qc : !qc.qubit
-      scf.yield %flag : i1
+    %lower = arith.constant 127 : i8
+    %upper = arith.constant -128 : i8
+    %step = arith.constant 1 : i8
+    %false = arith.constant false
+    %loop = scf.for unsigned %i = %lower to %upper step %step
+        iter_args(%flag = %false) -> (i1) : i8 {
+      qc.x %qc : !qc.qubit
+      %bit = qc.measure %qc : !qc.qubit -> i1
+      %out = arith.xori %flag, %bit : i1
+      scf.yield %out : i1
     }
     qc.dealloc %qc : !qc.qubit
     return %loop : i1
@@ -353,6 +357,9 @@ module {
     EXPECT_TRUE(llvm::equal(yield.getOperandTypes(), loop.getResultTypes()));
   });
   EXPECT_TRUE(sawLoop);
+  auto counts = qco::sample(mlir::mqt::getEntryPoint(*moduleOp), 1, 17);
+  ASSERT_TRUE(succeeded(counts));
+  EXPECT_EQ(counts->at("1"), 1U);
 
   expectNoQCOperations(*moduleOp);
 }
@@ -572,6 +579,31 @@ module {
   expectNoQCOperations(*moduleOp);
 }
 
+template <typename BranchOp>
+static void expectClassicalBranchRoundTrip(ModuleOp moduleOp,
+                                           Value classicalResult) {
+  auto getReturnValue = [&] {
+    auto main = moduleOp.lookupSymbol<func::FuncOp>("main");
+    return cast<func::ReturnOp>(main.front().getTerminator()).getOperand(0);
+  };
+  auto expectNoScratch = [&] {
+    moduleOp.walk([](Operation* op) {
+      EXPECT_FALSE(
+          (isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(op)));
+    });
+  };
+
+  EXPECT_EQ(getReturnValue(), classicalResult);
+  expectNoScratch();
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(moduleOp)));
+  ASSERT_TRUE(succeeded(verify(moduleOp)));
+  Value returned = getReturnValue();
+  auto branch = returned.getDefiningOp<BranchOp>();
+  ASSERT_TRUE(branch);
+  EXPECT_EQ(branch.getNumResults(), 1U);
+  expectNoScratch();
+}
+
 TEST_F(QCToQCORegressionTest, PreservesIfClassicalResultsWithoutScratch) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
@@ -612,18 +644,9 @@ module {
     EXPECT_TRUE(isa<qco::QubitType>(yield.getOperand(1).getType()));
   }
 
-  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
-  EXPECT_EQ(returnOp.getOperand(0), ifOp.getClassicalResults().front());
-
-  bool containsScratchStorage = false;
-  moduleOp->walk([&](Operation* operation) {
-    containsScratchStorage |=
-        isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
-  });
-  EXPECT_FALSE(containsScratchStorage);
   expectNoQCOperations(*moduleOp);
+  expectClassicalBranchRoundTrip<scf::IfOp>(*moduleOp,
+                                            ifOp.getClassicalResults().front());
 }
 
 TEST_F(QCToQCORegressionTest,
@@ -671,18 +694,9 @@ module {
     EXPECT_TRUE(isa<qco::QubitType>(yield.getOperand(1).getType()));
   }
 
-  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
-  EXPECT_EQ(returnOp.getOperand(0), switchOp.getClassicalResults().front());
-
-  bool containsScratchStorage = false;
-  moduleOp->walk([&](Operation* operation) {
-    containsScratchStorage |=
-        isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
-  });
-  EXPECT_FALSE(containsScratchStorage);
   expectNoQCOperations(*moduleOp);
+  expectClassicalBranchRoundTrip<scf::IndexSwitchOp>(
+      *moduleOp, switchOp.getClassicalResults().front());
 }
 
 TEST_F(QCToQCORegressionTest,
@@ -760,6 +774,7 @@ TEST_F(QCToQCORegressionTest, ThreadsConstantRegisterSlotsThroughAliases) {
   auto left = builder.loadQubit(reg, zero);
   builder.x(left);
   auto alias = builder.loadQubit(reg, builder.indexConstant(0));
+  memref::StoreOp::create(builder, alias, reg, ValueRange{zero});
   builder.x(alias);
   builder.inv(left, [&](Value qubit) { builder.x(qubit); });
   auto right = builder.loadQubit(reg, one);
@@ -1353,10 +1368,23 @@ module {
   }
 }
 )mlir",
+      R"mlir(
+module {
+  func.func private @aliases() -> (!qc.qubit, !qc.qubit) {
+    %q = qc.static 0 : !qc.qubit
+    %alias = qc.static 0 : !qc.qubit
+    return %q, %alias : !qc.qubit, !qc.qubit
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    return
+  }
+}
+)mlir",
   });
-  constexpr std::array<StringLiteral, 2> diagnostics{
+  constexpr std::array<StringLiteral, 3> diagnostics{
       "cannot return a borrowed qubit argument explicitly",
-      "cannot return the same qubit more than once",
+      "requires distinct qubit operands",
+      "requires distinct qubit operands",
   };
 
   for (auto [source, expected] : llvm::zip_equal(sources, diagnostics)) {
@@ -1703,14 +1731,14 @@ TEST_F(QCToQCORegressionTest, RejectsRegisterAliasingExposedByNormalization) {
   }
 }
 
-TEST_P(QCToQCOTest, ProgramConversion) {
+TEST_P(QCToQCOTest, ProgramConversions) {
   SCOPED_TRACE(llvm::formatv(
                    "QCToQCO: {0}, original={1}, reference={2}", GetParam().name,
                    ::mqt::test::displayName(GetParam().programBuilder.name),
                    ::mqt::test::displayName(GetParam().referenceBuilder.name))
                    .str());
-  const auto& [_, programBuilder, referenceBuilder,
-               expectsCompleteTensorState] = GetParam();
+  const auto& [_, programBuilder, referenceBuilder, expectsCompleteTensorState,
+               checkReverse] = GetParam();
   const auto name = " (" + GetParam().name + ")";
   ::mqt::test::DeferredPrinter printer;
 
@@ -1723,6 +1751,7 @@ TEST_P(QCToQCOTest, ProgramConversion) {
   EXPECT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
+  auto original = OwningOpRef<ModuleOp>(program->clone());
 
   EXPECT_TRUE(succeeded(runQCToQCOConversion(program.get())));
   printer.record(program.get(), "Converted QCO IR" + name);
@@ -1751,6 +1780,17 @@ TEST_P(QCToQCOTest, ProgramConversion) {
 
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
+
+  if (checkReverse) {
+    ASSERT_TRUE(succeeded(runQCOToQCConversion(reference.get())));
+    ASSERT_TRUE(
+        succeeded(runPassPipeline(reference.get(), "simplify-quantum")));
+    ASSERT_TRUE(succeeded(runQCCleanupPipeline(reference.get())));
+    ASSERT_TRUE(succeeded(verify(*reference)));
+    printer.record(reference.get(), "Converted Reference QC IR" + name);
+    EXPECT_TRUE(
+        areModulesEquivalentWithPermutations(reference.get(), original.get()));
+  }
 }
 
 static SmallVector<QCToQCOTestCase> commonConversionCases() {
@@ -1762,6 +1802,7 @@ static SmallVector<QCToQCOTestCase> commonConversionCases() {
         .programBuilder = qcBuilder,
         .referenceBuilder = qcoBuilder,
         .expectsCompleteTensorState = completeTensorState,
+        .checkReverse = true,
     });
   }
   return cases;
@@ -1793,9 +1834,6 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{
             "IfWithMeasurement", MQT_NAMED_BUILDER(qc::ifWithMeasurement),
             MQT_NAMED_BUILDER(qco::ifWithMeasurementCompleteTensorState), true},
-        QCToQCOTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qc::ifWithCreg),
-                        MQT_NAMED_BUILDER(qco::ifWithCregCompleteTensorState),
-                        true},
         QCToQCOTestCase{
             "SimpleIndexSwitchOp", MQT_NAMED_BUILDER(qc::simpleIndexSwitch),
             MQT_NAMED_BUILDER(qco::simpleIndexSwitchCompleteTensorState), true},
@@ -2126,6 +2164,64 @@ TEST_F(QCToQCORegressionTest, RoundTripsStableBorrowedRegister) {
   }
 }
 
+TEST_F(QCToQCORegressionTest, ConvertsOwnedReferenceBufferWithDynamicAccess) {
+  context.getOrLoadDialect<cbit::CBitDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(
+      R"mlir(module attributes {mqt.target_env = #mqt.target_env<
+      compilation_target = #mqt.compilation_target<sites = [],
+          connectivity = all_to_all, couplings = [], native_operations = unrestricted,
+          operations = [], gate_set = unit>,
+      payload_specification = #mqt.payload_spec<format = <id = "openqasm",
+          version = "3.0", profile = "", encoding = text>, capabilities = [],
+          optional_capabilities_known = false>>} {
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %idle = qc.alloc : !qc.qubit
+      %q0 = qc.alloc : !qc.qubit
+      %q1 = qc.alloc : !qc.qubit
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      scf.for %i = %zero to %one step %one {
+        qc.x %q1 : !qc.qubit
+      }
+      %reg = memref.alloca() : memref<2x!qc.qubit>
+      memref.store %q0, %reg[%zero] : memref<2x!qc.qubit>
+      memref.store %q1, %reg[%one] : memref<2x!qc.qubit>
+      scf.for %i = %zero to %two step %one {
+        %q = memref.load %reg[%i] : memref<2x!qc.qubit>
+        qc.x %q : !qc.qubit
+      }
+      %loaded = memref.load %reg[%one] : memref<2x!qc.qubit>
+      %value = qc.measure %loaded : !qc.qubit -> i1
+      %bits = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
+      cbit.store %value, %bits[%zero] : !cbit.reg<1>
+      qc.dealloc %loaded : !qc.qubit
+      qc.dealloc %q0 : !qc.qubit
+      qc.dealloc %idle : !qc.qubit
+      return %bits : !cbit.reg<1>
+    }
+  })mlir",
+      &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto function = mlir::mqt::getEntryPoint(*moduleOp);
+  EXPECT_EQ(llvm::range_size(function.getOps<qco::AllocOp>()), 3);
+  EXPECT_TRUE(function.getOps<qco::StaticOp>().empty());
+  auto counts = qco::sample(function, 8, 17);
+  ASSERT_TRUE(succeeded(counts));
+  ASSERT_EQ(counts->size(), 1U);
+  EXPECT_EQ(counts->at("0"), 8U);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  function = mlir::mqt::getEntryPoint(*moduleOp);
+  EXPECT_EQ(llvm::range_size(function.getOps<qc::AllocOp>()), 3);
+  EXPECT_EQ(llvm::range_size(function.getOps<qc::DeallocOp>()), 3);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
 TEST_F(QCToQCORegressionTest,
        RoundTripsPhysicalReferencesAcrossIdentityStores) {
   context.getOrLoadDialect<cbit::CBitDialect>();
@@ -2379,4 +2475,39 @@ TEST_F(QCToQCORegressionTest, RejectsBorrowedRegisterAliasingBeforeRewriting) {
         moduleOp->getOperation(), original->getOperation(),
         OperationEquivalence::Flags::None));
   }
+}
+
+TEST_F(QCToQCORegressionTest, RoundTripsConstantExtentWithDynamicTensorShape) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module attributes {mqt.target_env = #mqt.target_env<
+    compilation_target = #mqt.compilation_target<sites = [],
+        connectivity = all_to_all, couplings = [],
+        native_operations = unrestricted, operations = [], gate_set = unit>,
+    payload_specification = #mqt.payload_spec<
+        format = <id = "openqasm", version = "3.0", profile = "", encoding = text>,
+        capabilities = [], optional_capabilities_known = false>>} {
+  func.func @main(%index: index) attributes {mqt.entry_point} {
+    %size = arith.constant 4 : index
+    %reg = qtensor.alloc(%size) : tensor<?x!qco.qubit>
+    %rest, %qubit = qtensor.extract %reg[%index] : tensor<?x!qco.qubit>
+    %updated = qco.x %qubit : !qco.qubit
+    %full = qtensor.insert %updated into %rest[%index] : tensor<?x!qco.qubit>
+    qtensor.dealloc %full : tensor<?x!qco.qubit>
+    return
+  }
+}
+)mlir";
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  size_t allocations = 0;
+  size_t releases = 0;
+  moduleOp->walk([&](qc::AllocOp) { ++allocations; });
+  moduleOp->walk([&](qc::DeallocOp) { ++releases; });
+  EXPECT_EQ(allocations, 4);
+  EXPECT_EQ(releases, 4);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }

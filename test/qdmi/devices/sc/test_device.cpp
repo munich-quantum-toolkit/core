@@ -647,60 +647,30 @@ TEST_F(ScQDMIJobSpecificationTest, JobQueryProperty) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
-TEST_F(ScQDMISpecificationTest, JobSubmit) {
+TEST_F(ScQDMIJobSpecificationTest, CannotExecuteJobs) {
   EXPECT_EQ(MQT_SC_QDMI_device_job_submit(nullptr), QDMI_ERROR_INVALIDARGUMENT);
-}
-
-TEST_F(ScQDMIJobSpecificationTest, JobSubmit) {
-  const auto status = MQT_SC_QDMI_device_job_submit(job);
-  ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-}
-
-TEST_F(ScQDMISpecificationTest, JobCancel) {
+  EXPECT_EQ(MQT_SC_QDMI_device_job_submit(job), QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_SC_QDMI_device_job_cancel(nullptr), QDMI_ERROR_INVALIDARGUMENT);
-}
-
-TEST_F(ScQDMIJobSpecificationTest, JobCancel) {
-  const auto status = MQT_SC_QDMI_device_job_cancel(job);
-  ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_INVALIDARGUMENT,
-                                     QDMI_ERROR_NOTSUPPORTED));
-}
-
-TEST_F(ScQDMISpecificationTest, JobCheck) {
-  EXPECT_EQ(MQT_SC_QDMI_device_job_check(nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
-}
-
-TEST_F(ScQDMIJobSpecificationTest, JobCheck) {
+  EXPECT_EQ(MQT_SC_QDMI_device_job_cancel(job), QDMI_ERROR_NOTSUPPORTED);
   QDMI_Job_Status jobStatus = QDMI_JOB_STATUS_RUNNING;
-  const auto status = MQT_SC_QDMI_device_job_check(job, &jobStatus);
-  ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-}
-
-TEST_F(ScQDMISpecificationTest, JobWait) {
+  EXPECT_EQ(MQT_SC_QDMI_device_job_check(nullptr, &jobStatus),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_SC_QDMI_device_job_check(job, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_SC_QDMI_device_job_check(job, &jobStatus),
+            QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_SC_QDMI_device_job_wait(nullptr, 0),
             QDMI_ERROR_INVALIDARGUMENT);
-}
-
-TEST_F(ScQDMIJobSpecificationTest, JobWait) {
-  const auto status = MQT_SC_QDMI_device_job_wait(job, 1);
-  ASSERT_THAT(status, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED,
-                                     QDMI_ERROR_TIMEOUT));
-}
-
-TEST_F(ScQDMISpecificationTest, JobGetResults) {
-  EXPECT_EQ(MQT_SC_QDMI_device_job_get_results(nullptr, 0U, QDMI_JOB_RESULT_MAX,
-                                               0, nullptr, nullptr),
+  EXPECT_EQ(MQT_SC_QDMI_device_job_wait(job, 1), QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_SC_QDMI_device_job_get_results(
+                nullptr, 0U, QDMI_JOB_RESULT_SHOTS, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
-}
-
-TEST_F(ScQDMIJobSpecificationTest, JobGetResults) {
-  EXPECT_THAT(MQT_SC_QDMI_device_job_get_results(job, 0U, QDMI_JOB_RESULT_SHOTS,
-                                                 0, nullptr, nullptr),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   EXPECT_EQ(MQT_SC_QDMI_device_job_get_results(job, 0U, QDMI_JOB_RESULT_MAX, 0,
                                                nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_SC_QDMI_device_job_get_results(job, 0U, QDMI_JOB_RESULT_SHOTS,
+                                               0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
 }
 
 TEST_F(ScQDMISpecificationTest, QueryDeviceProperty) {

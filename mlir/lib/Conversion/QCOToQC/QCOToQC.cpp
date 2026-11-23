@@ -12,6 +12,7 @@
 
 #include "mqt/Conversion/ConversionUtils.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -49,6 +50,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <tuple>
 #include <utility>
 
 namespace mlir {
@@ -60,14 +62,10 @@ namespace {
 
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
-  Unset,   //!< No allocation mode has been established yet.
-  Static,  //!< The module uses static qubit allocation.
-  Dynamic, //!< The module uses dynamic qubit allocation.
-};
-
-struct ConversionRequirements {
-  AllocationMode allocationMode = AllocationMode::Unset;
-  bool needsWireOrigins = false;
+  Unset,   ///< No allocation mode has been established yet.
+  Static,  ///< The module uses static qubit allocation.
+  Dynamic, ///< The module uses dynamic qubit allocation.
+  Program, ///< Gate-set synthesis keeps individually owned program qubits.
 };
 
 /// Track function argument positions and the module's allocation mode.
@@ -102,22 +100,11 @@ private:
 };
 } // namespace
 
-/// Determine allocation mode and required wire checks before conversion.
-[[nodiscard]] static FailureOr<ConversionRequirements>
-collectConversionRequirements(ModuleOp moduleOp) {
-  ConversionRequirements requirements;
+/// Determine whether the module's qubit references own their allocations.
+[[nodiscard]] static FailureOr<AllocationMode>
+getAllocationMode(ModuleOp moduleOp) {
+  auto mode = AllocationMode::Unset;
   auto result = moduleOp.walk([&](Operation* op) {
-    if (!requirements.needsWireOrigins) {
-      if (isa<qtensor::ExtractOp, qtensor::InsertOp>(op)) {
-        requirements.needsWireOrigins = true;
-      } else if (op->getNumRegions() != 0 &&
-                 !isa<ModuleOp, qco::UnitaryOpInterface>(op)) {
-        auto function = dyn_cast<func::FuncOp>(op);
-        requirements.needsWireOrigins =
-            !function ||
-            !getQuantumArgumentIndices(function.getArgumentTypes()).empty();
-      }
-    }
     const auto requested = isa<qco::StaticOp>(op) ? AllocationMode::Static
                            : isa<qco::AllocOp, qtensor::AllocOp>(op)
                                ? AllocationMode::Dynamic
@@ -125,19 +112,21 @@ collectConversionRequirements(ModuleOp moduleOp) {
     if (requested == AllocationMode::Unset) {
       return WalkResult::advance();
     }
-    if (requirements.allocationMode != AllocationMode::Unset &&
-        requirements.allocationMode != requested) {
+    if (mode != AllocationMode::Unset && mode != requested) {
       op->emitOpError("cannot mix static and dynamic qubit allocation modes "
                       "in QCO program");
       return WalkResult::interrupt();
     }
-    requirements.allocationMode = requested;
+    mode = requested;
     return WalkResult::advance();
   });
   if (result.wasInterrupted()) {
     return failure();
   }
-  return requirements;
+  if (mode != AllocationMode::Static && mqt::preservesProgramQubits(moduleOp)) {
+    return AllocationMode::Program;
+  }
+  return mode;
 }
 
 /// Move a region, replace its block arguments with @p replacementValues,
@@ -272,36 +261,32 @@ public:
 
 /// Prove slot identity before lowering tensors to references.
 [[nodiscard]] static LogicalResult
-verifyTensorSlots(ModuleOp moduleOp, const DenseMap<Value, Value>& origins) {
+verifyTensorSlot(qtensor::InsertOp insert,
+                 const DenseMap<Value, Value>& origins) {
   const auto origin = [&](Value value) {
     auto known = origins.lookup(value);
     return known ? known : value;
   };
-  auto result = moduleOp.walk([&](qtensor::InsertOp insert) {
-    auto extract =
-        origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
-    if (!extract || origin(extract.getTensor()) != origin(insert.getDest())) {
-      insert.emitOpError(
-          "must restore the extracted qubit to its original register slot");
-      return WalkResult::interrupt();
-    }
-    auto source = extract.getIndex();
-    auto dest = insert.getIndex();
-    if (!isEqualConstantIntOrValue(source, dest) &&
-        !ValueBoundsConstraintSet::compare(source, ValueBoundsConstraintSet::EQ,
-                                           dest)) {
-      insert.emitOpError(
-          "cannot prove restoration to the original register slot; reuse the "
-          "extraction index or an equivalent affine expression");
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  });
-  return success(!result.wasInterrupted());
+  auto extract = origin(insert.getScalar()).getDefiningOp<qtensor::ExtractOp>();
+  if (!extract || origin(extract.getTensor()) != origin(insert.getDest())) {
+    return insert.emitOpError(
+        "must restore the extracted qubit to its original register slot");
+  }
+  auto source = extract.getIndex();
+  auto dest = insert.getIndex();
+  if (!isEqualConstantIntOrValue(source, dest) &&
+      !ValueBoundsConstraintSet::compare(source, ValueBoundsConstraintSet::EQ,
+                                         dest)) {
+    return insert.emitOpError(
+        "cannot prove restoration to the original register slot; reuse the "
+        "extraction index or an equivalent affine expression");
+  }
+  return success();
 }
 
 [[nodiscard]] static LogicalResult
-collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
+collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
+                              TensorLifetimeAnalysis& lifetimes) {
   for (auto function : moduleOp.getOps<func::FuncOp>()) {
     auto& qubitArguments = state.qubitArguments[function];
     qubitArguments =
@@ -316,7 +301,7 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
               "rank-one tensors without encoding");
         }
         if (!function.isDeclaration() &&
-            !hasCompleteTensorLifetime(function.getArgument(argument))) {
+            !lifetimes.isComplete(function.getArgument(argument))) {
           return function.emitOpError(
               "borrowed registers must restore all extracted slots");
         }
@@ -345,11 +330,13 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
     }
   }
   auto calls = moduleOp.walk([&](func::CallOp call) {
+    auto attrs = call.getResAttrsAttr();
+    if (!attrs) {
+      return WalkResult::advance();
+    }
     const auto count =
         qco::getQuantumArgumentIndices(call.getOperandTypes()).size();
-    if (auto attrs = call.getResAttrsAttr();
-        attrs &&
-        llvm::any_of(attrs.getValue().take_back(count), [](Attribute attr) {
+    if (llvm::any_of(attrs.getValue().take_back(count), [](Attribute attr) {
           return !cast<DictionaryAttr>(attr).empty();
         })) {
       call.emitOpError(
@@ -359,6 +346,41 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
     return WalkResult::advance();
   });
   return success(!calls.wasInterrupted());
+}
+
+[[nodiscard]] static LogicalResult verifyConversionInput(ModuleOp moduleOp,
+                                                         LoweringState& state) {
+  DenseMap<Value, Value> origins;
+  TensorLifetimeAnalysis lifetimes;
+  if (failed(verifyLinearity(moduleOp, origins)) ||
+      failed(collectFunctionQubitArguments(moduleOp, state, lifetimes))) {
+    return failure();
+  }
+  auto result = moduleOp.walk([&](Operation* op) {
+    if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+      return failed(verifyTensorSlot(insert, origins)) ? WalkResult::interrupt()
+                                                       : WalkResult::advance();
+    }
+    if (isa<qtensor::FromElementsOp>(op)) {
+      if (state.allocationMode == AllocationMode::Static) {
+        return WalkResult::advance();
+      }
+      if (state.allocationMode != AllocationMode::Program) {
+        op->emitOpError("QCO-to-QC requires placed qubits or owned program "
+                        "qubits in tensors of existing qubits");
+        return WalkResult::interrupt();
+      }
+    } else if (!isa<qtensor::AllocOp>(op)) {
+      return WalkResult::advance();
+    }
+    if (!lifetimes.isComplete(op->getResult(0))) {
+      op->emitOpError("QCO-to-QC requires all dynamic tensor slots to be "
+                      "restored before region exit or deallocation");
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return success(!result.wasInterrupted());
 }
 
 namespace {
@@ -481,18 +503,10 @@ struct ConvertQCOCallOp final : OpConversionPattern<qco::CallOp> {
   }
 };
 
-/// Converts qtensor.alloc to memref.alloc
-///
-/// @par Example:
-/// ```mlir
-/// %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
-/// ```
-struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
-  using OpConversionPattern::OpConversionPattern;
+/// Gate-set synthesis retains each program qubit as a separate QC allocation.
+struct ConvertQTensorAllocOp final
+    : StatefulOpConversionPattern<qtensor::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
@@ -501,6 +515,32 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
     auto tensorType = op.getResult().getType();
     auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
 
+    if (getState().allocationMode == AllocationMode::Program) {
+      const auto width = getConstantIntValue(op.getSize());
+      if (!width || *width <= 0) {
+        return op.emitError("program qubit storage requires a fixed extent");
+      }
+      SmallVector<Value> qubits;
+      for (int64_t index = 0; index < *width; ++index) {
+        qubits.push_back(qc::AllocOp::create(rewriter, op.getLoc()));
+      }
+      auto storage = memref::AllocaOp::create(
+          rewriter, op.getLoc(), MemRefType::get({*width}, qubitType));
+      storage->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+      for (auto [index, qubit] : llvm::enumerate(qubits)) {
+        auto offset = arith::ConstantIndexOp::create(
+            rewriter, op.getLoc(), static_cast<int64_t>(index));
+        memref::StoreOp::create(rewriter, op.getLoc(), qubit, storage,
+                                ValueRange{offset});
+      }
+      Value result = storage;
+      if (storage.getType() != memrefType) {
+        result =
+            memref::CastOp::create(rewriter, op.getLoc(), memrefType, storage);
+      }
+      rewriter.replaceOp(op, result);
+      return success();
+    }
     memref::AllocOp alloc;
     if (tensorType.hasStaticShape()) {
       // Static size: no dynamic size operand needed
@@ -516,16 +556,6 @@ struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
   }
 };
 
-/// Converts qtensor.extract to memref.load
-///
-/// @par Example:
-/// ```mlir
-/// %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// %q = memref.load %memref[%c0] : memref<3x!qc.qubit>
-/// ```
 struct ConvertQTensorExtractOp final : OpConversionPattern<qtensor::ExtractOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -539,10 +569,10 @@ struct ConvertQTensorExtractOp final : OpConversionPattern<qtensor::ExtractOp> {
   }
 };
 
-/// A tensor of placed qubits needs only storage for references.
+/// Store references to existing qubits in a fixed-size local buffer.
 struct ConvertQTensorFromElementsOp final
-    : OpConversionPattern<qtensor::FromElementsOp> {
-  using OpConversionPattern::OpConversionPattern;
+    : StatefulOpConversionPattern<qtensor::FromElementsOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::FromElementsOp op, OpAdaptor adaptor,
@@ -554,7 +584,13 @@ struct ConvertQTensorFromElementsOp final
     {
       OpBuilder::InsertionGuard guard(rewriter);
       auto function = op->getParentOfType<func::FuncOp>();
-      rewriter.setInsertionPointToStart(&function.getBody().front());
+      if (!function) {
+        return op.emitOpError("requires an enclosing function for a qubit "
+                              "reference buffer");
+      }
+      if (getState().allocationMode != AllocationMode::Program) {
+        rewriter.setInsertionPointToStart(&function.getBody().front());
+      }
       storage = memref::AllocaOp::create(rewriter, op.getLoc(), type);
     }
     storage->setDiscardableAttrs(op->getDiscardableAttrDictionary());
@@ -582,16 +618,6 @@ struct ConvertQTensorInsertOp final : OpConversionPattern<qtensor::InsertOp> {
   }
 };
 
-/// Converts qtensor.dealloc to memref.dealloc
-///
-/// @par Example:
-/// ```mlir
-/// qtensor.dealloc %tensor : tensor<3x!qco.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// memref.dealloc %memref : memref<3x!qc.qubit>
-/// ```
 struct ConvertQTensorDeallocOp final
     : StatefulOpConversionPattern<qtensor::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -599,7 +625,24 @@ struct ConvertQTensorDeallocOp final
   LogicalResult
   matchAndRewrite(qtensor::DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (getState().allocationMode != AllocationMode::Dynamic) {
+    if (getState().allocationMode == AllocationMode::Program) {
+      Value storage = adaptor.getTensor();
+      while (auto cast = storage.getDefiningOp<memref::CastOp>()) {
+        storage = cast.getSource();
+      }
+      const auto type = cast<MemRefType>(storage.getType());
+      if (!type.hasStaticShape()) {
+        return op.emitError("program qubit storage requires a fixed extent");
+      }
+      for (int64_t index = 0; index < type.getDimSize(0); ++index) {
+        auto offset =
+            arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
+        auto qubit = memref::LoadOp::create(rewriter, op.getLoc(), storage,
+                                            ValueRange{offset});
+        qc::DeallocOp::create(rewriter, op.getLoc(), qubit);
+      }
+      rewriter.eraseOp(op);
+    } else if (getState().allocationMode != AllocationMode::Dynamic) {
       rewriter.eraseOp(op);
     } else {
       rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, adaptor.getTensor());
@@ -660,16 +703,6 @@ struct ConvertQCOUnitaryOp final : OpConversionPattern<qco::UnitaryOp> {
 
 namespace {
 
-/// Converts qco.alloc to qc.alloc
-///
-/// @par Example:
-/// ```mlir
-/// %q = qco.alloc : !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q = qc.alloc : !qc.qubit
-/// ```
 struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -684,23 +717,7 @@ struct ConvertQCOAllocOp final : OpConversionPattern<qco::AllocOp> {
   }
 };
 
-/// Converts qco.sink to qc.dealloc.
-///
-/// In QCO, qubits have value/linear semantics and must be consumed explicitly
-/// (via `qco.sink`). In QC, qubits have reference semantics; for dynamic qubits
-/// we materialize this end-of-lifetime as `qc.dealloc`. Static qubits do not
-/// need explicit deallocation, so we simply erase the `qco.sink` operation.
-///
-/// The OpAdaptor automatically provides the type-converted qubit operand
-/// (`!qc.qubit` instead of `!qco.qubit`), so we simply pass it through to the
-/// new operation when needed.
-///
-/// Example transformation:
-/// ```mlir
-/// qco.sink %q_qco : !qco.qubit
-/// // becomes:
-/// qc.dealloc %q_qc : !qc.qubit
-/// ```
+/// Only dynamically allocated qubits need an explicit release in QC.
 struct ConvertQCOSinkOp final : StatefulOpConversionPattern<SinkOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -722,18 +739,6 @@ struct ConvertQCOSinkOp final : StatefulOpConversionPattern<SinkOp> {
   }
 };
 
-/// Converts qco.static to qc.static
-///
-/// Static qubits represent references to hardware-mapped or fixed-position
-/// qubits identified by an index. The conversion preserves the index attribute
-/// and creates the corresponding qc.static operation.
-///
-/// Example transformation:
-/// ```mlir
-/// %q0 = qco.static 0 : !qco.qubit
-/// // becomes:
-/// %q = qc.static 0 : !qc.qubit
-/// ```
 struct ConvertQCOStaticOp final : OpConversionPattern<qco::StaticOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -747,28 +752,6 @@ struct ConvertQCOStaticOp final : OpConversionPattern<qco::StaticOp> {
   }
 };
 
-/// Converts qco.measure to qc.measure
-///
-/// Measurement demonstrates the key semantic difference between the dialects:
-/// - QCO (value semantics): Consumes input qubit, returns both output qubit
-///   and classical bit result
-/// - QC (reference semantics): Measures qubit in-place, returns only the
-///   classical bit result
-///
-/// The OpAdaptor provides the input qubit already converted to !qc.qubit.
-/// Since QC operations are in-place, we return the same qubit reference
-/// alongside the measurement bit. MLIR's conversion infrastructure
-/// automatically routes subsequent uses of the QCO output qubit to this QC
-/// reference.
-///
-/// @par Example:
-/// ```mlir
-/// %q_out, %c = qco.measure %q_in : !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %c = qc.measure %q : !qc.qubit -> i1
-/// ```
 struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -790,24 +773,20 @@ struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
   }
 };
 
-/// Converts qco.reset to qc.reset
-///
-/// Reset operations force a qubit to the |0⟩ state:
-/// - QCO (value semantics): Consumes input qubit, returns reset output qubit
-/// - QC (reference semantics): Resets qubit in-place, no result value
-///
-/// The OpAdaptor provides the input qubit already converted to !qc.qubit.
-/// Since QC's reset is in-place, we return the same qubit reference.
-/// MLIR's conversion infrastructure automatically routes subsequent uses of
-/// the QCO output qubit to this QC reference.
-///
-/// Example transformation:
-/// ```mlir
-/// %q_out = qco.reset %q_in : !qco.qubit
-/// // becomes:
-/// qc.reset %q : !qc.qubit
-/// // %q_out uses are replaced with %q (the adaptor-converted input)
-/// ```
+struct ConvertQCODelayOp final : OpConversionPattern<qco::DelayOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::DelayOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto qubit = adaptor.getQubitIn();
+    qc::DelayOp::create(rewriter, op.getLoc(), qubit, op.getDuration(),
+                        op.getUnitAttr());
+    rewriter.replaceOp(op, qubit);
+    return success();
+  }
+};
+
 struct ConvertQCOResetOp final : OpConversionPattern<qco::ResetOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -827,17 +806,6 @@ struct ConvertQCOResetOp final : OpConversionPattern<qco::ResetOp> {
   }
 };
 
-/// Converts qco.barrier to qc.barrier
-///
-/// @par Example:
-/// ```mlir
-/// %q_out:2 = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
-/// !qco.qubit, !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// qc.barrier %q0, %q1 : !qc.qubit, !qc.qubit
-/// ```
 struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -848,7 +816,7 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
     auto qcQubits = adaptor.getQubitsIn();
 
     // Create qc.barrier operation
-    qc::BarrierOp::create(rewriter, op.getLoc(), qcQubits);
+    qc::BarrierOp::create(rewriter, op.getLoc(), qcQubits, op.getLabelAttr());
 
     // Replace the output qubits with the same qc references
     rewriter.replaceOp(op, qcQubits);
@@ -857,21 +825,6 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
   }
 };
 
-/// Converts qco.ctrl to qc.ctrl
-///
-/// @par Example:
-/// ```mlir
-/// %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%a_in = %q1_in) {
-///   %a_res = qco.x %a_in : !qco.qubit
-///   qco.yield %a_res : !qco.qubit
-/// } : ({!qco.qubit}, {!qco.qubit})
-/// ```
-/// is converted to
-/// ```mlir
-/// qc.ctrl(%q0) targets(%a0 = %q1) {
-///   qc.x %a0 : !qc.qubit
-/// } : !qc.qubit
-/// ```
 struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -893,21 +846,6 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
   }
 };
 
-/// Converts qco.inv to qc.inv
-///
-/// @par Example:
-/// ```mlir
-/// %q0_out = qco.inv (%a_in = %q0_in) {
-///   %a_res = qco.s %a_in : !qco.qubit
-///   qco.yield %a_res : !qco.qubit
-/// } : {!qco.qubit} -> {!qco.qubit}
-/// ```
-/// is converted to
-/// ```mlir
-/// qc.inv {
-///   qc.s %q0 : !qc.qubit
-/// }
-/// ```
 struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -928,21 +866,6 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
   }
 };
 
-/// Converts qco.pow to qc.pow
-///
-/// @par Example:
-/// ```mlir
-/// %q0_out = qco.pow(%exponent) (%a_in = %q0_in) {
-///   %a_res = qco.s %a_in : !qco.qubit
-///   qco.yield %a_res
-/// } : {!qco.qubit} -> {!qco.qubit}
-/// ```
-/// is converted to
-/// ```mlir
-/// qc.pow(%exponent) (%a0 = %q0) {
-///   qc.s %a0 : !qc.qubit
-/// } : !qc.qubit
-/// ```
 struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -964,17 +887,7 @@ struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
   }
 };
 
-/// Converts qco.yield to qc.yield or to scf.yield if the parent is a
-/// scf::IfOp or scf::IndexSwitchOp.
-///
-/// @par Example:
-/// ```mlir
-/// qco.yield %targets : !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// qc.yield
-/// ```
+/// Modifier regions use qc.yield. Classical branch results use scf.yield.
 struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -996,26 +909,7 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   }
 };
 
-/// Converts scf.for with value semantics to scf.for with memory
-/// semantics for qubit values while preserving classical loop-carried state.
-///
-/// @par Example:
-/// ```mlir
-/// %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 =
-/// %qtensor) -> (tensor<3x!qco.qubit) {
-///   %t0, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
-///   %q1 = qco.h %q0 : !qco.qubit
-///   %insert = qtensor.insert %q1 into %t1[%iv] : tensor<3x!qco.qubit>
-///   scf.yield %t1 : tensor<3x!qco.qubit>
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// scf.for %iv = %lb to %ub step %step {
-///   %q0 = qc.load %memref[%iv] : !memref<3x!qc.qubit>
-///   qc.h %q0 : !qc.qubit
-/// }
-/// ```
+/// QC references carry quantum state in place. Keep the classical iter_args.
 struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1028,7 +922,7 @@ struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
         selectConvertedState(op.getInitArgs(), adaptor.getInitArgs(), true);
     auto newFor = scf::ForOp::create(
         rewriter, op.getLoc(), adaptor.getLowerBound(), adaptor.getUpperBound(),
-        adaptor.getStep(), classicalInits);
+        adaptor.getStep(), classicalInits, nullptr, op.getUnsignedCmp());
     newFor->setDiscardableAttrs(op->getDiscardableAttrDictionary());
     // Erase default block
     rewriter.eraseBlock(&newFor.getRegion().front());
@@ -1046,30 +940,6 @@ struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
   }
 };
 
-/// Converts scf.while with value semantics to scf.while with memory
-/// semantics for qubit values while preserving classical loop-carried state.
-///
-/// @par Example:
-/// ```mlir
-/// %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
-///   %q1, %cond = qco.measure %arg0 : !qco.qubit
-///   scf.condition(%cond) %q1 : !qco.qubit
-/// } do {
-/// ^bb0(%arg0: !qco.qubit):
-///   %q2 = qco.h %arg0 : !qco.qubit
-///   scf.yield %q2 : !qco.qubit
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// scf.while : () -> () {
-///   %cond = qc.measure %q0 : !qc.qubit -> i1
-///   scf.condition(%cond)
-/// } do {
-///   qc.h %q0 : !qc.qubit
-///   scf.yield
-/// }
-/// ```
 struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1105,23 +975,6 @@ struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
   }
 };
 
-/// Converts qco.if to scf.if
-///
-/// @par Example:
-/// ```mlir
-/// %targets_out = qco.if %cond args(%arg0 = %q0) -> (!qco.qubit) {
-///   %q1 = qco.h %arg0 : !qco.qubit
-///   qco.yield %q1 : !qco.qubit
-/// } else args(%arg0 = %q0) {
-///   qco.yield %arg0 : !qco.qubit
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// scf.if %cond {
-///   qc.h %q0 : !qc.qubit
-/// }
-/// ```
 struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1164,30 +1017,6 @@ struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
   }
 };
 
-/// Converts qco.index_switch to scf.index_switch
-///
-/// @par Example:
-/// ```mlir
-/// %result = qco.index_switch %condition -> !qco.qubit
-/// case 0 args(%arg0 = %q0) {
-///   %q1 = qco.x %arg0 : !qco.qubit
-///   qco.yield %q1 : !qco.qubit
-/// }
-/// default args(%arg0 = %q0) {
-///   %q2 = qco.z %arg0 : !qco.qubit
-///   qco.yield %q2 : !qco.qubit
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// scf.index_switch %condition
-/// case 0 {
-///   qc.x %q0 : !qc.qubit
-/// }
-/// default {
-///   qc.z %q0 : !qc.qubit
-/// }
-/// ```
 struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1221,17 +1050,6 @@ struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
   }
 };
 
-/// Converts scf.yield with value semantics to scf.yield with memory
-/// semantics for qubit values while retaining classical yielded values.
-///
-/// @par Example:
-/// ```mlir
-/// scf.yield %targets
-/// ```
-/// is converted to
-/// ```mlir
-/// scf.yield
-/// ```
 struct ConvertQCOSCFYieldOp final : OpConversionPattern<scf::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1244,17 +1062,6 @@ struct ConvertQCOSCFYieldOp final : OpConversionPattern<scf::YieldOp> {
   }
 };
 
-/// Converts scf.condition with value semantics to scf.condition with
-/// memory semantics for qubit values while retaining classical state
-///
-/// @par Example:
-/// ```mlir
-/// scf.condition(%cond) %targets
-/// ```
-/// is converted to
-/// ```mlir
-/// scf.condition(%cond)
-/// ```
 struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1287,41 +1094,13 @@ protected:
     MLIRContext* context = &getContext();
     auto moduleOp = getOperation();
 
-    const auto requirements = collectConversionRequirements(moduleOp);
-    if (failed(requirements)) {
+    const auto mode = getAllocationMode(moduleOp);
+    if (failed(mode)) {
       signalPassFailure();
       return;
     }
-    LoweringState state(requirements->allocationMode);
-    // Flat owned circuits without register accesses have no wire checks.
-    if (requirements->needsWireOrigins) {
-      DenseMap<Value, Value> origins;
-      if (failed(collectWireOrigins(moduleOp, origins)) ||
-          failed(verifyTensorSlots(moduleOp, origins))) {
-        signalPassFailure();
-        return;
-      }
-    }
-    if (failed(collectFunctionQubitArguments(moduleOp, state))) {
-      signalPassFailure();
-      return;
-    }
-    const auto tensors = moduleOp.walk([&](Operation* op) {
-      if (isa<qtensor::FromElementsOp>(op) &&
-          requirements->allocationMode != AllocationMode::Static) {
-        op->emitOpError("QCO-to-QC requires static qubits in tensors of "
-                        "existing qubits; run placement before conversion");
-        return WalkResult::interrupt();
-      }
-      if (auto alloc = dyn_cast<qtensor::AllocOp>(op);
-          alloc && !hasCompleteTensorLifetime(alloc.getResult())) {
-        alloc.emitOpError("QCO-to-QC requires all dynamic tensor slots to be "
-                          "restored before region exit or deallocation");
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    });
-    if (tensors.wasInterrupted()) {
+    LoweringState state(*mode);
+    if (failed(verifyConversionInput(moduleOp, state))) {
       signalPassFailure();
       return;
     }
@@ -1355,10 +1134,9 @@ protected:
     });
 
     // Register operation conversion patterns that do not need state tracking
-    patterns.add<ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOUnitaryOp,
-                 ConvertQTensorAllocOp, ConvertQTensorFromElementsOp,
-                 ConvertQTensorExtractOp, ConvertQTensorInsertOp,
-                 ConvertQCOAllocOp, ConvertQCOStaticOp,
+    patterns.add<ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCODelayOp,
+                 ConvertQCOUnitaryOp, ConvertQTensorExtractOp,
+                 ConvertQTensorInsertOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
                  ConvertQCOGateToQC<qco::GPhaseOp, qc::GPhaseOp, 0, 1>>(
         typeConverter, context);
 
@@ -1375,7 +1153,8 @@ protected:
                  ConvertQCOSCFForOp>(typeConverter, context);
 
     // Register operation conversion patterns that need state tracking
-    patterns.add<ConvertQTensorDeallocOp, ConvertQCOSinkOp>(typeConverter,
+    patterns.add<ConvertQTensorAllocOp, ConvertQTensorFromElementsOp,
+                 ConvertQTensorDeallocOp, ConvertQCOSinkOp>(typeConverter,
                                                             context, &state);
 
     // QCO qubit arguments are returned positionally and become in-place QC
@@ -1403,6 +1182,18 @@ protected:
                                       config))) {
       signalPassFailure();
       return;
+    }
+    if (state.allocationMode == AllocationMode::Program) {
+      // Keep fixed reference buffers directly visible to later conversions.
+      moduleOp.walk([](memref::LoadOp load) {
+        std::ignore = memref::foldMemRefCast(load);
+      });
+      moduleOp.walk([](memref::CastOp cast) {
+        if (cast->use_empty() &&
+            isa<qc::QubitType>(cast.getType().getElementType())) {
+          cast.erase();
+        }
+      });
     }
   }
 };

@@ -6,62 +6,26 @@
 #
 # Licensed under the MIT License
 
-# Find llc tool (LLVM is guaranteed to be available at this point)
-find_program(LLC_EXECUTABLE NAMES llc HINTS ${LLVM_TOOLS_BINARY_DIR})
+find_program(LLC_EXECUTABLE NAMES llc HINTS ${LLVM_TOOLS_BINARY_DIR} REQUIRED)
 
-if(NOT LLC_EXECUTABLE)
-  message(FATAL_ERROR "llc not found. This should not happen since LLVM is available.")
-endif()
+set(runtime_test mqt-core-qir-runtime-test)
+package_add_test(${runtime_test} MQT::CoreQIRRuntime test_qir_runtime.cpp)
+mqt_llvm_target_disable_rtti(${runtime_test})
 
-message(STATUS "Found llc: ${LLC_EXECUTABLE}")
-
-# macro to add a test executable for one qir circuit
-macro(ADD_QIR_CIRCUIT target_name circuit_path)
-  if(NOT TARGET ${target_name})
-    # Add a custom command to compile the .ll file to .o
-    get_filename_component(circuit_name ${circuit_path} NAME_WE)
-    add_custom_command(
-      OUTPUT ${circuit_name}.o
-      COMMAND
-        ${LLC_EXECUTABLE} -filetype=obj -relocation-model=pic ${circuit_path} -o ${circuit_name}.o
-      DEPENDS ${circuit_path}
-      COMMENT "Compiling ${circuit_path} to ${circuit_name}.o with llc")
-    add_executable(${target_name} ${circuit_name}.o)
-    set_property(TARGET ${target_name} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
-    target_link_libraries(${target_name} PRIVATE MQT::CoreQIRRuntime)
-    set_target_properties(${target_name} PROPERTIES LINKER_LANGUAGE CXX)
-  endif()
-endmacro()
-
-# function to convert camel case to dash case
-function(camel_to_dash_lowercase input output)
-  string(REGEX REPLACE "([A-Z])" "-\\1" result "${input}")
-  string(TOLOWER "${result}" result)
-  string(REGEX REPLACE "^-+" "" result "${result}")
-  set(${output} "${result}" PARENT_SCOPE)
-endfunction()
-
-set(TARGET_NAME mqt-core-qir-runtime-test)
-
-# add test executable
-package_add_test(${TARGET_NAME} MQT::CoreQIRRuntime test_qir_runtime.cpp)
-mqt_llvm_target_disable_rtti(${TARGET_NAME})
-
-# add tests for QIR files
-set(QIR_EXECUTABLES "")
-set(QIR_FILES_DIR ${PROJECT_SOURCE_DIR}/test/circuits)
-
-file(GLOB QIR_FILES "${QIR_FILES_DIR}/*.ll")
-foreach(QIR_EXAMPLE ${QIR_FILES})
-  get_filename_component(QIR_EXAMPLE_NAME ${QIR_EXAMPLE} NAME_WE)
-  camel_to_dash_lowercase(${QIR_EXAMPLE_NAME} QIR_EXAMPLE_NAME)
-  add_qir_circuit(mqt-core-qir-${QIR_EXAMPLE_NAME}-ll ${QIR_EXAMPLE})
-  list(APPEND QIR_EXECUTABLES "$<TARGET_FILE:mqt-core-qir-${QIR_EXAMPLE_NAME}-ll>")
-  add_dependencies(${TARGET_NAME} mqt-core-qir-${QIR_EXAMPLE_NAME}-ll)
+file(GLOB qir_files "${PROJECT_SOURCE_DIR}/test/circuits/*.ll")
+foreach(source IN LISTS qir_files)
+  get_filename_component(circuit_stem "${source}" NAME_WE)
+  string(REGEX REPLACE "([A-Z])" "-\\1" target "${circuit_stem}")
+  string(TOLOWER "mqt-core-qir${target}-ll" target)
+  add_custom_command(
+    OUTPUT "${circuit_stem}.o"
+    COMMAND
+      "${LLC_EXECUTABLE}" -filetype=obj -relocation-model=pic "${source}" -o "${circuit_stem}.o"
+    DEPENDS "${source}"
+    VERBATIM)
+  add_executable(${target} "${circuit_stem}.o")
+  set_target_properties(${target} PROPERTIES BUILD_WITH_INSTALL_RPATH FALSE LINKER_LANGUAGE CXX)
+  target_link_libraries(${target} PRIVATE MQT::CoreQIRRuntime)
+  add_dependencies(${runtime_test} ${target})
+  add_test(NAME ${target} COMMAND ${target})
 endforeach()
-
-# transform QIR_EXECUTABLES to comma separated list of string ("...")
-string(REPLACE ";" "\",\"" QIR_EXECUTABLES "\"${QIR_EXECUTABLES}\"")
-
-# add all executables as initializer list of std::filesystem::path's
-target_compile_definitions(${TARGET_NAME} PRIVATE TEST_EXECUTABLES=${QIR_EXECUTABLES})

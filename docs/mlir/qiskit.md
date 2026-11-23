@@ -1,10 +1,10 @@
 # Qiskit compatibility
 
-Install `mqt-core[qiskit]` for Qiskit `>=2.5,<3`. The
-{doc}`QDMI backend <../qdmi/qdmi_backend>` executes circuits through
-device-specific serializers. The
-{doc}`MQT Compiler Collection <mqt_compiler_collection>` imports and exports
-circuits through its versioned native adapter.
+Install `mqt-core[qiskit]` for Qiskit `>=2.5,<3`. Use the
+{doc}`MQT Compiler Collection <mqt_compiler_collection>` to import, optimize,
+and export Qiskit circuits. To execute them on a QDMI device, use the
+{doc}`QDMI backend <../qdmi/qdmi_backend>`, which handles submission and returns
+results in the circuit's classical-bit order.
 
 ## QPY files
 
@@ -28,7 +28,7 @@ with open("output.qpy", "wb") as stream:
 The tuple unpacking requires exactly one circuit. QC and QCO programs both
 provide `to_qiskit()`; pass `copy=True` to preserve the source or `target=` to
 map compiler site IDs through a target. The
-[circuit translation contract](#circuit-translation-contract) defines which
+[supported circuit translation](#supported-circuit-translation) defines which
 circuit features survive conversion.
 
 QPY version 17 works with Qiskit 2.5 and 2.6 and enables their native writer.
@@ -59,13 +59,15 @@ target = CompilerTarget.from_qiskit(backend)
 ```
 
 A backend supplies the default target name; pass `name` to override it. Qiskit
-standard gates, measurement, reset, and their ordered qubit placements become
-native capabilities. Each parameter slot can be unrestricted or fixed to one
-finite value. Multiple instructions of the same gate, such as `RXGate(pi / 2)`
-and `RXGate(pi)`, retain their distinct target names and placements. The
-compiler uses canonical gate names; `to_qiskit(target=target)` selects the
-target name by gate, parameters, and ordered sites. This also preserves legacy
-spellings such as `u1` and `u3`.
+standard gates, measurement, reset, delay, and their ordered qubit placements
+become native capabilities. Each parameter slot can be unrestricted or fixed to
+one finite value. Multiple instructions of the same gate, such as
+`RXGate(pi / 2)` and `RXGate(pi)`, retain their distinct target names and
+placements. The compiler uses canonical gate names; `to_qiskit(target=target)`
+selects the target name by gate, parameters, and ordered sites. This also
+preserves legacy spellings such as `u1` and `u3`. The custom `gpi` and `gpi2`
+aliases are supported when their definitions match the corresponding fixed-angle
+R gates, including global phase.
 
 Routing connectivity is undirected and comes from the retained two-qubit gates.
 Gate applicability keeps its original qubit order. The target needs a known,
@@ -73,11 +75,11 @@ positive qubit count and a connected routing graph. Global phase is always
 allowed as circuit metadata.
 
 By default, unrepresentable gates are omitted with a warning. This includes
-custom gates, unsupported angle bounds, renamed measurement or reset, open
-controls, and controlled gates other than CX, CY, and CZ. Bounded RXX, RYY, RZX,
-and RZZ gates are retained with the conservative interval `[0, pi/2]` when the
-target accepts that entire interval; see
-{doc}`target compilation <target_compilation>`. Delay, barrier, classical
+other custom gates, unsupported angle bounds, fixed-duration delays, renamed
+measurement, reset, or delay instructions, open controls, and controlled gates
+other than CX, CY, and CZ. Bounded RXX, RYY, RZX, and RZZ gates are retained
+with the conservative interval `[0, pi/2]` when the target accepts that entire
+interval; see {doc}`target compilation <target_compilation>`. Barrier, classical
 control flow, and operations with no applicable qubits are omitted without a
 warning. Pass `operation_names` to retain a subset; every selected name must be
 representable. Calibration, timing, and scheduling data are not copied. A
@@ -88,7 +90,9 @@ Target-native synthesis requires a common single-qubit basis across sites and a
 common entangler across routing edges. For explicit pipelines, export with
 `program.to_qiskit(target=target)` to map compiler site IDs to device qubits.
 
-## Circuit translation contract
+(circuit-translation-contract)=
+
+## Supported circuit translation
 
 The compiler imports circuit operations without changing the source circuit. By
 default, import allocates program qubits and translates gate definitions. For a
@@ -109,7 +113,7 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 | ----------------------------------------------------------------------- | -------------------- | ---------------------------------- |
 | Standard gates, constructible numeric modifiers, and global phase       | Supported            | Supported                          |
 | Other finite numeric modifiers                                          | Supported            | Rejected                           |
-| Measurement, reset, and barrier                                         | Supported            | Supported                          |
+| Measurement, reset, delays, and barriers with labels                    | Supported            | Supported                          |
 | Canonical named registers and leading loose bits                        | Supported            | Explicit registers                 |
 | Custom Gates with finite, acyclic definitions                           | Reusable functions   | Custom Gates                       |
 | Generic instructions with finite, acyclic definitions                   | Recursively expanded | Expanded operations                |
@@ -129,6 +133,13 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 | Empty registers, root aliases, or interleaved root membership           | Rejected             | Rejected                           |
 | Complete transpiler layout metadata                                     | Preserved            | Reconstructed when still valid     |
 
+MQT Core accepts Qiskit delays with literal durations in device ticks or SI
+units. For example, `circuit.delay(32, [0, 1], unit="dt")` inserts an
+independent 32-tick wait on each qubit. Each wait stays ordered with the gates
+on its wire through placement. QPY retains exact integer tick counts and the
+units of SI durations. Schedule with Qiskit when execution requires explicit
+start times or idle padding.
+
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
 target and not by a control-flow block. External runtime inputs remain
@@ -142,10 +153,11 @@ the supported subset below.
 
 Export folds scalar expressions in the consumed QC program. Constant arithmetic,
 casts, and idempotent expressions can therefore disappear; expression-tree shape
-is not preserved. Quantum-resource and classical-snapshot canonicalization
-patterns are not applied, because they can change circuit width or introduce
-scratch bits. Call `cleanup()` explicitly when those broader transformations are
-wanted.
+is not preserved. Qubit-resource cleanup and classical-snapshot canonicalization
+are not applied, because they can change circuit width or introduce scratch
+bits. Call `cleanup()` explicitly when those broader transformations are wanted.
+
+### Parameters
 
 Imported free parameters and vectors retain their identities through QC/QCO
 conversion, optimization, and MLIR serialization, so exported circuits can be
@@ -166,9 +178,9 @@ combined declared size in one translated circuit are each limited to 65,536
 elements. Parameter-expression trees support at most 64 levels and 32,768 nodes.
 Import balances addition and subtraction chains before applying the depth limit.
 Fusing runtime rotations can expand these expressions. For repeated numerical
-runs, bind parameters in Core before export to avoid Qiskit's symbolic binding
-cost and stack limits on long addition chains. The limits above bound conversion
-work; they do not bound Qiskit's internal expression depth.
+runs, bind parameters in MQT Core before export to avoid Qiskit's symbolic
+binding cost and stack limits on long addition chains. The limits above bound
+conversion work; they do not bound Qiskit's internal expression depth.
 
 Import and export support real addition, subtraction, multiplication, division,
 power, negation, trigonometric and inverse trigonometric functions, exponential,
@@ -179,7 +191,7 @@ are supported and remain distinct from free symbols. Parameterized
 custom-instruction definitions are expanded after their symbols and expressions
 are resolved. Definition expansion rejects missing definitions, cycles, operand
 arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
-operations. Permutation patterns lower directly to SWAPs in Core, including
+operations. Permutation patterns lower directly to SWAPs in MQT Core, including
 inside nested definitions and gate modifiers. Other array-valued custom
 parameters are represented by the circuit definition rather than scalar program
 inputs. Operations without a supported definition are rejected with a Python
@@ -188,6 +200,8 @@ exception; arbitrary Python parameter objects are not preserved on export.
 Controlled-gate import supports multiple targets and open controls. Open
 controls use X conjugation from the gate's circuit definition;
 `AnnotatedOperation` control modifiers must be closed.
+
+### Control flow and classical values
 
 Structured-control export supports scalar results from {code}`scf.if` and
 {code}`scf.index_switch`, carried scalar state in constant-range
@@ -205,7 +219,10 @@ requiring the original jump statement to survive normalization.
 
 Local scalar state covers Boolean values, fixed-width integers, and `f64` using
 supported backend operations. It uses native `expr.Var` declarations, `Store`
-assignments, and captures in nested circuits. Compiler variables do not increase
+assignments, and captures in nested circuits. For a target that supports
+classical assignments, register the `qiskit.circuit.Store` class with
+`target.add_instruction(Store, name="store")`. Measuring directly into a
+classical bit needs only measurement support. Compiler variables do not increase
 the classical-bit or register counts. Import accepts initialized local variables
 and captures from enclosing supported circuits. External runtime inputs remain
 unsupported. Runtime classical values cannot be used as symbolic gate
@@ -246,6 +263,8 @@ in bounds. Internal CBit storage becomes additional Qiskit registers, ordered
 before returned registers; Qiskit exposes all circuit storage. Other formats and
 execution backends may support a narrower set of integer widths.
 
+### Registers and measurements
+
 Every public CBit output is exported as a Qiskit `ClassicalRegister`; an unnamed
 allocation receives a collision-free `_mqt_cN` name. This preserves the CBit
 register boundary and gives whole-register writes a valid Qiskit lvalue. Loose
@@ -263,6 +282,8 @@ Other uses of the result read a snapshot, including classical expressions,
 copies to dynamic indices, and stores in branches. Later measurements may reuse
 a destination; saved snapshots retain the earlier result.
 
+### Matrix operations
+
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to
 the target gate set. Dense unitary operations support at most eight qubits.
@@ -275,25 +296,47 @@ Other powers require explicit modifier lowering or synthesis.
 A complete Qiskit `TranspileLayout` maps program qubits to device qubits and
 records routing. Import stores those numeric maps as `mqt.layout` on the program
 module; export constructs a Qiskit layout from them. Copies, MLIR serialization,
-and QC/QCO conversions preserve the metadata. Other compiler transformations
-clear it.
+and QC/QCO conversions preserve the metadata. Pass pipelines clear it by
+default. Use `preserve_layout=True` for
+[custom pass sequences](target_compilation.md#custom-pass-sequences) only when
+the passes keep wire and site identities or update the layout.
 
 ```python
 program = QCProgram.from_qiskit(transpiled_circuit)
 restored = program.to_qco().to_qc().to_qiskit()
 ```
 
-Target compilation and compilation to a Qiskit circuit require inputs without an
-attached layout. Use the conversion methods above to preserve an existing
-layout. The numeric mapping does not retain Qiskit input register names or input
-ancilla labels; incomplete layouts are unsupported. See {doc}`MQT dialect <MQT>`
-for the metadata schema and {doc}`target compilation <target_compilation>` for
-placement.
+Compiling a mapped circuit to Qiskit or QPY requires a device target or an
+explicit `ignore_input_layout=True`. Use `to_qiskit()` for a direct conversion
+that preserves the layout.
+
+Device compilation composes an imported layout with MQT Core's placement and
+routing. The compiled circuit keeps the program qubits and final layout of the
+input, including the output permutation of SWAPs that Qiskit elided. To treat
+the current wires of a mapped circuit as fresh program qubits instead, pass
+`ignore_input_layout=True` to `compile_program`. Pass
+`include_output_layout=False` to omit the layout from a Qiskit circuit or
+explicit `OutputFormat.QPY` result while keeping the physical wires and
+measurement destinations. MQT Core raises `ValueError` if the input or output
+format does not support the requested option.
+
+In MQT Core's `mqt.layout`, `initial[i]` maps program qubit `i` to its device
+position before routing. If `routing` is present, `routing[initial[i]]` is its
+final position. The optional `sites` array maps positions to target site IDs;
+imported Qiskit layouts without this array use circuit-wire positions. These
+maps concern quantum placement. They do not describe classical result order,
+which is handled separately by {py:class}`~mqt.core.mlir.ResultLayout`.
+
+The numeric mapping requires complete layouts and omits Qiskit input register
+names and ancilla labels. See {doc}`MQT dialect <MQT>` for the metadata schema
+and {doc}`target compilation <target_compilation>` for placement.
 
 Names passed between Qiskit and the compiler must not contain NUL characters.
 Loop lists with jumps and switch cases with variables are supported within the
 64-level nesting and definition-expansion limits. Unsupported programs fail
 without exposing a partial result.
+
+## Version compatibility
 
 The binding imports Qiskit only when circuit translation is requested. It
 accepts Qiskit {code}`>=2.5,<3` and selects the newest bundled C API adapter
@@ -306,15 +349,3 @@ Qiskit's
 and may change between minor releases. Forward minor compatibility is
 optimistic: an incompatible native ABI can crash the process. Use a tested
 Qiskit minor in environments that require a fixed compatibility baseline.
-
-Qiskit 2.6 uses borrowed C API instruction views and reads numeric gate
-parameters and global phases natively. Both adapters construct circuits,
-registers, and empty control-flow blocks through the C API. Tuple conditions
-become C++ equality trees directly; their public Python values remain
-authoritative because native conditions can be stale after a condition edit.
-Symbolic expressions retain the Python fallback because the C API does not
-expose their expression trees or parameter identities. Custom Python gates and
-classical expressions also retain their Python fallbacks. The new native
-custom-operation API defines operations; it does not inspect existing Python
-gate definitions. Delay instructions remain unsupported because the compiler
-does not represent their timing semantics.

@@ -483,6 +483,15 @@ Expected<std::unique_ptr<JitSession>>
 JitSession::create(llvm::StringRef irBytes, llvm::StringRef bufferName,
                    Execution execution, std::optional<uint64_t> randomSeed,
                    llvm::raw_ostream* output, std::optional<size_t> maxQubits) {
+  return create(irBytes, bufferName, execution, randomSeed, output, maxQubits,
+                {});
+}
+
+Expected<std::unique_ptr<JitSession>>
+JitSession::create(llvm::StringRef irBytes, llvm::StringRef bufferName,
+                   Execution execution, std::optional<uint64_t> randomSeed,
+                   llvm::raw_ostream* output, std::optional<size_t> maxQubits,
+                   llvm::StringRef expectedProfile) {
   auto loadedModule = loadModuleFromMemory(irBytes, bufferName);
   if (!loadedModule) {
     return loadedModule.takeError();
@@ -493,7 +502,8 @@ JitSession::create(llvm::StringRef irBytes, llvm::StringRef bufferName,
     session->runtime_->maxQubits_ =
         std::min(*maxQubits, dd::Package::MAX_POSSIBLE_QUBITS);
   }
-  if (auto error = session->initialize(std::move(*loadedModule), execution)) {
+  if (auto error = session->initialize(std::move(*loadedModule), execution,
+                                       expectedProfile)) {
     // A failed construction must not run program destructors.
     session->jit_.reset();
     return error;
@@ -804,8 +814,11 @@ static Error normalizeNativeQISNames(llvm::Module& module) {
     }
     auto [gate, specialization] = name.split("__");
     llvm::StringRef canonical;
-    if (gate == "r") {
+    // Native GPI pulses keep the R(θ, φ) arguments of their compiled gate.
+    if (gate == "r" || gate == "gpi" || gate == "gpi2") {
       canonical = "prx";
+    } else if (gate == "zz") {
+      canonical = "rzz";
     } else if (gate == "u") {
       canonical = "u3";
     } else if (gate == "measure") {
@@ -847,11 +860,13 @@ static Error normalizeNativeQISNames(llvm::Module& module) {
 }
 
 Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
-                             const Execution execution) {
+                             const Execution execution,
+                             llvm::StringRef expectedProfile) {
 
   std::string entryPointName;
   std::vector<std::pair<std::string, void*>> runtimeSymbols;
   bool hasAggregateLoads = false;
+  bool allowTerminalSampling = false;
   auto preparation = loadedModule.withModuleDo([&](llvm::Module& module)
                                                    -> Error {
     if (auto error = normalizeNativeQISNames(module)) {
@@ -912,6 +927,16 @@ Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
       return selected.takeError();
     }
     auto& entryPoint = **selected;
+    if (!expectedProfile.empty()) {
+      const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
+      if (!profile.isStringAttribute() ||
+          profile.getValueAsString() != expectedProfile) {
+        return createStringError(
+            std::errc::invalid_argument,
+            "QIR entry point must declare the '%s' profile",
+            expectedProfile.str().c_str());
+      }
+    }
     entryPointName = entryPoint.getName().str();
     runtime_->setOutputSchema(readOutputSchema(entryPoint));
     std::vector<std::pair<std::string, std::string>> metadata;
@@ -958,8 +983,10 @@ Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
         first->getCalledFunction()->getName() == "__quantum__rt__initialize";
     // Destructors may inspect the last shot's collapsed state and Result
     // values.
-    if (execution == Execution::Sampling &&
-        module.getNamedGlobal("llvm.global_dtors") == nullptr) {
+    allowTerminalSampling =
+        execution == Execution::Sampling &&
+        module.getNamedGlobal("llvm.global_dtors") == nullptr;
+    if (allowTerminalSampling) {
       samplingOutputs_ = getStaticSamplingOutputs(entryPoint);
     }
     return Error::success();
@@ -1093,16 +1120,18 @@ Error JitSession::initialize(llvm::orc::ThreadSafeModule loadedModule,
       pipeline.addPass(
           llvm::createModuleToFunctionPassAdaptor(llvm::MemCpyOptPass()));
       if (execution == Execution::Sampling) {
-        pipeline.addPass(passBuilder.buildPerModuleDefaultPipeline(
-            llvm::OptimizationLevel::O1));
+        pipeline.addPass(passBuilder.buildModuleSimplificationPipeline(
+            llvm::OptimizationLevel::O1, llvm::ThinOrFullLTOPhase::None));
       }
       pipeline.run(module, moduleAnalyses);
-      sampleBranches_ =
-          execution == Execution::Sampling &&
-          qir::canSampleBranches(*module.getFunction(entryPointName));
+      auto& entryPoint = *module.getFunction(entryPointName);
+      if (allowTerminalSampling) {
+        samplingOutputs_ = getStaticSamplingOutputs(entryPoint);
+      }
+      sampleBranches_ = !samplingOutputs_ && execution == Execution::Sampling &&
+                        qir::canSampleBranches(entryPoint);
       tryTerminalSampling_ =
-          sampleBranches_ &&
-          qir::canDeferMeasurements(*module.getFunction(entryPointName));
+          sampleBranches_ && qir::canDeferMeasurements(entryPoint);
     });
   }
 

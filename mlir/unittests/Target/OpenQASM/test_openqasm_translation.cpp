@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "dd/Edge.hpp"
+#include "dd/Package.hpp"
 #include "mqt/Conversion/QCToQCO/QCToQCO.h"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
@@ -15,9 +17,10 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
-#include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/OpenQASM/TranslateOpenQASMToQC.h"
@@ -44,17 +47,17 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 
-#include <algorithm>
 #include <array>
+#include <bit>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <numbers>
-#include <optional>
 #include <string>
 #include <utility>
 
@@ -147,319 +150,71 @@ static Value legacyTripleControlledSx(qc::QCProgramBuilder& b) {
   return measureToRegister(b, q.qubits);
 }
 
-using Complex = std::complex<double>;
-
-namespace {
-
-template <size_t Dimension> struct TestMatrix {
-  std::array<Complex, Dimension * Dimension> data{};
-
-  template <typename... Elements>
-  [[nodiscard]] static TestMatrix fromElements(Elements... elements) {
-    static_assert(sizeof...(elements) == Dimension * Dimension);
-    return {{Complex{elements}...}};
-  }
-
-  [[nodiscard]] static TestMatrix identity() {
-    TestMatrix result;
-    for (size_t diagonal = 0; diagonal < Dimension; ++diagonal) {
-      result(diagonal, diagonal) = 1.0;
-    }
-    return result;
-  }
-
-  [[nodiscard]] Complex& operator()(const size_t row, const size_t column) {
-    return data[(row * Dimension) + column];
-  }
-
-  [[nodiscard]] Complex operator()(const size_t row,
-                                   const size_t column) const {
-    return data[(row * Dimension) + column];
-  }
-
-  [[nodiscard]] TestMatrix operator*(const TestMatrix& rhs) const {
-    TestMatrix result;
-    for (size_t row = 0; row < Dimension; ++row) {
-      for (size_t column = 0; column < Dimension; ++column) {
-        for (size_t inner = 0; inner < Dimension; ++inner) {
-          result(row, column) += (*this)(row, inner) * rhs(inner, column);
-        }
-      }
-    }
-    return result;
-  }
-
-  [[nodiscard]] TestMatrix operator*(const Complex scalar) const {
-    auto result = *this;
-    result *= scalar;
-    return result;
-  }
-
-  TestMatrix& operator*=(const Complex scalar) {
-    for (auto& element : data) {
-      element *= scalar;
-    }
-    return *this;
-  }
-
-  [[nodiscard]] TestMatrix adjoint() const {
-    TestMatrix result;
-    for (size_t row = 0; row < Dimension; ++row) {
-      for (size_t column = 0; column < Dimension; ++column) {
-        result(row, column) = std::conj(data[(column * Dimension) + row]);
-      }
-    }
-    return result;
-  }
-
-  [[nodiscard]] bool isApprox(const TestMatrix& other,
-                              const double tolerance) const {
-    return std::ranges::equal(data, other.data,
-                              [=](const Complex lhs, const Complex rhs) {
-                                return std::abs(lhs - rhs) <= tolerance;
-                              });
-  }
-};
-
-using Matrix2 = TestMatrix<2>;
-using Matrix4 = TestMatrix<4>;
-
-} // namespace
-
-[[nodiscard]] static Matrix4 embedInTwoQubit(const Matrix2& gate,
-                                             const size_t qubit) {
-  EXPECT_LT(qubit, 2U);
-  if (qubit == 0) {
-    return Matrix4::fromElements(
-        gate(0, 0), 0.0, gate(0, 1), 0.0, 0.0, gate(0, 0), 0.0, gate(0, 1),
-        gate(1, 0), 0.0, gate(1, 1), 0.0, 0.0, gate(1, 0), 0.0, gate(1, 1));
-  }
-  return Matrix4::fromElements(gate(0, 0), gate(0, 1), 0.0, 0.0, gate(1, 0),
-                               gate(1, 1), 0.0, 0.0, 0.0, 0.0, gate(0, 0),
-                               gate(0, 1), 0.0, 0.0, gate(1, 0), gate(1, 1));
-}
-
-[[nodiscard]] static Matrix2
+[[nodiscard]] static qco::Matrix2x2
 openQASM3UMatrix(const double theta, const double phi, const double lambda) {
   using namespace std::complex_literals;
   const auto thetaPhase = std::exp(1i * theta);
   const auto common = 0.5 * (1.0 + thetaPhase);
-  const auto difference = Complex{0.0, 0.5} * (1.0 - thetaPhase);
-  return Matrix2::fromElements(common, -std::exp(1i * lambda) * difference,
-                               std::exp(1i * phi) * difference,
-                               std::exp(1i * (phi + lambda)) * common);
+  const auto difference = qco::Complex{0.0, 0.5} * (1.0 - thetaPhase);
+  return qco::Matrix2x2::fromElements(
+      common, -std::exp(1i * lambda) * difference,
+      std::exp(1i * phi) * difference, std::exp(1i * (phi + lambda)) * common);
 }
 
-[[nodiscard]] static Matrix2
+[[nodiscard]] static qco::Matrix2x2
 conventionalUMatrix(const double theta, const double phi, const double lambda) {
   using namespace std::complex_literals;
   const auto cosine = std::cos(theta / 2.0);
   const auto sine = std::sin(theta / 2.0);
-  return Matrix2::fromElements(cosine, -std::exp(1i * lambda) * sine,
-                               std::exp(1i * phi) * sine,
-                               std::exp(1i * (phi + lambda)) * cosine);
+  return qco::Matrix2x2::fromElements(cosine, -std::exp(1i * lambda) * sine,
+                                      std::exp(1i * phi) * sine,
+                                      std::exp(1i * (phi + lambda)) * cosine);
 }
 
-[[nodiscard]] static Matrix2
+[[nodiscard]] static qco::Matrix2x2
 openQASM2UMatrix(const double theta, const double phi, const double lambda) {
   using namespace std::complex_literals;
   return conventionalUMatrix(theta, phi, lambda) *
-         std::exp(Complex{0.0, -0.5} * (phi + lambda));
+         std::exp(qco::Complex{0.0, -0.5} * (phi + lambda));
 }
 
-[[nodiscard]] static Matrix4 controlledMatrix(const Matrix2& body,
-                                              const bool negative = false) {
-  if (negative) {
-    return Matrix4::fromElements(body(0, 0), body(0, 1), 0.0, 0.0, body(1, 0),
-                                 body(1, 1), 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0,
-                                 0.0, 0.0, 1.0);
-  }
-  return Matrix4::fromElements(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0,
-                               body(0, 0), body(0, 1), 0.0, 0.0, body(1, 0),
-                               body(1, 1));
-}
-
-[[nodiscard]] static std::optional<double> evaluateScalar(Value value) {
-  if (auto constant = value.getDefiningOp<arith::ConstantOp>()) {
-    if (const auto floatValue = dyn_cast<FloatAttr>(constant.getValue())) {
-      return floatValue.getValueAsDouble();
+[[nodiscard]] static qco::Matrix4x4
+controlledMatrix(const qco::Matrix2x2& body, const bool negative = false) {
+  auto result = qco::Matrix4x4::identity();
+  // The control is q[0], the least significant bit of the basis index.
+  const size_t controlBit = negative ? 0 : 1;
+  for (size_t row = 0; row < 2; ++row) {
+    for (size_t column = 0; column < 2; ++column) {
+      result(2 * row + controlBit, 2 * column + controlBit) = body(row, column);
     }
-    if (const auto integerValue = dyn_cast<IntegerAttr>(constant.getValue())) {
-      return static_cast<double>(integerValue.getInt());
-    }
-  }
-  if (auto add = value.getDefiningOp<arith::AddFOp>()) {
-    const auto lhs = evaluateScalar(add.getLhs());
-    const auto rhs = evaluateScalar(add.getRhs());
-    if (lhs && rhs) {
-      return *lhs + *rhs;
-    }
-  }
-  if (auto multiply = value.getDefiningOp<arith::MulFOp>()) {
-    const auto lhs = evaluateScalar(multiply.getLhs());
-    const auto rhs = evaluateScalar(multiply.getRhs());
-    if (lhs && rhs) {
-      return *lhs * *rhs;
-    }
-  }
-  return std::nullopt;
-}
-
-[[nodiscard]] static Matrix2 integerPower(Matrix2 base, int64_t exponent) {
-  auto exponentMagnitude = static_cast<uint64_t>(exponent);
-  if (exponent < 0) {
-    base = base.adjoint();
-    exponentMagnitude = uint64_t{0} - exponentMagnitude;
-  }
-  auto result = Matrix2::identity();
-  while (exponentMagnitude > 0U) {
-    if ((exponentMagnitude & 1U) != 0U) {
-      result = base * result;
-    }
-    base = base * base;
-    exponentMagnitude >>= 1U;
   }
   return result;
 }
 
-[[nodiscard]] static std::optional<Matrix2>
-evaluateOneQubitRegion(Region& region);
-
-[[nodiscard]] static std::optional<Matrix2>
-evaluateOneQubitOperation(Operation* operation) {
-  if (auto gphase = dyn_cast<qc::GPhaseOp>(operation)) {
-    const auto theta = evaluateScalar(gphase.getTheta());
-    if (theta) {
-      return Matrix2::identity() * std::exp(std::complex<double>{0.0, *theta});
-    }
-  } else if (isa<qc::XOp>(operation)) {
-    return Matrix2::fromElements(0.0, 1.0, 1.0, 0.0);
-  } else if (auto phase = dyn_cast<qc::POp>(operation)) {
-    const auto theta = evaluateScalar(phase.getTheta());
-    if (theta) {
-      return Matrix2::fromElements(1.0, 0.0, 0.0,
-                                   std::exp(std::complex<double>{0.0, *theta}));
-    }
-  } else if (auto u = dyn_cast<qc::UOp>(operation)) {
-    const auto theta = evaluateScalar(u.getTheta());
-    const auto phi = evaluateScalar(u.getPhi());
-    const auto lambda = evaluateScalar(u.getLambda());
-    if (theta && phi && lambda) {
-      return conventionalUMatrix(*theta, *phi, *lambda);
-    }
-  } else if (auto u2 = dyn_cast<qc::U2Op>(operation)) {
-    const auto phi = evaluateScalar(u2.getPhi());
-    const auto lambda = evaluateScalar(u2.getLambda());
-    if (phi && lambda) {
-      return conventionalUMatrix(std::numbers::pi / 2.0, *phi, *lambda);
-    }
-  } else if (auto inverse = dyn_cast<qc::InvOp>(operation)) {
-    if (const auto body = evaluateOneQubitRegion(inverse.getRegion())) {
-      return body->adjoint();
-    }
-  } else if (auto power = dyn_cast<qc::PowOp>(operation)) {
-    const auto exponent = evaluateScalar(power.getExponent());
-    const auto body = evaluateOneQubitRegion(power.getRegion());
-    if (exponent && body && std::trunc(*exponent) == *exponent) {
-      return integerPower(*body, static_cast<int64_t>(*exponent));
-    }
-  }
-  return std::nullopt;
-}
-
-[[nodiscard]] static std::optional<Matrix2>
-evaluateOneQubitRegion(Region& region) {
-  auto result = Matrix2::identity();
-  for (Operation& operation : region.front()) {
-    if (!isa<qc::UnitaryOpInterface>(&operation)) {
-      continue;
-    }
-    const auto matrix = evaluateOneQubitOperation(&operation);
-    if (!matrix) {
-      return std::nullopt;
-    }
-    result = *matrix * result;
-  }
-  return result;
-}
-
-[[nodiscard]] static std::optional<size_t> topLevelQubitIndex(Value qubit) {
-  auto load = qubit.getDefiningOp<memref::LoadOp>();
-  if (!load || load.getIndices().size() != 1) {
-    return std::nullopt;
-  }
-  auto index = load.getIndices().front().getDefiningOp<arith::ConstantOp>();
-  if (!index) {
-    return std::nullopt;
-  }
-  const auto value = dyn_cast<IntegerAttr>(index.getValue());
-  if (!value || value.getInt() < 0) {
-    return std::nullopt;
-  }
-  return static_cast<size_t>(value.getInt());
-}
-
-[[nodiscard]] static Matrix2
-translatedOneQubitUnitary(const llvm::StringRef source) {
+template <typename Matrix>
+static void expectTranslatedMatrix(const llvm::StringRef source,
+                                   const Matrix& expected) {
+  SCOPED_TRACE(source.str());
   MLIRContext context;
-  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
-  EXPECT_TRUE(moduleOp);
-  if (!moduleOp) {
-    return Matrix2::identity();
-  }
-  auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  const auto matrix = evaluateOneQubitRegion(function.getBody());
-  EXPECT_TRUE(matrix);
-  return matrix.value_or(Matrix2::identity());
-}
+  auto module = qc::translateOpenQASMToQC(source, &context);
+  ASSERT_TRUE(module);
+  PassManager manager(&context);
+  manager.addPass(createQCToQCO());
+  ASSERT_TRUE(succeeded(manager.run(*module)));
 
-[[nodiscard]] static Matrix4
-translatedTwoQubitUnitary(const llvm::StringRef source) {
-  MLIRContext context;
-  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
-  EXPECT_TRUE(moduleOp);
-  if (!moduleOp) {
-    return Matrix4::identity();
+  constexpr auto numQubits = std::bit_width(Matrix::K_ROWS) - 1;
+  auto package = llvm::cantFail(dd::Package::create(numQubits));
+  const auto matrix =
+      qco::buildFunctionality(mlir::mqt::getEntryPoint(*module), *package);
+  ASSERT_TRUE(succeeded(matrix));
+  const auto actual = llvm::cantFail(dd::getMatrix(*matrix, numQubits));
+  for (size_t row = 0; row < Matrix::K_ROWS; ++row) {
+    for (size_t column = 0; column < Matrix::K_COLS; ++column) {
+      EXPECT_NEAR(std::abs(actual[row][column] - expected(row, column)), 0.,
+                  1e-10)
+          << "at (" << row << ", " << column << ")";
+    }
   }
-  auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  auto result = Matrix4::identity();
-  for (Operation& operation : function.getBody().front()) {
-    if (auto gphase = dyn_cast<qc::GPhaseOp>(&operation)) {
-      const auto theta = evaluateScalar(gphase.getTheta());
-      EXPECT_TRUE(theta);
-      if (!theta) {
-        return Matrix4::identity();
-      }
-      result *= std::exp(std::complex<double>{0.0, *theta});
-      continue;
-    }
-    if (auto control = dyn_cast<qc::CtrlOp>(&operation)) {
-      const auto controlIndex = topLevelQubitIndex(control.getControl(0));
-      const auto targetIndex = topLevelQubitIndex(control.getTarget(0));
-      const auto body = evaluateOneQubitRegion(control.getRegion());
-      EXPECT_EQ(controlIndex, 0U);
-      EXPECT_EQ(targetIndex, 1U);
-      EXPECT_TRUE(body);
-      if (!controlIndex || !targetIndex || !body) {
-        return Matrix4::identity();
-      }
-      result = controlledMatrix(*body) * result;
-      continue;
-    }
-    if (!isa<qc::UnitaryOpInterface>(&operation)) {
-      continue;
-    }
-    auto unitary = dyn_cast<qc::UnitaryOpInterface>(&operation);
-    const auto matrix = evaluateOneQubitOperation(&operation);
-    const auto targetIndex = topLevelQubitIndex(unitary.getTarget(0));
-    EXPECT_TRUE(matrix);
-    EXPECT_TRUE(targetIndex);
-    if (!matrix || !targetIndex) {
-      return Matrix4::identity();
-    }
-    result = embedInTwoQubit(*matrix, *targetIndex) * result;
-  }
-  return result;
 }
 
 TEST(OpenQASMTranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
@@ -473,7 +228,7 @@ TEST(OpenQASMTranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
 
   struct OneQubitCase {
     llvm::StringRef source;
-    Matrix2 expected;
+    qco::Matrix2x2 expected;
   };
   const auto oneQubitCases = std::to_array<OneQubitCase>({
       {
@@ -508,9 +263,7 @@ TEST(OpenQASMTranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
       },
   });
   for (const auto& test : oneQubitCases) {
-    SCOPED_TRACE(test.source.str());
-    EXPECT_TRUE(
-        translatedOneQubitUnitary(test.source).isApprox(test.expected, 1e-10));
+    expectTranslatedMatrix(test.source, test.expected);
   }
 
   const auto controlledQASM3 = controlledMatrix(qasm3U);
@@ -518,7 +271,7 @@ TEST(OpenQASMTranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
   const auto phasedQASM3 = qasm3U * std::exp(std::complex<double>{0.0, gamma});
   struct TwoQubitCase {
     llvm::StringRef source;
-    Matrix4 expected;
+    qco::Matrix4x4 expected;
   };
   const auto twoQubitCases = std::to_array<TwoQubitCase>({
       {
@@ -553,9 +306,7 @@ TEST(OpenQASMTranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
       },
   });
   for (const auto& test : twoQubitCases) {
-    SCOPED_TRACE(test.source.str());
-    EXPECT_TRUE(
-        translatedTwoQubitUnitary(test.source).isApprox(test.expected, 1e-10));
+    expectTranslatedMatrix(test.source, test.expected);
   }
 }
 

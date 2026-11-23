@@ -12,9 +12,9 @@ is generated from the same source revision as this guide.
 
 ## Use the wheel's native runtime
 
-The Python wheel supplies the QDMI driver, device bundles, and the `mqt-cc` and
-`mqt-core-bench` executables. Its CMake package exposes the QDMI C interfaces;
-C++ DD, QDMI client, and benchmark libraries require a source installation.
+The Python wheel supplies the QDMI driver, device bundles, and the `mqt-core`
+executable. Its CMake package exposes the QDMI C interfaces; C++ DD, QDMI
+client, and benchmark libraries require a source installation.
 
 This application runs one deterministic shot through DDSIM's worker using the
 builtin driver's C interface. Its bundle contains only the DDSIM device. Save it
@@ -22,8 +22,6 @@ as `main.cpp`:
 
 ```cpp
 #include "qdmi/client.h"
-
-#include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <stdexcept>
@@ -66,7 +64,6 @@ int main() {
   if (std::string(result) != "1") {
     return 1;
   }
-  llvm::outs() << "DDSIM result: " << result << '\n';
 }
 ```
 
@@ -78,27 +75,28 @@ project(qdmi-example LANGUAGES CXX)
 find_package(mqt-core CONFIG REQUIRED COMPONENTS Runtime)
 add_executable(qdmi-example main.cpp)
 target_compile_features(qdmi-example PRIVATE cxx_std_20)
-target_link_libraries(qdmi-example PRIVATE MQT::CoreQDMIDriver LLVMSupport)
+target_link_libraries(qdmi-example PRIVATE MQT::CoreQDMIDriver)
 mqt_copy_qdmi_runtime(qdmi-example MQT::CoreQDMI_DDSIM_Device)
 
 enable_testing()
 add_test(NAME qdmi-runtime COMMAND qdmi-example)
 ```
 
-With the wheel installed in the active environment and an LLVM SDK matching the
-major and minor version used to build MQT Core, run:
+With the wheel installed in the active environment, run:
 
 ```console
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(mqt-core-cli --cmake_dir)"
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$(mqt-core --cmake-dir)"
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-The application prints `DDSIM result: 1`.
+The application returns success after checking that DDSIM measured `1`. The
+Runtime component requires no LLVM SDK.
 
-CMake also provides `MQT::mqt-cc` and `MQT::mqt-core-bench` imported executable
-targets. Use them in custom commands, or run `mqt-cc` and `mqt-core-bench` from
-the environment's command line.
+CMake provides the `MQT::mqt-core` imported executable target. Use
+`mqt-core compile` and `mqt-core bench` in custom commands or from the command
+line. DDSIM launches `mqt-core simulate --worker-socket <socket>` as a separate
+process using its internal worker protocol.
 
 ```{code-cell} ipython3
 :tags: [remove-cell]
@@ -114,9 +112,10 @@ Build and install MQT Core from source, then request the `Development`
 component. It provides `MQT::CoreDD`, `MQT::CoreQDMI`, and `MQT::CoreBench`. The
 DD, QDMI C++ client, and benchmark libraries are static so LLVM errors stay
 within the consuming binary. Compile consumers with a compatible C++ toolchain.
-Development consumers require an LLVM SDK matching the major and minor version
-used to build MQT Core. CMake finds LLVM and propagates its headers and
-libraries through the imported targets.
+Development consumers require an LLVM SDK with the same major and minor version
+and the same ABI-breaking checks setting as the SDK used to build MQT Core.
+CMake checks compatibility and propagates the LLVM headers and libraries through
+the imported targets.
 
 ```cmake
 find_package(mqt-core CONFIG REQUIRED COMPONENTS Development)

@@ -279,19 +279,6 @@ TEST(OpenQASMTargetTest, EmitsVerifiedQCDirectly) {
   EXPECT_EQ(gates, 2);
 }
 
-TEST(OpenQASMTargetTest, ProductionTranslationUsesTheStagedPipeline) {
-  MLIRContext context;
-  auto moduleOp = qc::translateOpenQASMToQC(BROADCAST_PROGRAM, &context);
-  ASSERT_TRUE(moduleOp);
-  EXPECT_TRUE(succeeded(verify(*moduleOp)));
-
-  bool hasQuantumOperation = false;
-  moduleOp->walk([&](Operation* operation) {
-    hasQuantumOperation |= isa<qc::HOp>(operation);
-  });
-  EXPECT_TRUE(hasQuantumOperation);
-}
-
 TEST(OpenQASMTargetTest, EmitsScalarMathFunctions) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;

@@ -308,11 +308,12 @@ private:
   normalizeBlock(Block& block, Operation* extractionBoundary) {
     SmallVector<PhaseContribution> contributions;
     SmallVector<Operation*> directPhases;
-    Operation* insertionBefore = nullptr;
+    auto insertionPoint = block.end();
 
     for (auto& op : llvm::make_early_inc_range(block.without_terminator())) {
       auto* current = &op;
-      auto* next = op.getNextNode();
+      auto next = std::next(op.getIterator());
+      const bool atInsertionPoint = insertionPoint == op.getIterator();
       if (extractionBoundary != nullptr &&
           !isa<qc::UnitaryOpInterface, qco::UnitaryOpInterface>(op)) {
         // Hoist once, in source order, across the full eager modifier nest.
@@ -335,13 +336,14 @@ private:
         phase = normalizeOperation(&op, extractionBoundary);
       }
       // A following modifier may disappear or emit a relative phase.
-      if (insertionBefore == current && next->getPrevNode() != current) {
-        insertionBefore = next;
+      if (atInsertionPoint &&
+          (next == block.begin() || &*std::prev(next) != current)) {
+        insertionPoint = next;
       }
       if (!phase) {
         continue;
       }
-      insertionBefore = next;
+      insertionPoint = next;
       contributions.push_back(std::move(*phase));
     }
 
@@ -378,7 +380,7 @@ private:
     if (aggregate.expression.isZero()) {
       return std::nullopt;
     }
-    rewriter.setInsertionPoint(insertionBefore);
+    rewriter.setInsertionPoint(&block, insertionPoint);
     auto angle = aggregate.expression.materialize(rewriter, aggregate.loc);
     if (aggregate.dialect == PhaseDialect::QC) {
       qc::GPhaseOp::create(rewriter, aggregate.loc, angle);

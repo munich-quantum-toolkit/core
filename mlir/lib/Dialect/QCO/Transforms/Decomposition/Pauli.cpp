@@ -20,20 +20,24 @@
 #include "mqt/Dialect/QCO/Transforms/NativeSynthesis/NativeCost.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -713,7 +717,16 @@ void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp) {
           }
           if (!body || !isa<IdOp, ZOp, SOp, SdgOp, TOp, TdgOp, RZOp, POp, RZZOp,
                             GPhaseOp>(body.getOperation())) {
-            flush();
+            if (!isMemoryEffectFree(&operation) ||
+                operation.getNumRegions() != 0 || isa<BarrierOp>(operation)) {
+              flush();
+            } else {
+              // End only the touched wire segments; later outputs get fresh
+              // IDs.
+              for (Value input : gate.getInputQubits()) {
+                wires.erase(input);
+              }
+            }
             continue;
           }
           SmallVector<size_t, 2> operands;
@@ -757,15 +770,69 @@ void mergeDiagonalRotations(RewriterBase& rewriter, ModuleOp moduleOp) {
   });
 }
 
+// Omit the sole entangling Pauli only when it meets the Weyl fidelity floor.
+static SmallVector<Value, 2> emitRuntimePauliSequence(
+    RewriterBase& rewriter, Location loc, ValueRange inputs,
+    const PauliRotationSequence& sequence,
+    const CompilerTarget::SynthesisBasis& basis, bool reverse) {
+  auto reduced = sequence;
+  auto* term = llvm::find_if(reduced.rotations, [](const auto& rotation) {
+    return rotation.axes[0] != PauliAxis::I && rotation.axes[1] != PauliAxis::I;
+  });
+  if (term == reduced.rotations.end() ||
+      llvm::count_if(reduced.rotations,
+                     [](const auto& rotation) {
+                       return rotation.axes[0] != PauliAxis::I &&
+                              rotation.axes[1] != PauliAxis::I;
+                     }) != 1 ||
+      !std::isnormal(term->angleScale)) {
+    return emitPauliSequence(rewriter, loc, inputs, sequence, basis, reverse);
+  }
+  // One omitted Pauli rotation has 1 - F <= (scale * angle)^2 / 5.
+  const double bound = std::nextafter(
+      std::sqrt(5. * (1. - WEYL_DEFAULT_FIDELITY)) / std::abs(term->angleScale),
+      0.);
+  if (!std::isfinite(bound) || bound <= 0.) {
+    return emitPauliSequence(rewriter, loc, inputs, sequence, basis, reverse);
+  }
+  reduced.rotations.erase(term);
+  auto lower = mqt::constantFromScalar(rewriter, loc, -bound);
+  auto upper = mqt::constantFromScalar(rewriter, loc, bound);
+  auto above = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OGE,
+                                     sequence.angle, lower);
+  auto below = arith::CmpFOp::create(rewriter, loc, arith::CmpFPredicate::OLE,
+                                     sequence.angle, upper);
+  auto small = arith::AndIOp::create(rewriter, loc, above, below);
+  auto branch = IfOp::create(rewriter, loc, TypeRange{}, inputs.getTypes(),
+                             small, inputs);
+  const OpBuilder::InsertionGuard guard(rewriter);
+  for (auto [index, region] : llvm::enumerate(branch->getRegions())) {
+    auto* block =
+        rewriter.createBlock(&region, {}, inputs.getTypes(),
+                             SmallVector<Location>(inputs.size(), loc));
+    auto values =
+        emitPauliSequence(rewriter, loc, block->getArguments(),
+                          index == 0 ? reduced : sequence, basis, reverse);
+    YieldOp::create(rewriter, loc, values);
+  }
+  return {branch.result_begin(), branch.result_end()};
+}
+
 SmallVector<Value, 2>
 emitPauliRotations(RewriterBase& rewriter, Operation* operation,
                    const PauliRotationSequence& sequence,
-                   const CompilerTarget::SynthesisBasis& basis, bool reverse) {
+                   const CompilerTarget::SynthesisBasis& basis, bool reverse,
+                   bool allowRuntimeApproximation) {
   hoistPauliAngle(rewriter, operation);
   rewriter.setInsertionPoint(operation);
-  return emitPauliSequence(rewriter, operation->getLoc(),
-                           cast<UnitaryOpInterface>(operation).getInputQubits(),
-                           sequence, basis, reverse);
+  auto inputs = cast<UnitaryOpInterface>(operation).getInputQubits();
+  if (allowRuntimeApproximation &&
+      !mqt::valueToConstantDouble(sequence.angle)) {
+    return emitRuntimePauliSequence(rewriter, operation->getLoc(), inputs,
+                                    sequence, basis, reverse);
+  }
+  return emitPauliSequence(rewriter, operation->getLoc(), inputs, sequence,
+                           basis, reverse);
 }
 
 std::optional<PauliRotationCounts>
@@ -843,19 +910,17 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
   SmallVector<Operation*> operations;
   SmallVector<PauliGroup, 4> groups;
   SmallVector<RotationAngleTerm> phase;
-  std::array wires{first.getInputQubit(0), first.getInputQubit(1)};
   size_t separateCost = 0;
-  for (auto current = first;
-       current && current->getBlock() == head->getBlock();) {
+  const auto append = [&](UnitaryOpInterface current, bool reversed,
+                          bool prefix) {
     auto sequence = getPauliRotations(current);
     if (!sequence) {
-      break;
+      return false;
     }
-    // Numerical fusion owns constant heads; runtime runs may absorb constants.
-    if (operations.empty() && mqt::valueToConstantDouble(sequence->angle)) {
-      return failure();
+    if ((prefix || operations.empty()) &&
+        mqt::valueToConstantDouble(sequence->angle).has_value() != prefix) {
+      return false;
     }
-    const bool reversed = current.getInputQubit(0) != wires[0];
     if (reversed) {
       for (auto& term : sequence->rotations) {
         std::swap(term.axes[0], term.axes[1]);
@@ -871,14 +936,14 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
         sites ? std::optional<ArrayRef<CompilerTarget::SiteId>>{operationSites}
               : std::nullopt);
     if (!cost) {
-      break;
+      return false;
     }
     if (llvm::any_of(sequence->rotations, [&](const auto& term) {
           return llvm::any_of(groups, [&](const auto& group) {
             return !commute(term.axes, group.axes);
           });
         })) {
-      break;
+      return false;
     }
     for (const auto& term : sequence->rotations) {
       auto* found = llvm::find_if(
@@ -896,15 +961,42 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
     }
     operations.push_back(current);
     separateCost += *cost;
-    wires = {
-        current.getOutputForInput(wires[0]),
-        current.getOutputForInput(wires[1]),
+    return true;
+  };
+  if (!append(first, false, false)) {
+    return failure();
+  }
+  // Start at a runtime angle so all-constant chains stay on the matrix path.
+  std::array inputs{first.getInputQubit(0), first.getInputQubit(1)};
+  while (auto previous = inputs[0].getDefiningOp<UnitaryOpInterface>()) {
+    if (previous.getOperation() != inputs[1].getDefiningOp() ||
+        previous->getBlock() != head->getBlock() || !previous.isTwoQubit() ||
+        !append(previous, previous.getOutputQubit(0) != inputs[0], true)) {
+      break;
+    }
+    inputs = {
+        previous.getInputForOutput(inputs[0]),
+        previous.getInputForOutput(inputs[1]),
     };
-    auto next = dyn_cast<UnitaryOpInterface>(*wires[0].user_begin());
-    current = next && next.isTwoQubit() &&
-                      next.getOperation() == *wires[1].user_begin()
-                  ? next
-                  : UnitaryOpInterface{};
+  }
+  if (operations.size() > 1) {
+    std::ranges::reverse(operations);
+    std::ranges::reverse(phase);
+    for (auto& group : groups) {
+      std::ranges::reverse(group.angle);
+    }
+  }
+  std::array wires{first.getOutputQubit(0), first.getOutputQubit(1)};
+  while (auto next = dyn_cast<UnitaryOpInterface>(*wires[0].user_begin())) {
+    if (next.getOperation() != *wires[1].user_begin() ||
+        next->getBlock() != head->getBlock() || !next.isTwoQubit() ||
+        !append(next, next.getInputQubit(0) != wires[0], false)) {
+      break;
+    }
+    wires = {
+        next.getOutputForInput(wires[0]),
+        next.getOutputForInput(wires[1]),
+    };
   }
   if (operations.size() < 2) {
     return failure();
@@ -945,7 +1037,7 @@ fusePauliRotationRun(PatternRewriter& rewriter, Operation* head,
   }
   rewriter.setInsertionPoint(operations.back());
   auto loc = head->getLoc();
-  auto outputs = llvm::to_vector<2>(first.getInputQubits());
+  auto outputs = llvm::to_vector<2>(inputs);
   if (shared && (sqrtPair || entangling.size() == 2)) {
     outputs = emitPauliPair(
         rewriter, loc, outputs, {entangling[0]->axes, entangling[1]->axes},

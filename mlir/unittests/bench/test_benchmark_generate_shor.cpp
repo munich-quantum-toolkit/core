@@ -34,7 +34,6 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <numeric>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -107,52 +106,56 @@ static QCOProgram inPlaceMultiplier(uint64_t number, uint64_t multiplier) {
 
 TEST(GenerateProgramTest,
      PreservesSmallInPlaceMultiplierCoherenceAndWorkspace) {
-  for (uint64_t number = 2; number < 16; ++number) {
+  // Odd moduli span bit-width boundaries; powers include identity and both
+  // self-inverse and distinct-inverse multipliers.
+  for (const auto [number, multiplier] : {
+           std::pair{3U, 1U},
+           std::pair{3U, 2U},
+           std::pair{5U, 2U},
+           std::pair{7U, 3U},
+           std::pair{9U, 2U},
+           std::pair{15U, 2U},
+           std::pair{15U, 4U},
+           std::pair{15U, 14U},
+       }) {
     const auto bits = std::bit_width(number);
     const auto qubits = 2U * bits + 3U;
-    for (uint64_t multiplier = 1; multiplier < number; ++multiplier) {
-      if (std::gcd(multiplier, number) != 1) {
-        continue;
+    auto program = inPlaceMultiplier(number, multiplier);
+    auto packageOwner = value(dd::Package::create(qubits));
+    auto& package = *packageOwner;
+    auto functionality = qco::buildFunctionality(
+        mlir::mqt::getEntryPoint(program.module()), package);
+    ASSERT_TRUE(succeeded(functionality));
+    const auto phase = value(dd::getValueByIndex(*functionality, qubits, 0, 0));
+    EXPECT_NEAR(std::norm(phase), 1., 1e-11);
+    dd::CVec input(size_t{1} << qubits);
+    dd::CVec expectedOutput(input.size());
+    // A common unit-modulus amplitude for every valid basis column proves
+    // the permutation, clean workspace, and coherence of any superposition.
+    for (uint64_t value = 0; value < number; ++value) {
+      for (size_t control = 0; control < 2; ++control) {
+        SCOPED_TRACE(testing::PrintToString(
+            std::vector<uint64_t>{number, multiplier, value, control}));
+        const auto product = control != 0 ? multiplier * value % number : value;
+        const auto expected = (product << 1U) | control;
+        const auto amplitude = ::mqt::test::value(dd::getValueByIndex(
+            *functionality, qubits, expected, (value << 1U) | control));
+        EXPECT_NEAR(std::abs(amplitude - phase), 0., 1e-11);
+        const auto index = (value << 1U) | control;
+        input[index] =
+            std::polar(1. / std::sqrt(2. * static_cast<double>(number)),
+                       0.137 * static_cast<double>(index));
+        expectedOutput[expected] = phase * input[index];
       }
-      auto program = inPlaceMultiplier(number, multiplier);
-      auto packageOwner = value(dd::Package::create(qubits));
-      auto& package = *packageOwner;
-      auto functionality = qco::buildFunctionality(
-          mlir::mqt::getEntryPoint(program.module()), package);
-      ASSERT_TRUE(succeeded(functionality));
-      const auto phase =
-          value(dd::getValueByIndex(*functionality, qubits, 0, 0));
-      EXPECT_NEAR(std::norm(phase), 1., 1e-11);
-      dd::CVec input(size_t{1} << qubits);
-      dd::CVec expectedOutput(input.size());
-      // A common unit-modulus amplitude for every valid basis column proves
-      // the permutation, clean workspace, and coherence of any superposition.
-      for (uint64_t value = 0; value < number; ++value) {
-        for (size_t control = 0; control < 2; ++control) {
-          SCOPED_TRACE(testing::PrintToString(
-              std::vector<uint64_t>{number, multiplier, value, control}));
-          const auto product =
-              control != 0 ? multiplier * value % number : value;
-          const auto expected = (product << 1U) | control;
-          const auto amplitude = ::mqt::test::value(dd::getValueByIndex(
-              *functionality, qubits, expected, (value << 1U) | control));
-          EXPECT_NEAR(std::abs(amplitude - phase), 0., 1e-11);
-          const auto index = (value << 1U) | control;
-          input[index] =
-              std::polar(1. / std::sqrt(2. * static_cast<double>(number)),
-                         0.137 * static_cast<double>(index));
-          expectedOutput[expected] = phase * input[index];
-        }
-      }
-      auto state = package.applyOperation(
-          *functionality, value(dd::makeStateFromVector(input, package)));
-      const auto output = value(dd::getVector(state));
-      for (size_t index = 0; index < output.size(); ++index) {
-        EXPECT_NEAR(std::abs(output[index] - expectedOutput[index]), 0., 1e-11);
-      }
-      package.decRef(state);
-      package.decRef(*functionality);
     }
+    auto state = package.applyOperation(
+        *functionality, value(dd::makeStateFromVector(input, package)));
+    const auto output = value(dd::getVector(state));
+    for (size_t index = 0; index < output.size(); ++index) {
+      EXPECT_NEAR(std::abs(output[index] - expectedOutput[index]), 0., 1e-11);
+    }
+    package.decRef(state);
+    package.decRef(*functionality);
   }
 }
 

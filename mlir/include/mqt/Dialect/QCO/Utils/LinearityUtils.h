@@ -28,6 +28,10 @@ namespace mlir::qco {
 /// other index values is a program precondition.
 [[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
+/// Verify linearity and retain the wire origins used for positional checks.
+[[nodiscard]] LogicalResult verifyLinearity(Operation* root,
+                                            DenseMap<Value, Value>& origins);
+
 /// Collect quantum wire roots and verify positional quantum state flow.
 ///
 /// Requires ordinary MLIR verification first. Checks register-slot ownership
@@ -35,6 +39,16 @@ namespace mlir::qco {
 /// roots; verified region results continue their corresponding inputs.
 [[nodiscard]] LogicalResult collectWireOrigins(Operation* root,
                                                DenseMap<Value, Value>& origins);
+
+/// Check tensor lifetimes while the IR remains unchanged.
+class TensorLifetimeAnalysis {
+public:
+  /// Check that extracted slots are restored at calls and region exits.
+  [[nodiscard]] bool isComplete(Value tensor, unsigned depth = 0);
+
+private:
+  DenseMap<Value, Value> callResults_;
+};
 
 /// Check that extracted tensor slots are restored at calls and region exits.
 ///

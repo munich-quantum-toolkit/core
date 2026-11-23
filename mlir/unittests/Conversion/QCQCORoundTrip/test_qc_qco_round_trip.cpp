@@ -80,15 +80,6 @@ protected:
     pm.addPass(createQCToQCO());
     return pm.run(moduleOp);
   }
-
-  static void expectNoScratchStorage(ModuleOp moduleOp) {
-    bool containsScratchStorage = false;
-    moduleOp.walk([&](Operation* operation) {
-      containsScratchStorage |=
-          isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
-    });
-    EXPECT_FALSE(containsScratchStorage);
-  }
 };
 
 } // namespace
@@ -219,86 +210,6 @@ module {
   auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
   EXPECT_EQ(returnOp.getOperand(0), allocations[0].getResult());
   EXPECT_EQ(returnOp.getOperand(1), allocations[1].getResult());
-}
-
-TEST_F(QCQCORoundTripTest, PreservesClassicalIfResultWithoutScratch) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main(%condition: i1) -> i64
-      attributes {mqt.entry_point} {
-    %q = qc.alloc : !qc.qubit
-    %result = scf.if %condition -> i64 {
-      qc.h %q : !qc.qubit
-      %then = arith.constant 1 : i64
-      scf.yield %then : i64
-    } else {
-      qc.x %q : !qc.qubit
-      %else = arith.constant 2 : i64
-      scf.yield %else : i64
-    }
-    qc.dealloc %q : !qc.qubit
-    return %result : i64
-  }
-}
-)mlir";
-
-  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runRoundTrip(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  scf::IfOp ifOp;
-  moduleOp->walk([&](scf::IfOp candidate) { ifOp = candidate; });
-  ASSERT_TRUE(ifOp);
-  ASSERT_EQ(ifOp.getNumResults(), 1);
-
-  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
-  EXPECT_EQ(returnOp.getOperand(0), ifOp.getResult(0));
-  expectNoScratchStorage(*moduleOp);
-}
-
-TEST_F(QCQCORoundTripTest, PreservesClassicalIndexSwitchResultWithoutScratch) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main(%index: index) -> i64
-      attributes {mqt.entry_point} {
-    %q = qc.alloc : !qc.qubit
-    %result = scf.index_switch %index -> i64
-    case 0 {
-      qc.h %q : !qc.qubit
-      %case = arith.constant 1 : i64
-      scf.yield %case : i64
-    }
-    default {
-      qc.x %q : !qc.qubit
-      %default = arith.constant 2 : i64
-      scf.yield %default : i64
-    }
-    qc.dealloc %q : !qc.qubit
-    return %result : i64
-  }
-}
-)mlir";
-
-  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runRoundTrip(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  scf::IndexSwitchOp switchOp;
-  moduleOp->walk([&](scf::IndexSwitchOp candidate) { switchOp = candidate; });
-  ASSERT_TRUE(switchOp);
-  ASSERT_EQ(switchOp.getNumResults(), 1);
-
-  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
-  EXPECT_EQ(returnOp.getOperand(0), switchOp.getResult(0));
-  expectNoScratchStorage(*moduleOp);
 }
 
 TEST_F(QCQCORoundTripTest, PreservesDenseUnitaryMatrixAndQubitArity) {

@@ -47,7 +47,7 @@ private:
 enum class QPEMethod : uint8_t {
   /// Estimate all phase bits with one query qubit per bit.
   Standard,
-  /// Measure and reset one reused query qubit, with feed-forward corrections.
+  /// Reuse one query qubit with feedback for the semiclassical inverse QFT.
   Iterative,
 };
 

@@ -26,6 +26,7 @@
 #include "mlir/Interfaces/DataLayoutInterfaces.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/IR/Constants.h"
@@ -41,6 +42,24 @@
 #include <string>
 
 namespace mlir::qir {
+
+void removeUnusedDeclarations(ModuleOp moduleOp, StringRef prefix) {
+  const auto uses = SymbolTable::getSymbolUses(&moduleOp.getBodyRegion());
+  if (!uses) {
+    return;
+  }
+  DenseSet<StringAttr> referencedSymbols;
+  for (const auto& use : *uses) {
+    referencedSymbols.insert(use.getSymbolRef().getRootReference());
+  }
+  for (auto function :
+       llvm::make_early_inc_range(moduleOp.getOps<LLVM::LLVMFuncOp>())) {
+    if (function.isExternal() && function.getName().starts_with(prefix) &&
+        !referencedSymbols.contains(function.getSymNameAttr())) {
+      function.erase();
+    }
+  }
+}
 
 void normalizeQIRModuleFlags(llvm::Module& moduleOp) {
   for (const StringRef key : {

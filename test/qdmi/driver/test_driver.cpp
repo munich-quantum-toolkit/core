@@ -928,9 +928,7 @@ TEST_P(DriverTest, QuerySessionProperty) {
 
 constexpr std::array DEVICES{
     "MQT SC Default QDMI Device",
-#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
     "MQT Core DDSIM QDMI Device",
-#endif
 };
 
 namespace {
@@ -1021,17 +1019,15 @@ TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
   std::ranges::transform(devices, std::back_inserter(ids), [](auto device) {
     return queryTextProperty(device, QDMI_DEVICE_PROPERTY_ID);
   });
-  std::vector<std::string> expectedIds{
-      "mqt.sc.default",          "mqt.sc.ibm.heron",
-      "mqt.sc.ibm.nighthawk",    "mqt.sc.iqm.emerald",
-      "mqt.sc.iqm.garnet",       "test.sc.runtime-default",
-      "test.sc.runtime-custom",  "test.sc.runtime-one",
-      "test.sc.runtime-two",     "test.session-overrides",
-      "test.session-with-child", "test.typed-configuration",
+  const std::vector<std::string> expectedIds{
+      "mqt.ddsim.default",        "mqt.sc.default",
+      "mqt.sc.ibm.heron",         "mqt.sc.ibm.nighthawk",
+      "mqt.sc.iqm.emerald",       "mqt.sc.iqm.garnet",
+      "test.sc.runtime-default",  "test.sc.runtime-custom",
+      "test.sc.runtime-one",      "test.sc.runtime-two",
+      "test.session-overrides",   "test.session-with-child",
+      "test.typed-configuration",
   };
-#ifdef MQT_CORE_QDMI_HAS_DDSIM_DEVICE
-  expectedIds.emplace_back("mqt.ddsim.default");
-#endif
   EXPECT_THAT(ids, testing::UnorderedElementsAreArray(expectedIds));
   QDMI_session_free(session);
 }
@@ -1776,6 +1772,29 @@ TEST(DeviceRegistrationTest, SubmitsOrderedTextProgramsAtomically) {
   }
 }
 
+TEST(DeviceRegistrationTest, JudgesProgramListsWithRequestedShots) {
+  registerSessionTestDevice();
+  const auto device =
+      value(qdmi::Session::openDevice("test.session-overrides"));
+  // The test device accepts at most eight shots in total.
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
+  EXPECT_TRUE(value(device.supportsJob(format, 3U)));
+  EXPECT_TRUE(value(device.supportsJob(format, 2U, 4U)));
+  EXPECT_FALSE(value(device.supportsJob(format, 3U, 4U)));
+
+  const std::array<std::string, 3> programs{
+      "OPENQASM 3.0;",
+      "OPENQASM 3.0;",
+      "OPENQASM 3.0;",
+  };
+  EXPECT_FALSE(value(device.trySubmitJob(programs, format, 4U)).has_value());
+  const auto job =
+      value(device.trySubmitJob(std::span(programs).first(2U), format, 4U));
+  ASSERT_TRUE(job.has_value());
+  EXPECT_EQ(value(job->getNumPrograms()), 2U);
+  EXPECT_EQ(value(job->getNumShots()), 4U);
+}
+
 TEST(DeviceRegistrationTest, RejectedProgramListPreservesPreviousPayload) {
   registerSessionTestDevice();
   const auto device =
@@ -1815,7 +1834,7 @@ TEST(DeviceRegistrationTest, RetrievesIndexedHistograms) {
   EXPECT_EQ(value(job.getCounts(0U)),
             (std::map<std::string, size_t>{{"10", 1U}, {"01", 1U}}));
   EXPECT_EQ(value(job.getCounts(1U)),
-            (std::map<std::string, size_t>{{"11", 1U}, {"00", 1U}}));
+            (std::map<std::string, size_t>{{"11", 1U}, {"", 1U}}));
 }
 
 TEST(DeviceRegistrationTest, RuntimeRegistrationsStayOutOfClientCatalog) {

@@ -38,12 +38,31 @@ should start with the [v3-to-v4 migration guide](UPGRADING.md#400).
 
 ## Start with your task
 
-Install [mqt.core](https://pypi.org/project/mqt.core/) in a Python 3.11 or newer
-virtual environment:
+Install [mqt.core](https://pypi.org/project/mqt.core/) in a Python 3.11.5 or
+newer virtual environment:
 
 ```console
 uv pip install mqt.core
 ```
+
+Explore the benchmark catalog without setting up a project environment:
+
+```console
+uvx mqt-core bench list
+```
+
+Compile and simulate a circuit with the same tool:
+
+```console
+uvx mqt-core compile input.qasm --qdmi-device=mqt.ddsim.default -o circuit.bc
+uvx mqt-core simulate circuit.bc --shots 1024
+```
+
+OpenQASM files can also run directly with `uvx mqt-core simulate input.qasm`.
+Use `mqt-core run input.qasm --qdmi-device=<id>` to compile and submit through
+one QDMI device session. See the
+[command-line guide](https://mqt.readthedocs.io/projects/core/en/stable/installation.html#command-line-tools)
+for installation paths and command options.
 
 For other installation options, follow the
 [source-build instructions](https://mqt.readthedocs.io/projects/core/en/stable/installation.html).

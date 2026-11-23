@@ -60,30 +60,32 @@ using llvm::Expected;
 
 namespace qdmi {
 namespace detail {
-Expected<std::vector<std::string>> parseShots(const std::string_view shots,
-                                              const size_t numShots) {
-  if (numShots == 0) {
-    if (!shots.empty()) {
-      return qdmi::makeError(QDMI_ERROR_FATAL, "Number of shots mismatch");
-    }
-    return std::vector<std::string>{};
+Expected<PackedShots> PackedShots::parse(std::vector<std::byte> bytes,
+                                         size_t count) {
+  if (bytes.empty() || bytes.back() != std::byte{0}) {
+    return qdmi::makeError(QDMI_ERROR_FATAL, "Unterminated QDMI SHOTS result");
   }
-
-  std::vector<std::string> parsed;
-  parsed.reserve(numShots);
-  size_t start = 0;
-  while (true) {
-    const auto end = shots.find(',', start);
-    parsed.emplace_back(shots.substr(start, end - start));
-    if (end == std::string_view::npos) {
-      break;
-    }
-    start = end + 1;
-  }
-  if (parsed.size() != numShots) {
+  const auto rows = llvm::StringRef(reinterpret_cast<const char*>(bytes.data()),
+                                    bytes.size() - 1);
+  if (count == 0 ? !rows.empty() : rows.count(',') != count - 1) {
     return qdmi::makeError(QDMI_ERROR_FATAL, "Number of shots mismatch");
   }
-  return parsed;
+  return PackedShots{std::move(bytes), count};
+}
+
+Expected<PackedShots> getPackedShots(const Job& job, size_t programIndex) {
+  auto bytes = job.getResults(QDMI_JOB_RESULT_SHOTS, programIndex);
+  if (!bytes) {
+    return bytes.takeError();
+  }
+  if (bytes->empty()) {
+    return PackedShots{};
+  }
+  auto count = job.getNumShots();
+  if (!count) {
+    return count.takeError();
+  }
+  return PackedShots::parse(std::move(*bytes), *count);
 }
 
 } // namespace detail
@@ -139,25 +141,19 @@ Expected<std::map<std::string, T>> getSparseResult(
     return error;
   }
 
-  // Parse the comma-separated keys.
+  // A final comma can separate an empty outcome or terminate the list.
   std::map<std::string, T> result;
-  if (keys.empty() && values.size() == 1) {
-    result[""] = values.front();
-    return result;
-  }
-  llvm::StringRef remaining(keys);
-  size_t idx = 0;
-  while (!remaining.empty()) {
-    const auto [key, rest] = remaining.split(',');
-    remaining = rest;
-    if (idx >= values.size()) {
+  size_t start = 0;
+  for (const auto& value : values) {
+    if (start == std::string::npos) {
       return qdmi::makeError(QDMI_ERROR_FATAL, std::string(mismatch));
     }
-    result[key.str()] = values[idx];
-    ++idx;
+    const auto end = keys.find(',', start);
+    result.insert_or_assign(result.end(), keys.substr(start, end - start),
+                            value);
+    start = end == std::string::npos ? end : end + 1;
   }
-
-  if (idx != values.size()) {
+  if (start < keys.size()) {
     return qdmi::makeError(QDMI_ERROR_FATAL, std::string(mismatch));
   }
   return result;
@@ -1006,14 +1002,12 @@ Device::trySubmitJob(const std::span<const std::string> programs,
   sizes.reserve(programs.size());
   pointers.reserve(programs.size());
   for (const auto& program : programs) {
-    const auto terminator = program.find('\0');
-    if (terminator != std::string::npos && terminator != program.size() - 1) {
-      return qdmi::makeError(
-          QDMI_ERROR_INVALIDARGUMENT,
-          "Text programs must not contain embedded null bytes");
+    auto bytes = detail::programBytes(program, format);
+    if (!bytes) {
+      return bytes.takeError();
     }
-    sizes.push_back(program.size() + (terminator == std::string::npos ? 1 : 0));
-    pointers.push_back(program.c_str());
+    sizes.push_back(bytes->size());
+    pointers.push_back(bytes->data());
   }
   return submitJobImpl(format, sizes, pointers, numShots, custom1, custom2,
                        custom3, custom4, custom5);
@@ -1060,16 +1054,13 @@ Device::trySubmitJob(const std::span<const std::span<const std::byte>> programs,
                        custom3, custom4, custom5);
 }
 
-Expected<std::optional<Job>>
-Device::submitJobImpl(const QDMI_Program_Format format,
-                      const std::span<const size_t> sizes,
-                      const std::span<const void* const> programs,
-                      const std::optional<size_t> numShots,
-                      const std::optional<CustomJobParameter>& custom1,
-                      const std::optional<CustomJobParameter>& custom2,
-                      const std::optional<CustomJobParameter>& custom3,
-                      const std::optional<CustomJobParameter>& custom4,
-                      const std::optional<CustomJobParameter>& custom5) const {
+Expected<Job>
+Device::createJob(const std::optional<size_t> numShots,
+                  const std::optional<CustomJobParameter>& custom1,
+                  const std::optional<CustomJobParameter>& custom2,
+                  const std::optional<CustomJobParameter>& custom3,
+                  const std::optional<CustomJobParameter>& custom4,
+                  const std::optional<CustomJobParameter>& custom5) const {
   QDMI_Job job = nullptr;
   if (auto error = qdmi::checkError(api().device_create_job(device_, &job),
                                     "Creating job")) {
@@ -1089,9 +1080,36 @@ Device::submitJobImpl(const QDMI_Program_Format format,
       }
     }
   }
+  // Devices check program support against the configured shot count.
+  if (numShots.has_value()) {
+    const auto result = api().job_set_parameter(
+        jobWrapper, QDMI_JOB_PARAMETER_SHOTSNUM, sizeof(*numShots), &*numShots);
+    // Some devices accept shot counts only for a known program format.
+    if (result != QDMI_ERROR_NOTSUPPORTED) {
+      if (auto error = qdmi::checkError(result, "Setting number of shots")) {
+        return error;
+      }
+    }
+  }
+  return jobWrapper;
+}
 
-  const auto result = api().job_set_programs(
-      jobWrapper, format, programs.size(), sizes.data(), programs.data());
+Expected<std::optional<Job>>
+Device::submitJobImpl(const QDMI_Program_Format format,
+                      const std::span<const size_t> sizes,
+                      const std::span<const void* const> programs,
+                      const std::optional<size_t> numShots,
+                      const std::optional<CustomJobParameter>& custom1,
+                      const std::optional<CustomJobParameter>& custom2,
+                      const std::optional<CustomJobParameter>& custom3,
+                      const std::optional<CustomJobParameter>& custom4,
+                      const std::optional<CustomJobParameter>& custom5) const {
+  auto job = createJob(numShots, custom1, custom2, custom3, custom4, custom5);
+  if (!job) {
+    return job.takeError();
+  }
+  const auto result = api().job_set_programs(*job, format, programs.size(),
+                                             sizes.data(), programs.data());
   if (result == QDMI_ERROR_NOTSUPPORTED) {
     return std::optional<Job>{};
   }
@@ -1101,17 +1119,40 @@ Device::submitJobImpl(const QDMI_Program_Format format,
   // The program format determines whether this device accepts shot counts.
   if (numShots.has_value()) {
     if (auto error = qdmi::checkError(
-            api().job_set_parameter(jobWrapper, QDMI_JOB_PARAMETER_SHOTSNUM,
+            api().job_set_parameter(*job, QDMI_JOB_PARAMETER_SHOTSNUM,
                                     sizeof(*numShots), &*numShots),
             "Setting number of shots")) {
       return error;
     }
   }
-  if (auto error =
-          qdmi::checkError(api().job_submit(jobWrapper), "Submitting job")) {
+  if (auto error = qdmi::checkError(api().job_submit(*job), "Submitting job")) {
     return error;
   }
-  return std::optional<Job>{std::move(jobWrapper)};
+  return std::optional<Job>{std::move(*job)};
+}
+
+Expected<bool>
+Device::supportsJob(const QDMI_Program_Format format, const size_t count,
+                    const std::optional<size_t> numShots,
+                    const std::optional<CustomJobParameter>& custom1,
+                    const std::optional<CustomJobParameter>& custom2,
+                    const std::optional<CustomJobParameter>& custom3,
+                    const std::optional<CustomJobParameter>& custom4,
+                    const std::optional<CustomJobParameter>& custom5) const {
+  auto job = createJob(numShots, custom1, custom2, custom3, custom4, custom5);
+  if (!job) {
+    return job.takeError();
+  }
+  // Null programs check the format and count without changing the job.
+  const auto result =
+      api().job_set_programs(*job, format, count, nullptr, nullptr);
+  if (result == QDMI_ERROR_NOTSUPPORTED) {
+    return false;
+  }
+  if (auto error = qdmi::checkError(result, "Checking program support")) {
+    return error;
+  }
+  return true;
 }
 
 Expected<Job> Device::retrieveJobById(const std::string_view jobId) const {
@@ -1316,32 +1357,16 @@ Expected<std::optional<size_t>> Job::getQueuePosition() const {
 
 Expected<std::vector<std::string>>
 Job::getShots(const size_t programIndex) const {
-  size_t shotsSize = 0;
-  if (auto error = qdmi::checkError(
-          api().job_get_results(job_.get(), programIndex, QDMI_JOB_RESULT_SHOTS,
-                                0, nullptr, &shotsSize),
-          "Querying shots size")) {
-    return error;
+  auto packed = detail::getPackedShots(*this, programIndex);
+  if (!packed) {
+    return packed.takeError();
   }
-
-  if (shotsSize == 0) {
-    return std::vector<std::string>{};
+  std::vector<std::string> parsed;
+  parsed.reserve(packed->count);
+  for (const auto bits : packed->rows()) {
+    parsed.emplace_back(bits.data(), bits.size());
   }
-
-  std::string shots(shotsSize, '\0');
-  if (auto error = qdmi::checkError(
-          api().job_get_results(job_.get(), programIndex, QDMI_JOB_RESULT_SHOTS,
-                                shotsSize, shots.data(), nullptr),
-          "Querying shots")) {
-    return error;
-  }
-  shots.pop_back();
-
-  auto count = getNumShots();
-  if (!count) {
-    return count.takeError();
-  }
-  return detail::parseShots(shots, (*count));
+  return parsed;
 }
 
 Expected<std::map<std::string, size_t>>

@@ -86,6 +86,13 @@ public:
          llvm::raw_ostream* output = &llvm::outs(),
          std::optional<size_t> maxQubits = std::nullopt);
 
+  /// Build a session whose entry point must declare the supplied QIR profile.
+  [[nodiscard]] static llvm::Expected<std::unique_ptr<JitSession>>
+  create(llvm::StringRef irBytes, llvm::StringRef bufferName,
+         Execution execution, std::optional<uint64_t> randomSeed,
+         llvm::raw_ostream* output, std::optional<size_t> maxQubits,
+         llvm::StringRef expectedProfile);
+
   /// Tears down the LLJIT and any JIT'd resources owned by the session.
   ~JitSession();
 
@@ -220,7 +227,7 @@ private:
   ///
   /// Returns an owned error if validation or JIT initialization fails.
   llvm::Error initialize(llvm::orc::ThreadSafeModule loadedModule,
-                         Execution execution);
+                         Execution execution, llvm::StringRef expectedProfile);
 
   /// Tears down the @c LLJIT.
   void deinitialize() const;

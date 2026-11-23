@@ -573,7 +573,7 @@ manages Python packages, not these system tools.
 
 LLVM/MLIR must also be installed as described in {ref}`setting-up-mlir`.
 
-See {doc}`development` for Core's documentation validation and local-device
+See {doc}`development` for MQT Core's documentation validation and local-device
 execution contract.
 
 Omit `--non-interactive` to serve the documentation while editing. To check

@@ -127,8 +127,9 @@ struct LoweringState {
 /// return a copy with proved counted-loop constraints discharged. Run child
 /// passes through the caller to preserve instrumentation and reproducers.
 [[nodiscard]] FailureOr<std::optional<PayloadSpecification>>
-prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
-                 function_ref<LogicalResult(OpPassManager&)> runPipeline);
+prepareQIRTarget(ModuleOp moduleOp, StringRef profile, LoweringState& state,
+                 function_ref<LogicalResult(OpPassManager&)> runPipeline,
+                 const TargetEnvironment* environment = nullptr);
 
 /// Attach QIR metadata and validate emitted requirements for a matching target.
 ///

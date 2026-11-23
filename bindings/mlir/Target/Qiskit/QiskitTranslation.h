@@ -20,6 +20,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSet.h"
 
 #include <complex>
 #include <cstddef>
@@ -52,6 +53,9 @@ struct Register {
   std::string name;
   std::vector<uint32_t> bits;
 };
+
+void validateRegisterName(llvm::StringRef name, llvm::StringSet<>& names,
+                          std::string_view kind);
 
 /// Validate canonical register membership and return the leading loose bits.
 [[nodiscard]] uint32_t
@@ -212,6 +216,11 @@ struct StandardGateMapping {
   [[nodiscard]] bool operator==(const StandardGateMapping&) const = default;
 };
 
+struct DelayDuration {
+  std::variant<uint64_t, double> value;
+  std::string unit;
+};
+
 struct Instruction {
   OperationKind kind = OperationKind::Unknown;
   std::string name;
@@ -222,6 +231,8 @@ struct Instruction {
   std::optional<StandardGateMapping> standardGate;
   /// Output position i carries input position permutation[i].
   std::optional<std::vector<uint32_t>> permutation = std::nullopt;
+  std::optional<std::string> barrierLabel = std::nullopt;
+  std::unique_ptr<DelayDuration> delay;
 };
 
 enum class ClassicalType : uint8_t {
@@ -419,7 +430,9 @@ public:
                              const std::vector<GateModifier>& modifiers) = 0;
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
-  virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;
+  virtual void addDelay(uint32_t qubit, const DelayDuration& duration) = 0;
+  virtual void addBarrier(const std::vector<uint32_t>& qubits,
+                          const std::optional<std::string>& label) = 0;
   virtual void addStore(ClassicalTarget target,
                         std::unique_ptr<Expression> value) = 0;
   virtual void addUnitary(const std::vector<std::complex<double>>& matrix,
@@ -449,15 +462,18 @@ public:
   [[nodiscard]] virtual bool supportsGate(StandardGateMapping gate) const = 0;
   [[nodiscard]] virtual mlir::CompilerTarget
   importTarget(nb::handle target, nb::handle operationNames,
-               const std::optional<std::string>& name) const = 0;
+               const std::optional<std::string>& name, bool strict) const = 0;
   [[nodiscard]] virtual mlir::CompilerTarget::NativeOperations
-  importNativeOperations(nb::handle target,
-                         nb::handle operationNames) const = 0;
+  importNativeOperations(nb::handle target, nb::handle operationNames,
+                         bool strict,
+                         std::optional<size_t> nativeWidth) const = 0;
   [[nodiscard]] virtual mlir::PayloadSpecification
   payloadSpecification(nb::handle target) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>
   createCircuit(uint32_t looseQubits, uint32_t looseClbits,
                 const mlir::CompilerTarget* target = nullptr) const = 0;
+  virtual void registerNativeGate(std::string_view symbol,
+                                  std::string_view name) = 0;
   virtual void
   registerCustomGate(std::string_view symbol, std::string_view name,
                      const std::vector<std::string>& formalParameters,

@@ -10,6 +10,7 @@
 
 #include "OpenQASMToQCEmitter.h"
 
+#include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
@@ -151,22 +152,28 @@ public:
       return nullptr;
     }
     auto entry = cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp());
+    SmallVector<DictionaryAttr> attrs;
+    SmallVector<Location> locations;
     for (const auto id : program.inputs) {
       const auto& input = program.scalars[id];
-      const auto index = entry.getNumArguments();
-      auto attrs = builder.getDictionaryAttr({
+      attrs.push_back(builder.getDictionaryAttr({
           builder.getNamedAttr(
               mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
               builder.getStringAttr(input.name)),
-      });
-      if (failed(entry.insertArgument(index, builder.getF64Type(), attrs,
-                                      getLocation(input.location)))) {
-        emitError(getLocation(input.location))
-            << "OpenQASM QC emission error: cannot create input '" << input.name
-            << "'";
-        return nullptr;
-      }
-      scalarValues[id] = entry.getArgument(index);
+      }));
+      locations.push_back(getLocation(input.location));
+    }
+    if (failed(entry.insertArguments(
+            SmallVector<unsigned>(attrs.size(), 0U),
+            SmallVector<Type>(attrs.size(), builder.getF64Type()), attrs,
+            locations))) {
+      emitError(entry.getLoc(),
+                "OpenQASM QC emission error: cannot create inputs");
+      return nullptr;
+    }
+    for (auto [id, argument] :
+         llvm::zip_equal(program.inputs, entry.getArguments())) {
+      scalarValues[id] = argument;
     }
     // Semantic analysis requires gate definitions to precede their callers.
     for (const auto& gate : program.gates) {
@@ -413,6 +420,10 @@ private:
                 return llvm::any_of(data.qubits, [](const auto& qubit) {
                   return qubit.kind == frontend::QubitReferenceKind::Hardware;
                 });
+              }
+              if constexpr (std::is_same_v<T, frontend::DelayStatement>) {
+                return data.qubit.kind ==
+                       frontend::QubitReferenceKind::Hardware;
               }
               return false;
             },
@@ -1126,6 +1137,20 @@ private:
 
     const auto emitCatalogLowering = [&](ValueRange primitiveQubits) {
       const auto emitBody = [&](ValueRange bodyQubits) {
+        // Native pulses share the compiler's fixed-angle R definition.
+        if (const auto alias = nativeRAlias(
+                qc::getStandardGateDescriptor(catalog->gate).operationSymbol)) {
+          const auto constant = [&](double value) -> Value {
+            return arith::ConstantFloatOp::create(
+                opBuilder, loc, opBuilder.getF64Type(), APFloat(value));
+          };
+          if (alias->globalPhase != 0.) {
+            qc::GPhaseOp::create(opBuilder, loc, constant(alias->globalPhase));
+          }
+          return qc::emitStandardGate(
+              opBuilder, loc, qc::StandardGate::R,
+              {constant(alias->angle), parameters.front()}, bodyQubits);
+        }
         if (catalog->gate == qc::StandardGate::BuiltinU ||
             catalog->gate == qc::StandardGate::U2 ||
             (catalog->gate == qc::StandardGate::U3 &&
@@ -1727,6 +1752,23 @@ private:
               }
               builder.reset(resolveQubit(qubit, gateQubits, indices.front()));
             }
+          } else if constexpr (std::is_same_v<T, frontend::DelayStatement>) {
+            const auto indices = emitQubitIndices({data.qubit});
+            if (emissionBudget.isExhausted()) {
+              return;
+            }
+            Attribute duration;
+            if (const auto* ticks = std::get_if<uint64_t>(&data.duration)) {
+              duration = builder.getIntegerAttr(
+                  builder.getIntegerType(64, false), APInt(64, *ticks));
+            } else {
+              duration =
+                  builder.getF64FloatAttr(std::get<double>(data.duration));
+            }
+            qc::DelayOp::create(
+                builder, loc,
+                resolveQubit(data.qubit, gateQubits, indices.front()), duration,
+                builder.getStringAttr(data.unit));
           } else if constexpr (std::is_same_v<T, frontend::BarrierStatement>) {
             const auto indices = emitQubitIndices(data.qubits);
             if (emissionBudget.isExhausted()) {

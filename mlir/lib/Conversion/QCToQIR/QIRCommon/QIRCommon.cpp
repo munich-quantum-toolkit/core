@@ -15,12 +15,13 @@
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
-#include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
 #include "mqt/Target/QIR/Capabilities.h"
 
 #include "mlir/Conversion/AffineToStandard/AffineToStandard.h"
@@ -154,15 +155,23 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
 }
 
 FailureOr<std::optional<PayloadSpecification>>
-prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
-                 function_ref<LogicalResult(OpPassManager&)> runPipeline) {
-  if (!moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+prepareQIRTarget(ModuleOp moduleOp, StringRef profile, LoweringState& state,
+                 function_ref<LogicalResult(OpPassManager&)> runPipeline,
+                 const TargetEnvironment* preparedEnvironment) {
+  if (preparedEnvironment != nullptr) {
+    attachTargetEnvironment(moduleOp, *preparedEnvironment);
+  } else if (!moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
     return std::optional<PayloadSpecification>{};
   }
-  const TargetEnvironmentAnalysis environment(moduleOp);
+  const TargetEnvironmentAnalysis environment(moduleOp, preparedEnvironment);
   if (!environment) {
     moduleOp.emitError(environment.error());
     return failure();
+  }
+  const auto& target = environment.environment().target();
+  if (target.nativeOperationsKind() ==
+      CompilerTarget::NativeOperations::Kind::Explicit) {
+    state.nativeTarget = target;
   }
   auto payload = environment.environment().payloadSpecification();
   const auto& format = payload.format();
@@ -171,7 +180,8 @@ prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
   }
   if (profile == "adaptive" &&
       llvm::any_of(payload.capabilities(), [](const auto& capability) {
-        return capability.id == ProgramCapability::COUNTED_ITERATION &&
+        return (capability.id == ProgramCapability::COUNTED_ITERATION ||
+                capability.id == ProgramCapability::MULTIWAY_BRANCHING) &&
                !capability.constraints.empty();
       })) {
     if (failed(prepareQIRClassicalMemory(moduleOp))) {
@@ -179,8 +189,8 @@ prepareQIRTarget(ModuleOp moduleOp, StringRef profile,
     }
     OpPassManager preparation(ModuleOp::getOperationName());
     preparation.addPass(mqt::createPromoteClassicalMemory());
-    preparation.addPass(mqt::createLegalizeControlFlow());
-    if (failed(runPipeline(preparation))) {
+    if (failed(runPipeline(preparation)) ||
+        failed(mqt::legalizePayloadControlFlow(moduleOp, payload))) {
       return failure();
     }
     // QIR can classify a while loop as counted after dependence analysis.
@@ -206,8 +216,7 @@ finalizeQIRMetadata(ModuleOp moduleOp, StringRef profile,
                     const std::optional<PayloadSpecification>& payload,
                     function_ref<LogicalResult(OpPassManager&)> runPipeline) {
   OpPassManager metadata(ModuleOp::getOperationName());
-  metadata.addPass(
-      qir::createQIRSetAttributesAndMetadata({profile == "adaptive"}));
+  populateQIRCleanupPipeline(metadata, profile == "adaptive");
   if (failed(runPipeline(metadata))) {
     return failure();
   }
@@ -751,7 +760,9 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
 }
 
 /// Give opaque quantum functions QIS symbols without expanding their bodies.
-static LogicalResult nameOpaqueQIRGates(ModuleOp moduleOp) {
+static LogicalResult
+nameOpaqueQIRGates(ModuleOp moduleOp,
+                   const std::optional<CompilerTarget>& target) {
   DenseSet<Operation*> named;
   for (auto function :
        llvm::make_early_inc_range(moduleOp.getOps<func::FuncOp>())) {
@@ -791,6 +802,41 @@ static LogicalResult nameOpaqueQIRGates(ModuleOp moduleOp) {
       return function.emitError("unsupported opaque QIR gate signature: ")
              << name;
     }
+    if (target) {
+      const auto result = moduleOp.walk([&](func::CallOp call) {
+        if (call.getCallee() != function.getSymName()) {
+          return WalkResult::advance();
+        }
+        SmallVector<CompilerTarget::SiteId> sites;
+        SmallVector<std::optional<double>> values;
+        for (auto operand : call.getOperands()) {
+          if (operand.getType().isF64()) {
+            values.push_back(mqt::valueToDouble(operand));
+          } else if (auto site = operand.getDefiningOp<qc::StaticOp>()) {
+            sites.push_back(
+                static_cast<CompilerTarget::SiteId>(site.getIndex()));
+          } else {
+            call.emitError("native QIR gates require static target sites");
+            return WalkResult::interrupt();
+          }
+        }
+        const auto* capability =
+            target->findOperation(name, sites.size(), values, sites).capability;
+        if (!capability) {
+          call.emitError("external gate is not native for the target");
+          return WalkResult::interrupt();
+        }
+        call->setAttr(qir::QIR_NATIVE_NAME_ATTR,
+                      StringAttr::get(moduleOp.getContext(),
+                                      (Twine("__quantum__qis__") +
+                                       capability->name() + "__body")
+                                          .str()));
+        return WalkResult::advance();
+      });
+      if (result.wasInterrupted()) {
+        return failure();
+      }
+    }
     auto* existing = moduleOp.lookupSymbol(symbol);
     if (existing != nullptr && existing != function) {
       auto declaration = dyn_cast<func::FuncOp>(existing);
@@ -823,16 +869,7 @@ static LogicalResult nameOpaqueQIRGates(ModuleOp moduleOp) {
 LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
                                       bool allowComputedOutputs,
                                       bool deferMeasurementStores) {
-  if (failed(nameOpaqueQIRGates(cast<ModuleOp>(moduleOp)))) {
-    return failure();
-  }
   auto funcOp = mqt::getEntryPoint(cast<ModuleOp>(moduleOp));
-  const TargetEnvironmentAnalysis environment(moduleOp);
-  if (environment &&
-      environment.environment().target().nativeOperationsKind() ==
-          CompilerTarget::NativeOperations::Kind::Explicit) {
-    state.nativeTarget = environment.environment().target();
-  }
   bool hasInvalidMemory = false;
   moduleOp->walk([&](Operation* operation) {
     operation->removeAttr(qir::QIR_NATIVE_NAME_ATTR);
@@ -867,6 +904,10 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     }
   });
   if (hasInvalidMemory) {
+    return failure();
+  }
+  if (failed(
+          nameOpaqueQIRGates(cast<ModuleOp>(moduleOp), state.nativeTarget))) {
     return failure();
   }
   SmallVector<func::ReturnOp> returns;

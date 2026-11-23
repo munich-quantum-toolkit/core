@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Compare ancilla-free Core/Qiskit rotation synthesis in a common u,cx basis.
+"""Compare ancilla-free rotation synthesis by MQT Core and Qiskit in a common u,cx basis.
 
 Run with the locally built package, for example::
 
@@ -125,7 +125,7 @@ def main() -> None:
     source = Path(__file__).resolve().parents[2] / (
         "mlir/lib/Dialect/QCO/Transforms/Decomposition/DecomposeMultiControlled.cpp"
     )
-    LOGGER.info("Core %s; Qiskit %s; samples=%s", version("mqt-core"), version("qiskit"), args.samples)
+    LOGGER.info("MQT Core %s; Qiskit %s; samples=%s", version("mqt-core"), version("qiskit"), args.samples)
     LOGGER.info("DecomposeMultiControlled.cpp SHA256: %s", hashlib.sha256(source.read_bytes()).hexdigest())
     rows = []
     for axis, gate in (("rx", RXGate), ("ry", RYGate), ("rz", RZGate)):

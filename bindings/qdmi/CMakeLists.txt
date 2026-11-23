@@ -9,3 +9,6 @@
 file(GLOB_RECURSE SOURCES **.cpp)
 target_sources(${MQT_CORE_TARGET_NAME}-bindings PRIVATE ${SOURCES})
 target_link_libraries(${MQT_CORE_TARGET_NAME}-bindings PRIVATE MQT::CoreQDMI)
+
+# The client loads the driver at runtime.
+add_dependencies(${MQT_CORE_TARGET_NAME}-bindings ${MQT_CORE_TARGET_NAME}-qdmi-driver)

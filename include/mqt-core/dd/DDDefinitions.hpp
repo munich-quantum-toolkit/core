@@ -96,7 +96,7 @@ struct CompareControl {
 /// Controls sorted by qubit index and polarity.
 using Controls = std::set<Control, CompareControl>;
 
-/// Map logical qubit indices to physical qubit indices.
+/// Map program qubit indices to physical qubit indices.
 using Permutation = std::map<Qubit, Qubit>;
 
 /// Floating point type to use for computations

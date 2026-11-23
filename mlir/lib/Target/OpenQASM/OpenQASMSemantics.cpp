@@ -1391,8 +1391,7 @@ private:
       MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(syntaxId));
       return addCondition({
           .kind = ConditionKind::Literal,
-          .location =
-              sourceLocation(sources, syntax.expressions[syntaxId].location),
+          .location = getSourceLocation(syntax.expressions[syntaxId].location),
           .literal = asDouble(constant) != 0.0,
           .bit = {},
           .measurement = {},
@@ -1412,8 +1411,7 @@ private:
     const auto zero = addConstant(zeroValue);
     return addCondition({
         .kind = ConditionKind::Comparison,
-        .location =
-            sourceLocation(sources, syntax.expressions[syntaxId].location),
+        .location = getSourceLocation(syntax.expressions[syntaxId].location),
         .bit = {},
         .measurement = {},
         .comparisonLhs = value,
@@ -3248,6 +3246,8 @@ private:
     assert(syntax.bodyIncludeContexts.empty() ||
            syntax.body.size() == syntax.bodyIncludeContexts.size());
     for (const auto [index, id] : llvm::enumerate(syntax.body)) {
+      // Repeated includes share syntax IDs but bind fresh local variables.
+      sizeOfExpressions_.clear();
       if (!syntax.bodyIncludeContexts.empty()) {
         currentIncludeContext = syntax.bodyIncludeContexts[index];
       }
@@ -3469,6 +3469,24 @@ private:
           } else if constexpr (std::is_same_v<T, SyntaxMeasurement>) {
             MQT_OQ3_TRY_ASSIGN(analyzed,
                                analyzeMeasurement(statement.location, data));
+            destination.push_back(analyzed);
+            return success();
+          } else if constexpr (std::is_same_v<T, SyntaxDelay>) {
+            if (program.openQASM2) {
+              return fail(statement.location, "delay requires OpenQASM 3");
+            }
+            MQT_OQ3_TRY_ASSIGN(qubits, resolveQubitOperand(data.operand));
+            if (qubits.size() != 1) {
+              return fail(data.operand.location,
+                          "delay requires a single qubit");
+            }
+            MQT_OQ3_TRY_ASSIGN(
+                analyzed,
+                addStatement(statement.location, DelayStatement{
+                                                     .qubit = qubits.front(),
+                                                     .duration = data.duration,
+                                                     .unit = data.unit.str(),
+                                                 }));
             destination.push_back(analyzed);
             return success();
           } else if constexpr (std::is_same_v<T, SyntaxReset>) {
@@ -4565,9 +4583,11 @@ private:
         }
         return success();
       }
-      // Reject shadowing of available language and standard-library gates.
-      return fail(location,
-                  "gate '" + declaration.identifier + "' is already declared");
+      // Implicit compatibility availability does not declare a library gate.
+      if (isGateDeclared(*catalog)) {
+        return fail(location, "gate '" + declaration.identifier +
+                                  "' is already declared");
+      }
     }
     customGates[declaration.identifier] = {
         .parameterCount = declaration.parameters.size(),
@@ -4878,6 +4898,10 @@ private:
           afterThenInitialized[scalar] && afterElseInitialized[scalar];
       scalarGenerations[scalar] =
           std::max(afterThenGenerations[scalar], afterElseGenerations[scalar]);
+      if (afterThenGenerations[scalar] == beforeGenerations[scalar] &&
+          afterElseGenerations[scalar] == beforeGenerations[scalar]) {
+        continue;
+      }
       if (afterThenAffineScalarValues[scalar] &&
           afterElseAffineScalarValues[scalar] &&
           sameAffineValue(*afterThenAffineScalarValues[scalar],
@@ -5621,43 +5645,7 @@ private:
       }
       break;
     }
-    case Expr::Kind::Slice:
-    case Expr::Kind::Int:
-    case Expr::Kind::Float:
-    case Expr::Kind::Bool:
-    case Expr::Kind::FloatCast:
-    case Expr::Kind::IntCast:
-    case Expr::Kind::UintCast:
-    case Expr::Kind::AngleCast:
-    case Expr::Kind::Neg:
-    case Expr::Kind::BitNot:
-    case Expr::Kind::Add:
-    case Expr::Kind::Sub:
-    case Expr::Kind::Mul:
-    case Expr::Kind::Div:
-    case Expr::Kind::ArcCos:
-    case Expr::Kind::ArcSin:
-    case Expr::Kind::ArcTan:
-    case Expr::Kind::Ceiling:
-    case Expr::Kind::Cos:
-    case Expr::Kind::Exp:
-    case Expr::Kind::Floor:
-    case Expr::Kind::Log:
-    case Expr::Kind::Mod:
-    case Expr::Kind::BuiltinMod:
-    case Expr::Kind::Pow:
-    case Expr::Kind::BuiltinPow:
-    case Expr::Kind::BitAnd:
-    case Expr::Kind::BitOr:
-    case Expr::Kind::BitXor:
-    case Expr::Kind::ShiftLeft:
-    case Expr::Kind::ShiftRight:
-    case Expr::Kind::PopCount:
-    case Expr::Kind::RotateLeft:
-    case Expr::Kind::RotateRight:
-    case Expr::Kind::Sin:
-    case Expr::Kind::Sqrt:
-    case Expr::Kind::Tan:
+    default:
       return fail(condition.location, "condition must have bool type");
     }
     return addCondition(std::move(typed));
@@ -5685,9 +5673,7 @@ private:
     if (standard != nullptr && !isGateAvailable(*standard)) {
       standard = nullptr;
     }
-    // Prefer a user-defined gate when present. Available standard-library
-    // names are not registered as custom gates (OpenQASM 2 redefinitions are
-    // skipped), so this only applies to non-stdlib custom definitions.
+    // Explicit definitions take precedence over implicit catalog availability.
     if (custom != customGates.end()) {
       standard = nullptr;
     }

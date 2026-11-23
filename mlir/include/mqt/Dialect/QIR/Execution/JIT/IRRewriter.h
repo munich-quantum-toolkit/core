@@ -45,10 +45,12 @@ namespace qir {
 /// @return Whether an irreversible boundary was found and truncated.
 /// Returns an owned error for an unsupported profile, signature or effects.
 /// Base Profile extraction additionally rejects non-terminal irreversible
-/// regions and defined helpers; neither profile supports indirect calls.
+/// regions, return values computed in that region, and defined helpers.
+/// It preserves the entry point's exit code. Neither profile supports indirect
+/// calls.
 llvm::Expected<bool> prepareForStateExtraction(llvm::Function& entryPoint);
 
-/// Return logical qubit IDs in output order for deferred sampling.
+/// Return program qubit IDs in output order for deferred sampling.
 ///
 /// Only an acyclic unconditional Base or Adaptive path with constant gate
 /// arguments and scalar result records is supported. Boolean records, unknown

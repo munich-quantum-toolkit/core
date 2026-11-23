@@ -26,6 +26,14 @@
 #include <cstdint>
 #include <optional>
 
+namespace mlir::mqt {
+
+/// Saved execution environment while staged compilation uses a routing target.
+inline constexpr llvm::StringLiteral ORIGINAL_TARGET_ENV_ATTR =
+    "mqt.target_compilation_original_env";
+
+} // namespace mlir::mqt
+
 namespace mlir::mqt::detail {
 template <typename Element>
 [[nodiscard]] FailureOr<llvm::SmallVector<Element>>
@@ -58,3 +66,11 @@ void printArray(AsmPrinter& printer, const llvm::ArrayRef<Element> elements) {
 
 #define GET_ATTRDEF_CLASSES
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h.inc" // IWYU pragma: export
+
+namespace mlir {
+class Operation;
+namespace mqt {
+/// Whether the enclosing target requires retaining the program qubit interface.
+[[nodiscard]] bool preservesProgramQubits(Operation* operation);
+} // namespace mqt
+} // namespace mlir

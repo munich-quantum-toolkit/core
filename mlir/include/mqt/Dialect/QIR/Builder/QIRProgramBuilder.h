@@ -21,8 +21,8 @@
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringMap.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -100,18 +100,12 @@ public:
   /// `__quantum__rt__initialize`. Must be called before adding operations.
   void initialize();
 
-  /// Initialize the builder and prepare for program construction with specified
-  /// return types.
-  ///
-  /// @param returnType The return type for the main function
-  ///
-  /// Creates a main function with an entry_point attribute. Must be called
-  /// before adding operations.
+  /// Initialize the entry point with an explicit return type.
+  /// Finalizing an executable QIR program requires i64.
   void initialize(Type returnType);
 
-  /// Modify the return type of the main function after initialization.
-  ///
-  /// @param returnType The new return type for the main function
+  /// Change the entry point return type during construction.
+  /// The type must be i64 when the program is finalized.
   void retype(Type returnType);
 
   //===--------------------------------------------------------------------===//
@@ -946,9 +940,9 @@ public:
   ///
   /// @par Example:
   /// ```c++
-  /// builder.scfFor(lb, ub, step, [&](Value iv) {
-  ///   auto q0 = builder.load(register, iv);
-  ///   builder.h(q0);
+  /// auto reg = builder.allocQubitRegister(3);
+  /// builder.scfFor(0, 3, 1, [&](Value iv) {
+  ///   builder.h(builder.loadQubit(reg.value, iv));
   /// });
   /// ```
   /// ```mlir
@@ -1062,9 +1056,7 @@ public:
   /// ownership of the module to the caller. The builder should not be used
   /// after calling this method.
   ///
-  /// The return value must have the type indicated by the function signature of
-  /// the main function, which returns an `i64` by default and can be modified
-  /// by passing different arguments to the `initialize()` method.
+  /// QIR entry points must return an i64 exit code.
   ///
   /// @return The constructed module, or empty if verification or QIR metadata
   /// generation fails.
@@ -1118,8 +1110,12 @@ private:
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
 
-  /// Map from register name to `ClassicalRegister`
-  llvm::StringMap<ClassicalRegister> cregs;
+  /// Register storage identities in output order.
+  llvm::MapVector<Value, ClassicalRegister> cregs;
+
+  const ClassicalRegister&
+  resolveRegister(const ClassicalRegister& reg,
+                  const std::variant<int64_t, Value>& index) const;
 
   /// Indexed scalar results for output recording.
   DenseMap<int64_t, StaticResult> scalarResults;

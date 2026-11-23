@@ -71,6 +71,19 @@ def test_binary_program_sequence() -> None:
     assert [job.get_counts(i) for i in range(2)] == [{"1": 4}, {"1": 4}]
 
 
+def test_state_batch_keeps_dense_and_sparse_results_separate() -> None:
+    """Programs with different widths retain independent simulation state."""
+    device = open_device("mqt.ddsim.default")
+    two_qubits = 'OPENQASM 3; include "stdgates.inc"; qubit[2] q; x q;'
+    job = device.submit_job([PROGRAM, two_qubits], ProgramFormat.QASM3, num_shots=0)
+    assert job.wait()
+    for index, expected in enumerate(([0, 1], [0, 0, 0, 1])):
+        assert job.get_dense_statevector(index) == pytest.approx(expected)
+        assert job.get_dense_probabilities(index) == pytest.approx(expected)
+        assert job.get_sparse_statevector(index) == {"1" * (index + 1): 1}
+        assert job.get_sparse_probabilities(index) == {"1" * (index + 1): 1}
+
+
 def test_program_list_preserves_job_failure() -> None:
     """An invalid program fails the real job, not a synthetic batch wrapper."""
     device = open_device("mqt.ddsim.default")

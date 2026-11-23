@@ -137,6 +137,26 @@ TEST_F(MQTIRTest, SourceQubitIndicesMatchAllocationSlots) {
     SCOPED_TRACE(indices);
     EXPECT_FALSE(parse(source(indices)));
   }
+
+  const auto prepared = [](const char* index) {
+    return std::string(R"mlir(module attributes {
+        mqt.source_qubit_count = 4 : i64
+      } {
+      func.func @main() attributes {mqt.entry_point} {
+        %c2 = arith.constant 2 : index
+        %tensor = qtensor.alloc(%c2) {
+          mqt.source_qubit_indices = array<i64: 0, 1>
+        } : tensor<2x!qco.qubit>
+        %scalar = qco.alloc {mqt.source_qubit_indices = array<i64: )mlir") +
+           index + R"mlir(>} : !qco.qubit
+        qco.sink %scalar : !qco.qubit
+        qtensor.dealloc %tensor : tensor<2x!qco.qubit>
+        return
+      }
+    })mlir";
+  };
+  EXPECT_TRUE(parse(prepared("3")));
+  EXPECT_FALSE(parse(prepared("4")));
 }
 
 TEST_F(MQTIRTest, RoundTripsLayoutMetadata) {
@@ -389,6 +409,12 @@ TEST_F(MQTIRTest, RejectsInvalidTargetLeaves) {
 }
 
 TEST_F(MQTIRTest, RejectsInvalidCompilationTargets) {
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
+      sites = [<id = 0>, <id = 1>, <id = 2>], connectivity = explicit,
+      couplings = [<source = 0, target = 1>, <source = 1, target = 2>],
+      native_operations = explicit, operations = [<name = "cz",
+          arity = #mqt.operation_arity<kind = fixed, value = 2>,
+          num_parameters = 0, site_tuples = [<[2, 0]>]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
       name = "", sites = [<id = 0>], connectivity = all_to_all,
       couplings = [], native_operations = unrestricted, operations = []>)mlir"));
@@ -1227,24 +1253,34 @@ TEST_F(MQTIRTest, RejectsInvalidPayloadContracts) {
       optional_capabilities_known = true>)mlir"));
 }
 
-TEST_F(MQTIRTest, RejectsTargetEnvironmentOutsideModule) {
-  EXPECT_FALSE(parse(R"mlir(
-    module attributes {mqt.target_env = "invalid"} {}
-  )mlir"));
-  EXPECT_FALSE(parse(R"mlir(
-    module {
-      func.func @main() attributes {
-        mqt.target_env = #mqt.target_env<
-            compilation_target = #mqt.compilation_target<
-                sites = [<id = 0>], connectivity = all_to_all, couplings = [],
-                native_operations = unrestricted, operations = []>,
-            payload_specification = #mqt.payload_spec<
-                format = #mqt.payload_format<id = "qir",
-                    version = "2.1.0", profile = "base", encoding = binary>,
-                capabilities = [], optional_capabilities_known = false>>
-      } { return }
-    }
-  )mlir"));
+TEST_F(MQTIRTest, TargetEnvironmentsRequireTypedModuleAttributes) {
+  auto environment = parseAttr(R"mlir(#mqt.target_env<
+      compilation_target = #mqt.compilation_target<
+          sites = [<id = 0>], connectivity = all_to_all, couplings = [],
+          native_operations = unrestricted, operations = []>,
+      payload_specification = #mqt.payload_spec<
+          format = #mqt.payload_format<id = "qir",
+              version = "2.1.0", profile = "base", encoding = binary>,
+          capabilities = [], optional_capabilities_known = false>>
+  )mlir");
+  ASSERT_TRUE(environment);
+  for (const StringRef name :
+       {mqt::TargetEnvAttr::name, mqt::ORIGINAL_TARGET_ENV_ATTR}) {
+    SCOPED_TRACE(name.str());
+    auto moduleOp = parse("module { func.func @main() { return } }");
+    ASSERT_TRUE(moduleOp);
+    (*moduleOp)->setAttr(name, environment);
+    auto reparsed = roundTrip(*moduleOp);
+    ASSERT_TRUE(reparsed);
+    EXPECT_EQ((*reparsed)->getAttr(name), environment);
+
+    (*moduleOp)->setAttr(name, StringAttr::get(context.get(), "invalid"));
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+    (*moduleOp)->removeAttr(name);
+    auto function = *moduleOp->getOps<func::FuncOp>().begin();
+    function->setAttr(name, environment);
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+  }
 }
 
 } // namespace

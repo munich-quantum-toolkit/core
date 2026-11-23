@@ -447,6 +447,8 @@ TEST(OpenQASMFrontendTest, RejectsInvalidClassicalArrays) {
               "integer expression",
           },
           {"array[int, 1] a = {0}; if (a[0]) {}", "bool type"},
+          {"array[int, 4] a; int i = 1; if (sizeof(a[:i])) {}", "bool type"},
+          {"array[int, 1] a; if (a ++ missing) {}", "bool type"},
           {"array[int, 1] a = {0}; a = 1;", "array or subarray source"},
           {
               "int value = 1; array[int, 1] a = value;",
@@ -898,6 +900,43 @@ TEST(OpenQASMFrontendTest, AcceptsWideBarrierWithUnrelatedAffineOperand) {
   FAIL() << "expected a barrier";
 }
 
+TEST(OpenQASMFrontendTest, PreservesTicksInScientificAndDecimalLiterals) {
+  const auto result = openqasm::frontend::analyzeOpenQASM(
+      "OPENQASM 3; delay[9.007199254740993e15dt] $0; delay[.5 µs] $0;");
+  ASSERT_TRUE(result) << result.diagnostics.front().message;
+  const auto& statements = result.program->statements;
+  ASSERT_EQ(statements.size(), 2);
+  const auto& ticks =
+      std::get<openqasm::frontend::DelayStatement>(statements.front().data);
+  const auto& time =
+      std::get<openqasm::frontend::DelayStatement>(statements.back().data);
+  EXPECT_EQ(std::get<uint64_t>(ticks.duration), 9007199254740993ULL);
+  EXPECT_EQ(time.unit, "us");
+  EXPECT_EQ(std::get<double>(time.duration), 0.5);
+}
+
+TEST(OpenQASMFrontendTest, DiagnosesUnsupportedDelayForms) {
+  constexpr auto cases =
+      std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
+          {"OPENQASM 2.0; qreg q[1]; delay[1dt] q[0];", "requires OpenQASM 3"},
+          {"OPENQASM 3; qubit[2] q; delay[1ns] q;", "single qubit"},
+          {"OPENQASM 3; delay[1ps] $0;", "literal delay duration"},
+          {"OPENQASM 3; delay[1.5dt] $0;", "unsigned 64-bit integer"},
+          {
+              "OPENQASM 3; delay[18446744073709551616dt] $0;",
+              "unsigned 64-bit integer",
+          },
+      });
+  for (const auto& [source, diagnostic] : cases) {
+    SCOPED_TRACE(source.str());
+    const auto result = openqasm::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(result);
+    ASSERT_FALSE(result.diagnostics.empty());
+    EXPECT_NE(result.diagnostics.front().message.find(diagnostic.str()),
+              std::string::npos);
+  }
+}
+
 TEST(OpenQASMFrontendTest, RejectsDuplicateBarrierQubits) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       "OPENQASM 3.1; qubit q; barrier q, q;",
@@ -986,7 +1025,7 @@ sx q[0];
                                                   strict));
 }
 
-TEST(OpenQASMFrontendTest, StrictPolicyAllowsUserDefinedGateNames) {
+TEST(OpenQASMFrontendTest, AllowsUndeclaredStandardLibraryGateNames) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
 gate x q {
@@ -995,8 +1034,16 @@ gate x q {
 qubit q;
 x q;
 )qasm";
-  const auto strict = openqasm::frontend::GatePolicy::Strict;
-  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(source, strict));
+  for (const auto policy : {
+           openqasm::frontend::GatePolicy::Strict,
+           openqasm::frontend::GatePolicy::MQTCompatibility,
+       }) {
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(source, policy);
+    ASSERT_TRUE(analyzed);
+    ASSERT_EQ(analyzed.program->gates.size(), 1);
+    EXPECT_EQ(analyzed.program->gates.front().name, "x");
+    EXPECT_FALSE(analyzed.program->gates.front().body.empty());
+  }
 }
 
 TEST(OpenQASMFrontendTest, RequiresGateDefinitionScopes) {
@@ -2158,8 +2205,8 @@ TEST(OpenQASMFrontendTest, RejectsInvalidProgramsAcrossSemanticFamilies) {
           .source = "OPENQASM 3.1; gate custom q {} gate custom q {}",
       },
       {
-          .name = "custom-gate-conflicts-with-catalog",
-          .source = "OPENQASM 3.1; gate x q {}",
+          .name = "custom-gate-conflicts-with-import",
+          .source = "OPENQASM 3.1; include \"stdgates.inc\"; gate x q {}",
       },
       {
           .name = "wrong-gate-parameter-count",

@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Dialect/MQT/Utils/GatePowering.h"
+
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/OpDefinition.h"
@@ -26,6 +28,7 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/ErrorHandling.h"
 
+#include <cmath>
 #include <cstddef>
 #include <iterator>
 
@@ -131,6 +134,40 @@ void hoistSupportingOpsBefore(Block& body, Operation* keep, Operation* target,
 void inlineModifierBody(Operation* operation, Block& body,
                         ValueRange blockArgReplacements,
                         RewriterBase& rewriter);
+
+/// Erase an identity power or inline a power equal to the original body.
+/// A fixed gate's exact period also applies when some target wires are idle.
+template <typename UnitaryInterface, typename PowOp>
+LogicalResult foldTrivialPower(PowOp op, PatternRewriter& rewriter) {
+  const auto exponent = op.getExponentValue();
+  if (!exponent) {
+    return failure();
+  }
+  double reduced = *exponent;
+  if (reduced != 0. && reduced != 1.) {
+    auto gate = getSoleBodyUnitary<UnitaryInterface>(*op.getBody());
+    const auto period =
+        gate ? getFixedGatePowerPeriod(gate.getBaseSymbol()) : 0U;
+    if (period == 0) {
+      return failure();
+    }
+    reduced = std::remainder(reduced, static_cast<double>(period));
+    if (period == 2 && reduced == -1.) {
+      reduced = 1.;
+    }
+  }
+  // The exponent precedes the quantum operands in both dialects.
+  auto qubits = op->getOperands().drop_front();
+  if (reduced == 1.) {
+    inlineModifierBody(op, *op.getBody(), qubits, rewriter);
+    return success();
+  }
+  if (reduced != 0.) {
+    return failure();
+  }
+  rewriter.replaceOp(op, qubits.take_front(op->getNumResults()));
+  return success();
+}
 
 /// Inline @p source into the current block and return its yielded values.
 [[nodiscard]] SmallVector<Value>

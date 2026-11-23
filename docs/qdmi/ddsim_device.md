@@ -11,183 +11,10 @@ mystnb:
 DDSIM executes quantum programs locally through QDMI using
 [decision diagrams](../dd_package.md).
 
-## Session width
-
-DDSIM supports up to 65,535 qubits. Set the optional device-session `CUSTOM1`
-parameter to a decimal string from `"1"` to `"65535"` before initialization:
-
-```python
-from mqt.core.qdmi.builtin_driver import open_device
-
-device = open_device("mqt.ddsim.default", custom1="12")
-```
-
-The same argument works with `QDMIBackend.from_device_id`. The compiler sees 12
-sites instead of the simulator's maximum. Compile for that device before
-submission. The default remains the full simulator capacity.
-
-The width is fixed for the session and independent of other sessions. The C ABI
-expects a NUL-terminated string, with its terminator included in the buffer
-size. Invalid strings and values outside this range return
-`QDMI_ERROR_INVALIDARGUMENT`. Programs that exceed the width fail during
-execution, including dynamic QIR allocations. The bound counts DD wires: QCO
-lifetimes do not reclaim wires. Simulation packages grow only as needed. This
-session parameter is separate from job `CUSTOM1`, which sets the random seed.
-
-## Capabilities
-
-The simulator device accepts OpenQASM 2, OpenQASM 3, and textual or binary QIR
-programs using the Base or Adaptive Profile. See the
-{doc}`OpenQASM support table <../mlir/OpenQASM>` and
-[QIR Support in the MQT](../qir/index.md) for the supported operations, exact
-QDMI program formats, and payload contracts.
-
-The Qiskit target advertises `if_else`, `for_loop`, `while_loop`, `switch_case`,
-`break_loop`, `continue_loop`, and `store`. Loop bodies use the same gate
-capabilities as the enclosing program. Break and continue affect the nearest
-loop. Sampling supports measurement feedback and reset; loops must terminate.
-
-The device can perform weak simulation for every supported format, i.e., sample
-from the distribution produced by the program. It can also perform strong
-simulation for OpenQASM and eligible QIR Base or Adaptive Profile programs,
-i.e., compute a representation of the full state vector. Set the
-`QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` parameter to the desired number of shots,
-or to `0` to request only the state. In Python, use `num_shots`.
-
-Sampling jobs also retain an uncollapsed state when the existing terminal
-sampling path prepares one state for all shots. Such jobs provide statevector
-and probability results alongside shots and counts. Dense and sparse vectors are
-materialized only when queried; queries do not rerun simulation or change the
-samples. Jobs that execute separately for each shot do not expose their last
-trajectory as a statevector and return `QDMI_ERROR_NOTSUPPORTED` for state
-queries. Zero-shot extraction remains useful for eligible programs outside the
-terminal-sampling fast path.
-
-State extraction defers terminal measurements without collapsing the returned
-state. Measurement-dependent computation, resets and subsequent operations on
-measured wires are unsupported. Adaptive QIR may still execute classical loops,
-branches, dynamic allocations and direct helpers; see the
-[QIR extraction contract](../qir/index.md) for result-use and lifetime rules.
-
-For reproducible stochastic execution, set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM1`
-to a positive `int` seed. The Python API exposes the same parameter as
-`custom1`. If `custom1` is absent, the device seeds the random-number generator
-from the system. The seed controls OpenQASM and QIR sampling. State extraction
-does not use this seed.
-
-Adaptive sampling selects its worker count automatically by default. QCO
-programs share work before measurements and resets when these operations occur
-in the top-level stream, for/while loops, conditionals or index switches. Other
-QCO programs and adaptive QIR programs can run independent shots in parallel.
-Terminal measurements still use one simulation for all shots. Set
-`QDMI_DEVICE_JOB_PARAMETER_CUSTOM3` to a `size_t` maximum worker count
-(`custom3` in Python). Zero selects automatic allocation; one selects serial
-execution. For QCO and short QIR programs, automatic allocation uses roughly one
-worker per 256 shots, up to eight. Large QIR programs with shareable JIT code
-may use up to 32 workers. The DDSIM device reserves one CPU slot for each active
-program process and shares its remaining slots among their shot workers.
-Programs in one native job each receive at most their share of the budget. Set
-`MQT_CORE_DD_WORKER_BUDGET` to a positive integer before starting the parent
-process to cap the total active slots; the default uses LLVM's
-physical-core-aware thread strategy. An invalid value falls back to that
-default. Each host process has its own budget; coordinate separate host
-processes externally. Direct QCO sampling applies the same setting
-independently. The seed controls sampling, but shot order is unspecified and
-changing the worker count may change sampled outcomes. The C++ and Python QDMI
-clients may also pass a nonnegative native `int` to `custom3`.
-
-Under the hood, the QDMI device imports OpenQASM into the compiler's QC
-representation, lowers it to QCO, and executes it with the QCO DD utilities.
-This is the same compiler-backed simulation path exposed by
-{py:class}`~mqt.core.mlir.QCOProgram`.
-
-OpenQASM 3 output bits are undefined until written, so direct QDMI jobs with a
-partially initialized output register fail during import. The Qiskit backend
-preserves Qiskit's zero-initialized classical-bit semantics by writing every
-classical bit before submitting its generated OpenQASM 3 program.
-
-Sampling returns individual bitstrings through `QDMI_JOB_RESULT_SHOTS` and their
-histogram through `QDMI_JOB_RESULT_HIST_KEYS` and `QDMI_JOB_RESULT_HIST_VALUES`.
-Both results come from the same samples, including mid-circuit measurements. The
-sequence of shots has no defined meaning. Jobs without captured text retain a
-compact histogram and expand shots only when queried. Eligible terminal programs
-in both simulation paths sample populations directly from one prepared DD,
-avoiding a full traversal for every shot when many outcomes coincide. See the
-[QIR execution contract](../qir/index.md) for sampling eligibility and resource
-limits. OpenQASM classical registers use reverse declaration order, with each
-register most-significant-bit first. QIR records define increasing output-bit
-indices; the device reverses each recorded bitstring before returning shots and
-counts. Equivalent OpenQASM and QIR programs therefore use the same bit
-positions within each bitstring. Adaptive QIR shots can record different numbers
-of bits; their histogram retains these variable-length outcomes.
-
-Sparse statevector and probability results use ascending numerical basis-index
-order. Their keys and values share that order. Sparse exports require at most 64
-qubits on a 64-bit platform; wider states return `QDMI_ERROR_NOTSUPPORTED`
-because their basis indices do not fit the sparse representation.
-
-Dense results are written into the caller's buffer without retaining another
-dense copy. Reuse that buffer when reading the same state repeatedly. Sparse
-size queries count paths through the decision diagram and cache only the count;
-each key or value read traverses the diagram again. Counts are reused for equal
-child nodes, but other shared paths can be revisited, so sizing can still grow
-with the number of represented amplitudes. Allocation failures during result
-retrieval return `QDMI_ERROR_OUTOFMEM` and can be retried.
-
-## Multi-program execution
-
-DDSIM executes programs concurrently in reusable worker processes. A shared LLVM
-thread pool and CPU-slot budget bound active simulation workers using physical
-cores and process affinity. Each program starts with one slot. After
-preparation, a worker requests extra slots only for parallel adaptive sampling;
-terminal and structured-branch sampling keep one slot. Extra slots return to the
-budget when the worker responds. An earlier adaptive program can occupy all
-slots until it finishes. Each program creates its own compiler, JIT, runtime,
-and DD state; results retain independent DD packages after workers become
-available again. DDSIM requires an LLVM build with threading enabled.
-
-One failing or cancelled program does not discard completed siblings. Cancelling
-a job stops its active workers and prevents its queued programs from running.
-Freeing a cancelled job releases its payloads without waiting for other jobs. If
-a worker crashes, its assigned program fails. Memory exhaustion and failure to
-create a sampling thread terminate that worker. DDSIM starts a new worker for
-future submissions; it does not automatically retry the failed program. The
-worker executable is installed beside the device library and must move with it.
-
-A common explicit seed is applied independently to each program, matching
-separate submissions. QIR output capture is indexed by program, like shots,
-counts, and state results. Worker reuse supports ordinary QDMI programs; it does
-not isolate arbitrary native process-global side effects between executions.
-
-## QIR output capture
-
-Set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM2` to a `bool` value of `true` before
-submission to capture textual QIR output. In Python, pass `custom2=True` to
-`submit_job` or `submit_program`. This option requires a QIR Base or Adaptive
-program and a positive shot count; other jobs reject it with
-`QDMI_ERROR_NOTSUPPORTED`.
-
-After successful execution, `QDMI_JOB_RESULT_CUSTOM1` returns the complete,
-null-terminated output stream. Its reported size includes the terminator. The
-Python equivalent is `job.get_custom_result(CustomProperty.CUSTOM1, str)`; C++
-clients use `job.getCustomResult<std::string>(qdmi::CustomProperty::Custom1)`.
-Without capture, that result is unsupported (`None` in Python).
-
-Capture retains the QIR header, per-shot metadata, typed output records, and
-exit codes. Shot records align with `QDMI_JOB_RESULT_SHOTS`; integer and double
-records do not add bits to shots or counts. Double records preserve the original
-floating-point value when parsed back. Eligible terminal programs retain one
-output template and the uncollapsed statevector; querying the stream expands
-that template with the sampled bits. Other capture jobs execute once per shot
-and retain their text in memory. See the
-[executable QIR example](../qir/index.md#retrieve-the-qir-output-stream-through-qdmi).
-
 ## Compile and execute
 
-Compile a Bell circuit, sample its measurements, and inspect its statevector.
-DDSIM retains the state before terminal measurements, so state extraction does
-not require a separate job or zero shots. Circuits with mid-circuit measurements
-or resets do not support state extraction.
+Compile a Bell circuit and sample its measurements. The same job returns the
+statevector that produced those samples.
 
 ```{code-cell} ipython3
 from mqt.core.mlir import submit_program
@@ -218,3 +45,216 @@ is required. Retrieving an array does not create a Python object per element.
 DDSIM retains the decision diagram, but does not cache extracted dense or sparse
 vectors. Repeated result reads traverse the diagram again. Keep and reuse a
 retrieved result when it is needed more than once.
+
+## Session width
+
+DDSIM supports up to 65,535 qubits. Set the optional device-session `CUSTOM1`
+parameter to a decimal string from `"1"` to `"65535"` before initialization:
+
+```python
+from mqt.core.qdmi.builtin_driver import open_device
+
+device = open_device("mqt.ddsim.default", custom1="12")
+```
+
+The same argument works with `QDMIBackend.from_device_id`. The compiler sees 12
+sites instead of the simulator's maximum. Compile for that device before
+submission. The default remains the full simulator capacity. The PennyLane
+`DDSIMDevice` selects the declared wire count when no session `custom1` is
+given.
+
+For Qiskit primitives, open a suitably sized backend before transpilation, for
+example `DDSIMBackend(num_qubits=12)`. An explicit layout can allocate idle
+qubits up to the target width. Scoping the session limits both target
+construction and this circuit expansion; it does not change physical site IDs.
+
+The width is fixed for the session and independent of other sessions. The C ABI
+expects a NUL-terminated string, with its terminator included in the buffer
+size. Invalid strings and values outside this range return
+`QDMI_ERROR_INVALIDARGUMENT`. Programs that exceed the width fail during
+execution, including dynamic QIR allocations. The bound counts DD wires: QCO
+lifetimes do not reclaim wires. Simulation packages grow only as needed. This
+session parameter is separate from job `CUSTOM1`, which sets the random seed.
+
+## Capabilities
+
+The simulator device accepts OpenQASM 2, OpenQASM 3, and textual or binary QIR
+programs using the Base or Adaptive Profile. See the
+{doc}`OpenQASM support table <../mlir/OpenQASM>` and
+[QIR Support in the MQT](../qir/index.md) for the supported operations, exact
+QDMI program formats, and execution requirements.
+
+The Qiskit target advertises `if_else`, `for_loop`, `while_loop`, `switch_case`,
+`break_loop`, `continue_loop`, and `store`. Loop bodies use the same gate
+capabilities as the enclosing program. Break and continue affect the nearest
+loop. Sampling supports measurement feedback and reset; loops must terminate.
+
+### Sampling and statevectors
+
+DDSIM can sample measurement outcomes from every supported program format. Set
+`QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` to the desired number of shots. In Python,
+use `num_shots`.
+
+Jobs that prepare one state for all shots retain it before measurement. You can
+query its statevector and probabilities alongside shots and counts. DDSIM
+materializes dense and sparse vectors on request. Other sampling jobs return
+`QDMI_ERROR_NOTSUPPORTED` for state queries.
+
+With [QIR output capture](#qir-output-capture) enabled, DDSIM retains the state
+only when it recognizes the terminal measurements and their outputs before
+execution. A QIR program that dynamically allocates its results can retain its
+state with capture disabled. Enabling capture for that program requires a
+separate simulation per shot. To request only the state of an eligible program,
+submit it with `num_shots=0` and capture disabled.
+
+State extraction defers terminal measurements without collapsing the returned
+state. Measurement-dependent computation, resets and subsequent operations on
+measured wires are unsupported. Adaptive QIR may still execute classical loops,
+branches, dynamic allocations, and direct helpers. See
+[QIR state extraction](../qir/index.md#sampling-and-state-extraction) for
+result-use and lifetime rules.
+
+### Seeds and parallel execution
+
+For reproducible sampling, set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM1` to a positive
+`int` seed. The Python API exposes the same parameter as `custom1`. If `custom1`
+is absent, the device seeds the random-number generator from the system. The
+seed controls OpenQASM and QIR sampling. State extraction does not use this
+seed.
+
+Adaptive sampling selects its worker count automatically by default. QCO
+programs share work before measurements and resets when these operations occur
+in the top-level stream, for/while loops, conditionals or index switches. Other
+QCO programs and adaptive QIR programs can run independent shots in parallel.
+Terminal measurements still use one simulation for all shots. Set
+`QDMI_DEVICE_JOB_PARAMETER_CUSTOM3` to a `size_t` maximum worker count
+(`custom3` in Python). Zero selects automatic allocation; one selects serial
+execution. For QCO and short QIR programs, automatic allocation uses roughly one
+worker per 256 shots, up to eight. Large QIR programs with shareable JIT code
+may use up to 32 workers. The DDSIM device reserves one CPU slot for each active
+program process and shares its remaining slots among their shot workers.
+Programs in one native job each receive at most their share of the budget. Set
+`MQT_CORE_DD_WORKER_BUDGET` to a positive integer before starting the parent
+process to cap the total active slots; the default uses LLVM's
+physical-core-aware thread strategy. An invalid value falls back to that
+default. Each host process has its own budget; coordinate separate host
+processes externally. Direct QCO sampling applies the same setting
+independently. For fixed shots, the seed and requested worker setting determine
+sampled outcomes; the number of threads granted does not. Changing `custom3` may
+change those outcomes. Shot order is unspecified. The C++ and Python QDMI
+clients may also pass a nonnegative native `int` to `custom3`.
+
+### Program inputs and result order
+
+DDSIM translates OpenQASM through QC to QCO and uses the same decision-diagram
+simulation as {py:class}`~mqt.core.mlir.QCOProgram`.
+
+OpenQASM 3 output bits are undefined until written, so direct QDMI jobs with a
+partially initialized output register fail during import. The Qiskit backend
+preserves Qiskit's zero-initialized classical-bit semantics by writing every
+classical bit before submitting its generated OpenQASM 3 program.
+
+Sampling returns individual bitstrings through `QDMI_JOB_RESULT_SHOTS` and their
+histogram through `QDMI_JOB_RESULT_HIST_KEYS` and `QDMI_JOB_RESULT_HIST_VALUES`.
+Both results come from the same samples, including mid-circuit measurements. The
+sequence of shots has no defined meaning. Jobs without captured text retain a
+compact histogram and expand shots only when queried. Eligible terminal programs
+in both simulation paths sample populations directly from one prepared DD,
+avoiding a full traversal for every shot when many outcomes coincide. See the
+[QIR execution requirements](../qir/index.md) for sampling eligibility and
+resource limits. OpenQASM classical registers use reverse declaration order,
+with each register most-significant-bit first. QIR records define increasing
+output-bit indices; the device reverses each recorded bitstring before returning
+shots and counts. Equivalent OpenQASM and QIR programs therefore use the same
+bit positions within each bitstring. Adaptive QIR shots can record different
+numbers of bits; their histogram retains these variable-length outcomes.
+
+Sparse statevector and probability results use ascending numerical basis-index
+order. Their keys and values share that order. Sparse exports require at most 64
+qubits on a 64-bit platform; wider states return `QDMI_ERROR_NOTSUPPORTED`
+because their basis indices do not fit the sparse representation.
+
+Dense results are written into the caller's buffer without retaining another
+dense copy. Reuse that buffer when reading the same state repeatedly. Sparse
+size queries compute the amplitude count once per reachable decision-diagram
+node and retain only the total. Reading the keys or values traverses the
+represented amplitudes in order. Allocation failures during result retrieval
+return `QDMI_ERROR_OUTOFMEM` and can be retried.
+
+## Multi-program execution
+
+DDSIM executes programs concurrently in reusable worker processes. A shared LLVM
+thread pool and CPU-slot budget bound active simulation workers using physical
+cores and process affinity. Each program starts with one slot. After
+preparation, a worker requests extra slots only for parallel adaptive sampling;
+terminal and structured-branch sampling keep one slot. Extra slots return to the
+budget when the worker responds. An earlier adaptive program can occupy all
+slots until it finishes. Each program creates its own compiler, JIT, runtime,
+and DD state. Results retain serialized state after workers become available
+again and reconstruct an independent DD package on the first state or
+probability query. Sampling-only queries do not reconstruct the state. An
+invalid serialized state returns `QDMI_ERROR_FATAL` from state and probability
+queries; the completed program and its samples remain available. DDSIM requires
+an LLVM build with threading enabled.
+
+One failing or cancelled program does not discard completed siblings. Cancelling
+a job stops its active workers and prevents its queued programs from running.
+Freeing a cancelled job releases its stored programs without waiting for other
+jobs. If a worker crashes, its assigned program fails. Memory exhaustion and
+failure to create a sampling thread terminate that worker. DDSIM starts a new
+worker for future submissions; it does not automatically retry the failed
+program. The worker executable is installed beside the device library and must
+move with it.
+
+With an explicit job seed, program `i` uses the unsigned 64-bit seed
+`job_seed + i`. The first program uses the supplied seed, as does a job with one
+program. This makes the assignment independent of worker scheduling, but
+splitting or reordering a batch changes which seed each program receives. The
+PennyLane `DDSIMDevice(seed=...)` option instead numbers programs across all
+submissions of the device, so splitting does not change their seeds. Without an
+explicit seed, each program obtains fresh system entropy. QIR output capture is
+indexed by program, like shots, counts, and state results. Worker reuse supports
+ordinary QDMI programs; it does not isolate arbitrary native process-global side
+effects between executions.
+
+## Program completion trace
+
+Set `MQT_CORE_DDSIM_PROGRAM_TRACE` to a new file path before submitting a job to
+record its terminal program transitions. This process-wide setting must not be
+changed concurrently with submissions. Each path belongs to one job: existing
+files, empty paths, and `-` are rejected before submission. Unset the variable
+or select a new path before another job.
+
+The tab-separated columns are steady-clock nanoseconds, program index, terminal
+QDMI status, total worker budget, and slots held at completion. Records are
+ordered under the job mutex. The final field is not peak program parallelism; a
+canceled queued program holds zero slots.
+
+A write failure emits a diagnostic and stops tracing without changing quantum
+results or execution status. The file may be incomplete. Trace consumers must
+check that every program has exactly one terminal record and validate its status
+before using the observations. Leave the variable unset when tracing is not
+needed.
+
+## QIR output capture
+
+Set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM2` to a `bool` value of `true` before
+submission to capture textual QIR output. In Python, pass `custom2=True` to
+`submit_job` or `submit_program`. This option requires a QIR Base or Adaptive
+program and a positive shot count; other jobs reject it with
+`QDMI_ERROR_NOTSUPPORTED`.
+
+After successful execution, `QDMI_JOB_RESULT_CUSTOM1` returns the complete,
+null-terminated output stream. Its reported size includes the terminator. The
+Python equivalent is `job.get_custom_result(CustomProperty.CUSTOM1, str)`; C++
+clients use `job.getCustomResult<std::string>(qdmi::CustomProperty::Custom1)`.
+Without capture, that result is unsupported (`None` in Python).
+
+Capture retains the QIR header, per-shot metadata, typed output records, and
+exit codes. Shot records align with `QDMI_JOB_RESULT_SHOTS`; integer and double
+records do not add bits to shots or counts. Double records preserve the original
+floating-point value when parsed back. Eligible terminal programs retain one
+output template and the uncollapsed statevector; querying the stream expands
+that template with the sampled bits. Other capture jobs execute once per shot
+and retain their text in memory. See the
+[executable QIR example](../qir/index.md#retrieve-the-qir-output-stream-through-qdmi).

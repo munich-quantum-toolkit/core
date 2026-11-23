@@ -14,8 +14,10 @@
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Operation.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
@@ -27,6 +29,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -34,6 +37,17 @@
 
 using namespace mlir;
 using namespace mlir::mqt;
+
+bool mlir::mqt::preservesProgramQubits(Operation* operation) {
+  auto moduleOp = dyn_cast<ModuleOp>(operation);
+  if (!moduleOp) {
+    moduleOp = operation->getParentOfType<ModuleOp>();
+  }
+  const auto environment =
+      moduleOp ? moduleOp->getAttrOfType<TargetEnvAttr>(TargetEnvAttr::name)
+               : TargetEnvAttr{};
+  return environment && environment.getCompilationTarget().getGateSet();
+}
 
 LogicalResult
 PayloadFormatAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
@@ -299,12 +313,17 @@ LogicalResult CompilationTargetAttr::verify(
     const ArrayRef<SiteAttr> sites, const DurationUnitAttr durationUnit,
     const ConnectivityKind connectivity, const ArrayRef<CouplingAttr> couplings,
     const NativeOperationsKind nativeOperations,
-    const ArrayRef<NativeOperationAttr> operations) {
+    const ArrayRef<NativeOperationAttr> operations, const UnitAttr gateSet) {
   if (name && name.getValue().empty()) {
     return emitError() << "compiler target name must not be empty when present";
   }
-  if (sites.empty()) {
+  if (!gateSet && sites.empty()) {
     return emitError() << "compiler target must contain at least one site";
+  }
+  if (gateSet &&
+      (!sites.empty() || connectivity != ConnectivityKind::AllToAll ||
+       !couplings.empty() || durationUnit)) {
+    return emitError() << "gate-set target cannot contain device constraints";
   }
 
   llvm::SmallDenseSet<int64_t> siteIds;
@@ -319,19 +338,16 @@ LogicalResult CompilationTargetAttr::verify(
     return emitError()
            << "compiler target couplings require explicit connectivity";
   }
+  llvm::SmallDenseSet<std::pair<int64_t, int64_t>> edges;
   if (connectivity == ConnectivityKind::Explicit) {
-    llvm::SmallDenseSet<std::pair<int64_t, int64_t>> seen;
     for (const CouplingAttr coupling : couplings) {
-      auto source = coupling.getSource();
-      auto target = coupling.getTarget();
+      const auto source = coupling.getSource();
+      const auto target = coupling.getTarget();
       if (!siteIds.contains(source) || !siteIds.contains(target)) {
         return emitError()
                << "compiler target coupling references an unknown site";
       }
-      if (target < source) {
-        std::swap(source, target);
-      }
-      if (!seen.insert({source, target}).second) {
+      if (!edges.insert(std::minmax(source, target)).second) {
         return emitError() << "compiler target contains a duplicate coupling";
       }
     }
@@ -343,7 +359,11 @@ LogicalResult CompilationTargetAttr::verify(
            << "compiler target operations require explicit native operations";
   }
   for (const NativeOperationAttr operation : operations) {
-    if (operation.getArity().getValue() > sites.size()) {
+    if (gateSet && !operation.getSiteTuples().empty()) {
+      return emitError()
+             << "gate-set target cannot contain site-specific operations";
+    }
+    if (!gateSet && operation.getArity().getValue() > sites.size()) {
       if (operation.getArity().getKind() == OperationArityKind::Variadic) {
         return emitError() << "compiler target operation variadic minimum "
                               "exceeds its site count";
@@ -352,11 +372,19 @@ LogicalResult CompilationTargetAttr::verify(
                             "count";
     }
     for (const SiteTupleAttr siteTuple : operation.getSiteTuples()) {
-      if (llvm::any_of(siteTuple.getSites(), [&](const int64_t site) {
+      auto tuple = siteTuple.getSites();
+      if (llvm::any_of(tuple, [&](const int64_t site) {
             return !siteIds.contains(site);
           })) {
         return emitError() << "compiler target operation site tuple references "
                               "an unknown site";
+      }
+      if (connectivity == ConnectivityKind::Explicit && tuple.size() == 2 &&
+          !edges.contains(std::minmax(tuple[0], tuple[1]))) {
+        return emitError() << "native operation '"
+                           << operation.getName().getValue() << "' on sites "
+                           << tuple[0] << ", " << tuple[1]
+                           << " requires a coupling";
       }
     }
   }

@@ -9,7 +9,7 @@
  */
 
 /// @file
-/// Tests for canonicalization of classical QCO conditional results.
+/// Tests for canonicalization of QCO control flow.
 
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
@@ -22,6 +22,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Block.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -35,11 +36,108 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/STLExtras.h"
+
 #include <utility>
 
 using namespace mlir;
 
 namespace {
+
+TEST(QCOControlFlowCanonicalization, RemovesIdentityBranches) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @test(%condition: i1, %q0: !qco.qubit,
+                      %fixed: tensor<2x!qco.qubit>,
+                      %dynamic: tensor<?x!qco.qubit>, %q1: !qco.qubit)
+          -> (!qco.qubit, tensor<2x!qco.qubit>,
+              tensor<?x!qco.qubit>, !qco.qubit) {
+        %out:4 = qco.if %condition
+            args(%a = %q0, %b = %fixed, %c = %dynamic, %d = %q1)
+            -> (!qco.qubit, tensor<2x!qco.qubit>,
+                tensor<?x!qco.qubit>, !qco.qubit) {
+          qco.yield %a, %b, %c, %d : !qco.qubit, tensor<2x!qco.qubit>,
+                                   tensor<?x!qco.qubit>, !qco.qubit
+        } else args(%a = %q0, %b = %fixed, %c = %dynamic, %d = %q1) {
+          qco.yield %a, %b, %c, %d : !qco.qubit, tensor<2x!qco.qubit>,
+                                   tensor<?x!qco.qubit>, !qco.qubit
+        }
+        return %out#0, %out#1, %out#2, %out#3
+            : !qco.qubit, tensor<2x!qco.qubit>,
+              tensor<?x!qco.qubit>, !qco.qubit
+      }
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  PassManager manager(&context);
+  manager.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+  EXPECT_TRUE(function.getOps<qco::IfOp>().empty());
+  auto returned =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  for (auto [actual, input] : llvm::zip_equal(
+           returned.getOperands(), function.getArguments().drop_front())) {
+    EXPECT_EQ(actual, input);
+  }
+}
+
+TEST(QCOControlFlowCanonicalization, PreservesBranchOperations) {
+  for (const bool thenBranch : {false, true}) {
+    for (const bool quantumOperation : {false, true}) {
+      SCOPED_TRACE(thenBranch);
+      SCOPED_TRACE(quantumOperation);
+      MLIRContext context;
+      context.loadDialect<qco::QCODialect, func::FuncDialect>();
+      auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+        module {
+          func.func private @effect()
+          func.func @test(%condition: i1, %q: !qco.qubit) -> !qco.qubit {
+            %out = qco.if %condition args(%a = %q) -> !qco.qubit {
+              qco.yield %a : !qco.qubit
+            } else args(%a = %q) {
+              qco.yield %a : !qco.qubit
+            }
+            return %out : !qco.qubit
+          }
+        }
+      )mlir",
+                                                  &context);
+      ASSERT_TRUE(moduleOp);
+      auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+      auto conditional = *function.getOps<qco::IfOp>().begin();
+      auto yield =
+          thenBranch ? conditional.thenYield() : conditional.elseYield();
+      OpBuilder builder(yield);
+      if (quantumOperation) {
+        auto changed = qco::HOp::create(builder, yield.getLoc(),
+                                        yield.getTargets().front());
+        yield.setOperand(0, changed);
+      } else {
+        func::CallOp::create(builder, yield.getLoc(), "effect", TypeRange{},
+                             ValueRange{});
+      }
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+      PassManager manager(&context);
+      manager.addPass(createCanonicalizerPass());
+      ASSERT_TRUE(succeeded(manager.run(*moduleOp)));
+      EXPECT_TRUE(succeeded(verify(*moduleOp)));
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+      auto returned =
+          cast<func::ReturnOp>(function.getBody().front().getTerminator());
+      EXPECT_TRUE(returned.getOperand(0).getDefiningOp<qco::IfOp>());
+    }
+  }
+}
 
 TEST(QCOControlFlowCanonicalization, RemovesForwardedIdleLoopQubit) {
   MLIRContext context;

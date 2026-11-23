@@ -80,6 +80,7 @@ using decomposition::emitUnitary2QWeyl;
 
 #define GEN_PASS_DEF_TARGETNATIVESYNTHESIS
 #define GEN_PASS_DEF_VERIFYTARGETCONFORMANCE
+#define GEN_PASS_DEF_FUSETWOQUBITGATES
 #include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
@@ -388,9 +389,7 @@ static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
       return WalkResult::interrupt();
     }
     if (auto staticOp = dyn_cast<StaticOp>(operation)) {
-      sites.try_emplace(staticOp.getQubit(),
-                        indexed ? std::nullopt
-                                : std::optional<SiteId>(staticOp.getIndex()));
+      sites.try_emplace(staticOp.getQubit(), staticOp.getIndex());
     } else if (indexed && isa<qtensor::FromElementsOp, qtensor::ExtractOp,
                               qtensor::InsertOp>(operation)) {
       for (auto input : getQubitValues(operation->getOperands(), true)) {
@@ -403,7 +402,8 @@ static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
       for (auto output : operation->getResults()) {
         sites.try_emplace(output, std::nullopt);
       }
-    } else if (isa<UnitaryOpInterface, ResetOp, MeasureOp>(operation)) {
+    } else if (isa<UnitaryOpInterface, ResetOp, MeasureOp, DelayOp>(
+                   operation)) {
       if (propagate(operation->getOperands(), operation->getResults())
               .wasInterrupted()) {
         return WalkResult::interrupt();
@@ -446,16 +446,25 @@ static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
   return sites;
 }
 
-/// Collection has validated the inputs of every unitary, reset, and measure.
+/// Return all ordered sites, or an empty vector for runtime-selected addresses.
 ///
 /// Keep the common one- and two-qubit cases inline.
 static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
                                                 const SiteMap& sites) {
   SmallVector<SiteId, 2> result;
   for (Value qubit : getQubitValues(operation->getOperands())) {
-    result.push_back(*sites.at(qubit));
+    const auto found = sites.find(qubit);
+    if (found == sites.end() || !found->second) {
+      return {};
+    }
+    result.push_back(*found->second);
   }
   return result;
+}
+
+// Borrow the caller's site storage; an empty placement denotes unknown sites.
+static std::optional<ArrayRef<SiteId>> knownSites(ArrayRef<SiteId> sites) {
+  return sites.empty() ? std::nullopt : std::optional{sites};
 }
 
 static LogicalResult verifyTopology(Operation* root,
@@ -541,11 +550,15 @@ std::optional<bool>
 NativeCostAnalysis::entanglerOrientation(const CompilerTarget& target,
                                          CompilerTarget::Entangler entangler,
                                          Sites sites) {
-  if (!sites || target.supports(entangler, *sites)) {
+  if (sites ? target.supports(entangler, *sites) : target.supports(entangler)) {
     return false;
   }
-  if (target.supports(entangler, std::array{(*sites)[1], (*sites)[0]})) {
-    return true;
+  if (sites &&
+      target.supports(entangler, std::array{(*sites)[1], (*sites)[0]})) {
+    // Symmetric recipes retain program order; legalization orders native gates.
+    return entangler.gate == CompilerTarget::GateKind::CX ||
+           entangler.gate == CompilerTarget::GateKind::ECR ||
+           entangler.gate == CompilerTarget::GateKind::RZX;
   }
   return std::nullopt;
 }
@@ -587,32 +600,33 @@ NativeCostTable::precompute(Operation* root, uint64_t seed) {
   constexpr size_t capacity = 1024;
   auto result = std::make_unique<NativeCostTable>();
   result->seed_ = seed;
-  const auto add = [&](const Matrix4x4& matrix) {
+  const auto add = [&](const Matrix4x4& key, const Matrix4x4& equivalent) {
     if (result->entries_.size() == capacity) {
       return;
     }
-    const auto hash = matrixHash(matrix);
+    const auto hash = matrixHash(key);
     // Keep one entry per fingerprint; collisions remain cache misses.
     if (result->index_.contains(hash)) {
       return;
     }
+    const auto* cached = result->lookup(equivalent, matrixHash(equivalent));
+    const auto coordinates = cached ? *cached : weylCoordinates(key, seed);
     result->index_.try_emplace(hash, result->entries_.size());
-    result->entries_.push_back({
-        .matrix = matrix,
-        .coordinates = weylCoordinates(matrix, seed),
-    });
+    result->entries_.push_back({.matrix = key, .coordinates = coordinates});
   };
   const auto swap = SWAPOp::getUnitaryMatrix();
   const auto addOrientations = [&](const Matrix4x4& matrix) {
+    const auto swapped = swap * matrix;
+    // SWAP conjugation preserves Weyl coordinates, including for SWAP * M.
     for (const bool reverse : {false, true}) {
       const auto ordered = reverse ? matrix.reorderForQubits(1, 0) : matrix;
-      add(ordered);
-      add(swap * ordered);
-      add(ordered * swap);
+      add(ordered, matrix);
+      add(swap * ordered, swapped);
+      add(ordered * swap, swapped);
     }
   };
-  add(Matrix4x4::identity());
-  add(swap);
+  add(Matrix4x4::identity(), Matrix4x4::identity());
+  add(swap, swap);
   root->walk([&](Operation* op) {
     if (result->entries_.size() == capacity) {
       return WalkResult::interrupt();
@@ -1000,7 +1014,7 @@ void NativeCostTracker::append(Operation* operation,
     for (size_t vertex : vertices) {
       depths_[vertex] = depth;
     }
-    if (isa<MeasureOp, ResetOp>(operation) &&
+    if (isa<MeasureOp, ResetOp, DelayOp>(operation) &&
         !target_.supports(operation, sites)) {
       available_ = false;
     }
@@ -1131,7 +1145,8 @@ int64_t NativeCostTracker::swapCostAdjustment(size_t first, size_t second,
 static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
     std::optional<CompilerTarget::SynthesisBasis> basis,
-    std::optional<ArrayRef<SiteId>> sites, NativeCostAnalysis& analysis) {
+    std::optional<ArrayRef<SiteId>> sites, NativeCostAnalysis& analysis,
+    bool canEmitRuntimeBranches) {
   Operation* const operation = op.getOperation();
   if (const auto reverse = analysis.nativeOrientation(op, target, sites)) {
     if (*reverse) {
@@ -1191,9 +1206,10 @@ static LogicalResult synthesizeTargetOperation(
     if (const auto choice =
             counts ? analysis.select(*counts, target, sites) : std::nullopt) {
       basis->entangler = choice->entangler;
-      rewriter.replaceOp(operation, decomposition::emitPauliRotations(
-                                        rewriter, operation, *sequence, *basis,
-                                        choice->reverse));
+      rewriter.replaceOp(operation,
+                         decomposition::emitPauliRotations(
+                             rewriter, operation, *sequence, *basis,
+                             choice->reverse, canEmitRuntimeBranches));
       return success();
     }
   }
@@ -1240,9 +1256,7 @@ static bool reducesNativeCost(const FusableTwoQubitRun& run, size_t fusedCost,
     }
     auto siteValues = sites != nullptr ? getOperationSites(operation, *sites)
                                        : SmallVector<SiteId, 2>{};
-    const auto operationSites =
-        sites != nullptr ? std::optional<ArrayRef<SiteId>>(siteValues)
-                         : std::nullopt;
+    const auto operationSites = knownSites(siteValues);
     const auto individual =
         analysis.operationCost(unitary, target, operationSites);
     if (!individual) {
@@ -1288,11 +1302,8 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   if (target != nullptr) {
     const auto placement = sites != nullptr ? getOperationSites(head, *sites)
                                             : SmallVector<SiteId, 2>{};
-    const auto selected = analysis.decompose(
-        run.composed, *target,
-        sites != nullptr ? std::optional<ArrayRef<SiteId>>(placement)
-                         : std::nullopt,
-        improves);
+    const auto selected = analysis.decompose(run.composed, *target,
+                                             knownSites(placement), improves);
     if (!selected) {
       return false;
     }
@@ -1364,35 +1375,42 @@ fuseGateRuns(IRRewriter& rewriter, ModuleOp moduleOp,
 namespace {
 
 struct FuseTwoQubitGatesPass final
-    : PassWrapper<FuseTwoQubitGatesPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FuseTwoQubitGatesPass)
+    : impl::FuseTwoQubitGatesBase<FuseTwoQubitGatesPass> {
+  using Base::Base;
 
   FuseTwoQubitGatesPass() = default;
   explicit FuseTwoQubitGatesPass(const CompilerTarget& target)
       : target_(target) {}
 
-  void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, arith::ArithDialect>();
-  }
-
 protected:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
+    const auto* target = target_ ? &*target_ : nullptr;
+    if (useTarget) {
+      const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+      if (!environment) {
+        moduleOp.emitError()
+            << "expected a valid mqt.target_env: " << environment.error();
+        signalPassFailure();
+        return;
+      }
+      target = &environment.environment().target();
+    }
     const std::optional defaultBasis{CompilerTarget::SynthesisBasis{
         .singleQubit = CompilerTarget::SingleQubitBasis::U,
         .entangler =
             CompilerTarget::Entangler{.gate = CompilerTarget::GateKind::CZ},
     }};
-    const auto& basis = target_ ? target_->synthesisBasis() : defaultBasis;
+    const auto& basis =
+        target != nullptr ? target->synthesisBasis() : defaultBasis;
     if (!basis || !basis->entangler) {
       return;
     }
     IRRewriter rewriter(&getContext());
     decomposition::mergeDiagonalRotations(rewriter, moduleOp);
     NativeCostAnalysis analysis(compilationSeed(moduleOp, 2023));
-    const auto changed =
-        fuseGateRuns(rewriter, moduleOp, *basis, analysis,
-                     target_ ? &*target_ : nullptr, nullptr, true);
+    const auto changed = fuseGateRuns(rewriter, moduleOp, *basis, analysis,
+                                      target, nullptr, true);
     if (failed(changed) ||
         (*changed && failed(mlir::mqt::normalizeGlobalPhases(moduleOp)))) {
       signalPassFailure();
@@ -1481,9 +1499,7 @@ struct ComposePauliRotations final
     }
     auto placement = sites != nullptr ? getOperationSites(op, *sites)
                                       : SmallVector<SiteId, 2>{};
-    const auto operationSites = sites != nullptr
-                                    ? std::optional<ArrayRef<SiteId>>(placement)
-                                    : std::nullopt;
+    const auto operationSites = knownSites(placement);
     return decomposition::fusePauliRotationRun(rewriter, op, basis, target,
                                                operationSites, analysis);
   }
@@ -1528,7 +1544,21 @@ protected:
       return;
     }
     const bool indexed = environment.environment().supportsIndexedQubits();
-    auto sites = collectStaticSites(moduleOp, indexed);
+    const auto& payload = environment.environment().payloadSpecification();
+    const bool supportsFloatBranches =
+        (payload.format().id == "qir" &&
+         payload.format().profile == "adaptive") ||
+        (payload.format().id == "openqasm" && payload.versionRange() &&
+         payload.versionRange()->withinMajor(3));
+    const bool canEmitRuntimeBranches =
+        supportsFloatBranches &&
+        llvm::any_of(payload.capabilities(), [](const auto& capability) {
+          return capability.id == ProgramCapability::FORWARD_BRANCHING &&
+                 capability.value == 0 && capability.constraints.empty();
+        });
+    auto sites = target.hasDeviceConstraints()
+                     ? collectStaticSites(moduleOp, indexed)
+                     : FailureOr<SiteMap>(SiteMap{});
     if (failed(sites)) {
       signalPassFailure();
       return;
@@ -1546,8 +1576,7 @@ protected:
       decomposition::populateRotationCompositionPatterns(patterns);
       if (targetBasis->entangler) {
         patterns.add<ComposePauliRotations>(&getContext(), *emissionBasis,
-                                            target, analysis,
-                                            indexed ? nullptr : &*sites);
+                                            target, analysis, &*sites);
       }
       auto config = compositionConfig;
       if (failed(applyPatternsGreedily(moduleOp, std::move(patterns),
@@ -1561,7 +1590,7 @@ protected:
       decomposition::SingleQubitRunFusion fusion(
           *targetBasis, &target, GreedyRewriteConfig{}.setListener(&listener));
       if (failed(fuseGateRuns(rewriter, moduleOp, *emissionBasis, analysis,
-                              &target, indexed ? nullptr : &*sites, false,
+                              &target, &*sites, false,
                               equatorial ? nullptr : &fusion))) {
         signalPassFailure();
         return;
@@ -1583,13 +1612,10 @@ protected:
               (equatorial && unitary.isSingleQubit())) {
             return WalkResult::advance();
           }
-          auto operationSites = indexed ? SmallVector<SiteId, 2>{}
-                                        : getOperationSites(operation, *sites);
+          auto operationSites = getOperationSites(operation, *sites);
           const auto synthesized = synthesizeTargetOperation(
               rewriter, unitary, target, emissionBasis,
-              indexed ? std::nullopt
-                      : std::optional<ArrayRef<SiteId>>(operationSites),
-              analysis);
+              knownSites(operationSites), analysis, canEmitRuntimeBranches);
           return failed(synthesized) ? WalkResult::interrupt()
                                      : WalkResult::advance();
         });
@@ -1598,6 +1624,39 @@ protected:
     if (result.wasInterrupted()) {
       signalPassFailure();
       return;
+    }
+    if (llvm::any_of(target.operations(), [](const auto& operation) {
+          return llvm::any_of(operation.siteTuples(), [](const auto& tuple) {
+            return tuple.sites().size() == 2;
+          });
+        })) {
+      // Synthesis can introduce branches with new placed block arguments.
+      sites = collectStaticSites(moduleOp, indexed);
+      if (failed(sites)) {
+        signalPassFailure();
+        return;
+      }
+      const auto oriented = moduleOp.walk([&](UnitaryOpInterface gate) {
+        if (!gate.isTwoQubit() ||
+            !isWalkableUnitaryShell(gate.getOperation())) {
+          return WalkResult::advance();
+        }
+        const auto placement = getOperationSites(gate, *sites);
+        const auto reverse = NativeCostAnalysis::nativeOrientation(
+            gate, target, knownSites(placement));
+        if (!reverse) {
+          gate.emitError("generated operation has no supported native locus");
+          return WalkResult::interrupt();
+        }
+        if (*reverse) {
+          reorderTwoQubitOperation(rewriter, gate);
+        }
+        return WalkResult::advance();
+      });
+      if (oriented.wasInterrupted()) {
+        signalPassFailure();
+        return;
+      }
     }
     if (targetBasis && !equatorial) {
       RewritePatternSet patterns(&getContext());
@@ -1615,9 +1674,7 @@ protected:
     // Propagate frames after local fusion: resynthesizing the shifted runs
     // can trade virtual Z gates for additional physical rotations.
     if (targetBasis) {
-      if (failed(decomposition::propagateZFrames(
-              rewriter, moduleOp, target,
-              GreedyRewriteConfig{}.setListener(&listener)))) {
+      if (failed(decomposition::propagateZFrames(rewriter, moduleOp, target))) {
         signalPassFailure();
         return;
       }
@@ -1645,7 +1702,9 @@ protected:
     }
     const CompilerTarget& target = environment.environment().target();
     const bool indexed = environment.environment().supportsIndexedQubits();
-    auto sites = collectStaticSites(moduleOp, indexed);
+    auto sites = target.hasDeviceConstraints()
+                     ? collectStaticSites(moduleOp, indexed)
+                     : FailureOr<SiteMap>(SiteMap{});
     if (failed(sites)) {
       signalPassFailure();
       return;
@@ -1673,14 +1732,16 @@ protected:
         }
         arity = unitary.getNumQubits();
         parameterCount = unitary.getNumParams();
+      } else if (isa<DelayOp>(operation)) {
+        parameterCount = 1;
       } else if (!isa<MeasureOp, ResetOp>(operation)) {
         return WalkResult::advance();
       }
 
-      auto operationSites = indexed ? SmallVector<SiteId, 2>{}
-                                    : getOperationSites(operation, *sites);
-      if (indexed ? target.supports(operation)
-                  : target.supports(operation, operationSites)) {
+      auto operationSites = getOperationSites(operation, *sites);
+      if (operationSites.size() == arity
+              ? target.supports(operation, operationSites)
+              : target.supports(operation)) {
         return WalkResult::advance();
       }
 
@@ -1746,18 +1807,12 @@ protected:
 
 } // namespace
 
-std::unique_ptr<Pass> createFuseTwoQubitGates() {
-  return std::make_unique<FuseTwoQubitGatesPass>();
-}
-
 std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
   return std::make_unique<FuseTwoQubitGatesPass>(target);
 }
 
 void populateTargetNativeSynthesisPipeline(OpPassManager& pm) {
-  // Placement consumes allocations; native synthesis normalizes phases.
-  pm.addPass(createCanonicalizerPass(
-      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+  pm.addPass(createCanonicalizerPass());
   // Reuse unchanged classical reads before native synthesis splits their uses.
   pm.addPass(createCSEPass());
   pm.addPass(std::make_unique<TargetDeadValueCleanupPass>());

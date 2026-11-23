@@ -25,6 +25,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/RegionKindInterface.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Support/WalkResult.h"
 
@@ -38,6 +39,10 @@ using namespace mlir;
 using namespace mlir::qco;
 
 bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
+  return TensorLifetimeAnalysis().isComplete(tensor, depth);
+}
+
+bool TensorLifetimeAnalysis::isComplete(Value tensor, unsigned depth) {
   // Bound recursive stack use at nesting depth 64.
   if (depth >= 64) {
     return false;
@@ -71,7 +76,7 @@ bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
         auto arguments =
             llvm::filter_to_vector(region.getArguments(), isTensor);
         if (index >= arguments.size() ||
-            !hasCompleteTensorLifetime(arguments[index], depth + 1)) {
+            !isComplete(arguments[index], depth + 1)) {
           return false;
         }
       }
@@ -84,20 +89,37 @@ bool mlir::qco::hasCompleteTensorLifetime(Value tensor, unsigned depth) {
       if (extracted != 0) {
         return false;
       }
-      auto arguments = qco::getQuantumArgumentIndices(call.getOperandTypes());
-      auto* position =
-          llvm::find(arguments, tensor.use_begin()->getOperandNumber());
-      if (position == arguments.end() ||
-          call.getNumResults() < arguments.size()) {
+      if (auto result = callResults_.find(tensor);
+          result != callResults_.end()) {
+        tensor = result->second;
+        callResults_.erase(result);
+        continue;
+      }
+      if (!SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+              call, call.getCalleeAttr())) {
         return false;
       }
-      const auto result = call.getNumResults() - arguments.size() +
-                          std::distance(arguments.begin(), position);
-      auto argument = qco::getCallArgumentForResult(call, result);
-      if (failed(argument)) {
+      auto arguments = getQuantumArgumentIndices(call.getOperandTypes());
+      if (call.getNumResults() < arguments.size()) {
         return false;
       }
-      tensor = call.getResult(result);
+      Value next;
+      for (auto [argument, result] : llvm::zip_equal(
+               arguments, call.getResults().take_back(arguments.size()))) {
+        auto input = call.getOperand(argument);
+        if (input.getType() != result.getType()) {
+          continue;
+        }
+        if (input == tensor) {
+          next = result;
+        } else if (isTensor(input)) {
+          callResults_.try_emplace(input, result);
+        }
+      }
+      if (!next) {
+        return false;
+      }
+      tensor = next;
     } else {
       return isa<qtensor::DeallocOp, qco::YieldOp, scf::YieldOp,
                  scf::ConditionOp, func::ReturnOp>(user) &&
@@ -149,12 +171,16 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
       origins[output] = origin(input);
     }
   };
+  const auto tieWires = [&](WireOpInterface wires) {
+    for (auto [input, output] :
+         llvm::zip_equal(wires.getInputQubits(), wires.getOutputQubits())) {
+      origins[output] = origin(input);
+    }
+  };
   auto result = root->walk([&](Operation* op, const WalkStage& stage) {
-    if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
-      for (auto [input, output] : llvm::zip_equal(unitary.getInputQubits(),
-                                                  unitary.getOutputQubits())) {
-        origins[output] = origin(input);
-      }
+    if (auto wires = dyn_cast<WireOpInterface>(op);
+        wires && (op->getNumRegions() == 0 || isa<UnitaryOpInterface>(op))) {
+      tieWires(wires);
       return WalkResult::skip();
     }
     if (!stage.isAfterAllRegions()) {
@@ -178,7 +204,7 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
             corresponds(region.front().getArguments(),
                         region.front().getTerminator()->getOperands());
       }
-      tie(op->getOperands(), op->getResults());
+      tieWires(cast<WireOpInterface>(op));
     } else if (auto function = dyn_cast<func::FuncOp>(op)) {
       auto arguments = getQuantumArgumentIndices(function.getArgumentTypes());
       if (arguments.empty()) {
@@ -212,10 +238,6 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
         function.emitOpError("must return its quantum arguments positionally");
         return WalkResult::interrupt();
       }
-    } else if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
-      tie(ValueRange{measure.getQubitIn()}, ValueRange{measure.getQubitOut()});
-    } else if (auto reset = dyn_cast<qco::ResetOp>(op)) {
-      tie(ValueRange{reset.getQubitIn()}, ValueRange{reset.getQubitOut()});
     } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
       auto tensor = origin(extract.getTensor());
       // Graph regions need not place definitions before uses.
@@ -282,6 +304,13 @@ LogicalResult mlir::qco::collectWireOrigins(Operation* root,
 }
 
 LogicalResult mlir::qco::verifyLinearity(Operation* root) {
+  DenseMap<Value, Value> origins;
+  return verifyLinearity(root, origins);
+}
+
+LogicalResult mlir::qco::verifyLinearity(Operation* root,
+                                         DenseMap<Value, Value>& origins) {
+  origins.clear();
   func::FuncOp entryPoint;
   if (auto moduleOp = dyn_cast<ModuleOp>(root)) {
     entryPoint = mqt::getEntryPoint(moduleOp);
@@ -341,6 +370,5 @@ LogicalResult mlir::qco::verifyLinearity(Operation* root) {
   if (!needsWireChecks) {
     return success();
   }
-  DenseMap<Value, Value> origins;
   return collectWireOrigins(root, origins);
 }

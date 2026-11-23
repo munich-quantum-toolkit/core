@@ -8,6 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
@@ -36,6 +39,8 @@
 #include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 
 #include <cstddef>
 #include <utility>
@@ -73,6 +78,46 @@ protected:
   }
 };
 } // namespace
+
+TEST_F(CombineControlledGatesTest, TargetOptionPreservesNativeControls) {
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  using OperationCapability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(OperationCapability::create(
+              "rz", OperationCapability::Arity::variadic(2), 1)),
+      })));
+  const TargetEnvironment environment(
+      target, llvm::cantFail(PayloadSpecification::create(
+                  PayloadFormat{.id = "mqt.test.payload"})));
+  auto original =
+      QCOProgramBuilder::build(&context, [](QCOProgramBuilder& builder) {
+        auto [control, qubit] =
+            builder.ctrl(builder.staticQubit(0), builder.staticQubit(1),
+                         [&](Value q) { return builder.rz(0.2, q); });
+        builder.ctrl(control, qubit,
+                     [&](Value q) { return builder.rz(0.3, q); });
+        return SmallVector<Value>{};
+      });
+  ASSERT_TRUE(original);
+  for (const llvm::StringRef mode : {"generic", "target", "environment"}) {
+    SCOPED_TRACE(mode.str());
+    OwningOpRef<ModuleOp> moduleOp = original->clone();
+    attachTargetEnvironment(*moduleOp, environment);
+    PassManager pm(&context);
+    pm.addPass(mode == "target"
+                   ? createCombineControlledGates(target)
+                   : createCombineControlledGates(CombineControlledGatesOptions{
+                         .useTarget = mode == "environment",
+                     }));
+    ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    EXPECT_EQ(countControls(*moduleOp), mode == "generic" ? 1U : 2U);
+    ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 2);
+  }
+}
 
 TEST_F(CombineControlledGatesTest, DefaultPipelineMergesParameterizedBodies) {
   auto moduleOp =

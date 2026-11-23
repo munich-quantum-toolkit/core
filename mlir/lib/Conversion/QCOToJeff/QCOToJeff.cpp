@@ -527,7 +527,7 @@ static LogicalResult cleanUp(ModuleOp moduleOp, LoweringState& state) {
   }
   moduleOp->setAttr("jeff.strings", builder.getStrArrayAttr(stringRefs));
 
-  moduleOp->setAttr("jeff.tool", builder.getStringAttr("mqt-cc"));
+  moduleOp->setAttr("jeff.tool", builder.getStringAttr("mqt-core"));
   moduleOp->setAttr("jeff.toolVersion",
                     builder.getStringAttr(MQT_CORE_VERSION));
 

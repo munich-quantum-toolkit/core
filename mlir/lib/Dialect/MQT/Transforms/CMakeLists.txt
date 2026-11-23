@@ -8,6 +8,7 @@
 
 add_mlir_library(
   MLIRMQTTransforms
+  RemoveUnusedQubits.cpp
   SimplifyQuantum.cpp
   DropGlobalPhases.cpp
   NormalizeGlobalPhases.cpp
@@ -28,8 +29,10 @@ add_mlir_library(
   MLIRMathDialect
   MLIRMemorySlotInterfaces
   MLIRLLVMIRTransforms
+  MLIRMQTDialect
   MLIRMQTUtils
   MLIRPass
+  MLIRQTensorDialect
   MLIRQCDialect
   MLIRQCODialect
   MLIRSCFDialect
@@ -49,5 +52,9 @@ file(GLOB_RECURSE PASSES_HEADERS_BUILD
 target_sources(
   MLIRMQTTransforms
   PUBLIC
-  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES ${PASSES_HEADERS_SOURCE}
-  FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_BUILD_INCLUDE_DIR} FILES ${PASSES_HEADERS_BUILD})
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+    FILES ${PASSES_HEADERS_SOURCE}
+  FILE_SET HEADERS
+    BASE_DIRS ${MQT_MLIR_BUILD_INCLUDE_DIR}
+    FILES ${PASSES_HEADERS_BUILD})

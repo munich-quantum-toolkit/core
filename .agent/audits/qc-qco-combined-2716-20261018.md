@@ -45,11 +45,7 @@ These follow-up changes remove another 44 net converter lines from the initial
 combination. Against upstream, the complete prototype removes 581 net
 source/test lines: 146 production and 435 test lines. It preserves the shared
 132 forward and 133 reverse conversion cases and all five PR regressions; this
-follow-up adds no tests. Independent design and correctness reviews, including
-the final ponytail review, found no remaining concrete issue or necessary
-regression gap. The final review covered converter lifetimes and scaling,
-builder ownership and callers, iterator correspondence, consumer traversal, and
-public validation boundaries.
+follow-up adds no tests.
 
 The source-operation snapshot remains deliberate. Structural rewrites move
 children, and deferred erasure preserves reference identity. Replacing it with a

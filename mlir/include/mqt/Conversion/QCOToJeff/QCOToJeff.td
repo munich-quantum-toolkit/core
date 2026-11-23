@@ -28,7 +28,7 @@ def QCOToJeff : Pass<"qco-to-jeff", "mlir::ModuleOp"> {
     signed i32. Mutable array arguments in helpers remain unsupported.
 
     `qco.static` exports as `jeff.qubit_alloc`; static site indices are not
-    preserved. Exchange logical programs before device mapping.
+    preserved. Exchange programs before device mapping.
   }];
 
   let dependentDialects = ["mlir::func::FuncDialect", "mlir::jeff::JeffDialect",

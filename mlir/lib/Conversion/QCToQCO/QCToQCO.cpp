@@ -12,6 +12,7 @@
 
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -128,9 +129,9 @@ struct LoweringState {
   DenseMap<RegisterId, llvm::MapVector<int64_t, RegisterQubit>>
       scalarRegisterQubits;
 
-  /// Immutable physical reference buffers, in slot order.
-  DenseMap<Value, SmallVector<std::pair<Value, uint64_t>>> referenceBuffers;
-  /// Local physical tensors released at function return, in allocation order.
+  /// Immutable qubit reference buffers, in slot order.
+  DenseMap<Value, SmallVector<Value>> referenceBuffers;
+  /// Local tensors released at function return, in allocation order.
   DenseMap<Region*, SmallVector<RegisterId>> localReferenceRegisters;
 
   /// Original QC capture order for source and converted structured operations.
@@ -334,7 +335,6 @@ materializeQubits(LoweringState& state, Operation* anchor, ValueRange qcQubits,
     }
 
     const auto access = accessIt->second;
-    Value* cachedQubit = nullptr;
     if (auto reg = state.scalarRegisterQubits.find(access.reg);
         reg != state.scalarRegisterQubits.end()) {
       auto& slot = reg->second[*getConstantIntValue(access.index)];
@@ -344,15 +344,11 @@ materializeQubits(LoweringState& state, Operation* anchor, ValueRange qcQubits,
         continue;
       }
       slot.index = access.index;
-      cachedQubit = &slot.qubit;
     }
     auto tensor = lookupMappedTensor(state, anchor, access.reg);
     auto extract = qtensor::ExtractOp::create(rewriter, anchor->getLoc(),
                                               tensor, access.index);
     assignMappedTensor(state, anchor, access.reg, extract.getOutTensor());
-    if (cachedQubit != nullptr) {
-      *cachedQubit = extract.getResult();
-    }
     materialized.values.push_back(extract.getResult());
     materialized.accesses.emplace_back(access);
   }
@@ -471,7 +467,6 @@ static void commitQubits(LoweringState& state, Operation* anchor,
     }
     if (auto returnOp = dyn_cast<func::ReturnOp>(operation)) {
       auto function = returnOp->getParentOfType<func::FuncOp>();
-      llvm::SmallDenseSet<Value, 4> returnedQubits;
       for (Value value : returnOp.getOperands()) {
         if (!isa<qc::QubitType>(value.getType())) {
           continue;
@@ -483,10 +478,10 @@ static void commitQubits(LoweringState& state, Operation* anchor,
               "returns borrowed qubits implicitly");
           return WalkResult::interrupt();
         }
-        if (!returnedQubits.insert(value).second) {
-          returnOp.emitOpError("cannot return the same qubit more than once");
-          return WalkResult::interrupt();
-        }
+      }
+      if (failed(qc::verifyDistinctQubitOperands(returnOp,
+                                                 returnOp.getOperands()))) {
+        return WalkResult::interrupt();
       }
     }
 
@@ -580,6 +575,14 @@ static void commitQubits(LoweringState& state, Operation* anchor,
   return success(!result.wasInterrupted());
 }
 
+/// Gate-set programs can own fresh qubits returned by helpers.
+static bool isOwnedBufferElement(Value qubit) {
+  if (auto call = qubit.getDefiningOp<func::CallOp>()) {
+    return mqt::preservesProgramQubits(call);
+  }
+  return isa_and_nonnull<qc::AllocOp>(qubit.getDefiningOp());
+}
+
 /// Collects stable register identifiers and load provenance.
 [[nodiscard]] static LogicalResult
 collectRegisterAccesses(Operation* root, LoweringState& state) {
@@ -611,49 +614,67 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
                              "qubit reference buffer with identity layout");
       return WalkResult::interrupt();
     }
-    auto& elements = state.referenceBuffers[allocation];
-    elements.resize(static_cast<size_t>(type.getDimSize(0)));
+    // A slot can have later identity stores. Find its first initializer among
+    // this buffer's own uses, which MLIR does not keep in program order.
+    SmallVector<memref::StoreOp> initializers(
+        static_cast<size_t>(type.getDimSize(0)));
+    for (auto* user : allocation->getUsers()) {
+      auto store = dyn_cast<memref::StoreOp>(user);
+      if (!store || store->getBlock() != allocation->getBlock() ||
+          (!store.getValue().getDefiningOp<qc::StaticOp>() &&
+           !isOwnedBufferElement(store.getValue()))) {
+        continue;
+      }
+      const auto index = getConstantIntValue(store.getIndices().front());
+      if (index && *index >= 0 && *index < type.getDimSize(0)) {
+        auto& first = initializers[*index];
+        if (!first || store->isBeforeInBlock(first)) {
+          first = store;
+        }
+      }
+    }
+
     const auto reg = state.registerIds.size();
     state.registerIds.try_emplace(allocation, reg);
+    auto& elements = state.referenceBuffers[allocation];
+    elements.reserve(initializers.size());
     Operation* finalInitialization = nullptr;
-    // Find initializers in block order with one scan per buffer; later identity
-    // stores share the register-slot validation below.
-    for (auto store : allocation->getBlock()->getOps<memref::StoreOp>()) {
-      if (store.getMemref() != allocation) {
-        continue;
+    for (auto store : initializers) {
+      if (!store) {
+        allocation.emitOpError("reference buffers must be fully initialized");
+        return WalkResult::interrupt();
       }
-      auto qubit = store.getValue().getDefiningOp<qc::StaticOp>();
-      const auto index = getConstantIntValue(store.getIndices().front());
-      if (!qubit || !index || *index < 0 || *index >= type.getDimSize(0) ||
-          elements[*index].first) {
-        continue;
-      }
+      auto qubit = store.getValue();
       if (!state.registerAccesses
-               .try_emplace(qubit.getResult(),
+               .try_emplace(qubit,
                             RegisterAccess{
                                 .reg = reg,
                                 .index = store.getIndices().front(),
                             })
                .second) {
-        store.emitOpError("physical reference buffers require distinct static "
-                          "qubits initialized once per slot");
+        store.emitOpError("reference buffers require distinct qubits "
+                          "initialized once per slot");
         return WalkResult::interrupt();
       }
-      elements[*index] = {qubit.getResult(), qubit.getIndex()};
-      finalInitialization = store;
-    }
-    if (llvm::any_of(elements,
-                     [](const auto& element) { return !element.first; })) {
-      allocation.emitOpError(
-          "physical reference buffers must be fully initialized");
-      return WalkResult::interrupt();
+      elements.push_back(qubit);
+      if (!finalInitialization || finalInitialization->isBeforeInBlock(store)) {
+        finalInitialization = store;
+      }
     }
     DominanceInfo dominance(function);
-    for (auto reference : llvm::make_first_range(elements)) {
+    for (auto reference : elements) {
+      const bool owned = !reference.getDefiningOp<qc::StaticOp>();
+      if (owned && !dominance.properlyDominates(reference.getDefiningOp(),
+                                                allocation.getOperation())) {
+        allocation.emitOpError(
+            "owned reference buffers require their qubits before storage");
+        return WalkResult::interrupt();
+      }
       for (auto* user : reference.getUsers()) {
-        if (!dominance.properlyDominates(allocation.getOperation(), user)) {
-          user->emitOpError("physical reference buffers must precede uses of "
-                            "their qubits");
+        if ((!owned || isa<qc::DeallocOp>(user)) &&
+            !dominance.properlyDominates(allocation.getOperation(), user)) {
+          user->emitOpError("reference buffers must precede physical qubit "
+                            "uses and owned qubit releases");
           return WalkResult::interrupt();
         }
       }
@@ -664,7 +685,7 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       }
       if (!isa<memref::LoadOp, func::CallOp>(user) ||
           !dominance.properlyDominates(finalInitialization, user)) {
-        user->emitOpError("physical reference initialization must precede "
+        user->emitOpError("reference initialization must precede "
                           "all register loads and helper calls");
         return WalkResult::interrupt();
       }
@@ -704,8 +725,14 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
 
   for (auto qubit : llvm::make_first_range(state.registerAccesses)) {
     for (auto* user : qubit.getUsers()) {
-      if (!isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, func::CallOp,
-               memref::StoreOp>(user)) {
+      auto load = qubit.getDefiningOp<memref::LoadOp>();
+      const bool consumesReference =
+          isa<qc::DeallocOp>(user) &&
+          (isOwnedBufferElement(qubit) ||
+           (load && load.getMemref().getDefiningOp<memref::AllocaOp>()));
+      if (!consumesReference &&
+          !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, qc::DelayOp,
+               func::CallOp, memref::StoreOp>(user)) {
         return user->emitOpError("cannot consume or return a register-backed "
                                  "qubit reference");
       }
@@ -733,17 +760,14 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       return WalkResult::advance();
     }
 
-    llvm::SmallDenseSet<Value, 4> qubits;
+    if (failed(qc::verifyDistinctQubitOperands(operation, operands))) {
+      return WalkResult::interrupt();
+    }
     DenseMap<RegisterId, SeenRegisterIndices> registerIndices;
     for (auto qubit : operands) {
       if (!isa<qc::QubitType>(qubit.getType())) {
         continue;
       }
-      if (!qubits.insert(qubit).second) {
-        operation->emitOpError("requires distinct qubit operands");
-        return WalkResult::interrupt();
-      }
-
       const auto access = state.registerAccesses.find(qubit);
       if (access == state.registerAccesses.end()) {
         continue;
@@ -816,6 +840,11 @@ static void collectScalarRegisters(ModuleOp moduleOp, LoweringState& state) {
           return;
         }
         deallocation = dealloc;
+      } else if (auto store = dyn_cast<memref::StoreOp>(user)) {
+        // Preflight checked the source register and rejected unequal constants.
+        if (!getConstantIntValue(store.getIndices().front())) {
+          return;
+        }
       } else if (!isa<memref::LoadOp>(user)) {
         return;
       }
@@ -836,8 +865,8 @@ static void collectScalarRegisters(ModuleOp moduleOp, LoweringState& state) {
       for (auto* consumer : load->getUsers()) {
         if (consumer->getBlock() != block ||
             !consumer->isBeforeInBlock(deallocation) ||
-            !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp>(
-                consumer)) {
+            !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp,
+                 qc::DelayOp, memref::StoreOp>(consumer)) {
           return;
         }
       }
@@ -847,40 +876,36 @@ static void collectScalarRegisters(ModuleOp moduleOp, LoweringState& state) {
   });
 }
 
-/// Collects values captured by supported structured control flow.
-static void collectStructuredCaptures(Operation* root, LoweringState& state) {
-  root->walk([&](Operation* operation) {
-    if (!isa<scf::ForOp, scf::WhileOp, scf::IfOp, scf::IndexSwitchOp>(
-            operation)) {
-      return;
-    }
+/// Classify captures using the register bindings live at this operation.
+static bool collectStructuredCaptures(Operation* operation,
+                                      LoweringState& state) {
+  SetVector<Value> captures;
+  getUsedValuesDefinedAbove(operation->getRegions(), captures);
 
-    SetVector<Value> captures;
-    getUsedValuesDefinedAbove(operation->getRegions(), captures);
-
-    SmallVector<Value> qubits;
-    SetVector<RegisterId> registers;
-    for (auto value : captures) {
-      if (const auto access = state.registerAccesses.find(value);
-          access != state.registerAccesses.end()) {
-        registers.insert(access->second.reg);
-        continue;
-      }
-      if (isa<qc::QubitType>(value.getType())) {
-        qubits.push_back(value);
-        continue;
-      }
-      if (isQubitMemrefType(value.getType())) {
-        registers.insert(lookupRegisterId(state, value));
-      }
+  SmallVector<Value> qubits;
+  SetVector<RegisterId> registers;
+  for (auto value : captures) {
+    if (const auto access = state.registerAccesses.find(value);
+        access != state.registerAccesses.end()) {
+      registers.insert(access->second.reg);
+      continue;
     }
-    if (!qubits.empty() || !registers.empty()) {
-      state.structuredValues[operation] = {
-          .qubits = std::move(qubits),
-          .registers = registers.takeVector(),
-      };
+    if (isa<qc::QubitType>(value.getType())) {
+      qubits.push_back(value);
+      continue;
     }
-  });
+    if (isQubitMemrefType(value.getType())) {
+      registers.insert(lookupRegisterId(state, value));
+    }
+  }
+  if (!qubits.empty() || !registers.empty()) {
+    state.structuredValues[operation] = {
+        .qubits = std::move(qubits),
+        .registers = registers.takeVector(),
+    };
+    return true;
+  }
+  return false;
 }
 
 // Keep the block and its argument identities; only their types change. All
@@ -1150,16 +1175,6 @@ struct ConvertQCCallOp final : LoweringPattern<qc::CallOp> {
   }
 };
 
-/// Converts memref.alloc to qtensor.alloc
-///
-/// @par Example:
-/// ```mlir
-/// %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
-/// ```
 struct ConvertMemRefAllocOp final : LoweringPattern<memref::AllocOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1199,7 +1214,7 @@ struct ConvertMemRefAllocOp final : LoweringPattern<memref::AllocOp> {
   }
 };
 
-/// Rebuild an immutable buffer of physical references as a qubit tensor.
+/// Rebuild an immutable reference buffer as a qubit tensor.
 struct ConvertMemRefAllocaOp final : LoweringPattern<memref::AllocaOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1210,21 +1225,27 @@ struct ConvertMemRefAllocaOp final : LoweringPattern<memref::AllocaOp> {
     if (buffer == state.referenceBuffers.end()) {
       return failure();
     }
-    if (failed(state.ensureAllocationMode(AllocationMode::Static, op))) {
-      return failure();
-    }
+    const auto reg = lookupRegisterId(state, op.getResult());
     SmallVector<Value> qubits;
+    qubits.reserve(buffer->second.size());
     for (auto [index, element] : llvm::enumerate(buffer->second)) {
-      qubits.push_back(
-          qco::StaticOp::create(rewriter, op.getLoc(), element.second));
-      state.registerAccesses[element.first].index =
-          arith::ConstantIndexOp::create(rewriter, op.getLoc(),
-                                         static_cast<int64_t>(index));
+      if (auto physical = element.getDefiningOp<qc::StaticOp>()) {
+        if (failed(state.ensureAllocationMode(AllocationMode::Static, op))) {
+          return failure();
+        }
+        qubits.push_back(
+            qco::StaticOp::create(rewriter, op.getLoc(), physical.getIndex()));
+      } else {
+        qubits.push_back(lookupMappedQubit(state, op, element));
+        assignMappedQubit(state, op, element, nullptr);
+      }
+      auto offset = arith::ConstantIndexOp::create(rewriter, op.getLoc(),
+                                                   static_cast<int64_t>(index));
+      state.registerAccesses[element] = {.reg = reg, .index = offset};
     }
     auto tensor =
         qtensor::FromElementsOp::create(rewriter, op.getLoc(), qubits);
     tensor->setDiscardableAttrs(op->getDiscardableAttrDictionary());
-    const auto reg = lookupRegisterId(state, op.getResult());
     assignMappedTensor(state, op, reg, tensor.getResult());
     state.localReferenceRegisters[op->getParentRegion()].push_back(reg);
     // Source identity retained until all QC users are lowered.
@@ -1246,16 +1267,6 @@ struct ConvertMemRefStoreOp final : LoweringPattern<memref::StoreOp> {
   }
 };
 
-/// Converts memref.dealloc to qtensor.dealloc
-///
-/// @par Example:
-/// ```mlir
-/// memref.dealloc %memref : memref<3x!qc.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// qtensor.dealloc %tensor : tensor<3x!qco.qubit>
-/// ```
 struct ConvertMemRefDeallocOp final : LoweringPattern<memref::DeallocOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1297,9 +1308,16 @@ struct ConvertQCDeallocOp final : LoweringPattern<DeallocOp> {
     auto* operation = op.getOperation();
 
     auto qcQubit = op.getQubit();
-    auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
+    if (mqt::preservesProgramQubits(op) &&
+        state.registerAccesses.contains(qcQubit)) {
+      // Program allocations share the reference buffer's function lifetime.
+      rewriter.eraseOp(op);
+      return success();
+    }
+    const SmallVector<Value, 1> qcQubits{qcQubit};
+    auto materialized = materializeQubits(state, operation, qcQubits, rewriter);
 
-    rewriter.replaceOpWithNewOp<SinkOp>(op, qcoQubit);
+    rewriter.replaceOpWithNewOp<SinkOp>(op, materialized.values.front());
 
     // Retain the slot so deallocation does not shift the ordered map.
     qubitMap[qcQubit] = nullptr;
@@ -1330,6 +1348,24 @@ struct ConvertQCMeasureOp final : LoweringPattern<qc::MeasureOp> {
 
     rewriter.replaceOp(op, qcoOp.getResult());
 
+    return success();
+  }
+};
+
+struct ConvertQCDelayOp final : LoweringPattern<qc::DelayOp> {
+  using LoweringPattern::LoweringPattern;
+
+  LogicalResult matchAndRewrite(qc::DelayOp op,
+                                PatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto inputs = op->getOperands();
+    auto materialized = materializeQubits(state, op, inputs, rewriter);
+    auto delay =
+        qco::DelayOp::create(rewriter, op.getLoc(), materialized.values.front(),
+                             op.getDuration(), op.getUnitAttr());
+    commitQubits(state, op, inputs, delay->getResults(), materialized,
+                 rewriter);
+    rewriter.eraseOp(op);
     return success();
   }
 };
@@ -1411,17 +1447,6 @@ struct ConvertQCUnitaryOp final : LoweringPattern<qc::UnitaryOp> {
   }
 };
 
-/// Converts qc.barrier to qco.barrier
-///
-/// @par Example:
-/// ```mlir
-/// qc.barrier %q0, %q1 : !qc.qubit, !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out:2 = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
-/// !qco.qubit, !qco.qubit
-/// ```
 struct ConvertQCBarrierOp final : LoweringPattern<qc::BarrierOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1432,8 +1457,8 @@ struct ConvertQCBarrierOp final : LoweringPattern<qc::BarrierOp> {
     auto qcQubits = op.getQubits();
     auto materialized = materializeQubits(state, operation, qcQubits, rewriter);
 
-    auto qcoOp =
-        qco::BarrierOp::create(rewriter, op.getLoc(), materialized.values);
+    auto qcoOp = qco::BarrierOp::create(rewriter, op.getLoc(),
+                                        materialized.values, op.getLabelAttr());
 
     commitQubits(state, operation, qcQubits, qcoOp.getQubitsOut(), materialized,
                  rewriter);
@@ -1443,21 +1468,6 @@ struct ConvertQCBarrierOp final : LoweringPattern<qc::BarrierOp> {
   }
 };
 
-/// Converts qc.ctrl to qco.ctrl
-///
-/// @par Example:
-/// ```mlir
-/// qc.ctrl(%q0) targets(%a0 = %q1) {
-///   qc.x %a0 : !qc.qubit
-/// } : !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%a_in = %q1_in) {
-///   %a_res = qco.x %a_in : !qco.qubit
-///   qco.yield %a_res : !qco.qubit
-/// } : ({!qco.qubit}, {!qco.qubit})
-/// ```
 struct ConvertQCCtrlOp final : LoweringPattern<qc::CtrlOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1491,21 +1501,6 @@ struct ConvertQCCtrlOp final : LoweringPattern<qc::CtrlOp> {
   }
 };
 
-/// Converts qc.inv to qco.inv
-///
-/// @par Example:
-/// ```mlir
-/// qc.inv {
-///   qc.s %q0 : !qc.qubit
-/// } : !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q0_out = qco.inv (%a0_in = %q0_in) {
-///   %a0_res = qco.s %a0_in : !qco.qubit
-///   qco.yield %a0_res : !qco.qubit
-/// } : {!qco.qubit} -> {!qco.qubit}
-/// ```
 struct ConvertQCInvOp final : LoweringPattern<qc::InvOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1532,21 +1527,6 @@ struct ConvertQCInvOp final : LoweringPattern<qc::InvOp> {
   }
 };
 
-/// Converts qc.pow to qco.pow
-///
-/// @par Example:
-/// ```mlir
-/// qc.pow(%exponent) (%a0 = %q0) {
-///   qc.s %a0 : !qc.qubit
-/// } : !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q0_out = qco.pow(%exponent) (%a0_in = %q0_in) {
-///   %a0_res = qco.s %a0_in : !qco.qubit
-///   qco.yield %a0_res
-/// } : {!qco.qubit} -> {!qco.qubit}
-/// ```
 struct ConvertQCPowOp final : LoweringPattern<qc::PowOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1574,16 +1554,6 @@ struct ConvertQCPowOp final : LoweringPattern<qc::PowOp> {
   }
 };
 
-/// Converts qc.yield to qco.yield
-///
-/// @par Example:
-/// ```mlir
-/// qc.yield
-/// ```
-/// is converted to
-/// ```mlir
-/// qco.yield %targets : !qco.qubit
-/// ```
 struct ConvertQCYieldOp final : LoweringPattern<qc::YieldOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1605,26 +1575,7 @@ struct ConvertQCYieldOp final : LoweringPattern<qc::YieldOp> {
   }
 };
 
-/// Converts scf.for with memory semantics to scf.for with value
-/// semantics for qubit values
-///
-/// @par Example:
-/// ```mlir
-/// scf.for %iv = %lb to %ub step %step {
-///   %q0 = memref.load %memref[%iv] : memref<3x!qc.qubit>
-///   qc.h %q0 : !qc.qubit
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 =
-/// %qtensor) -> (tensor<3x!qco.qubit>) {
-///   %t0, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
-///   %q1 = qco.h %q0 : !qco.qubit
-///   %t1 = qtensor.insert %q1 into %t0[%iv] : tensor<3x!qco.qubit>
-///   scf.yield %t1 : tensor<3x!qco.qubit>
-/// }
-/// ```
+/// Append captured quantum state to the existing loop-carried values.
 struct ConvertSCFForOp final : LoweringPattern<scf::ForOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1641,9 +1592,9 @@ struct ConvertSCFForOp final : LoweringPattern<scf::ForOp> {
     SmallVector<Value> initArgs(op.getInitArgs());
     llvm::append_range(initArgs, qcoTargets);
 
-    auto newForOp =
-        scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
-                           op.getUpperBound(), op.getStep(), initArgs);
+    auto newForOp = scf::ForOp::create(
+        rewriter, op.getLoc(), op.getLowerBound(), op.getUpperBound(),
+        op.getStep(), initArgs, nullptr, op.getUnsignedCmp());
     newForOp->setDiscardableAttrs(op->getDiscardableAttrDictionary());
 
     assignMappedTensors(state, op.getOperation(), registers,
@@ -1679,30 +1630,6 @@ struct ConvertSCFForOp final : LoweringPattern<scf::ForOp> {
   }
 };
 
-/// Converts scf.while with memory semantics to scf.while with value
-/// semantics for qubit values.
-///
-/// @par Example:
-/// ```mlir
-/// scf.while : () -> () {
-///   %cond = qc.measure %q0 : !qc.qubit -> i1
-///   scf.condition(%cond)
-/// } do {
-///   qc.h %q0 : !qc.qubit
-///   scf.yield
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
-///   %q1, %cond = qco.measure %arg0 : !qco.qubit
-///   scf.condition(%cond) %q1 : !qco.qubit
-/// } do {
-/// ^bb0(%arg0: !qco.qubit):
-///   %q2 = qco.h %arg0 : !qco.qubit
-///   scf.yield %q2 : !qco.qubit
-/// }
-/// ```
 struct ConvertSCFWhileOp final : LoweringPattern<scf::WhileOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1785,23 +1712,6 @@ struct ConvertSCFWhileOp final : LoweringPattern<scf::WhileOp> {
   }
 };
 
-/// Converts scf.if to qco.if
-///
-/// @par Example:
-/// ```mlir
-/// scf.if %cond {
-///   qc.h %q0 : !qc.qubit
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// %targets_out = qco.if %cond args(%arg0 = %q0) -> (!qco.qubit) {
-///   %q1 = qco.h %arg0 : !qco.qubit
-///   qco.yield %q1 : !qco.qubit
-/// } else args(%arg0 = %q0) {
-///   qco.yield %arg0 : !qco.qubit
-/// }
-/// ```
 struct ConvertSCFIfOp final : LoweringPattern<scf::IfOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1864,30 +1774,6 @@ struct ConvertSCFIfOp final : LoweringPattern<scf::IfOp> {
   }
 };
 
-/// Converts scf.index_switch to qco.index_switch
-///
-/// @par Example:
-/// ```mlir
-/// scf.index_switch %condition
-/// case 0 {
-///   qc.x %q0 : !qc.qubit
-/// }
-/// default {
-///   qc.z %q0 : !qc.qubit
-/// }
-/// ```
-/// is converted to
-/// ```mlir
-/// %result = qco.index_switch %condition -> !qco.qubit
-/// case 0 args(%arg0 = %q0) {
-///   %q1 = qco.x %arg0 : !qco.qubit
-///   qco.yield %q1 : !qco.qubit
-/// }
-/// default args(%arg0 = %q0) {
-///   %q2 = qco.z %arg0 : !qco.qubit
-///   qco.yield %q2 : !qco.qubit
-/// }
-/// ```
 struct ConvertSCFIndexSwitchOp final : LoweringPattern<scf::IndexSwitchOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1940,18 +1826,6 @@ struct ConvertSCFIndexSwitchOp final : LoweringPattern<scf::IndexSwitchOp> {
   }
 };
 
-/// Converts scf.yield with memory semantics to scf.yield with value
-/// semantics for qubit values or to qco.yield if the parentOp is a qco::IfOp or
-/// qco::IndexSwitchOp.
-///
-/// @par Example:
-/// ```mlir
-/// scf.yield
-/// ```
-/// is converted to
-/// ```mlir
-/// scf.yield %targets
-/// ```
 struct ConvertSCFYieldOp final : LoweringPattern<scf::YieldOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -1975,17 +1849,6 @@ struct ConvertSCFYieldOp final : LoweringPattern<scf::YieldOp> {
   }
 };
 
-/// Converts scf.condition with memory semantics to scf.condition with
-/// value semantics for qubit values
-///
-/// @par Example:
-/// ```mlir
-/// scf.condition(%cond)
-/// ```
-/// is converted to
-/// ```mlir
-/// scf.condition(%cond) %targets
-/// ```
 struct ConvertSCFConditionOp final : LoweringPattern<scf::ConditionOp> {
   using LoweringPattern::LoweringPattern;
 
@@ -2033,20 +1896,29 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
       }
     }
   }
+  // Preflight needs every alias. During lowering an owned qubit stays scalar
+  // until its reference buffer is assembled.
+  for (auto& elements : llvm::make_second_range(state.referenceBuffers)) {
+    for (Value qubit : elements) {
+      if (!qubit.getDefiningOp<qc::StaticOp>()) {
+        state.registerAccesses.erase(qubit);
+      }
+    }
+  }
   collectScalarRegisters(moduleOp, state);
-  collectStructuredCaptures(moduleOp, state);
   auto* ctx = moduleOp.getContext();
   auto* qcDialect = ctx->getLoadedDialect<qc::QCDialect>();
   auto* memrefDialect = ctx->getLoadedDialect<memref::MemRefDialect>();
   RewritePatternSet patterns(ctx);
-  patterns.add<
-      ConvertQCDeallocOp, ConvertQCMeasureOp, ConvertQCResetOp,
-      ConvertQCUnitaryOp, ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCInvOp,
-      ConvertQCPowOp, ConvertQCYieldOp, ConvertSCFForOp, ConvertSCFWhileOp,
-      ConvertSCFIfOp, ConvertSCFIndexSwitchOp, ConvertSCFYieldOp,
-      ConvertSCFConditionOp, ConvertFuncReturnOp, ConvertMemRefAllocOp,
-      ConvertMemRefAllocaOp, ConvertMemRefStoreOp, ConvertMemRefDeallocOp,
-      ConvertFuncOp, ConvertFuncCallOp, ConvertQCCallOp>(ctx, &state);
+  patterns
+      .add<ConvertQCDeallocOp, ConvertQCMeasureOp, ConvertQCResetOp,
+           ConvertQCDelayOp, ConvertQCUnitaryOp, ConvertQCBarrierOp,
+           ConvertQCCtrlOp, ConvertQCInvOp, ConvertQCPowOp, ConvertQCYieldOp,
+           ConvertSCFForOp, ConvertSCFWhileOp, ConvertSCFIfOp,
+           ConvertSCFIndexSwitchOp, ConvertSCFYieldOp, ConvertSCFConditionOp,
+           ConvertFuncReturnOp, ConvertMemRefAllocOp, ConvertMemRefAllocaOp,
+           ConvertMemRefStoreOp, ConvertMemRefDeallocOp, ConvertFuncOp,
+           ConvertFuncCallOp, ConvertQCCallOp>(ctx, &state);
   patterns.add<ConvertQCGateToQCO<qc::GPhaseOp, qco::GPhaseOp, 0, 1>>(ctx,
                                                                       &state);
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
@@ -2134,7 +2006,7 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
     }
     if (isa<scf::ForOp, scf::WhileOp, scf::IfOp, scf::IndexSwitchOp>(
             operation)) {
-      required = state.structuredValues.contains(operation);
+      required = collectStructuredCaptures(operation, state);
     }
     if (isa<scf::YieldOp, scf::ConditionOp>(operation)) {
       required = state.structuredValues.contains(operation->getParentOp());

@@ -53,13 +53,16 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <future>
 #include <initializer_list>
 #include <limits>
@@ -68,6 +71,7 @@
 #include <numbers>
 #include <random>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -1864,6 +1868,126 @@ TEST_F(QCODDFunctionalityTest, ConcurrentSamplingSharesReadOnlyContext) {
   EXPECT_EQ(*a, *b);
 }
 
+TEST_F(QCODDFunctionalityTest, SeededSamplingDoesNotDependOnWorkerGrant) {
+  // An untaken external call keeps this on the conservative per-shot path.
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+module {
+  func.func private @external()
+func.func @coin(%q: !qco.qubit) -> (i1, !qco.qubit) {
+ %h = qco.h %q : !qco.qubit
+ %m, %b = qco.measure %h : !qco.qubit
+ return %b, %m : i1, !qco.qubit
+}
+func.func @main() -> i1 attributes {mqt.entry_point} {
+ %false = arith.constant false
+ scf.if %false { func.call @external() : () -> () }
+ %q = qco.static 0 : !qco.qubit
+ %a:2 = func.call @coin(%q) : (!qco.qubit) -> (i1, !qco.qubit)
+ %r = qco.reset %a#1 : !qco.qubit
+ %b:2 = func.call @coin(%r) : (!qco.qubit) -> (i1, !qco.qubit)
+ qco.sink %b#1 : !qco.qubit
+ return %b#0 : i1
+}
+}
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  std::map<std::string, size_t> expected;
+  std::vector<std::string> expectedSamples;
+  for (const size_t grant : {1U, 2U, 4U}) {
+    SCOPED_TRACE(grant);
+    std::vector<std::string> samples;
+    auto counts = sample(
+        mainFunc(*mod), 1024, 17, DDArgumentBindings{}, &samples, nullptr, {},
+        4, [grant](size_t requested) { return std::min(grant, requested); });
+    ASSERT_TRUE(succeeded(counts));
+    ASSERT_EQ(samples.size(), 1024);
+    ASSERT_EQ(counts->size(), 2);
+    if (grant == 1) {
+      expected = *counts;
+      expectedSamples = samples;
+    } else {
+      EXPECT_EQ(*counts, expected);
+      EXPECT_EQ(samples, expectedSamples);
+    }
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, CalledMeasurementsPreserveBindingsAndInput) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+module {
+  func.func private @coin(%q: !qco.qubit) -> (i1, !qco.qubit) {
+    %h = qco.h %q : !qco.qubit
+    %m, %b = qco.measure %h : !qco.qubit
+    return %b, %m : i1, !qco.qubit
+  }
+  func.func private @nested(%q: !qco.qubit) -> (i1, !qco.qubit) {
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %two = arith.constant 2 : index
+    %false = arith.constant false
+    %b, %m = scf.for %i = %zero to %two step %one
+        iter_args(%bit = %false, %arg = %q) -> (i1, !qco.qubit) {
+      %next, %out = func.call @coin(%arg) : (!qco.qubit) -> (i1, !qco.qubit)
+      scf.yield %next, %out : i1, !qco.qubit
+    }
+    return %b, %m : i1, !qco.qubit
+  }
+  func.func private @main(%flag: i1, %qs: tensor<?x!qco.qubit>)
+      -> (i1, i1, tensor<?x!qco.qubit>) {
+    %zero = arith.constant 0 : index
+    %rest, %q = qtensor.extract %qs[%zero] : tensor<?x!qco.qubit>
+    %bit, %m = func.call @nested(%q) : (!qco.qubit) -> (i1, !qco.qubit)
+    %flip = arith.xori %bit, %flag : i1
+    %out = qco.if %flip args(%arg = %m) -> (!qco.qubit) {
+      %x = qco.x %arg : !qco.qubit
+      qco.yield %x : !qco.qubit
+    } else args(%arg = %m) {
+      qco.yield %arg : !qco.qubit
+    }
+    %measured, %result = qco.measure %out : !qco.qubit
+    %qs1 = qtensor.insert %measured into %rest[%zero] : tensor<?x!qco.qubit>
+    return %bit, %result, %qs1 : i1, i1, tensor<?x!qco.qubit>
+  }
+})mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  const auto print = [&] {
+    std::string result;
+    llvm::raw_string_ostream stream(result);
+    mod->print(stream);
+    return result;
+  };
+  const auto original = print();
+  auto func = mainFunc(*mod);
+  DDArgumentBindings bindings;
+  bindings[func.getArgument(0)] =
+      IntegerAttr::get(IntegerType::get(context.get(), 1), 1);
+  bindings[func.getArgument(1)] =
+      IntegerAttr::get(IndexType::get(context.get()), 2);
+  const auto run = [&] {
+    return sample(func, 64, 42, bindings, nullptr, nullptr, {}, 4, [](size_t) {
+      ADD_FAILURE() << "Called measurements should share shots";
+      return size_t{1};
+    });
+  };
+  auto first = std::async(std::launch::async, run);
+  auto second = std::async(std::launch::async, run);
+  const auto counts = first.get();
+  const auto repeated = second.get();
+  ASSERT_TRUE(succeeded(counts));
+  ASSERT_TRUE(succeeded(repeated));
+  EXPECT_EQ(*counts, *repeated);
+  ASSERT_EQ(counts->size(), 2U);
+  EXPECT_GT(counts->at("10"), 0U);
+  EXPECT_GT(counts->at("11"), 0U);
+  EXPECT_EQ(counts->at("10") + counts->at("11"), 64U);
+  EXPECT_EQ(print(), original);
+  bindings[mod->lookupSymbol<func::FuncOp>("coin").getArgument(0)] =
+      IntegerAttr::get(IntegerType::get(context.get(), 1), 1);
+  EXPECT_TRUE(failed(sample(func, 64, 42, bindings)));
+}
+
 TEST_F(QCODDFunctionalityTest, DisabledContextUsesOneSamplingWorker) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto [q, bit] = b.measure(b.h(b.staticQubit(0)));
@@ -3304,15 +3428,18 @@ TEST_F(QCODDFunctionalityTest, SamplingAnalysisHandlesSharedCallees) {
   }
 }
 
-TEST_F(QCODDFunctionalityTest,
-       SampleExecutesCalleeMeasurementBeforeCallerGate) {
+TEST_F(QCODDFunctionalityTest, SampleFallbackHonorsExternalWorkerGrant) {
+  // An untaken external call keeps this on the conservative per-shot path.
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
+  func.func private @external()
       func.func @measure(%q: !qco.qubit) -> !qco.qubit {
         %q1, %bit = qco.measure %q : !qco.qubit
         return %q1 : !qco.qubit
       }
       func.func @main() {
+        %false = arith.constant false
+        scf.if %false { func.call @external() : () -> () }
         %q = qco.static 0 : !qco.qubit
         %q1 = qco.h %q : !qco.qubit
         %q2 = func.call @measure(%q1) : (!qco.qubit) -> !qco.qubit
@@ -3352,22 +3479,32 @@ TEST_F(QCODDFunctionalityTest,
     }
     EXPECT_EQ(sampleCounts, *histogram);
   }
-  std::vector<std::string> serial;
+  std::vector<std::string> fullGrant;
   std::vector<std::string> capped;
-  ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 128, 9, serial,
-                                    DDArgumentBindings{}, nullptr, {}, 1)));
-  ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 128, 9, capped,
-                                    DDArgumentBindings{}, nullptr, {}, 4,
-                                    [](size_t) { return size_t{1}; })));
-  std::map<std::string, size_t> serialCounts;
-  std::map<std::string, size_t> cappedCounts;
-  for (const auto& shot : serial) {
-    ++serialCounts[shot];
+  if (llvm::heavyweight_hardware_concurrency().compute_thread_count() < 2) {
+    GTEST_SKIP() << "External worker grants require two worker slots";
   }
-  for (const auto& shot : capped) {
-    ++cappedCounts[shot];
+  if (const char* raw = std::getenv("MQT_CORE_DD_WORKER_BUDGET")) {
+    const std::string_view value(raw);
+    size_t budget = 0;
+    const auto [end, error] =
+        std::from_chars(value.data(), value.data() + value.size(), budget);
+    if (error == std::errc{} && end == value.data() + value.size() &&
+        budget == 1) {
+      GTEST_SKIP() << "External worker grants require two worker slots";
+    }
   }
-  EXPECT_EQ(cappedCounts, serialCounts);
+  size_t requestedWorkers = 0;
+  ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 1024, 9, fullGrant,
+                                    DDArgumentBindings{}, nullptr, {}, 0)));
+  ASSERT_TRUE(succeeded(sampleShots(mainFunc(*mod), 1024, 9, capped,
+                                    DDArgumentBindings{}, nullptr, {}, 0,
+                                    [&](size_t requested) {
+                                      requestedWorkers = requested;
+                                      return size_t{1};
+                                    })));
+  EXPECT_GT(requestedWorkers, 1U);
+  EXPECT_EQ(capped, fullGrant);
 }
 
 TEST_F(QCODDFunctionalityTest, SampleDefersNestedTerminalMeasurement) {

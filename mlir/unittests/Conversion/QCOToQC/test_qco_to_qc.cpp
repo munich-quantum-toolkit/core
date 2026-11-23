@@ -21,7 +21,6 @@
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Support/Passes.h"
 
-#include "Conversion/ConversionTestCases.h"
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "qc_programs.h"
@@ -50,10 +49,8 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/FormatVariadic.h"
 
-#include <array>
 #include <memory>
 #include <string>
-#include <tuple>
 #include <utility>
 
 using namespace mlir;
@@ -956,13 +953,13 @@ TEST(QCOToQCRegressionTest, PreservesClassicalForLoopState) {
 module {
   func.func @main() -> i64 attributes {mqt.entry_point} {
     %q0 = qco.alloc : !qco.qubit
-    %lb = arith.constant 0 : index
-    %ub = arith.constant 2 : index
-    %step = arith.constant 1 : index
+    %lb = arith.constant 127 : i8
+    %ub = arith.constant -128 : i8
+    %step = arith.constant 1 : i8
     %initial = arith.constant 0 : i64
     %one = arith.constant 1 : i64
-    %result, %q1 = scf.for %iv = %lb to %ub step %step
-        iter_args(%value = %initial, %q = %q0) -> (i64, !qco.qubit) {
+    %result, %q1 = scf.for unsigned %iv = %lb to %ub step %step
+        iter_args(%value = %initial, %q = %q0) -> (i64, !qco.qubit) : i8 {
       %next = arith.addi %value, %one : i64
       %q2 = qco.reset %q : !qco.qubit
       scf.yield %next, %q2 : i64, !qco.qubit
@@ -982,6 +979,7 @@ module {
   scf::ForOp loop;
   moduleOp->walk([&](scf::ForOp candidate) { loop = candidate; });
   ASSERT_TRUE(loop);
+  EXPECT_TRUE(loop.getUnsignedCmp());
   EXPECT_EQ(llvm::range_size(loop.getBody()->getOps<qc::ResetOp>()), 1);
   ASSERT_EQ(loop.getInitArgs().size(), 1);
   EXPECT_TRUE(loop.getInitArgs().front().getType().isInteger(64));
@@ -1143,21 +1141,6 @@ TEST_P(QCOToQCTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-static SmallVector<QCOToQCTestCase> commonConversionCases() {
-  SmallVector<QCOToQCTestCase> cases;
-  for (const auto& testCase : ::mqt::test::COMMON_QC_QCO_CONVERSION_CASES) {
-    cases.push_back({
-        .name = std::get<0>(testCase),
-        .programBuilder = std::get<2>(testCase),
-        .referenceBuilder = std::get<1>(testCase),
-    });
-  }
-  return cases;
-}
-
-INSTANTIATE_TEST_SUITE_P(CommonCases, QCOToQCTest,
-                         testing::ValuesIn(commonConversionCases()));
-
 INSTANTIATE_TEST_SUITE_P(
     SpecialCases, QCOToQCTest,
     testing::Values(
@@ -1181,8 +1164,6 @@ INSTANTIATE_TEST_SUITE_P(
         QCOToQCTestCase{"IfWithMeasurement",
                         MQT_NAMED_BUILDER(qco::ifWithMeasurement),
                         MQT_NAMED_BUILDER(qc::ifWithMeasurement)},
-        QCOToQCTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qco::ifWithCreg),
-                        MQT_NAMED_BUILDER(qc::ifWithCreg)},
         QCOToQCTestCase{"SimpleIndexSwitchOp",
                         MQT_NAMED_BUILDER(qco::simpleIndexSwitch),
                         MQT_NAMED_BUILDER(qc::simpleIndexSwitch)},
@@ -1200,3 +1181,74 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(
                 aliasSafeNestedForLoopCtrlOpWithExtractedQubit)}));
+
+TEST(QCOToQCRegressionTest, RetainsOwnedProgramTensorAfterCleanup) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                  qtensor::QTensorDialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  auto parseProgram = [&](StringRef body) {
+    const auto source = llvm::formatv(R"mlir(
+module attributes {{mqt.target_env = #mqt.target_env<
+    compilation_target = #mqt.compilation_target<sites = [],
+        connectivity = all_to_all, couplings = [],
+        native_operations = unrestricted, operations = [], gate_set = unit>,
+    payload_specification = #mqt.payload_spec<
+        format = <id = "openqasm", version = "3.0", profile = "", encoding = text>,
+        capabilities = [], optional_capabilities_known = false>>} {{
+  func.func @main() attributes {{mqt.entry_point} {{
+    {0}
+    return
+  }
+}
+)mlir",
+                                      body)
+                            .str();
+    return parseSourceString<ModuleOp>(source, &context);
+  };
+  for (const auto* shape : {"4", "?"}) {
+    auto moduleOp = parseProgram(llvm::formatv(R"mlir(
+      %size = arith.constant 4 : index
+      %reg = qtensor.alloc(%size) : tensor<{0}x!qco.qubit>
+      qtensor.dealloc %reg : tensor<{0}x!qco.qubit>
+    )mlir",
+                                               shape)
+                                     .str());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+    ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
+    size_t qubits = 0;
+    size_t releases = 0;
+    moduleOp->walk([&](qc::AllocOp) { ++qubits; });
+    moduleOp->walk([&](qc::DeallocOp) { ++releases; });
+    EXPECT_EQ(qubits, 4);
+    EXPECT_EQ(releases, 4);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  }
+  for (const bool placed : {false, true}) {
+    auto moduleOp =
+        parseProgram(llvm::formatv(R"mlir(
+      %zero = arith.constant 0 : index
+      %q = {0} : !qco.qubit
+      %tensor = qtensor.from_elements %q : tensor<1x!qco.qubit>
+      %rest, %cell = qtensor.extract %tensor[%zero] : tensor<1x!qco.qubit>
+      qco.sink %cell : !qco.qubit
+      qtensor.dealloc %rest : tensor<1x!qco.qubit>
+    )mlir",
+                                   placed ? "qco.static 0" : "qco.alloc")
+                         .str());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    if (placed) {
+      ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+      EXPECT_TRUE(moduleOp->lookupSymbol<func::FuncOp>("main")
+                      .getOps<qc::DeallocOp>()
+                      .empty());
+    } else {
+      EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+    }
+  }
+}

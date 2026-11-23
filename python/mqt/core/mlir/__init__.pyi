@@ -1,0 +1,2126 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+"""MQT Core MLIR compiler bindings."""
+
+import enum
+import os
+import pathlib
+from collections.abc import Hashable, Iterable, Mapping, Sequence
+from typing import Annotated, Any, Generic, Literal, Self, SupportsFloat, TypeAlias, TypedDict, Unpack, overload
+
+import numpy as np
+import pennylane.tape
+import qiskit.circuit
+import qiskit.providers
+import qiskit.transpiler
+from numpy.typing import NDArray
+from typing_extensions import TypeVar
+
+import mqt.core.dd
+import mqt.core.plugins.qiskit.backend
+import mqt.core.qdmi
+from mqt.core.mlir import _pennylane as _pennylane
+from mqt.core.mlir import _qdmi as _qdmi
+from mqt.core.mlir import _qiskit as _qiskit
+from mqt.core.qdmi import Device
+
+_CompilerInput: TypeAlias = (
+    str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
+)
+_CompilerTarget: TypeAlias = (
+    CompilerTarget
+    | TargetEnvironment
+    | qiskit.providers.BackendV2
+    | qiskit.transpiler.Target
+    | mqt.core.qdmi.Device
+    | str
+)
+_CompilerOutput: TypeAlias = (
+    qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | QIRProgram | IQMJSONProgram
+)
+_ProgramT = TypeVar("_ProgramT", qiskit.circuit.QuantumCircuit, QCProgram, QCOProgram, JeffProgram, OpenQASMProgram)
+_CompilerInputT = TypeVar(
+    "_CompilerInputT",
+    str,
+    os.PathLike[str],
+    qiskit.circuit.QuantumCircuit,
+    QCProgram,
+    QCOProgram,
+    JeffProgram,
+    OpenQASMProgram,
+)
+_SourceT = TypeVar("_SourceT", str, os.PathLike[str])
+_TargetResult: TypeAlias = _CompilerOutput | CompiledProgram
+_TargetResultT_co = TypeVar("_TargetResultT_co", bound=_TargetResult, default=_TargetResult, covariant=True)
+
+class _CompileOptions(TypedDict, total=False, closed=True):
+    copy: bool
+    qco_pipeline: str
+    options: CompilationOptions | None
+    ignore_input_layout: bool
+    include_output_layout: bool
+
+class QIRProfile(enum.Enum):
+    """QIR target profiles."""
+
+    BASE = 0
+    """The QIR Base Profile."""
+
+    ADAPTIVE = 1
+    """The QIR Adaptive Profile."""
+
+class OutputFormat(enum.Enum):
+    """Default compiler output formats."""
+
+    QC_IMPORT = 0
+    """QC directly after frontend import."""
+
+    QCO = 1
+    """QCO immediately after conversion, before optimization."""
+
+    QCO_OPTIMIZED = 2
+    """QCO after the configured optimization pipeline."""
+
+    QC = 3
+    """QC after the optimized QCO round trip."""
+
+    OPENQASM2 = 9
+    """OpenQASM 2 with bound parameters."""
+
+    OPENQASM3 = 4
+    """OpenQASM 3 after the optimized QCO round trip."""
+
+    IQM_JSON = 8
+    """An IQM circuit for an explicit physical target."""
+
+    JEFF = 5
+    """Serializable ``jeff`` MLIR."""
+
+    QIR_BASE = 6
+    """QIR for the Base Profile."""
+
+    QIR_ADAPTIVE = 7
+    """QIR for the Adaptive Profile."""
+
+    QISKIT = 10
+    """A Qiskit QuantumCircuit."""
+
+    QPY = 11
+    """A QPY 17 binary circuit."""
+
+class PayloadEncoding(enum.Enum):
+    """Text or binary program encoding."""
+
+    TEXT = 0
+
+    BINARY = 1
+
+class PayloadFormat:
+    """Selected program format and accepted receiver versions."""
+
+    def __init__(
+        self, format_id: str, version: str, profile: str = "", encoding: PayloadEncoding = PayloadEncoding.TEXT
+    ) -> None: ...
+    @property
+    def format_id(self) -> str: ...
+    @format_id.setter
+    def format_id(self, arg: str, /) -> None: ...
+    @property
+    def version(self) -> str: ...
+    @version.setter
+    def version(self, arg: str, /) -> None: ...
+    @property
+    def profile(self) -> str: ...
+    @profile.setter
+    def profile(self, arg: str, /) -> None: ...
+    @property
+    def encoding(self) -> PayloadEncoding: ...
+    @encoding.setter
+    def encoding(self, arg: PayloadEncoding, /) -> None: ...
+
+class ProgramConstraint:
+    """One limit on a supported program feature."""
+
+    def __init__(self, constraint_id: str, value: int) -> None: ...
+    @property
+    def constraint_id(self) -> str: ...
+    @constraint_id.setter
+    def constraint_id(self, arg: str, /) -> None: ...
+    @property
+    def value(self) -> int: ...
+    @value.setter
+    def value(self, arg: int, /) -> None: ...
+
+    MAX_NESTING_DEPTH: str = "max-control-flow-nesting-depth"
+
+    MAX_ITERATION_COUNT: str = "max-iteration-count"
+
+    MAX_CASE_COUNT: str = "max-case-count"
+
+class ProgramCapability:
+    """One program feature supported for execution."""
+
+    def __init__(self, capability_id: str, value: int = 0, constraints: Sequence[ProgramConstraint] = []) -> None: ...
+    @property
+    def capability_id(self) -> str: ...
+    @capability_id.setter
+    def capability_id(self, arg: str, /) -> None: ...
+    @property
+    def value(self) -> int: ...
+    @value.setter
+    def value(self, arg: int, /) -> None: ...
+    @property
+    def constraints(self) -> list[ProgramConstraint]: ...
+    @constraints.setter
+    def constraints(self, arg: Sequence[ProgramConstraint], /) -> None: ...
+
+    CLASSICAL_ASSIGNMENT: str = "classical-assignment"
+
+    FORWARD_BRANCHING: str = "forward-branching"
+
+    COUNTED_ITERATION: str = "counted-iteration"
+
+    CONDITIONAL_LOOP: str = "conditional-loop"
+
+    MULTIWAY_BRANCHING: str = "multiway-branching"
+
+class PayloadSpecification(Generic[_TargetResultT_co]):
+    """The format and program features selected for execution.
+
+    A device may accept several formats with different restrictions. This object
+    records one selection: its format, version, encoding, and allowed features,
+    such as branches or loops. Pair it with a :class:`CompilerTarget` in a
+    :class:`TargetEnvironment` to compile for that combination.
+    """
+
+    def __new__(
+        cls,
+        payload_format: PayloadFormat,
+        capabilities: Sequence[ProgramCapability] = (),
+        optional_capabilities_known: bool = False,
+    ) -> PayloadSpecification[qiskit.circuit.QuantumCircuit | CompiledProgram]: ...
+    @staticmethod
+    def from_program_format(program_format: mqt.core.qdmi.ProgramFormat) -> PayloadSpecification[CompiledProgram]:
+        """The compiler-supported baseline features for a QDMI program format."""
+
+    @property
+    def format(self) -> PayloadFormat:
+        """The selected program format and accepted receiver versions."""
+
+    @property
+    def capabilities(self) -> list[ProgramCapability]:
+        """The program features allowed by this specification."""
+
+    @property
+    def optional_capabilities_known(self) -> bool:
+        """Whether optional capability metadata is complete."""
+
+class CompilerTarget:
+    """Immutable MQT compiler target.
+
+    A target describes the hardware facts used during compilation without opening
+    a device connection. Connectivity can be all-to-all or an explicit list of
+    connections. Native operations can be unrestricted or listed individually with
+    their supported sites and parameters. Use a :class:`TargetEnvironment` to combine
+    these hardware facts with the format and program features accepted for execution.
+    """
+
+    @overload
+    def __init__(
+        self,
+        num_sites: int,
+        *,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
+        duration_unit: CompilerTarget.DurationUnit | None = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: str,
+        num_sites: int,
+        *,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
+        duration_unit: CompilerTarget.DurationUnit | None = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        sites: Sequence[CompilerTarget.Site],
+        *,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
+        duration_unit: CompilerTarget.DurationUnit | None = None,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        name: str,
+        sites: Sequence[CompilerTarget.Site],
+        *,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
+        duration_unit: CompilerTarget.DurationUnit | None = None,
+    ) -> None: ...
+
+    class DurationUnit:
+        """Unit for raw target timing metadata."""
+
+        def __init__(self, unit: str, scale_factor: float) -> None: ...
+        @property
+        def unit(self) -> str:
+            """The reported duration unit."""
+
+        @property
+        def scale_factor(self) -> float:
+            """The multiplier applied to raw timing values."""
+
+    class Site:
+        """A hardware site and its optional metadata."""
+
+        def __init__(
+            self, site_id: int, name: str | None = None, t1: int | None = None, t2: int | None = None
+        ) -> None: ...
+        @property
+        def id(self) -> int:
+            """The target-defined nonnegative site identifier."""
+
+        @property
+        def name(self) -> str | None:
+            """The reported site name, if available."""
+
+        @property
+        def t1(self) -> int | None:
+            """The raw T1 coherence time, if available."""
+
+        @property
+        def t2(self) -> int | None:
+            """The raw T2 coherence time, if available."""
+
+    class SiteTuple:
+        """A supported ordered placement with optional calibration."""
+
+        def __init__(
+            self, sites: Sequence[int], duration: int | None = None, fidelity: float | None = None
+        ) -> None: ...
+        @property
+        def sites(self) -> list[int]:
+            """The ordered target site identifiers."""
+
+        @property
+        def duration(self) -> int | None:
+            """The raw operation duration, if available."""
+
+        @property
+        def fidelity(self) -> float | None:
+            """The operation fidelity, if available."""
+
+    class OperationArityKind(enum.Enum):
+        """How an operation capability accepts qubit widths."""
+
+        FIXED = 0
+
+        VARIADIC = 1
+
+    class OperationArity:
+        """Accepted operation qubit widths."""
+
+        @staticmethod
+        def fixed(value: int) -> CompilerTarget.OperationArity:
+            """Create an exact operation arity."""
+
+        @staticmethod
+        def variadic(minimum: int) -> CompilerTarget.OperationArity:
+            """Create an operation arity with an inclusive minimum.
+
+            Capability construction requires a positive minimum.
+            """
+
+        @property
+        def kind(self) -> CompilerTarget.OperationArityKind:
+            """The arity kind."""
+
+        @property
+        def value(self) -> int:
+            """The exact arity or inclusive variadic minimum."""
+
+        def accepts(self, width: int) -> bool:
+            """Whether this arity accepts a concrete width."""
+
+    class OperationCapability:
+        """A target operation capability, calibration, and ordered applicability."""
+
+        def __init__(
+            self,
+            name: str,
+            arity: int | CompilerTarget.OperationArity,
+            num_parameters: int,
+            site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
+            duration: int | None = None,
+            fidelity: float | None = None,
+            *,
+            fixed_parameters: Sequence[float | None] = (),
+            canonical_name: str | None = None,
+            parameter_bounds: Sequence[tuple[float, float] | None] = (),
+        ) -> None: ...
+        @property
+        def name(self) -> str:
+            """The exact reported operation name."""
+
+        @property
+        def canonical_name(self) -> str:
+            """The normalized compiler operation name."""
+
+        @property
+        def arity(self) -> CompilerTarget.OperationArity:
+            """The accepted operation arity."""
+
+        @property
+        def num_parameters(self) -> int:
+            """The number of real-valued parameters."""
+
+        @property
+        def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
+            """Supported ordered placements with optional calibration; empty means general applicability."""
+
+        @property
+        def parameter_bounds(self) -> list[tuple[float, float] | None]:
+            """Inclusive parameter intervals; None leaves a parameter unbounded."""
+
+        @property
+        def fixed_parameters(self) -> list[float | None]:
+            """Fixed values or None per parameter; empty means unrestricted.
+
+            Constants use absolute tolerance 1e-15 without angle wrapping.
+            """
+
+        @property
+        def duration(self) -> int | None:
+            """The raw default duration, if available."""
+
+        @property
+        def fidelity(self) -> float | None:
+            """The default fidelity, if available."""
+
+    class GateKind(enum.Enum):
+        """Recognized native gate capability."""
+
+        U = 0
+
+        X = 1
+
+        SX = 2
+
+        RZ = 3
+
+        RX = 4
+
+        RY = 5
+
+        R = 6
+
+        RXX = 7
+
+        RYY = 8
+
+        RZX = 9
+
+        RZZ = 10
+
+        ISWAP = 11
+
+        CZ = 12
+
+        CX = 13
+
+        ECR = 14
+
+        SQRTISWAP = 15
+
+    class SingleQubitBasis(enum.Enum):
+        """Recognized target-wide single-qubit synthesis basis."""
+
+        U = 0
+
+        ZSXX = 1
+
+        R = 2
+
+        GPI = 7
+
+        XZX = 3
+
+        XYX = 4
+
+        ZYZ = 5
+
+        ZXZ = 6
+
+    class AngleSupport(enum.Enum):
+        """Angle domain used by native entangler synthesis."""
+
+        FIXED = 0
+
+        UNRESTRICTED = 1
+
+        ZERO_TO_HALF_PI = 2
+
+    class Entangler:
+        """A native synthesis entangler and its angle support."""
+
+        @property
+        def gate(self) -> CompilerTarget.GateKind:
+            """The native gate kind."""
+
+        @property
+        def parameterized(self) -> bool:
+            """Whether synthesis can vary the entangler angle."""
+
+        @property
+        def angles(self) -> CompilerTarget.AngleSupport:
+            """The angle domain used by synthesis."""
+
+    class SynthesisBasis:
+        """One synthesis basis usable across the complete target."""
+
+        @property
+        def single_qubit(self) -> CompilerTarget.SingleQubitBasis:
+            """The single-qubit synthesis basis."""
+
+        @property
+        def entangler(self) -> CompilerTarget.Entangler | None:
+            """The two-qubit entangler, or None when none is usable."""
+
+    class ConnectivityKind(enum.Enum):
+        """The target connectivity model."""
+
+        ALL_TO_ALL = 0
+
+        EXPLICIT = 1
+
+    class Connectivity:
+        """A target connectivity model."""
+
+        def __init__(self, couplings: Sequence[tuple[int, int]]) -> None:
+            """Create an explicit connectivity model."""
+
+        @staticmethod
+        def all_to_all() -> CompilerTarget.Connectivity:
+            """Create an all-to-all connectivity model."""
+
+        @property
+        def kind(self) -> CompilerTarget.ConnectivityKind:
+            """The connectivity model."""
+
+        @property
+        def couplings(self) -> list[tuple[int, int]]:
+            """The explicit couplings, if present."""
+
+    class NativeOperationsKind(enum.Enum):
+        """The native-operation support model."""
+
+        UNRESTRICTED = 0
+
+        EXPLICIT = 1
+
+    class NativeOperations:
+        """Native-operation support."""
+
+        def __init__(self, operations: Sequence[CompilerTarget.OperationCapability]) -> None:
+            """Create explicit native-operation support."""
+
+        @staticmethod
+        def from_qiskit(
+            source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
+            *,
+            operation_names: Iterable[str] | None = None,
+        ) -> CompilerTarget.NativeOperations:
+            """Import gate capabilities and parameter constraints, ignoring physical placement.
+
+            Unsupported explicit selections raise ValueError; otherwise they warn and are omitted.
+            """
+
+        @staticmethod
+        def unrestricted() -> CompilerTarget.NativeOperations:
+            """Create unrestricted native-operation support."""
+
+        @property
+        def kind(self) -> CompilerTarget.NativeOperationsKind:
+            """The native-operation support model."""
+
+        @property
+        def operations(self) -> list[CompilerTarget.OperationCapability]:
+            """The explicit operations, if present."""
+
+    @staticmethod
+    def for_gate_set(native_operations: CompilerTarget.NativeOperations) -> CompilerTarget:
+        """Create a gate-set target without device constraints."""
+
+    @property
+    def has_device_constraints(self) -> bool:
+        """Whether compilation assigns program qubits to device sites."""
+
+    @staticmethod
+    def from_device(device: Device) -> CompilerTarget:
+        """Snapshot a circuit-model QDMI device."""
+
+    @staticmethod
+    def from_qiskit(
+        source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
+        *,
+        operation_names: Iterable[str] | None = None,
+        name: str | None = None,
+    ) -> CompilerTarget:
+        """Snapshot native operations and connectivity from Qiskit.
+
+        Args:
+            source: Qiskit Target or BackendV2. Physical import requires a known positive qubit count.
+            operation_names: Qiskit Target operation names to retain. By default,
+                include every representable operation. Explicit selections must all be
+                representable.
+            name: Override the target name. By default, use the backend name when
+                source is a BackendV2; a Target produces an unnamed snapshot.
+
+        Returns:
+            An independent compiler target. Unrepresentable gates are omitted with
+            warnings when operation_names is not set. Calibration and scheduling data
+            are not included.
+
+        Raises:
+            TypeError: If source is neither a Target nor a BackendV2.
+            ValueError: If the selected operations or connectivity cannot be represented.
+        """
+
+    @staticmethod
+    def from_device_id(
+        device_id: str,
+        *,
+        driver_path: str | os.PathLike[str] | None = None,
+        token: str | None = None,
+        auth_file: str | os.PathLike[str] | None = None,
+        auth_url: str | None = None,
+        username: str | None = None,
+        password: str | None = None,
+        project_id: str | None = None,
+        custom1: str | None = None,
+        custom2: str | None = None,
+        custom3: str | None = None,
+        custom4: str | None = None,
+        custom5: str | None = None,
+    ) -> CompilerTarget:
+        """Open a device through :func:`mqt.core.qdmi.open_device` and snapshot its compiler target."""
+
+    @property
+    def name(self) -> str | None:
+        """The target name, if available."""
+
+    @property
+    def duration_unit(self) -> CompilerTarget.DurationUnit | None:
+        """The target timing unit, if available."""
+
+    @property
+    def placeable_sites(self) -> list[int]:
+        """Sites supporting a compiler-targetable single-qubit gate.
+
+        If the target supports measurement, these sites must also support readout.
+        """
+
+    @property
+    def num_sites(self) -> int:
+        """The number of target sites."""
+
+    @property
+    def sites(self) -> list[CompilerTarget.Site]:
+        """Detailed sites in compiler-vertex order."""
+
+    @property
+    def connectivity_kind(self) -> CompilerTarget.ConnectivityKind:
+        """The target connectivity model."""
+
+    @property
+    def couplings(self) -> list[tuple[int, int]]:
+        """Canonical undirected couplings in target site IDs."""
+
+    @property
+    def native_operations_kind(self) -> CompilerTarget.NativeOperationsKind:
+        """The target native-operation support model."""
+
+    @property
+    def operations(self) -> list[CompilerTarget.OperationCapability]:
+        """Operation capabilities in reported order."""
+
+    @property
+    def supported_gates(self) -> list[CompilerTarget.GateKind]:
+        """Recognized native gates supported by the target."""
+
+    @property
+    def synthesis_basis(self) -> CompilerTarget.SynthesisBasis | None:
+        """A target-wide single-qubit basis with an optional entangler, or None when no single-qubit basis is usable."""
+
+    def supports_operation(
+        self,
+        name: str,
+        arity: int,
+        num_parameters: int | None = None,
+        sites: Sequence[int] | None = None,
+        *,
+        parameters: Sequence[float | None] = (),
+    ) -> bool:
+        """Check whether the target supports an operation.
+
+        Args:
+            name: Operation name. Recognized aliases are normalized.
+            arity: Number of qubits used by the operation.
+            num_parameters: Number of real-valued parameters. None accepts any count.
+            sites: Ordered target site IDs. None checks support on any placement.
+            parameters: Known parameter values. Omitted or None values require
+                unrestricted support.
+        """
+
+def _native_r_gate(capability: CompilerTarget.OperationCapability) -> qiskit.circuit.Gate | None:
+    """Construct the Qiskit native pulse definition, if applicable."""
+
+class TargetEnvironment(Generic[_TargetResultT_co]):
+    """A compiler target paired with an execution format and its restrictions.
+
+    The target describes available gates and connectivity. The payload specification
+    describes how the program will be represented and which classical operations and
+    control flow it may use. Keep the environment to compile several programs for
+    the same combination, or create one from a device with :meth:`from_device`.
+    """
+
+    @overload
+    def __new__(
+        cls, target: CompilerTarget, payload_specification: PayloadSpecification[qiskit.circuit.QuantumCircuit]
+    ) -> TargetEnvironment[qiskit.circuit.QuantumCircuit]: ...
+    @overload
+    def __new__(
+        cls, target: CompilerTarget, payload_specification: PayloadSpecification
+    ) -> TargetEnvironment[_TargetResult]: ...
+    @staticmethod
+    def from_qiskit(
+        source: qiskit.transpiler.Target | qiskit.providers.BackendV2,
+        *,
+        native_num_qubits: int | None = None,
+        strict: bool = False,
+    ) -> TargetEnvironment[qiskit.circuit.QuantumCircuit]:
+        """Snapshot a Qiskit target and its output capabilities.
+
+        Args:
+            source: Qiskit Target or BackendV2.
+            native_num_qubits: Build a gate-set target without device placement.
+                Pass the circuit's positive width to skip wider gates. None retains
+                the device topology.
+            strict: Raise ValueError for an applicable gate or constraint that MQT Core
+                cannot represent. By default, warn and omit unsupported gates.
+
+        Returns:
+            The compiler target and supported Qiskit program features.
+        """
+
+    @staticmethod
+    def from_device(
+        device: mqt.core.qdmi.Device | str, *, program_format: mqt.core.qdmi.ProgramFormat | None = None
+    ) -> TargetEnvironment[CompiledProgram]:
+        """Snapshot a QDMI device and select its execution format."""
+
+    @property
+    def target(self) -> CompilerTarget:
+        """The compiler target."""
+
+    @property
+    def payload_specification(self) -> PayloadSpecification[_TargetResultT_co]:
+        """The selected execution format and supported program features."""
+
+class Program:
+    """Base class for a typed MLIR compiler program.
+
+    Programs own their MLIR module. Conversions can consume a program; use
+    ``is_valid`` to check whether it can still be used.
+    """
+
+    @property
+    def is_valid(self) -> bool:
+        """Whether this program still owns its module."""
+
+    def operation_counts(self) -> dict[str, int]:
+        """Count every operation by its full MLIR name.
+
+        Includes the root module, helper functions, modifier bodies, terminators,
+        and nested modules.
+        """
+
+    @property
+    def ir(self) -> str:
+        """The textual MLIR representation of this program."""
+
+class MappingOptions:
+    """Native mapping controls."""
+
+    def __init__(
+        self,
+        *,
+        trials: int | None = None,
+        iterations: int = 2,
+        lookahead: int = 20,
+        search_memory_limit: int = 268435456,
+    ) -> None: ...
+    @property
+    def trials(self) -> int | None:
+        """Positive trial count; None uses the available logical CPU count, with a minimum of 8."""
+
+    @trials.setter
+    def trials(self, arg: int | None, /) -> None: ...
+    @property
+    def iterations(self) -> int:
+        """Forward/backward refinement rounds; zero scores each start directly."""
+
+    @iterations.setter
+    def iterations(self, arg: int, /) -> None: ...
+    @property
+    def lookahead(self) -> int:
+        """Additional two-qubit gates considered during routing; zero disables lookahead."""
+
+    @lookahead.setter
+    def lookahead(self, arg: int, /) -> None: ...
+    @property
+    def search_memory_limit(self) -> int:
+        """Estimated node and layout bytes per routing search, per concurrent trial.
+
+        Zero disables node expansion. Container overhead, caches, and IR are extra.
+        """
+
+    @search_memory_limit.setter
+    def search_memory_limit(self, arg: int, /) -> None: ...
+
+class CompilationOptions:
+    """Shared compiler controls.
+
+    An explicit seed overrides all compiler randomness; None preserves pass defaults and custom pipeline seeds.
+    """
+
+    def __init__(
+        self,
+        *,
+        seed: int | None = None,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+        mapping: MappingOptions = ...,
+        trace_file: str | os.PathLike | None = None,
+    ) -> None: ...
+    @property
+    def seed(self) -> int | None: ...
+    @seed.setter
+    def seed(self, arg: int | None, /) -> None: ...
+    @property
+    def enable_timing(self) -> bool: ...
+    @enable_timing.setter
+    def enable_timing(self, arg: bool, /) -> None: ...
+    @property
+    def enable_statistics(self) -> bool: ...
+    @enable_statistics.setter
+    def enable_statistics(self, arg: bool, /) -> None: ...
+    @property
+    def mapping(self) -> MappingOptions: ...
+    @mapping.setter
+    def mapping(self, arg: MappingOptions, /) -> None: ...
+    @property
+    def trace_file(self) -> pathlib.Path | None:
+        """File for a Chrome trace of the native compilation, or None to disable tracing.
+
+        The trace records MLIR actions, such as pass runs and pattern applications.
+        Each call overwrites the file. Program sequences reject this option.
+        """
+
+    @trace_file.setter
+    def trace_file(self, arg: str | os.PathLike | None, /) -> None: ...
+
+class QuantumProgramInfo:
+    """Quantum resources and static IR statistics.
+
+    Use :meth:`QCProgram.inspect` or :meth:`QCOProgram.inspect` to collect a snapshot.
+    """
+
+    @property
+    def num_qubits(self) -> int | None:
+        """Declared quantum capacity.
+
+        Counts allocated qubits or distinct static site IDs. ``None`` means the width
+        is unknown. Resource inspection includes helper functions and excludes nested
+        modules; it describes declared capacity rather than peak live width.
+        """
+
+    @property
+    def static_qubits(self) -> list[int]:
+        """Sorted distinct physical site IDs.
+
+        Includes declarations in helper functions and excludes nested modules.
+        """
+
+    @property
+    def has_control_flow(self) -> bool:
+        """Whether the module contains control flow.
+
+        Includes branches and region-control operations in helper functions, but
+        excludes nested modules.
+        """
+
+    @property
+    def num_gates(self) -> int:
+        """MQT Core's static entry-point gate count.
+
+        See :meth:`QCProgram.num_gates`.
+        """
+
+    @property
+    def num_single_qubit_gates(self) -> int:
+        """Static single-qubit gate count.
+
+        See :meth:`QCProgram.num_single_qubit_gates`.
+        """
+
+    @property
+    def num_two_qubit_gates(self) -> int:
+        """Static two-qubit gate count.
+
+        See :meth:`QCProgram.num_two_qubit_gates`.
+        """
+
+    @property
+    def gate_counts(self) -> dict[str, int]:
+        """Entry-point gate histogram.
+
+        See :meth:`QCProgram.gate_counts`.
+        """
+
+    @property
+    def control_flow_counts(self) -> dict[str, int]:
+        """Entry-point control-flow histogram.
+
+        See :meth:`QCProgram.control_flow_counts`.
+        """
+
+    @property
+    def operation_counts(self) -> dict[str, int]:
+        """Full module operation histogram.
+
+        See :meth:`Program.operation_counts`.
+        """
+
+    @property
+    def depth(self) -> int | None:
+        """Depth of the program, or ``None`` if unsupported.
+
+        See :meth:`QCProgram.depth`.
+        """
+
+class QCProgram(Program):
+    """A compiler program in the QC dialect.
+
+    QC programs use reference semantics and represent frontend quantum programs
+    before conversion to QCO.
+    """
+
+    @staticmethod
+    def from_mlir_str(source: str) -> QCProgram:
+        """Parse a QC MLIR source string."""
+
+    @staticmethod
+    def from_mlir_file(path: str | os.PathLike) -> QCProgram:
+        """Parse QC MLIR from a file."""
+
+    @staticmethod
+    def from_openqasm_str(source: str) -> QCProgram:
+        """Translate supported OpenQASM to QC MLIR.
+
+        Accepts versionless input and versions 2.0, 3.0, and 3.1.
+        """
+
+    @staticmethod
+    def from_openqasm_file(path: str | os.PathLike) -> QCProgram:
+        """Translate a supported OpenQASM file to QC MLIR.
+
+        Accepts versionless input and versions 2.0, 3.0, and 3.1.
+        """
+
+    @staticmethod
+    def from_qiskit(circuit: qiskit.circuit.QuantumCircuit, *, native: bool = False) -> QCProgram:
+        """Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.
+
+        Args:
+            circuit: Circuit to import. A complete transpiler layout is retained as
+                metadata.
+            native: Whether the circuit is already compiled for a device. Fixes circuit
+                indices to device qubits and preserves gate names and operands without
+                importing definitions. The caller validates device support and placements.
+        """
+
+    @staticmethod
+    def from_pennylane(tape: pennylane.tape.QuantumScript, *, wires: Sequence[Hashable] | None = None) -> QCProgram:
+        """Translate a preprocessed PennyLane {py:class}`~pennylane.tape.QuantumScript` to QC MLIR.
+
+        The tape must contain supported native gates after decomposition, measurement
+        basis rotations, and mid-circuit measurement deferral. Touched wires are measured;
+        untouched wires contribute known zeros. Results follow the supplied wire order
+        (the tape's wire order by default).
+        PennyLane's terminal measurements are evaluated from these samples by the device.
+
+        Args:
+            tape: Preprocessed tape to import.
+            wires: Wire order for the measured results. Defaults to the tape's wire order.
+        """
+
+    def copy(self) -> QCProgram:
+        """Return an independent copy of this program."""
+
+    def cleanup(self) -> None:
+        """Fold classical values and remove structural scaffolding in place.
+
+        Preserve supplied unitary gates. Use explicit quantum optimization passes to
+        cancel, fuse, or specialize gates.
+        """
+
+    def normalize_global_phases(self) -> None:
+        """Normalize scoped global phases in place."""
+
+    def to_openqasm2(self, *, copy: bool = False) -> OpenQASMProgram:
+        """Emit OpenQASM 2, discarding program-wide global phase.
+
+        Parameters must be bound, indices static, and classical storage limited to
+        output registers written by measurements. Register-equality conditions can guard
+        gates, resets, and measurements. Other runtime control flow and unsupported
+        modifiers raise an error. Use ``compile_program`` to lower static loops before
+        export.
+
+        The source is consumed, including on failure. Set ``copy=True`` to preserve it.
+
+        Args:
+            copy: Export a copy of the program.
+        """
+
+    def to_openqasm3(self, *, copy: bool = False) -> OpenQASMProgram:
+        """Emit this QC program as OpenQASM 3.
+
+        Classical memory and control flow are legalized for the source format. Use
+        ``compile_program`` for optimization before export.
+
+        The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
+
+        Args:
+            copy: Preserve the source program by exporting a copy.
+        """
+
+    def to_qiskit(self, *, target: CompilerTarget | None = None, copy: bool = False) -> qiskit.circuit.QuantumCircuit:
+        """Convert this program to a Qiskit circuit.
+
+        The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
+        The exporter restores attached layout metadata when it is compatible with the
+        selected target.
+
+        Args:
+            target: Map static site IDs to qubit indices in target site order. All
+                qubits must be static sites of the target. Select applicable standard
+                gate names without checking device execution support. None applies no
+                target site mapping.
+            copy: Preserve the source program by exporting a copy.
+        """
+
+    def to_qco(self, *, copy: bool = False) -> QCOProgram:
+        """Convert this program to QCO.
+
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+        """
+
+    def to_iqm_json(self, target: CompilerTarget, *, copy: bool = False) -> IQMJSONProgram:
+        """Serialize PRX/CZ gates and terminal readout as IQM JSON.
+
+        Qubits must be static target sites. Each output bit must have one terminal
+        measurement. Entry-point global phases are normalized and discarded.
+        This performs no routing, gate synthesis, or optimization.
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+        """
+
+    def to_qir(self, profile: QIRProfile, *, copy: bool = False) -> QIRProgram:
+        """Lower this program to QIR for the requested profile.
+
+        Entry results may be direct measurements or CBit registers. Adaptive Profile
+        also supports computed Boolean (``i1``) results. Other scalar outputs are
+        unsupported. The generated QIR returns a zero execution status.
+        Both profiles lower supported controls, inverses, and powers on individual operations.
+        Base requires straight-line quantum operations. Adaptive retains loops and promotes
+        eligible classical memory to SSA values. Use ``compile_program`` to inline calls
+        with quantum-register arguments and unroll eligible multi-operation modifiers and
+        bounded Base loops.
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+        """
+
+    def inspect(self) -> QuantumProgramInfo:
+        """Inspect quantum resources and static IR statistics.
+
+        Returns a :class:`QuantumProgramInfo` snapshot with gate, control-flow, and
+        full operation counts.
+        """
+
+    def num_gates(self) -> int:
+        """Return MQT Core's static gate count of the entry-point IR.
+
+        Unitary operations, measurements, and resets each count once. Barriers are
+        excluded. Each modifier or call counts once without expanding its body. Gates
+        in every control-flow region count once, regardless of runtime paths or loop
+        iterations.
+        """
+
+    def num_single_qubit_gates(self) -> int:
+        """Count gates acting on exactly one qubit.
+
+        Uses the counting rules of :meth:`num_gates`, including measurements and resets.
+        """
+
+    def num_two_qubit_gates(self) -> int:
+        """Count gates acting on exactly two qubits.
+
+        Uses the counting rules of :meth:`num_gates`.
+        """
+
+    def gate_counts(self) -> dict[str, int]:
+        """Count entry-point gates by name.
+
+        Uses the counting rules of :meth:`num_gates`. Controls on a single primitive
+        gate add a ``c`` per control: ``cx``, ``ccx``.
+        Other single-gate modifiers use ``inv(h)``, ``pow(rx)``, or ``ctrl(inv(x))``;
+        multiple controls use ``ctrl(2,inv(x))``. Parameters do not split buckets.
+        Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
+        ``pow``. Calls use the callee name; explicit phases use ``gphase``.
+        """
+
+    def control_flow_counts(self) -> dict[str, int]:
+        """Count entry-point control-flow operations.
+
+        Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
+        visited once, without expanding calls. Region terminators
+        such as ``scf.yield`` are excluded.
+        """
+
+    def depth(self) -> int | None:
+        """Compute depth of the entry-point IR.
+
+        Gates, measurements, and resets add one layer. Measurements include the bit they
+        are stored to. Barriers align their qubits without adding a layer. A gate
+        modifier or an ``if`` adds exactly one layer over every qubit and bit it uses,
+        regardless of the depth of its body. Operations also wait for the bits that
+        their classical operands and conditions read. A bit copy and a classical ``if``
+        that only computes a condition, such as a lowered ``&&``, add no layer.
+
+        Returns ``None`` for loops, calls, other control flow, qubits without a known
+        wire, qubit stores at unknown slots, conditions that read no known bit, and an
+        ``if`` nested in a modifier or ``if`` body.
+        """
+
+    @property
+    def parameters(self) -> list[str]:
+        """Named f64 scalar and fixed-length array inputs in function argument order."""
+
+    def bind_parameters(
+        self,
+        values: Mapping[
+            str,
+            SupportsFloat
+            | Sequence[SupportsFloat]
+            | np.ndarray[tuple[int], np.dtype[np.floating[Any] | np.integer[Any]]],
+        ],
+        *,
+        copy: bool = False,
+    ) -> Self:
+        """Bind named scalar and array parameters and return the bound program.
+
+        Binding modifies this program unless ``copy=True`` requests an independent copy.
+
+        Inputs must be f64 scalars or fixed-length, one-dimensional f64 arrays.
+        Supply arrays as sequences or NumPy arrays with the expected length.
+        Partial binding preserves unbound inputs and their source identities.
+        Unknown names, mismatched scalar or array values, incorrect lengths,
+        non-finite values, and references to the entry point raise ValueError
+        without changing the program.
+
+        Binding folds expressions using the bound values. Folding failures may
+        leave the program modified. Use ``copy=True`` to preserve the input.
+        """
+
+class QCOProgram(Program):
+    """A compiler program in the QCO dialect.
+
+    QCO programs use value semantics and expose optimization and transformation
+    operations.
+    """
+
+    @staticmethod
+    def from_mlir_str(source: str) -> QCOProgram:
+        """Parse a QCO MLIR source string."""
+
+    @staticmethod
+    def from_mlir_file(path: str | os.PathLike) -> QCOProgram:
+        """Parse QCO MLIR from a file."""
+
+    def copy(self) -> QCOProgram:
+        """Return an independent copy of this program."""
+
+    def cleanup(self) -> None:
+        """Fold classical values and remove structural scaffolding in place.
+
+        Preserve supplied unitary gates. Use explicit quantum optimization passes to
+        cancel, fuse, or specialize gates.
+        """
+
+    def normalize_global_phases(self) -> None:
+        """Normalize scoped global phases in place."""
+
+    def run_pass_pipeline(
+        self,
+        pipeline: str,
+        *,
+        target_environment: TargetEnvironment | None = None,
+        options: CompilationOptions = ...,
+        preserve_layout: bool = False,
+    ) -> None:
+        """Run a textual MLIR pass pipeline in place.
+
+        The supplied target environment replaces the existing one after parsing succeeds
+        and remains attached for subsequent passes. None retains the existing environment.
+        Only the requested passes run; no default target compilation stages are added.
+        Layout metadata is cleared unless ``preserve_layout=True``. Set this only when
+        the passes keep wire and site identities or update the layout to reflect changes.
+        The flag itself does not create or validate a mapping. Execution failure can leave
+        partial changes; use ``copy()`` to preserve the input.
+        """
+
+    def merge_single_qubit_rotation_gates(self) -> None:
+        """Merge compatible consecutive single-qubit rotation gates."""
+
+    def fuse_single_qubit_unitary_runs(self, *, basis: str = "zyz") -> None:
+        """Fuse single-qubit unitary runs into the chosen decomposition basis."""
+
+    def unroll_quantum_loops(self, *, unroll_factor: int = -1) -> None:
+        """Unroll quantum loops, optionally using a maximum unroll factor."""
+
+    def lift_hadamards(self) -> None:
+        """Move Hadamard gates through compatible operations."""
+
+    def reuse_qubits(self) -> None:
+        """Reuse independent single-qubit allocations."""
+
+    def run_qubit_reuse_pipeline(self) -> None:
+        """Prepare the program for qubit reuse and reuse eligible qubits."""
+
+    def decompose_multi_controlled(self, *, min_qubits: int = 3) -> None:
+        """Decompose gates that act on at least min_qubits qubits.
+
+        Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
+        at least 3. The pass borrows and restores ancilla qubits when this reduces the
+        estimated entangling cost. It allocates no additional qubits.
+        """
+
+    def compile_for_target(self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...) -> None:
+        """Compile for the target and attach layout metadata when possible.
+
+        Compose an attached layout without sites, such as an imported Qiskit layout, with
+        placement and routing when every qubit is allocated in the entry block. Reject other
+        layout metadata. Do not rely on program contents if compilation fails. Failures raise
+        RuntimeError with MLIR diagnostics.
+        """
+
+    def synthesize_for_target(
+        self, target_environment: TargetEnvironment, *, options: CompilationOptions = ...
+    ) -> None:
+        """Synthesize native operations without routing.
+
+        For device targets, allocated program qubits require all-to-all connectivity
+        and receive layout metadata when possible. Static device-site references keep
+        their IDs and must fit the target topology. Do not rely on the program contents if synthesis fails.
+        Failures raise RuntimeError with the emitted MLIR diagnostics.
+        """
+
+    def to_qiskit(self, *, target: CompilerTarget | None = None, copy: bool = False) -> qiskit.circuit.QuantumCircuit:
+        """Convert this program through QC to a Qiskit circuit.
+
+        The source is consumed, including when conversion or export fails. Set ``copy=True`` to preserve it.
+        The exporter restores attached layout metadata when it is compatible with the
+        selected target.
+
+        Args:
+            target: Map static site IDs to qubit indices in target site order. All
+                qubits must be static sites of the target. Select applicable standard
+                gate names without checking device execution support. None applies no
+                target site mapping.
+            copy: Preserve the source program by exporting a copy.
+        """
+
+    def to_qc(self, *, copy: bool = False) -> QCProgram:
+        """Convert this program to QC.
+
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+        """
+
+    def to_jeff(self, *, copy: bool = False) -> JeffProgram:
+        """Convert this program to ``jeff`` MLIR.
+
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+        """
+
+    def inspect(self) -> QuantumProgramInfo:
+        """Inspect quantum resources and static IR statistics.
+
+        Returns a :class:`QuantumProgramInfo` snapshot with gate, control-flow, and
+        full operation counts.
+        """
+
+    def num_gates(self) -> int:
+        """Return MQT Core's static gate count of the entry-point IR.
+
+        Unitary operations, measurements, and resets each count once. Barriers are
+        excluded. Each modifier or call counts once without expanding its body. Gates
+        in every control-flow region count once, regardless of runtime paths or loop
+        iterations.
+        """
+
+    def num_single_qubit_gates(self) -> int:
+        """Count gates acting on exactly one qubit.
+
+        Uses the counting rules of :meth:`num_gates`, including measurements and resets.
+        """
+
+    def num_two_qubit_gates(self) -> int:
+        """Count gates acting on exactly two qubits.
+
+        Uses the counting rules of :meth:`num_gates`.
+        """
+
+    def gate_counts(self) -> dict[str, int]:
+        """Count entry-point gates by name.
+
+        Uses the counting rules of :meth:`num_gates`. Controls on a single primitive
+        gate add a ``c`` per control: ``cx``, ``ccx``.
+        Other single-gate modifiers use ``inv(h)``, ``pow(rx)``, or ``ctrl(inv(x))``;
+        multiple controls use ``ctrl(2,inv(x))``. Parameters do not split buckets.
+        Composite bodies or unused modifier targets retain ``ctrl``, ``inv``, or
+        ``pow``. Calls use the callee name; explicit phases use ``gphase``.
+        """
+
+    def control_flow_counts(self) -> dict[str, int]:
+        """Count entry-point control-flow operations.
+
+        Keys are full MLIR names such as ``scf.for`` and ``qco.if``. Every region is
+        visited once, without expanding calls. Region terminators
+        such as ``scf.yield`` are excluded.
+        """
+
+    def depth(self) -> int | None:
+        """Compute depth of the entry-point IR.
+
+        Gates, measurements, and resets add one layer. Measurements include the bit they
+        are stored to. Barriers align their qubits without adding a layer. A gate
+        modifier or an ``if`` adds exactly one layer over every qubit and bit it uses,
+        regardless of the depth of its body. Operations also wait for the bits that
+        their classical operands and conditions read. A bit copy and a classical ``if``
+        that only computes a condition, such as a lowered ``&&``, add no layer.
+
+        Returns ``None`` for loops, calls, other control flow, qubits without a known
+        wire, qubit stores at unknown slots, conditions that read no known bit, and an
+        ``if`` nested in a modifier or ``if`` body.
+        """
+
+    @property
+    def parameters(self) -> list[str]:
+        """Named f64 scalar and fixed-length array inputs in function argument order."""
+
+    def bind_parameters(
+        self,
+        values: Mapping[
+            str,
+            SupportsFloat
+            | Sequence[SupportsFloat]
+            | np.ndarray[tuple[int], np.dtype[np.floating[Any] | np.integer[Any]]],
+        ],
+        *,
+        copy: bool = False,
+    ) -> Self:
+        """Bind named scalar and array parameters and return the bound program.
+
+        Binding modifies this program unless ``copy=True`` requests an independent copy.
+
+        Inputs must be f64 scalars or fixed-length, one-dimensional f64 arrays.
+        Supply arrays as sequences or NumPy arrays with the expected length.
+        Partial binding preserves unbound inputs and their source identities.
+        Unknown names, mismatched scalar or array values, incorrect lengths,
+        non-finite values, and references to the entry point raise ValueError
+        without changing the program.
+
+        Binding folds expressions using the bound values. Folding failures may
+        leave the program modified. Use ``copy=True`` to preserve the input.
+        """
+
+    def build_functionality(self, dd_package: mqt.core.dd.DDPackage) -> mqt.core.dd.MatrixDD:
+        """Build a matrix DD for a static unitary QCO program.
+
+        Args:
+            dd_package: DD package with enough qubits for the program.
+
+        Returns:
+            Matrix DD of the program functionality.
+
+        Raises:
+            ValueError: When the program is unsupported for functionality construction.
+        """
+
+    def simulate(
+        self, initial_state: mqt.core.dd.VectorDD, dd_package: mqt.core.dd.DDPackage, seed: int = 0
+    ) -> mqt.core.dd.VectorDD:
+        """Simulate a QCO program on a DD state.
+
+        Args:
+            initial_state: Input state DD that spans at least the program's qubits and
+                has a live reference in ``dd_package``. Higher wires are preserved. A
+                valid input reference is consumed.
+            dd_package: DD package with enough qubits for the program.
+            seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+                value produces reproducible measurement and reset results.
+
+        Returns:
+            Output state DD.
+
+        Raises:
+            ValueError: When ``initial_state`` has no live reference in ``dd_package``,
+                has too few qubits, or the program is unsupported for simulation.
+        """
+
+    def expectation_values(self, observables: Sequence[Mapping[str, float]]) -> list[float]:
+        """Evaluate Pauli observables on the state prepared by this program.
+
+        The calculation starts with all qubits in zero and evaluates every observable on
+        the resulting state before measurement. It uses decision diagrams, so it does not
+        need dense state or observable arrays. The program remains available after the
+        call. Terminal measurements are deferred under the same conditions as
+        :func:`mqt.core.mlir.simulate`; resets and measurement-dependent evolution are
+        unsupported.
+
+        Args:
+            observables: Sequence of mappings from Pauli strings to finite real
+                coefficients. Each string spans every program wire and contains only
+                ``I``, ``X``, ``Y`` and ``Z``, with the rightmost character acting on
+                wire zero. An empty mapping represents the zero observable.
+
+        Returns:
+            Numerical expectation values in observable order.
+
+        Raises:
+            ValueError: When an observable is invalid or the program cannot prepare an
+                uncollapsed state, or an expectation is not finite.
+        """
+
+    def sample(self, shots: int = 1024, seed: int = 0) -> dict[str, int]:
+        """Sample the declared outputs of a QCO program.
+
+        Args:
+            shots: Number of shots (default 1024).
+            seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+                value produces reproducible results.
+
+        Returns:
+            Histogram keys use conventional count-string order. The last returned
+            CBit register or Boolean value comes first, and each register is MSB-first.
+            Other classical output types are rejected. Without classical results,
+            final ``measureAll`` bitstrings are used instead.
+
+        Raises:
+            ValueError: When the program is unsupported for sampling.
+        """
+
+class JeffProgram(Program):
+    """A serializable compiler program in the ``jeff`` dialect.
+
+    ``jeff`` programs can be stored as bytes or files and converted back to QCO for
+    further compilation.
+    """
+
+    @staticmethod
+    def from_segments(
+        segments: Sequence[bytes | bytearray | memoryview | np.ndarray],
+    ) -> JeffProgram:
+        """Deserialize a ``jeff`` program from Cap'n Proto segments.
+
+        Each segment must be a contiguous one-dimensional byte buffer whose size is a
+        multiple of eight. Keep the buffers unchanged until this call returns. Aligned
+        buffers are borrowed; unaligned buffers are copied into aligned storage. The
+        returned program does not retain the buffers.
+        """
+
+    @staticmethod
+    def from_bytes(data: bytes) -> JeffProgram:
+        """Deserialize a ``jeff`` program from bytes."""
+
+    @staticmethod
+    def from_file(path: str | os.PathLike) -> JeffProgram:
+        """Read a ``jeff`` program from a file."""
+
+    def copy(self) -> JeffProgram:
+        """Return an independent copy of this program."""
+
+    def cleanup(self) -> None:
+        """Run the standard ``jeff`` cleanup pipeline in place."""
+
+    def to_segment_views(self) -> list[memoryview]:
+        """Serialize this program into read-only Cap'n Proto segment views.
+
+        The views keep their message storage alive independently of this program. No
+        segment data is copied or flattened.
+        """
+
+    def to_bytes(self) -> bytes:
+        """Serialize this program to its ``jeff`` byte representation."""
+
+    def write(self, path: str | os.PathLike) -> None:
+        """Write this program to a ``jeff`` file."""
+
+    def to_qco(self, *, copy: bool = False) -> QCOProgram:
+        """Convert this program to QCO.
+
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+        """
+
+class IQMJSONProgram:
+    """An immutable output-only IQM circuit object."""
+
+    @property
+    def source(self) -> str:
+        """The emitted IQM JSON source."""
+
+    def write(self, path: str | os.PathLike) -> None:
+        """Write the IQM JSON source to a file."""
+
+class OpenQASMProgram:
+    """An immutable compiler program containing OpenQASM 3 source."""
+
+    @property
+    def source(self) -> str:
+        """The emitted OpenQASM 3 source."""
+
+    def write(self, path: str | os.PathLike) -> None:
+        """Write the emitted source to a file."""
+
+class QIRProgram(Program):
+    """A compiler program lowered to QIR.
+
+    QIR programs retain their target profile and can be emitted as LLVM IR or
+    LLVM bitcode.
+    """
+
+    def simulate(self) -> Annotated[NDArray[np.complex128], {"shape": (None,), "order": "C", "device": "cpu"}]:
+        """Return the uncollapsed statevector in QIR runtime qubit order; reset and measurement-dependent feedback are unsupported."""
+
+    def sample(self, shots: int = 1024, seed: int = 0) -> dict[str, int]:
+        """Sample recorded outputs. Zero selects random seeding; fixed seeds must fit a positive signed 32-bit integer."""
+
+    def copy(self) -> QIRProgram:
+        """Return an independent copy of this program."""
+
+    def cleanup(self) -> None:
+        """Run the standard QIR cleanup pipeline in place."""
+
+    @property
+    def profile(self) -> QIRProfile:
+        """The QIR target profile used to produce this program."""
+
+    def to_llvm_ir(self, *, copy: bool = False) -> str:
+        """Consume this program and emit LLVM IR text.
+
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+
+        Args:
+            copy: Preserve the source program by exporting a copy.
+        """
+
+    def to_bitcode(self, *, copy: bool = False) -> bytes:
+        """Consume this program and emit LLVM bitcode.
+
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+
+        Args:
+            copy: Preserve the source program by exporting a copy.
+        """
+
+    def write_bitcode(self, path: str | os.PathLike, *, copy: bool = False) -> None:
+        """Consume this program and write LLVM bitcode to a file.
+
+        The source is consumed even on failure. Set ``copy=True`` to preserve it.
+
+        Args:
+            path: Destination file.
+            copy: Preserve the source program by exporting a copy.
+        """
+
+def build_functionality(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+) -> Annotated[np.typing.NDArray[np.complex128], {"shape": (None, None)}]:
+    """Build the full unitary matrix of a supported compiler input.
+
+    The DD package is managed internally. The matrix is materialized directly into
+    the returned NumPy array without an additional copy. The full matrix grows
+    exponentially, and the caller is responsible for requesting a result that fits
+    in memory.
+
+    Raises:
+        MemoryError: When the dense matrix does not fit in memory.
+        ValueError: When the program is unsupported or the matrix dimensions exceed
+            addressable memory.
+    """
+
+def simulate(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram
+    | QIRProgram
+    | bytes,
+) -> Annotated[np.typing.NDArray[np.complex128], {"shape": (None,)}]:
+    """Simulate a program with all inputs bound from the all-zero state.
+
+    The program must have no unbound inputs. This function returns the statevector
+    before final measurements. Those measurements must be returned directly or
+    stored in returned classical registers. MQT Core manages the decision diagram internally.
+
+    For a custom initial state, resets, or mid-circuit measurement feedback, use
+    :meth:`QCOProgram.simulate` with an explicit DD package.
+
+    Args:
+        program: Compiler input, compiled QIR, or QIR text/bitcode.
+            QIR profile and version are read from module metadata. Other inputs
+            lower to QCO.
+
+    Returns:
+        Full statevector in runtime qubit order, materialized into a NumPy array.
+        Compiled QIR may remove or reorder source qubits.
+
+    Raises:
+        MemoryError: When the dense statevector does not fit in memory.
+        ValueError: When the program has unbound inputs, is unsupported for statevector
+            simulation, or the statevector dimensions exceed addressable memory.
+        RuntimeError: When QIR execution fails.
+    """
+
+def sample(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram
+    | QIRProgram
+    | bytes,
+    shots: int = 1024,
+    seed: int = 0,
+) -> dict[str, int]:
+    """Sample a supported compiler input or QIR program.
+
+    An existing QCO program is used without copying. See :meth:`QCOProgram.sample`
+    for shot counts, seeds, result ordering, and errors. QIR text and bitcode run in
+    the bundled DDSIM worker, which reads the profile and version from the module
+    metadata. For QIR, use seed 0 for randomness or a positive signed 32-bit integer
+    for reproducible sampling. Execute only trusted QIR: its profile declaration
+    does not validate arbitrary LLVM code.
+    """
+
+def expectation_values(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    observables: Sequence[Mapping[str, float]],
+) -> list[float]:
+    """Evaluate Pauli observables after translating or converting an input to QCO.
+
+    An existing QCO program is used without copying. See
+    :meth:`QCOProgram.expectation_values` for supported observables, state
+    preparation, and errors.
+    """
+
+class ResultLayout:
+    """Reconstruct program output bits from device samples.
+
+    This map describes classical output order, not qubit placement. Entry i in
+    :attr:`bits` gives the raw sample bit used for program output bit i, or None
+    when that output is always zero. Both indices count from the least significant
+    bit; displayed bitstrings put the most significant bit first.
+    """
+
+    @property
+    def raw_width(self) -> int:
+        """The number of bits in each raw receiver sample."""
+
+    @property
+    def bits(self) -> list[int | None]:
+        """Program output bit to raw sample bit, or None for zero, in LSB-first order."""
+
+    def decode_bits(self, raw: str) -> str:
+        """Decode one MSB-first binary sample to logical output order."""
+
+def decode_counts(
+    counts: Mapping[str, int], width: int | None, shots: int, layout: ResultLayout | None = None
+) -> dict[str, int]:
+    """Validate binary counts and reconstruct logical outcomes, ignoring ASCII spaces."""
+
+def decode_shots(
+    samples: Sequence[str], width: int | None, shots: int, layout: ResultLayout | None = None
+) -> list[str]:
+    """Validate and reconstruct logical samples in shot order, ignoring ASCII spaces."""
+
+class CompiledProgram:
+    """A serialized program ready for QDMI submission.
+
+    The object retains the target and format specification used for compilation.
+    Submission checks that the destination supports them before creating a job.
+    Its result layout reconstructs the program's classical output order from
+    device samples.
+    """
+
+    @property
+    def result_width(self) -> int | None:
+        """Logical bit width, or None for non-bit outputs."""
+
+    def _validate_environment(self, environment: TargetEnvironment) -> None:
+        """Check every program before submitting any format group in a batch."""
+
+    @property
+    def result_layout(self) -> ResultLayout | None:
+        """Logical output reconstruction, or None for an identity layout."""
+
+    @property
+    def program_format(self) -> mqt.core.qdmi.ProgramFormat:
+        """The exact QDMI program format."""
+
+    @property
+    def payload(self) -> str | bytes:
+        """The serialized program."""
+
+    @property
+    def target(self) -> CompilerTarget:
+        """The hardware snapshot used for compilation."""
+
+    @property
+    def payload_specification(self) -> PayloadSpecification[CompiledProgram]:
+        """The execution format and supported features used for compilation."""
+
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QC],
+    **kwargs: Unpack[_CompileOptions],
+) -> QCProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QCO_OPTIMIZED],
+    **kwargs: Unpack[_CompileOptions],
+) -> QCOProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: None = None,
+    output: Literal[OutputFormat.QC_IMPORT],
+    **kwargs: Unpack[_CompileOptions],
+) -> QCProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: None = None,
+    output: Literal[OutputFormat.QCO],
+    **kwargs: Unpack[_CompileOptions],
+) -> QCOProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.OPENQASM2, OutputFormat.OPENQASM3],
+    **kwargs: Unpack[_CompileOptions],
+) -> OpenQASMProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget,
+    output: Literal[OutputFormat.IQM_JSON],
+    **kwargs: Unpack[_CompileOptions],
+) -> IQMJSONProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.JEFF],
+    **kwargs: Unpack[_CompileOptions],
+) -> JeffProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
+    **kwargs: Unpack[_CompileOptions],
+) -> QIRProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QPY],
+    **kwargs: Unpack[_CompileOptions],
+) -> bytes: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QISKIT],
+    **kwargs: Unpack[_CompileOptions],
+) -> qiskit.circuit.QuantumCircuit: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: mqt.core.plugins.qiskit.backend.QDMIBackend,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> CompiledProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: qiskit.transpiler.Target,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> qiskit.circuit.QuantumCircuit: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> qiskit.circuit.QuantumCircuit | CompiledProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: TargetEnvironment[_TargetResultT_co],
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> _TargetResultT_co: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: mqt.core.qdmi.Device | str,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> CompiledProgram: ...
+@overload
+def compile_program(
+    program: _ProgramT,
+    *,
+    target: CompilerTarget | None = None,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> _ProgramT: ...
+@overload
+def compile_program(
+    program: str | os.PathLike[str],
+    *,
+    target: CompilerTarget | None = None,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> QCProgram | JeffProgram | OpenQASMProgram: ...
+@overload
+def compile_program(
+    program: _CompilerInput,
+    *,
+    target: _CompilerTarget | None = None,
+    output: OutputFormat,
+    **kwargs: Unpack[_CompileOptions],
+) -> _CompilerOutput: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QC],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QCProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QCO_OPTIMIZED],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QCOProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: None = None,
+    output: Literal[OutputFormat.QC_IMPORT],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QCProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: None = None,
+    output: Literal[OutputFormat.QCO],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QCOProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.OPENQASM2, OutputFormat.OPENQASM3],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[OpenQASMProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget,
+    output: Literal[OutputFormat.IQM_JSON],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[IQMJSONProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.JEFF],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[JeffProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QIRProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QPY],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[bytes]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: Literal[OutputFormat.QISKIT],
+    **kwargs: Unpack[_CompileOptions],
+) -> list[qiskit.circuit.QuantumCircuit]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: mqt.core.plugins.qiskit.backend.QDMIBackend,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[CompiledProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: qiskit.transpiler.Target,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[qiskit.circuit.QuantumCircuit]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: qiskit.providers.BackendV2 | qiskit.transpiler.Target,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[qiskit.circuit.QuantumCircuit] | list[CompiledProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: TargetEnvironment[_TargetResultT_co],
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[_TargetResultT_co]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: mqt.core.qdmi.Device | str,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[CompiledProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_ProgramT],
+    *,
+    target: CompilerTarget | None = None,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[_ProgramT]: ...
+@overload
+def compile_program(
+    program: Sequence[_SourceT],
+    *,
+    target: CompilerTarget | None = None,
+    output: None = None,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[QCProgram | JeffProgram | OpenQASMProgram]: ...
+@overload
+def compile_program(
+    program: Sequence[_CompilerInputT],
+    *,
+    target: _CompilerTarget | None = None,
+    output: OutputFormat,
+    **kwargs: Unpack[_CompileOptions],
+) -> list[_CompilerOutput]:
+    """Compile a program or a homogeneous sequence for a gate set or hardware target.
+
+    Pass one program to compile it, or a list or tuple of programs of the same
+    input kind to compile a batch. A batch returns a list in input order, even when
+    empty or containing only one program. Subclasses of supported input types are
+    accepted. Strings and paths each represent one program; generators and binary
+    buffers are unsupported.
+
+    An explicit ``output`` selects each result's representation. Without it, a
+    Qiskit target or environment using the Qiskit format selects QuantumCircuit. A QDMI
+    backend, device or other device target environment selects :class:`CompiledProgram`
+    for :func:`submit_program`. Otherwise, each input retains its format family:
+    OpenQASM source returns :class:`OpenQASMProgram`,
+    QC MLIR returns :class:`QCProgram`, jeff files return :class:`JeffProgram`, and
+    QCO inputs return optimized QCO.
+
+    A target created by ``CompilerTarget.for_gate_set`` synthesizes gates without device placement.
+    It preserves program-qubit order and idle qubits, including terminal permutations,
+    and retains the input format family by default. Inputs must have fixed-width
+    entry-block allocations and no static device-site references or layout metadata. Site-specific
+    capabilities are rejected; ``NativeOperations.from_qiskit`` imports gates
+    without physical placement.
+
+    Compilation takes ownership of typed MLIR inputs, making the original objects
+    unusable. Set ``copy=True`` to compile copies when you need the originals again.
+    Source text, paths, Qiskit circuits, and OpenQASM programs remain reusable.
+
+    For a batch, input kinds are checked before compilation starts. If compilation
+    fails, no results are returned. Inputs processed up to and including the failing
+    program may already have been consumed; later inputs remain usable.
+
+    Args:
+        program: Source text, a file path, a Qiskit circuit, a typed compiler program,
+            or a homogeneous sequence of these inputs.
+        target: A CompilerTarget, TargetEnvironment, Qiskit BackendV2 or Target,
+            QDMI Device, or device ID.
+        output: The returned representation. QC_IMPORT and raw QCO are checkpoints
+            before target compilation and cannot be combined with a target.
+        copy: Preserve typed inputs by compiling copies. Defaults to False.
+        qco_pipeline: The QCO pipeline, defaulting to "mqt-qco-default".
+            Custom pipelines require no target.
+        options: Shared compilation controls.
+        ignore_input_layout: Treat the current wires of a Qiskit input as fresh
+            program qubits. Defaults to False. True requires a Qiskit circuit input.
+        include_output_layout: Attach layout metadata to Qiskit and explicit QPY
+            outputs when available. Defaults to True. Physical wire indices and
+            measurement destinations are preserved either way. False requires
+            Qiskit or explicit QPY output.
+
+    For a device, format selection prefers QPY when supported Qiskit is installed,
+    then OpenQASM 3, Adaptive QIR (binary, then text), IQM JSON, Base QIR (binary,
+    then text), and OpenQASM 2. Use a :class:`TargetEnvironment` to select an exact
+    execution format. An explicit ``output`` can instead request a representation
+    for inspection or exchange; it need not be executable on the device. Jeff output
+    does not retain hardware placement.
+    """
+
+def serialize_program(
+    program: QCProgram | qiskit.circuit.QuantumCircuit, *, target: TargetEnvironment | mqt.core.qdmi.Device | str
+) -> CompiledProgram:
+    """Serialize an already native circuit without compiling or routing it.
+
+    Use this for a circuit that already uses the device's native gates and physical
+    sites. The caller must validate those gates and placements. For programs with
+    fixed physical sites, serialization arranges final measurements in site order and
+    records how to restore the requested output order. Dynamically allocated programs
+    retain their classical outputs. The input remains available after serialization.
+
+    Args:
+        program: A native Qiskit circuit or QC program with static target sites.
+        target: The destination device, registered device ID, or TargetEnvironment.
+    """
+
+def submit_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram
+    | CompiledProgram,
+    *,
+    target: str | mqt.core.qdmi.Device,
+    num_shots: int = 1024,
+    program_format: mqt.core.qdmi.ProgramFormat | None = None,
+    custom1: str | bool | float | bytes | None = None,
+    custom2: str | bool | float | bytes | None = None,
+    custom3: str | bool | float | bytes | None = None,
+    custom4: str | bool | float | bytes | None = None,
+    custom5: str | bool | float | bytes | None = None,
+    options: CompilationOptions | None = None,
+) -> mqt.core.qdmi.Job:
+    """Compile source or submit a compiled program to a device.
+
+    ``target`` accepts a registered device ID or an open device. For source input,
+    ``program_format`` selects the exact QDMI execution format, including text or
+    binary QIR; omitting it selects a supported native format.
+
+    A compiled program reuses its serialized data after checking compatibility with
+    the destination. Job results use the device's measurement order. When
+    ``compiled.result_layout`` is present, use its decoding methods to restore the
+    program's output order. Source input that needs this mapping is rejected;
+    compile it explicitly and keep the resulting :class:`CompiledProgram`.
+    """
+
+def _run_compiler(arguments: Sequence[str]) -> int:
+    """Run the compiler command once. LLVM options can terminate the process."""

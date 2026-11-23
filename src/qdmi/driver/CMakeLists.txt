@@ -14,8 +14,8 @@ if(NOT TARGET ${TARGET_NAME})
   set_target_properties(
     ${TARGET_NAME}
     PROPERTIES
-      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.." RUNTIME_OUTPUT_DIRECTORY
-      "${CMAKE_CURRENT_BINARY_DIR}/..")
+      LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}"
+      RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
   target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_driver_EXPORTS)
 
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
@@ -49,10 +49,8 @@ if(NOT TARGET ${TARGET_NAME})
 
   mqt_get_qdmi_device_targets(QDMI_DEVICE_TARGETS)
 
-  # Ensure the driver can find the device libraries at runtime
-  if(QDMI_DEVICE_TARGETS)
-    mqt_copy_qdmi_runtime(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
-  endif()
+  # Driver and devices share the build output directory.
+  add_dependencies(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
 
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()

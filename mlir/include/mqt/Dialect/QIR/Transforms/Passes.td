@@ -18,8 +18,9 @@ def QIRSetAttributesAndMetadata
                 "adds the required module flags, selecting the minimum "
                 "required QIR version";
   let description = [{
-    Input must already conform to the selected profile. Base uses QIR 2.0;
-    Adaptive requires 2.1 for dynamic resources or runtime arrays.
+    Input must already conform to the selected profile. The minimum version is
+    QIR 2.0, or 2.1 for Adaptive programs with dynamic resources or runtime
+    arrays. An attached QIR target may require a higher minimum version.
     Static resource counts specify the capacity through the highest qubit ID
     used by a quantum instruction and the highest used result ID. Rejects
     IDs whose required capacity cannot fit in an unsigned 64-bit integer.
@@ -37,11 +38,7 @@ def QIRSetAttributesAndMetadata
 
 def QIRCleanupPass : Pass<"qir-cleanup", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];
-  let summary = "Remove redundant QIR runtime bookkeeping.";
-  let description = [{
-    Removes redundant QIR runtime qubit-array allocation/release pairs that do
-    not contribute to observable behavior, and keeps QIR modules compact.
-  }];
+  let summary = "Remove unused external LLVM function declarations.";
 }
 
 #endif // MLIR_DIALECT_QIR_TRANSFORMS_PASSES_TD

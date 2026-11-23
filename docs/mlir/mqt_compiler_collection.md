@@ -8,15 +8,17 @@ mystnb:
 
 # MQT Compiler Collection
 
-The MQT Compiler Collection is MQT Core's quantum-classical compilation
-framework, built on MLIR and LLVM. It represents quantum operations together
-with classical computation and control flow, then optimizes and lowers supported
-programs for exchange or device execution. Its three interfaces share the same
-MLIR representations and passes:
+The MQT Compiler Collection translates and optimizes quantum programs for
+simulators, hardware, and other compilers. It handles quantum operations
+together with classical calculations, branches, and loops, including feedback
+from measurements.
+
+The compiler uses MLIR and LLVM internally. You can work with it through any of
+three interfaces; all use the same program representations and transformations:
 
 | Interface    | Entry point                                                         |
 | ------------ | ------------------------------------------------------------------- |
-| Command line | `mqt-cc`, with examples below                                       |
+| Command line | `mqt-core compile`, with examples below                             |
 | Python       | {py:mod}`mqt.core.mlir`                                             |
 | C++          | [Source-tree compiler API](target_compilation.md#c-source-tree-api) |
 
@@ -28,10 +30,12 @@ The Python examples below accept source strings, {code}`.qasm`, {code}`.mlir`,
 and {code}`.jeff` files, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit`
 objects, and typed compiler programs. Select an output format to choose where
 compilation stops and which program type is returned, or use the
-[default selection rules](#select-an-output-format). Compilation and conversions
-consume typed MLIR programs, including on failure. Set `copy=True` to preserve
-an input for another use. Source strings, paths, Qiskit circuits and OpenQASM
-text programs remain reusable.
+[default selection rules](#select-an-output-format). When compilation takes a
+typed MLIR program, it transfers ownership of that program to the compiler: the
+original object becomes invalid, even if compilation fails. Set `copy=True` to
+keep it available for another use. The same rule applies to conversions between
+typed MLIR programs. Strings, paths, Qiskit circuits, and OpenQASM text programs
+remain reusable.
 
 Install {doc}`MQT Core <../installation>` and import the compiler interface:
 
@@ -70,8 +74,8 @@ Programs do not need to be written in MLIR to use the compiler.
 
 For versionless OpenQASM text, use
 `compile_program(QCProgram.from_openqasm_str(source))`. Automatic source-string
-detection uses the `OPENQASM` header; see {doc}`OpenQASM` for the import
-contract.
+detection uses the `OPENQASM` header; see {doc}`OpenQASM` for supported input
+syntax.
 
 ## Inspect a quantum program
 
@@ -102,17 +106,18 @@ For an individual count, use `num_gates()`, `num_single_qubit_gates()`,
 only the requested count. `operation_counts()` is available on every MLIR
 program type.
 
-Gate counts describe the static entry-point IR. Each gate in a structured
-control-flow region counts once, regardless of runtime paths or loop iterations.
-Unitary operations, measurements, and resets count as gates. Measurements and
-resets count as single-qubit gates. Barriers are excluded from gate counts and
-appear in `operation_counts`. Each modifier or unitary call counts as one gate.
-Controls on a single primitive gate add a `c` per control: `cx`, `cz`, `crx`,
-`cswap`, or `ccx`. Other single-gate modifiers retain their structure: `inv(h)`,
-`pow(rx)`, `ctrl(inv(x))`, or `ctrl(2,inv(x))` for two controls. Parameters,
-including power exponents, do not split histogram buckets. Modifiers with
-multiple body gates or unused target operands use `ctrl`, `inv`, or `pow`. Calls
-use the callee name. Explicit global-phase operations count under `gphase`.
+MQT Core's static gate count describes the entry-point IR. Each gate in a
+structured control-flow region counts once, regardless of runtime paths or loop
+iterations. This metric counts unitary operations, measurements, and resets.
+Measurements and resets count as single-qubit gates. Barriers are excluded from
+gate counts and appear in `operation_counts`. Each modifier or unitary call
+counts as one gate. Controls on a single primitive gate add a `c` per control:
+`cx`, `cz`, `crx`, `cswap`, or `ccx`. Other single-gate modifiers retain their
+structure: `inv(h)`, `pow(rx)`, `ctrl(inv(x))`, or `ctrl(2,inv(x))` for two
+controls. Parameters, including power exponents, do not split histogram buckets.
+Modifiers with multiple body gates or unused target operands use `ctrl`, `inv`,
+or `pow`. Calls use the callee name. Explicit global-phase operations count
+under `gphase`.
 
 `control_flow_counts` counts entry-point branch and region-control operations by
 their full MLIR names, such as `scf.for`, `scf.while`, `scf.if`, or `qco.if`.
@@ -191,38 +196,31 @@ input's program family:
 | `JeffProgram` or `.jeff` file                     | `JeffProgram`          |
 | `OpenQASMProgram`, OpenQASM text, or `.qasm` file | `OpenQASMProgram`      |
 
-A Qiskit `BackendV2` or `Target` defaults to a `QuantumCircuit`. A QDMI device
-or registered device ID defaults to a `CompiledProgram` containing a supported
-execution payload.
+A QDMI backend, device, registered device ID or `TargetEnvironment` defaults to
+a `CompiledProgram` containing the serialized program and its execution format.
+Other Qiskit backends and targets default to a `QuantumCircuit`.
 
 An explicit `output` selects the representation independently of the input
 family and target:
 
-| Purpose                                  | Output format                                          | Result type       |
-| ---------------------------------------- | ------------------------------------------------------ | ----------------- |
-| Inspect frontend translation             | `OutputFormat.QC_IMPORT`                               | `QCProgram`       |
-| Inspect QCO immediately after conversion | `OutputFormat.QCO`                                     | `QCOProgram`      |
-| Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
-| Obtain the optimized circuit             | `OutputFormat.QC`                                      | `QCProgram`       |
-| Obtain a Qiskit circuit                  | `OutputFormat.QISKIT`                                  | `QuantumCircuit`  |
-| Emit an optimized OpenQASM program       | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
-| Emit IQM JSON for a target               | `OutputFormat.IQM_JSON`                                | `IQMJSONProgram`  |
-| Convert to the jeff dialect              | `OutputFormat.JEFF`                                    | `JeffProgram`     |
-| Generate QIR                             | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
+| Purpose                                      | Output format                                          | Result type       |
+| -------------------------------------------- | ------------------------------------------------------ | ----------------- |
+| Inspect frontend translation                 | `OutputFormat.QC_IMPORT`                               | `QCProgram`       |
+| Inspect QCO immediately after conversion     | `OutputFormat.QCO`                                     | `QCOProgram`      |
+| Inspect QCO after optimization               | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
+| Obtain the optimized circuit                 | `OutputFormat.QC`                                      | `QCProgram`       |
+| Obtain a Qiskit circuit                      | `OutputFormat.QISKIT`                                  | `QuantumCircuit`  |
+| Serialize a Qiskit-compatible binary circuit | `OutputFormat.QPY`                                     | `bytes`           |
+| Emit an optimized OpenQASM program           | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
+| Emit IQM JSON for a target                   | `OutputFormat.IQM_JSON`                                | `IQMJSONProgram`  |
+| Convert to the jeff dialect                  | `OutputFormat.JEFF`                                    | `JeffProgram`     |
+| Generate QIR                                 | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
 
 The raw `QC_IMPORT` and `QCO` checkpoints stop before target compilation and
 cannot be combined with `target`. A QDMI target with no explicit `output`
 returns a `CompiledProgram` in an automatically selected native format. To
-select an exact execution format, use `submit_program(..., program_format=...)`.
-See {doc}`target_compilation` for payload selection and submission.
-
-After rotation merging, the default pipeline groups controlled gates with the
-same ordered controls and targets. Canonicalization cancels named inverses and
-combines constant rotations inside each group, retaining controlled phase.
-Runtime bodies remain grouped for later binding or explicit fusion. Grouping
-follows the same linear wires within one block, across independent operations
-and scalar parameter computations. It preserves loop structure and does not
-combine across iterations. The standalone pass is `combine-controlled-gates`.
+select an exact execution format, use `TargetEnvironment.from_device`. See
+{doc}`target_compilation` for execution-format selection and submission.
 
 For example, select optimized QCO to inspect the representation after the
 default QCO pass pipeline:
@@ -268,10 +266,11 @@ recompiled = compile_program(openqasm, output=OutputFormat.QC_IMPORT)
 assert isinstance(recompiled, QCProgram)
 ```
 
-The exporter supports structured control flow and runtime classical-bit indices.
-Quantum register indices and ranges must be static. Surviving runtime
-assertions, checked-index machinery, and live poison values fail with an MLIR
-diagnostic. See {doc}`OpenQASM` for the complete support table.
+The exporter supports structured control flow and runtime indices for program
+qubits and classical bits. Mapped physical qubits must have fixed indices.
+Export fails if the program still contains runtime safety assertions or
+undefined values that are still used. See {doc}`OpenQASM` for the complete
+support table.
 
 ## Use Qiskit circuits directly
 
@@ -343,7 +342,7 @@ print(final_qc.ir)
 
 Architecture-independent QCO transformations can also be composed with MLIR's
 textual pass-pipeline syntax. The same pass names and options are accepted by
-{code}`mqt-cc`:
+{code}`mqt-core compile`:
 
 ```{code-cell} ipython3
 custom = compile_program(
@@ -354,6 +353,14 @@ custom = compile_program(
 assert custom.is_valid
 print(custom.ir)
 ```
+
+After rotation merging, the default pipeline groups controlled gates with the
+same ordered controls and targets. Canonicalization cancels named inverses and
+combines constant rotations inside each group, retaining controlled phase.
+Runtime bodies remain grouped for later binding or explicit fusion. Grouping
+follows the same linear wires within one block, across independent operations
+and scalar parameter computations. It preserves loop structure and does not
+combine across iterations. The standalone pass is `combine-controlled-gates`.
 
 Pauli twirling is available as an opt-in textual pass. It supports CX, CZ, ECR,
 and iSWAP gates, keeps every inserted Pauli operation (including identities)
@@ -376,11 +383,15 @@ mapping or synthesis and does not guarantee that the result uses a target's
 native gate set. Target-aware twirling is not currently available through the
 target compilation pipeline.
 
-The raw qubit-reuse pass and its composite preparation pipeline are both
-available through the compiler collection. Two independent measured qubits can
-share one physical qubit, with a reset between uses. This example uses scalar
-QCO values directly; register operations and intervening classical stores can
-prevent the raw pass from proving that reuse is safe:
+Qubit reuse reduces the number of physical qubits needed by scheduling
+independent parts of a circuit in sequence. Two independent measured qubits can
+share a physical qubit if it is reset between uses. Use `reuse_qubits()` to
+apply this transformation directly, or `run_qubit_reuse_pipeline()` to prepare
+the program first.
+
+The example below uses individual QCO qubit values. Register operations and
+intervening classical stores can prevent `reuse_qubits()` from establishing that
+reuse is safe:
 
 ```{code-cell} ipython3
 from mqt.core.mlir import QCOProgram
@@ -416,15 +427,15 @@ The same flows can be composed with the default optimization pipeline in the
 compiler driver:
 
 ```console
-mqt-cc input.qasm --emit=qco-optimized \
+mqt-core compile input.qasm --emit=qco-optimized \
   --pass-pipeline='builtin.module(reuse-qubits,mqt-qco-default)'
-mqt-cc input.qasm --emit=qco-optimized \
+mqt-core compile input.qasm --emit=qco-optimized \
   --pass-pipeline='builtin.module(mqt-qubit-reuse,mqt-qco-default)'
 ```
 
-The {code}`mqt-qubit-reuse` pipeline lifts measurements and replaces classical
-controls before applying the raw {code}`reuse-qubits` pass. It also runs
-{code}`remove-dead-gates`, which can remove gates whose results are unused,
+The {code}`mqt-qubit-reuse` pipeline moves measurements and replaces classical
+controls with quantum controls before applying {code}`reuse-qubits`. It also
+runs {code}`remove-dead-gates`, which can remove gates whose results are unused,
 including operations on unmeasured qubits. Use these passes only when those
 results may be discarded.
 
@@ -440,9 +451,8 @@ Use {py:meth}`~mqt.core.mlir.JeffProgram.to_bytes` or
 can be loaded and compiled again in a later process.
 
 The {doc}`jeff guide <../jeff>` describes buffer and file interfaces and the
-supported conversion boundary. The
-{doc}`exchange tutorial <../tutorials/jeff_exchange>` checks phase and
-structured control flow across a serialization handoff.
+supported conversion. The {doc}`exchange tutorial <../tutorials/jeff_exchange>`
+checks phase and structured control flow across a serialization handoff.
 
 ```{code-cell} ipython3
 from pathlib import Path
@@ -485,12 +495,12 @@ when another export or inspection must follow. The
 profiles, inspects capability flags, and executes the generated bytes with DDSIM
 through QDMI.
 
-The {code}`mqt-cc` compiler driver selects the QIR serialization from the output
-filename. Use {code}`.ll` for textual LLVM IR and {code}`.bc` for LLVM bitcode:
+MQT Core selects the QIR serialization from the output filename. Use {code}`.ll`
+for textual LLVM IR and {code}`.bc` for LLVM bitcode:
 
 ```console
-mqt-cc input.qasm --emit=qir-base -o output.ll
-mqt-cc input.qasm --emit=qir-adaptive -o output.bc
+mqt-core compile input.qasm --emit=qir-base -o output.ll
+mqt-core compile input.qasm --emit=qir-adaptive -o output.bc
 ```
 
 Writing QIR to standard output also produces textual LLVM IR. All other output

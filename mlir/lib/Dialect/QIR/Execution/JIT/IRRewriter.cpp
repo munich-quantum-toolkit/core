@@ -19,8 +19,6 @@
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/CFG.h"
-#include "llvm/IR/Constant.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
@@ -56,13 +54,15 @@ static bool isIrreversible(const llvm::CallBase& call) {
   return callee != nullptr && callee->hasFnAttribute(IRREVERSIBLE_ATTR);
 }
 
-static Error requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
+/// Find the exit code on the unconditional path discarded by Base extraction.
+static llvm::Expected<llvm::Value*>
+terminalExitCode(llvm::CallInst& boundary,
+                 const llvm::DominatorTree& dominators) {
   llvm::SmallPtrSet<llvm::BasicBlock*, 8> visited;
-  llvm::SmallVector<llvm::BasicBlock*> pending;
-
-  auto inspect = [&](llvm::BasicBlock& block,
-                     llvm::BasicBlock::iterator begin) -> Error {
-    for (auto it = begin; it != block.end(); ++it) {
+  auto* block = boundary.getParent();
+  auto begin = boundary.getIterator();
+  while (visited.insert(block).second) {
+    for (auto it = begin; it != block->end(); ++it) {
       const auto* call = llvm::dyn_cast<llvm::CallBase>(&*it);
       const auto* callee =
           call == nullptr ? nullptr
@@ -73,39 +73,28 @@ static Error requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
           !isIrreversible(*call)) {
         return createStringError(
             std::make_error_code(std::errc::invalid_argument),
-            TERMINAL_REGION_ERROR.str());
+            TERMINAL_REGION_ERROR);
       }
     }
-
-    auto* terminator = block.getTerminator();
-    if (terminator->getNumSuccessors() > 1) {
-      return createStringError(
-          std::make_error_code(std::errc::invalid_argument),
-          TERMINAL_REGION_ERROR.str());
+    auto* terminator = block->getTerminator();
+    if (auto* ret = llvm::dyn_cast<llvm::ReturnInst>(terminator)) {
+      auto* code = ret->getReturnValue();
+      if (!dominators.dominates(code, &boundary)) {
+        return createStringError(
+            std::errc::invalid_argument,
+            "QIR exit code depends on discarded instructions");
+      }
+      return code;
     }
-    for (auto* successor : llvm::successors(&block)) {
-      pending.emplace_back(successor);
+    const auto* branch = llvm::dyn_cast<llvm::UncondBrInst>(terminator);
+    if (branch == nullptr) {
+      break;
     }
-    return Error::success();
-  };
-
-  auto* boundaryBlock = boundary.getParent();
-  visited.insert(boundaryBlock);
-  if (auto error = inspect(*boundaryBlock, boundary.getIterator())) {
-    return error;
+    block = branch->getSuccessor();
+    begin = block->begin();
   }
-  while (!pending.empty()) {
-    auto* block = pending.pop_back_val();
-    if (!visited.insert(block).second) {
-      return createStringError(
-          std::make_error_code(std::errc::invalid_argument),
-          TERMINAL_REGION_ERROR.str());
-    }
-    if (auto error = inspect(*block, block->begin())) {
-      return error;
-    }
-  }
-  return Error::success();
+  return createStringError(std::make_error_code(std::errc::invalid_argument),
+                           TERMINAL_REGION_ERROR);
 }
 
 static Error validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
@@ -233,14 +222,15 @@ llvm::Expected<bool> prepareForStateExtraction(llvm::Function& entryPoint) {
     }
   }
 
-  if (auto error = requireTerminalIrreversibleRegion(*boundary)) {
-    return error;
+  auto code = terminalExitCode(*boundary, dominators);
+  if (!code) {
+    return code.takeError();
   }
   auto* prefix = boundary->getParent();
   prefix->splitBasicBlock(boundary, "state-extraction.discarded");
   auto* oldTerminator = prefix->getTerminator();
   llvm::IRBuilder<> builder(oldTerminator);
-  builder.CreateRet(llvm::Constant::getNullValue(entryPoint.getReturnType()));
+  builder.CreateRet(*code);
   oldTerminator->eraseFromParent();
   llvm::removeUnreachableBlocks(entryPoint);
   return true;

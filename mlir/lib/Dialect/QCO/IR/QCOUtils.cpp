@@ -19,6 +19,7 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -29,6 +30,23 @@
 #include <optional>
 
 namespace mlir::qco {
+
+bool hasLinearQubitCapture(Operation* operation) {
+  bool hasCapture = false;
+  visitUsedValuesDefinedAbove(operation->getRegions(), [&](OpOperand* operand) {
+    hasCapture |= isLinearQubitType(operand->get().getType());
+  });
+  return hasCapture;
+}
+
+LogicalResult verifyQubitScope(Operation* operation) {
+  if (hasLinearQubitCapture(operation)) {
+    return operation->emitOpError(
+        "regions must not capture QCO linear values from above; pass them as "
+        "region arguments");
+  }
+  return success();
+}
 
 /// Returns the wire index for @p wire in @p wireIds, or `std::nullopt` if
 /// untracked.

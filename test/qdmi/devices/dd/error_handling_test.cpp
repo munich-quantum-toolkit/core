@@ -168,8 +168,10 @@ TEST_F(ErrorHandling, CustomEnums) {
        }) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
                   s.session, prop, 0, nullptr, nullptr),
-              prop == QDMI_DEVICE_PROPERTY_CUSTOM1 ? QDMI_SUCCESS
-                                                   : QDMI_ERROR_NOTSUPPORTED)
+              prop == QDMI_DEVICE_PROPERTY_CUSTOM2 ||
+                      prop == QDMI_DEVICE_PROPERTY_CUSTOM3
+                  ? QDMI_SUCCESS
+                  : QDMI_ERROR_NOTSUPPORTED)
         << prop;
   }
 
@@ -269,16 +271,23 @@ TEST_F(ErrorHandling, BadState) {
 
 TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
   const qdmi_test::SessionGuard s{};
-  for (const size_t shots : {128U, 0U}) {
-    const qdmi_test::JobGuard j{s.session};
-    ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                    qdmi_test::QASM3_MALFORMED),
-              QDMI_SUCCESS);
-    ASSERT_EQ(qdmi_test::setShots(j.job, shots), QDMI_SUCCESS);
-    ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-    QDMI_Job_Status status{};
-    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &status), QDMI_SUCCESS);
-    EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED) << shots;
+  const auto adaptive = qdmi_test::getQIRProgram("BellPairAdaptive.ll");
+  for (const auto& [format, program] : {
+           std::pair<QDMI_Program_Format, std::string_view>{
+               QDMI_PROGRAM_FORMAT_QASM3, qdmi_test::QASM3_MALFORMED},
+           {QDMI_PROGRAM_FORMAT_QIRBASESTRING, adaptive},
+           {QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE, adaptive},
+       }) {
+    SCOPED_TRACE(format);
+    for (const size_t shots : {128U, 0U}) {
+      const qdmi_test::JobGuard j{s.session};
+      ASSERT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
+      ASSERT_EQ(qdmi_test::setShots(j.job, shots), QDMI_SUCCESS);
+      ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+      QDMI_Job_Status status{};
+      ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &status), QDMI_SUCCESS);
+      EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED) << shots;
+    }
   }
 }
 

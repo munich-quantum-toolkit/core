@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 
 from mqt.core.plugins.qiskit.backend import QDMIBackend
 from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
-from mqt.core.qdmi.builtin_driver import registered_device_ids
+from mqt.core.qdmi.builtin_driver import open_device, registered_device_ids
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -101,7 +101,10 @@ class QDMIProvider:
         """
         for device_id in self.device_ids():
             try:
-                backend = self.get_backend_by_device_id(device_id)
+                device = open_device(device_id)
+                if name is not None and name not in device.name():
+                    continue
+                backend = QDMIBackend(device, provider=self, device_id=device_id)
             except UnsupportedDeviceError:
                 continue
             except (IndexError, RuntimeError, ValueError):
@@ -111,8 +114,7 @@ class QDMIProvider:
                     stacklevel=3,
                 )
                 continue
-            if name is None or (backend.name is not None and name in backend.name):
-                yield backend
+            yield backend
 
     def get_backend_by_device_id(
         self,

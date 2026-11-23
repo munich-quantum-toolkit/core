@@ -19,27 +19,36 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace mqt::bindings::qiskit {
 
 namespace nb = nanobind;
 
+/// Register private QDMI result conversion for Qiskit.
+void registerResultBindings(nb::module_& m);
+
+/// Construct a native R alias gate, or None for an unrecognized name.
+[[nodiscard]] nb::object nativeRGate(std::string_view name, nb::handle phase);
+
 /// Import a Qiskit QuantumCircuit into an independently owned QC program.
 ///
 /// Ordinary import translates gate definitions and allocates program qubits.
-/// Native import fixes circuit indices to device qubits and preserves gate
-/// names and operands as opaque calls, without reading their definitions.
+/// Native import fixes circuit indices to device qubits and uses standard QC
+/// operations or opaque native calls, without reading gate definitions.
 /// The caller validates device support and placements. A complete transpiler
 /// layout is retained as metadata; it does not remap circuit indices.
 ///
 /// @param circuit Borrowed Python circuit; it is neither modified nor consumed.
 /// @param native Whether the circuit is already compiled for a device.
+/// @param ignoreLayout Whether to skip importing the transpiler layout.
 /// @returns A program owning its MLIR context and translated module.
 /// @throws std::runtime_error If the circuit is outside the supported import
 /// subset.
 /// @throws nanobind::python_error If a Python API call fails.
 [[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit,
-                                            bool native = false);
+                                            bool native = false,
+                                            bool ignoreLayout = false);
 
 /// Snapshot a Qiskit Target or BackendV2 into an owned compiler target.
 ///
@@ -53,9 +62,16 @@ importTarget(nb::handle target, nb::handle operationNames,
 [[nodiscard]] mlir::CompilerTarget::NativeOperations
 importNativeOperations(nb::handle target, nb::handle operationNames);
 
-/// Describe Qiskit output capabilities, restricted to a target when supplied.
-[[nodiscard]] mlir::PayloadSpecification
-payloadSpecification(nb::handle target = nb::none());
+/// Import a Qiskit target and its output capabilities together.
+///
+/// A native width selects gates that fit and ignores device placement.
+/// Strict import rejects unsupported applicable gates.
+[[nodiscard]] mlir::TargetEnvironment
+importTargetEnvironment(nb::handle target, std::optional<size_t> nativeWidth,
+                        bool strict);
+
+/// Describe unconstrained Qiskit output capabilities.
+[[nodiscard]] mlir::PayloadSpecification payloadSpecification();
 
 /// Consume a QC program to build a Qiskit circuit for an optional target.
 [[nodiscard]] nb::object

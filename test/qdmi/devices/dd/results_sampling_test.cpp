@@ -49,11 +49,16 @@
 
 namespace {
 
-std::vector<std::string> getShots(MQT_DDSIM_QDMI_Device_Job job) {
-  const size_t size = qdmi_test::querySize(job, QDMI_JOB_RESULT_SHOTS);
+std::vector<std::string> getShots(MQT_DDSIM_QDMI_Device_Job job,
+                                  size_t programIndex = 0) {
+  size_t size = 0;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job, programIndex, QDMI_JOB_RESULT_SHOTS, 0, nullptr, &size),
+            QDMI_SUCCESS);
   std::string result(size, '\0');
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job, 0, QDMI_JOB_RESULT_SHOTS,
-                                                  size, result.data(), nullptr),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job, programIndex,
+                                                  QDMI_JOB_RESULT_SHOTS, size,
+                                                  result.data(), nullptr),
             QDMI_SUCCESS);
   EXPECT_FALSE(result.empty());
   if (!result.empty()) {
@@ -274,13 +279,8 @@ TEST_F(QIRHistogramTestString, BaseStatic) {
       runProgram(format, qdmi_test::getQIRProgram("BellPairStatic.ll")));
 }
 
-TEST_F(QIRHistogramTestModule, BaseDynamic) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
-  checkHistogram(runProgram(format, getProgram("BellPairDynamic.ll")));
-}
-
-TEST_F(QIRHistogramTestString, BaseDynamic) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+TEST_F(QIRHistogramTestString, DynamicAllocation) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
   checkHistogram(
       runProgram(format, qdmi_test::getQIRProgram("BellPairDynamic.ll")));
 }
@@ -288,17 +288,6 @@ TEST_F(QIRHistogramTestString, BaseDynamic) {
 TEST_F(QIRHistogramTestModule, Adaptive) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
   checkHistogram(runProgram(format, getProgram("BellPairAdaptive.ll")));
-}
-
-TEST_F(QIRHistogramTestString, Adaptive) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
-  checkHistogram(
-      runProgram(format, qdmi_test::getQIRProgram("BellPairAdaptive.ll")));
-}
-
-TEST_F(QIRHistogramTestModule, AdaptiveRecordOutputs) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
-  checkTypedOutput(format, getProgram("AdaptiveRecordOutputs.ll"));
 }
 
 TEST_F(QIRHistogramTestString, AdaptiveRecordOutputs) {
@@ -315,6 +304,46 @@ TEST_F(HistogramTest, SeedReproducesQASMSampling) {
   EXPECT_EQ(runProgram(format, program, 7, &first),
             runProgram(format, program, 7, &second));
   EXPECT_EQ(first, second);
+}
+
+TEST_F(HistogramTest, BatchProgramSeedsAreDistinctAndRepeatable) {
+  constexpr int seed = 17;
+  constexpr size_t count = 8;
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
+  const auto runBatch = [&](size_t workers) {
+    const qdmi_test::SessionGuard session{};
+    const qdmi_test::JobGuard job{session.session};
+    const std::vector<const void*> programs(count, program.data());
+    const std::vector<size_t> sizes(count, program.size() + 1);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_programs(
+                  job.job, format, count, sizes.data(), programs.data()),
+              QDMI_SUCCESS);
+    EXPECT_EQ(qdmi_test::setShots(job.job, NUM_SHOTS), QDMI_SUCCESS);
+    EXPECT_EQ(qdmi_test::setSeed(job.job, seed), QDMI_SUCCESS);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                  job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM3, sizeof(workers),
+                  &workers),
+              QDMI_SUCCESS);
+    EXPECT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+    std::vector<std::vector<std::string>> samples;
+    for (size_t i = 0; i < count; ++i) {
+      samples.push_back(getShots(job.job, i));
+      std::ranges::sort(samples.back());
+    }
+    return samples;
+  };
+  const auto first = runBatch(1);
+  EXPECT_EQ(first, runBatch(1));
+  EXPECT_EQ(first, runBatch(4));
+  EXPECT_TRUE(std::ranges::any_of(
+      first, [&](const auto& samples) { return samples != first.front(); }));
+  for (size_t i = 0; i < count; ++i) {
+    std::vector<std::string> separate;
+    runProgram(format, program, seed + static_cast<int>(i), &separate, 1);
+    std::ranges::sort(separate);
+    EXPECT_EQ(first[i], separate);
+  }
 }
 
 TEST_F(QIRHistogramTestString, SeedReproducesQIRSampling) {
@@ -348,7 +377,7 @@ b[0] = measure q[1];
             NUM_SHOTS);
   std::vector<std::string> first;
   std::vector<std::string> second;
-  for (const size_t workers : {0U, 4U}) {
+  for (const size_t workers : {0U, 1U, 4U}) {
     EXPECT_EQ(
         runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &first, workers),
         runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &second, workers));
@@ -545,8 +574,12 @@ define void @setup() {
   ret void
 }
 declare void @__quantum__rt__int_record_output(i64, ptr)
-define i64 @main() #0 {
+define internal void @flip() alwaysinline {
   call void @__quantum__qis__x__body(ptr null)
+  ret void
+}
+define i64 @main() #0 {
+  call void @flip()
   call void @__quantum__qis__swap__body(ptr null, ptr inttoptr (i64 2 to ptr))
   call void @__quantum__qis__mz__body(ptr null, ptr null)
   call void @__quantum__qis__mz__body(ptr inttoptr (i64 2 to ptr), ptr inttoptr (i64 1 to ptr))

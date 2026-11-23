@@ -31,13 +31,17 @@
 #include "mlir/Rewrite/PatternApplicator.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <string>
 #include <utility>
 
 using namespace mlir;
@@ -131,6 +135,52 @@ TEST_F(QTensorPairCanonicalizationTest,
   EXPECT_TRUE(function.getOps<InsertOp>().empty());
   auto returned = cast<func::ReturnOp>(function.getBody().front().back());
   EXPECT_EQ(returned.getOperand(0), function.getArgument(0));
+}
+
+TEST_F(QTensorPairCanonicalizationTest, CancelsIdentityChainFromAnyRoot) {
+  for (const size_t root : {0U, 1U, 3U}) {
+    SCOPED_TRACE(root);
+    auto moduleOp = makeChain();
+    ASSERT_TRUE(moduleOp);
+    auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+    IRRewriter rewriter(&context_);
+    for (auto gate : llvm::make_early_inc_range(function.getOps<qco::HOp>())) {
+      rewriter.replaceOp(gate, gate.getInputQubit(0));
+    }
+    SmallVector<InsertOp> inserts(function.getOps<InsertOp>());
+    ASSERT_TRUE(succeeded(applyInsertPattern(inserts[root])));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    EXPECT_TRUE(function.getOps<ExtractOp>().empty());
+    EXPECT_TRUE(function.getOps<InsertOp>().empty());
+    auto returned = cast<func::ReturnOp>(function.getBody().front().back());
+    EXPECT_EQ(returned.getOperand(0), function.getArgument(0));
+  }
+}
+
+TEST_F(QTensorPairCanonicalizationTest, IdentityBatchStopsAtChangedQubit) {
+  for (const size_t root : {0U, 3U}) {
+    SCOPED_TRACE(root);
+    auto moduleOp = makeChain();
+    ASSERT_TRUE(moduleOp);
+    auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+    IRRewriter rewriter(&context_);
+    size_t index = 0;
+    for (auto gate : llvm::make_early_inc_range(function.getOps<qco::HOp>())) {
+      if (index++ != 1) {
+        rewriter.replaceOp(gate, gate.getInputQubit(0));
+      }
+    }
+    SmallVector<InsertOp> inserts(function.getOps<InsertOp>());
+    auto barrier = inserts[1];
+    ASSERT_TRUE(succeeded(applyInsertPattern(inserts[root])));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    EXPECT_EQ(std::distance(function.getOps<InsertOp>().begin(),
+                            function.getOps<InsertOp>().end()),
+              root == 0 ? 3 : 2);
+    EXPECT_TRUE(isa<qco::HOp>(barrier.getScalar().getDefiningOp()));
+  }
 }
 
 TEST_F(QTensorPairCanonicalizationTest,
@@ -280,6 +330,85 @@ TEST_F(QTensorPairCanonicalizationTest, ChecksOperationOrderInGraphRegions) {
     ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
     EXPECT_EQ(extract.getTensor() == insert.getResult(), backwardUse);
   }
+}
+
+TEST_F(QTensorPairCanonicalizationTest, IdentityBatchRespectsGraphOrder) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      %size = arith.constant 1 : index
+      %index = arith.constant 0 : index
+      %tensor = qtensor.alloc(%size) : tensor<1x!qco.qubit>
+      %r0, %q0 = qtensor.extract %tensor[%index] : tensor<1x!qco.qubit>
+      %t0 = qtensor.insert %q0 into %r0[%index] : tensor<1x!qco.qubit>
+      %r1, %q1 = qtensor.extract %t0[%index] : tensor<1x!qco.qubit>
+      %t1 = qtensor.insert %q1 into %r1[%index] : tensor<1x!qco.qubit>
+      qtensor.dealloc %t1 : tensor<1x!qco.qubit>
+    }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  SmallVector<InsertOp> inserts(moduleOp->getOps<InsertOp>());
+  auto extract = inserts[1].getScalar().getDefiningOp<ExtractOp>();
+  extract->moveBefore(inserts[0]);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  ASSERT_TRUE(succeeded(applyInsertPattern(inserts[1])));
+  ASSERT_TRUE(llvm::hasSingleElement(moduleOp->getOps<InsertOp>()));
+  EXPECT_EQ(*moduleOp->getOps<InsertOp>().begin(), inserts[0]);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  RewritePatternSet patterns(&context_);
+  InsertOp::getCanonicalizationPatterns(patterns, &context_);
+  EXPECT_TRUE(succeeded(
+      applyPatternsGreedily(*moduleOp, std::move(patterns),
+                            GreedyRewriteConfig{}.setMaxIterations(2))));
+  EXPECT_TRUE(moduleOp->getOps<InsertOp>().empty());
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST_F(QTensorPairCanonicalizationTest, BackwardPrefixDoesNotReportProgress) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      %c3 = arith.constant 3 : index
+      %c4 = arith.constant 4 : index
+      %tensor = qtensor.alloc(%c4) : tensor<4x!qco.qubit>
+      %qa = qco.alloc : !qco.qubit
+      %qb = qco.alloc : !qco.qubit
+      %a = qtensor.insert %qa into %tensor[%c0] : tensor<4x!qco.qubit>
+      %x, %qx = qtensor.extract %a[%c1] : tensor<4x!qco.qubit>
+      %b = qtensor.insert %qb into %x[%c2] : tensor<4x!qco.qubit>
+      %e, %qe = qtensor.extract %b[%c3] : tensor<4x!qco.qubit>
+      qco.sink %qx : !qco.qubit
+      qco.sink %qe : !qco.qubit
+      qtensor.dealloc %e : tensor<4x!qco.qubit>
+    }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  SmallVector<InsertOp> inserts(moduleOp->getOps<InsertOp>());
+  auto extract = cast<ExtractOp>(*inserts[0].getResult().user_begin());
+  extract->moveBefore(inserts[0]);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  std::string before;
+  llvm::raw_string_ostream beforeStream(before);
+  moduleOp->print(beforeStream);
+  EXPECT_TRUE(failed(applyInsertPattern(inserts[1])));
+  std::string after;
+  llvm::raw_string_ostream afterStream(after);
+  moduleOp->print(afterStream);
+  EXPECT_EQ(after, before);
+  RewritePatternSet patterns(&context_);
+  InsertOp::getCanonicalizationPatterns(patterns, &context_);
+  EXPECT_TRUE(succeeded(
+      applyPatternsGreedily(*moduleOp, std::move(patterns),
+                            GreedyRewriteConfig{}.setMaxIterations(2))));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
 }
 
 } // namespace

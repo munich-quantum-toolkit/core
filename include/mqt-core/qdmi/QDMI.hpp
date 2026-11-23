@@ -18,6 +18,8 @@
 #include "qdmi/client.h"
 #include "qdmi/types.h"
 
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 
 #include <algorithm>
@@ -41,6 +43,8 @@
 #include <vector>
 
 namespace qdmi {
+class Job;
+
 /// Identifies one of QDMI's implementation-defined custom slots.
 ///
 /// The same selector is used for custom device, site, operation, and
@@ -147,8 +151,26 @@ queuePositionFromResult(const int result, const size_t queuePosition) {
   return std::optional<size_t>{std::move(queuePosition)};
 }
 
-[[nodiscard]] llvm::Expected<std::vector<std::string>>
-parseShots(std::string_view shots, size_t numShots);
+/// Owns the provider's SHOTS payload and its validated number of rows.
+struct PackedShots {
+  std::vector<std::byte> bytes;
+  size_t count = 0;
+
+  [[nodiscard]] static llvm::Expected<PackedShots>
+  parse(std::vector<std::byte> bytes, size_t count);
+
+  /// Split the payload lazily, including empty shots.
+  [[nodiscard]] auto rows() const {
+    llvm::StringRef payload;
+    if (count != 0) {
+      payload = {reinterpret_cast<const char*>(bytes.data()), bytes.size() - 1};
+    }
+    return llvm::split(payload, ',');
+  }
+};
+
+[[nodiscard]] llvm::Expected<PackedShots> getPackedShots(const Job& job,
+                                                         size_t programIndex);
 
 template <custom_property_value T, typename Query>
 [[nodiscard]] llvm::Expected<std::optional<T>>
@@ -345,6 +367,25 @@ isBinaryProgramFormat(const QDMI_Program_Format format) noexcept {
          format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE ||
          format == QDMI_PROGRAM_FORMAT_QPY;
 }
+
+namespace detail {
+/// Borrow the exact bytes of an owned payload, including the text terminator.
+[[nodiscard]] inline llvm::Expected<std::span<const std::byte>>
+programBytes(const std::string& payload, QDMI_Program_Format format) {
+  size_t size = payload.size();
+  if (!isBinaryProgramFormat(format)) {
+    const auto terminator = payload.find('\0');
+    if (terminator == std::string::npos) {
+      ++size;
+    } else if (terminator != size - 1) {
+      return qdmi::makeError(
+          QDMI_ERROR_INVALIDARGUMENT,
+          "Text programs must not contain embedded null bytes");
+    }
+  }
+  return std::as_bytes(std::span(payload.c_str(), size));
+}
+} // namespace detail
 
 /// Concept for ranges that are contiguous in memory and can be
 /// constructed with a size.
@@ -564,7 +605,6 @@ struct SessionConfig {
   std::optional<std::string> custom5;
 };
 
-class Job;
 class Site;
 class Device;
 class Operation;
@@ -870,6 +910,22 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
+  /// Checks whether the device accepts a job of `count` programs in `format`
+  /// with the given job parameters.
+  ///
+  /// The check sends no program and submits nothing. It returns false when
+  /// the device does not support this format and count with these parameters.
+  /// A device can still decline the actual programs.
+  /// @see QDMI_job_set_programs
+  [[nodiscard]] llvm::Expected<bool> supportsJob(
+      QDMI_Program_Format format, size_t count,
+      std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
   /// Retrieves an existing job by its device-provided ID.
   ///
   /// Opening a job does not submit, clone, or modify the remote job.
@@ -912,6 +968,16 @@ private:
         llvm::Twine("Querying ") + qdmi::toString(prop),
         llvm::Twine("Querying ") + qdmi::toString(prop));
   }
+
+  /// Create a job with custom parameters and, if the device accepts it before
+  /// the program format is known, the shot count.
+  [[nodiscard]] llvm::Expected<Job>
+  createJob(std::optional<size_t> numShots,
+            const std::optional<CustomJobParameter>& custom1,
+            const std::optional<CustomJobParameter>& custom2,
+            const std::optional<CustomJobParameter>& custom3,
+            const std::optional<CustomJobParameter>& custom4,
+            const std::optional<CustomJobParameter>& custom5) const;
 
   [[nodiscard]] llvm::Expected<std::optional<Job>>
   submitJobImpl(QDMI_Program_Format format, std::span<const size_t> sizes,

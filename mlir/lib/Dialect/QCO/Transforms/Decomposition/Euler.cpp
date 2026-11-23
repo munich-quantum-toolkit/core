@@ -351,20 +351,31 @@ Value emitRotationAngleSum(OpBuilder& builder, Location loc,
   if (terms.empty()) {
     return mqt::constantFromScalar(builder, loc, 0.);
   }
-  SmallVector<Value> angles;
-  angles.reserve(terms.size());
-  for (const auto& term : terms) {
-    Value angle = term.scale == 1.
-                      ? term.value
-                      : builder.createOrFold<arith::MulFOp>(
-                            loc, term.value,
-                            mqt::constantFromScalar(builder, loc, term.scale));
-    angles.push_back(terms.size() == 1
-                         ? angle
-                         : mqt::variantToValue(builder, loc,
-                                               normalizeRotationParameter(
-                                                   builder, loc, angle)));
+  const auto scaled = [&](const RotationAngleTerm& term) -> Value {
+    if (term.scale == 1.) {
+      return term.value;
+    }
+    return builder.createOrFold<arith::MulFOp>(
+        loc, term.value, mqt::constantFromScalar(builder, loc, term.scale));
+  };
+  if (terms.size() == 1) {
+    return scaled(terms.front());
   }
+  const auto normalized = [&](const RotationAngleTerm& term) {
+    return mqt::variantToValue(
+        builder, loc, normalizeRotationParameter(builder, loc, scaled(term)));
+  };
+  const auto& first = terms.front();
+  if (llvm::all_of(terms.drop_front(), [&](const auto& term) {
+        return term.value == first.value && term.scale == first.scale;
+      })) {
+    // Reduce modulo 4*pi before multiplying even very large input angles.
+    return builder.createOrFold<arith::MulFOp>(
+        loc, normalized(first),
+        mqt::constantFromScalar(builder, loc,
+                                static_cast<double>(terms.size())));
+  }
+  auto angles = llvm::map_to_vector(terms, normalized);
   for (size_t stride = 1; stride < angles.size(); stride *= 2) {
     for (size_t i = 0; i + stride < angles.size(); i += 2 * stride) {
       angles[i] = builder.createOrFold<arith::AddFOp>(loc, angles[i],
@@ -391,13 +402,9 @@ static bool isConstantParameter(const RotationParameter& value,
   return scalar && isNearZeroRotationAngle(*scalar - expected);
 }
 
-/// A finite rotation angle has an exact additive identity.
-///
-/// Keep this policy outside scalar arithmetic, where signed zero and nonfinite
-/// values matter.
-static RotationParameter addRotationParameters(OpBuilder& builder, Location loc,
-                                               const RotationParameter& lhs,
-                                               const RotationParameter& rhs) {
+RotationParameter addRotationParameters(OpBuilder& builder, Location loc,
+                                        const RotationParameter& lhs,
+                                        const RotationParameter& rhs) {
   const auto foldedLhs = mqt::foldParameter(lhs);
   const auto foldedRhs = mqt::foldParameter(rhs);
   const auto* a = std::get_if<double>(&foldedLhs);
@@ -606,7 +613,16 @@ emitEulerPlan(OpBuilder& builder, Location loc, Value qubit,
     }
     switch (kind) {
     case Kind::RZ:
-      qubit = RZOp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
+      if (basis.phaseRotation) {
+        qubit =
+            POp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
+        phase = addRotationParameters(
+            builder, loc, phase,
+            mqt::scaleParameter(builder, loc, theta, -0.5));
+      } else {
+        qubit =
+            RZOp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
+      }
       break;
     case Kind::RY:
       qubit = RYOp::create(builder, loc, qubit, parameter(theta)).getQubitOut();
@@ -640,7 +656,7 @@ emitEulerPlan(OpBuilder& builder, Location loc, Value qubit,
 static void emitParameterPhase(OpBuilder& builder, Location loc,
                                const RotationParameter& phase) {
   if (!isConstantParameter(phase)) {
-    GPhaseOp::create(builder, loc, mqt::variantToValue(builder, loc, phase));
+    emitGPhaseIfNeeded(builder, loc, mqt::variantToValue(builder, loc, phase));
   }
 }
 
@@ -782,6 +798,11 @@ Value synthesizePauliRotation1Q(OpBuilder& builder, Location loc, Value qubit,
     return RYOp::create(builder, loc, qubit, rotationAngle).getQubitOut();
   }
   if (axis == PauliAxis::Z && supportsZ) {
+    if (basis.phaseRotation) {
+      emitParameterPhase(builder, loc,
+                         mqt::scaleParameter(builder, loc, angle, -0.5));
+      return POp::create(builder, loc, qubit, rotationAngle).getQubitOut();
+    }
     return RZOp::create(builder, loc, qubit, rotationAngle).getQubitOut();
   }
   // Pick a native rotation and a constant frame; rotationAngle remains
@@ -887,7 +908,9 @@ void synthesizeParameterizedUnitary1Q(
     RewriterBase& rewriter, Operation* op,
     const CompilerTarget::SynthesisBasis& basis) {
   assert(canSynthesizeParameterizedUnitary1Q(op));
-  if (isSingleQubitBasisGate(op, basis.singleQubit)) {
+  if ((isSingleQubitBasisGate(op, basis.singleQubit) &&
+       !(basis.phaseRotation && isa<RZOp>(op))) ||
+      (basis.phaseRotation && isa<POp>(op))) {
     return;
   }
   auto unitary = cast<UnitaryOpInterface>(op);

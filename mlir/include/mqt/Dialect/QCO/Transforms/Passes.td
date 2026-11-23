@@ -11,8 +11,17 @@
 
 include "mlir/Pass/PassBase.td"
 
+class TargetAwareQCOOptimization<string argument>
+    : Pass<argument, "mlir::ModuleOp"> {
+  list<Option> targetOptions = [Option<"useTarget", "use-target", "bool",
+                                       "false",
+                                       "Use the attached target environment; "
+                                       "fail if it is missing or invalid.">];
+  let options = targetOptions;
+}
+
 def CombineControlledGates
-    : Pass<"combine-controlled-gates", "mlir::ModuleOp"> {
+    : TargetAwareQCOOptimization<"combine-controlled-gates"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Combine gates along the same ordered control and target wires";
   let description = [{
@@ -28,7 +37,9 @@ def CombineControlledGates
     groups and their bodies, including fixed-parameter operations. They retain
     native controlled U fusion, then unroll surviving composites before routing
     and native synthesis. Combining is a separate pass so canonicalization does
-    not recreate composite target operations.
+    not recreate composite target operations. Set `use-target=true` to use this
+    target-aware behavior with the attached `mqt.target_env`; the default
+    combines gates independently of target metadata.
   }];
 }
 
@@ -66,7 +77,7 @@ def MergeSingleQubitRotationGates
 }
 
 def FuseSingleQubitUnitaryRuns
-    : Pass<"fuse-single-qubit-unitary-runs", "mlir::ModuleOp"> {
+    : TargetAwareQCOOptimization<"fuse-single-qubit-unitary-runs"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect",
                            "::mlir::math::MathDialect",
@@ -82,6 +93,10 @@ def FuseSingleQubitUnitaryRuns
     length are left unchanged.
 
     The emitted basis is controlled via the `basis` option (e.g. `zyz`, `zsxx`).
+    The `gpi` option uses equatorial rotations `R(π, φ)` and `R(π/2, φ)`
+    with unrestricted axis angle `φ` in radians. Native GPi/GPi2 export
+    accounts for the GPi global-phase difference; see
+    [native single-qubit gates](target_compilation.md#native-single-qubit-gates).
     A `gphase` correction is inserted when needed so the rewritten sequence
     matches the composed matrix exactly (not only up to global phase).
 
@@ -97,10 +112,32 @@ def FuseSingleQubitUnitaryRuns
     most three gates (one in the `u` basis).
     These conversions need no quaternion extraction or conditional expressions.
     Other dynamic chains use runtime Euler-angle extraction.
+
+    With `use-target=true`, select the attached target's synthesis basis instead
+    of `basis` and preserve its supported operations. A target without a usable
+    synthesis basis leaves the input unchanged.
   }];
-  let options = [Option<
+  let options = targetOptions#[Option<
       "basis", "basis", "std::string", "\"zyz\"",
       "Target Euler basis (zyz, zxz, xzx, xyx, u, zsxx, r, gpi).">];
+}
+
+def FuseTwoQubitGates : TargetAwareQCOOptimization<"fuse-two-qubit-gates"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Fuse constant two-qubit runs before placement";
+  let description = [{
+    Resynthesize constant two-qubit runs, including interleaved single-qubit
+    gates, when both the IR gate count and the estimated native two-qubit count
+    decrease. Barriers, non-unitary operations, and unavailable matrices end a
+    run. Numerical decomposition failure leaves that run unchanged.
+
+    The default uses U and CZ gates independently of target metadata. Set
+    `use-target=true` to select the attached target's synthesis basis and
+    preserve its supported operations. A target without a usable two-qubit
+    synthesis basis leaves the input unchanged. This pass does not assign
+    physical sites; use `target-native-synthesis` for placed circuits.
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -142,11 +179,18 @@ def UnrollLoopsForPayload : PayloadControlFlowPass<"unroll-loops-for-payload"> {
     Uses an explicit `payload-spec` attribute when set, otherwise reads
     `mqt.target_env`. Explicit payloads do not require hardware metadata. Fully unrolls
     static `scf.for` operations that its counted-iteration capability does not
-    cover. Local classical memory is promoted and static branches fold between
+    cover. When the payload does not support a `scf.while`, recovers `scf.for`
+    from loops with a signed strict upper bound, constant bounds, and a positive
+    constant step whose counter cannot overflow. The condition region must only
+    compare the counter and forward iteration arguments in order. Other while
+    loops remain unchanged.
+    Local classical memory is promoted and static branches fold between
     expansion rounds, exposing constant accesses and nested loop bounds.
-    In target-environment mode, tensor-carrying loops remain indexed for Adaptive
-    QIR on all-to-all targets whose native operations have no site tuples. Other
-    cases require fixed quantum indices and specialize these loops. Scalar loops
+    In target-environment mode, Adaptive QIR can retain tensor indices on an
+    all-to-all target when its native operations work at every placement.
+    Site-restricted extras are also allowed when a synthesis basis covers
+    unknown sites and any advertised measurement or reset does too. Other
+    targets require fixed indices and specialize tensor-carrying loops. Scalar loops
     remain when supported by the payload. Run QCO cleanup first to move
     complete constant-slot tensor accesses outside structured control flow.
     Constant inner sweeps can become scalar-qubit loops after tensor cleanup,
@@ -189,6 +233,67 @@ def LegalizeControlFlow : PayloadControlFlowPass<"legalize-qco-control-flow"> {
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
 
+def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Elide virtual SWAPs before placement";
+  let description = [{
+    Tracks wire permutations through QCO and structured control flow, removing
+    unconditional SWAPs and retargeting later operations. Materializes
+    permutations where resource identity or region interfaces require them.
+    Fixed physical qubits, modifier bodies, regions that capture quantum values,
+    and unstructured function bodies retain their wiring. Dynamic tensor
+    accesses reconcile pending permutations on that tensor. Programs without
+    SWAPs that can be elided remain unchanged.
+
+    Programs without source labels keep their physical output order:
+    permutations are reconciled before measurements and function exits.
+    Programs prepared by `mqt-target-prepare` instead keep terminal output
+    permutations virtual through final observations and disposal. The pass
+    composes them into the `routing` of the circuit-wire `mqt.layout`, the form
+    an imported Qiskit `final_layout` takes. Placement composes that layout
+    into the published qubit layout.
+
+    Run after inlining and cleanup, before fusion and placement.
+  }];
+}
+
+def ElideTerminalSwapsPass : Pass<"elide-terminal-swaps", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Record terminal SWAPs in the layout before placement";
+  let description = [{
+    Restricts `elide-permutations` to SWAPs in the straight-line suffix of the
+    entry block that follows its last non-SWAP multi-qubit operation, reset,
+    region, or opaque quantum boundary. Intermediate measurements and disposal
+    also end the suffix. Single-qubit gates may follow those SWAPs. Earlier
+    SWAPs remain, so a program already routed for a sparse topology keeps
+    its local interactions.
+
+    Requires source labels from `mqt-target-prepare` and records the output
+    permutation for placement like `elide-permutations`. Other programs remain
+    unchanged. Target compilation uses this pass for explicit coupling graphs.
+  }];
+}
+
+def PlacementPass : Pass<"place-qubits", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect"];
+  let summary = "Assign physical sites without routing";
+  let description = [{
+    Assign dynamically allocated qubits to sites of the attached target in
+    deterministic order. Already placed programs remain unchanged. This does
+    not enforce adjacency; use `place-and-route` for sparse topologies.
+
+    Input qubit labels prepared by `mqt-target-prepare` produce layout metadata,
+    including any output permutation recorded by `elide-permutations` or
+    `elide-terminal-swaps`. Supported tensor and control-flow forms follow the
+    placement requirements of target compilation.
+  }];
+}
+
 def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect"];
   let summary = "Place and route a program for an explicit target topology";
@@ -211,8 +316,14 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     lowered before mapping. Tensor allocations must follow a flat
     extract/insert/deallocate chain without tensor control flow.
 
-    First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
-    mapping, which is referred to as the initial layout. The layout covers the
+    Measurements advance during routing when their results or qubit successors
+    are needed by subsequent quantum work. This dependency analysis includes
+    nested captures and ordered classical memory effects. Other measurements
+    remain terminal. Placement preserves the logical classification while
+    inserting SWAPs and threading physical workspace through regions.
+
+    First, the pass assigns each allocated program qubit to a device site.
+    This initial assignment is called the initial layout. The layout covers the
     complete target. The pass materializes all target sites as routing workspace
     and carries them through structured control flow. Cleanup after mapping
     removes unused sites. The pass traverses the circuit
@@ -220,7 +331,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     are executable on the target architecture, a process known as routing.
 
     Each routing block has one wire slot per physical site. Its layout is the
-    sole mapping from logical qubits to those sites. Candidate evaluation keeps
+    sole mapping from program qubits to those sites. Candidate evaluation keeps
     empty cursors for idle sites; final placement materializes their qubits.
     Virtual SWAPs exchange the cursors at their two sites, matching the SSA
     successors of emitted SWAPs. Both traversal directions stop at region
@@ -229,22 +340,25 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     layout. For `scf.while`, the before-region exit places the after region
     and loop results; the after region restores the loop-entry layout.
 
-    For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
-    or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
-    sequence of `SWAP` operations that makes these two-qubit operations executable. The A* search also considers
-    subsequent layers, which are determined by the `nlookahead` parameter.
+    Each routing search finds a sequence of `SWAP` operations that makes the
+    leading two-qubit interaction executable. The remaining interactions in
+    the window guide the heuristic; they need not be executable when the
+    search finishes. The `nlookahead` parameter limits these additional
+    interactions.
 
     The cost function of the A* search is defined as follows:
 
     - `f(n) = g(n) + h(n)`
-    - `g(n) = alpha * depth(n)`
-    - `h(n) = sum(pow(lambda, i) * h(gate, p) for [i, gate] in enumerate(window))`
+    - `g(n) = alpha * cost(n)`
+    - `h(n) = swapCost * sum(pow(lambda, i) * h(gate, p) for [i, gate] in enumerate(window))`
 
     Where:
 
     - `p` is the dynamic-to-static mapping associated with search node `n`.
-    - `window` contains at most `1 + nlookahead` two-qubit operations in program order.
-    - `depth(n)` returns the distance from the node `n` to the root node.
+    - `window` contains at most `1 + nlookahead` two-qubit operations in wire-frontier order.
+    - `cost(n)` is the accumulated SWAP cost from the root to node `n`.
+      Without native costs, each SWAP costs one.
+    - `swapCost` is the uniform standalone SWAP cost, or one without native costs.
     - `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
     - `h(gate, p)` is `dist(p[gate.first], p[gate.second]) - 1`.
 
@@ -266,6 +380,11 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Each search limits retained nodes using `search-memory-limit`, an estimated
     byte budget for the nodes and their qubit layouts (256 MiB by default).
     At least the root node is retained; zero disables node expansion.
+    Search states are identified by the positions of all program qubits,
+    including idle spectators. Unused-site labels do not distinguish states.
+    Candidates are discarded when those positions already have an equal or
+    lower search cost. They skip heuristic evaluation and do not consume
+    retained-node capacity.
     The pass stops allocating nodes at the limit, checks the remaining queue,
     and, if no solution is queued, completes the route with SWAPs that reduce
     the leading pair's distance. This always makes progress on a connected
@@ -274,54 +393,38 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     Queue, visited-map, allocator, and linear fallback workspace overhead are
     additional. Each concurrent trial reuses this bounded storage across its
     searches and releases it when the trial finishes. Final SWAP insertion uses
-    separate storage after the trials finish. Target distance caches and
-    O(number of sites) wire, layout, and optional native-cost state for each
-    live region are separate; this is not a process memory limit. Candidate scoring
-    does not clone IR or execute native-synthesis passes. A shared immutable
-    table holds at most 1024 precomputed numerical native counts (about 264 KiB
-    of payload plus indexing). Each live region's tracker caches up to 64
-    additional counts (about 17 KiB). Exact matrix, entangler, and compilation
-    seed matches preserve numerical results; misses use normal analysis.
+    separate storage after the trials finish. Target distance caches, wire
+    layouts, and native-cost tracking use additional memory. Concurrent trials
+    share precomputed Weyl coordinates for repeated two-qubit matrices and
+    keep their own numerical caches.
 
-    To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
-    each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
-    made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
-    potentially find a more optimal solution. This behavior is controlled by the `niterations` parameter.
+    For straight-line scalar interactions and scalar `scf.for` loops with
+    positive static trip counts, the pass first checks the identity layout.
+    Nested loops contribute interaction weights according to their trip counts.
+    For disjoint paths and isolated program qubits, the pass also tries to
+    embed all paths along a single walk on the target. The walk prefers
+    neighbors with fewer unused edges. A complete direct placement skips
+    routing trials. Otherwise the greedy layout places frequently interacting
+    qubits near each other. Other control flow and
+    zero or unknown trip counts use identity and random starts.
 
-    Programs with supported control flow keep the identity layout immediately
-    when all two-qubit interactions are already adjacent on the target.
-    This avoids constructing and refining alternative layouts.
+    The `ntrials` option sets the number of starting layouts to generate.
+    The pass tries the greedy layout when available, then identity if a slot
+    remains, and fills the rest of the slots with seeded random layouts.
+    It refines each distinct starting layout once. Each trial performs up to
+    `niterations` rounds of forward and backward routing, stopping when both
+    the layout and wire cursors repeat at the end of a round. With zero
+    rounds the starting layouts are compared directly.
 
-    Otherwise, the pass option `ntrials` determines the number of initial refinement trials:
-    a greedy layout when available, then identity if a slot remains, and random
-    layouts for the remaining slots. Every trial uses `niterations` refinement
-    rounds before scoring; zero scores the initial layouts directly.
-    It defaults to the number of available logical CPUs reported by LLVM, taking
-    CPU affinity into account, with a minimum of one. Disabling multithreading
-    runs the same trials sequentially; it does not reduce the trial count.
-    If compiled with multi-threading on, these trials will be executed in parallel.
-    Set both `ntrials` and `seed` explicitly for reproducible results across
-    machines with different CPU counts.
+    The default is two refinement rounds. The default trial count is the
+    number of logical CPUs available to LLVM, with a minimum of eight.
+    Disabling multithreading runs the same trials sequentially. Set both
+    `ntrials` and `seed` for reproducible choices across machines.
 
-    For programs with two-qubit interactions, the pass also constructs an
-    interaction-weighted greedy layout. Statically counted scalar-qubit
-    `scf.for` loops contribute their body interactions weighted by the trip
-    count, including nested loops. Zero or unknown trip counts and other control
-    flow keep the identity/random fallback. Layout costs use saturating weights;
-    routing restores the layout at loop boundaries.
-    For disjoint interaction paths and isolated qubits, it first tries to place
-    them along one path through the target sites. The walk prefers neighbors
-    with fewer unused edges and accepts only a complete placement; it does not
-    backtrack. A complete path placement needs no routing and skips layout
-    trials, as does an executable identity layout. Other interaction graphs and
-    failed walks use the weighted greedy layout, which places frequently
-    interacting qubits nearby, starting at a central target site. This layout
-    occupies the first trial slot.
-
-    With an explicit native operation set and a usable entangler basis, each
-    candidate is scored by a read-only forward traversal of original gates and
-    virtual SWAPs. The estimate shares native support, operand direction, and
-    numerical decomposition with native synthesis. It composes constant runs on
+    For a target with a usable native entangler basis, the pass scores candidate layouts with a read-only
+    forward traversal of original gates and virtual SWAPs. The estimate shares
+    native support, operand direction, and numerical decomposition with
+    native synthesis. It composes constant runs on
     each physical pair, including intervening constant single-qubit gates, and
     preserves supported operations unless fusion reduces two-qubit count.
     Immediate inverse pairs do not break an earlier pending run. Other pair
@@ -329,7 +432,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     end runs. Branch reconciliation and loop-restoration SWAPs are included.
 
     The pass ranks candidates by estimated native two-qubit count, then estimated
-    qubit-dependency depth, retaining the earlier candidate on an exact tie.
+    qubit-dependency depth. Within a trial, the latest equally scoring layout
+    wins. Across trials, the earliest equally scoring trial wins.
     Counts are static: loop bodies and branch arms contribute their operations
     without execution frequencies. Depth is the maximum within any block; it
     excludes classical scheduling and is not a runtime control-flow bound.
@@ -342,26 +446,29 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     target compilation diagnoses unsupported native operations. Scoring and final
     routing use the same traversal hooks and first-SWAP cost guidance.
   }];
-  let options = [Option<"nlookahead", "nlookahead", "std::size_t", "20",
-                        "The number of lookahead steps.">,
-                 Option<"alpha", "alpha", "float", "1.0F",
-                        "The alpha cost factor. Must be finite and > 0.">,
-                 Option<"lambda", "lambda", "float", "0.5F",
-                        "The lambda factor in the cost function.">,
-                 Option<"niterations", "niterations", "std::size_t", "1",
-                        "The number of forwards and backwards traversal to "
-                        "improve the initial layout. Must be >= 0.">,
-                 Option<"ntrials", "ntrials", "std::size_t",
-                        "llvm::hardware_concurrency().compute_thread_count()",
-                        "The total number of greedy/identity/random trials of "
-                        "the forwards and backwards mechanism. Defaults to "
-                        "the available logical CPU count. Must be > 0.">,
-                 Option<"seed", "seed", "std::size_t", "42",
-                        "A seed used for randomization.">,
-                 Option<"searchMemoryLimit", "search-memory-limit", "size_t",
-                        "256UL * 1024 * 1024",
-                        "Estimated node and layout bytes per search. "
-                        "Zero disables node expansion.">];
+  let options =
+      [Option<"nlookahead", "nlookahead", "std::size_t", "20",
+              "The number of lookahead steps.">,
+       Option<"alpha", "alpha", "float", "1.0F",
+              "The alpha cost factor. Must be finite and > 0.">,
+       Option<"lambda", "lambda", "float", "0.5F",
+              "The lambda factor in the cost function.">,
+       Option<"niterations", "niterations", "std::size_t", "2",
+              "The maximum number of forwards and backwards traversals to "
+              "improve the initial layout. Must be >= 0.">,
+       Option<
+           "ntrials", "ntrials", "std::size_t",
+           "std::max(8U, llvm::hardware_concurrency().compute_thread_count())",
+           "The total number of greedy/identity/random trials of "
+           "the forwards and backwards mechanism. Defaults to "
+           "the available logical CPU count, with a minimum of 8. "
+           "Must be > 0.">,
+       Option<"seed", "seed", "std::size_t", "42",
+              "A seed used for randomization.">,
+       Option<"searchMemoryLimit", "search-memory-limit", "size_t",
+              "256UL * 1024 * 1024",
+              "Estimated node and layout bytes per search. "
+              "Zero disables node expansion.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
                               "The number of inserted SWAPs">];
 }
@@ -589,8 +696,9 @@ def RemoveDeadGates : Pass<"remove-dead-gates", "mlir::ModuleOp"> {
 //===----------------------------------------------------------------------===//
 
 def DecomposeMultiControlled
-    : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
+    : TargetAwareQCOOptimization<"decompose-multi-controlled"> {
   let dependentDialects = ["mlir::qco::QCODialect",
+                           "mlir::qtensor::QTensorDialect",
                            "::mlir::arith::ArithDialect"];
   let summary = "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and "
                 "qco.rccx that act on at least min-qubits qubits";
@@ -598,7 +706,8 @@ def DecomposeMultiControlled
     Decomposes multi-qubit controlled operations that act on at least
     `min-qubits` qubits (default 3: everything wider than a two-qubit gate).
     Supported shapes: `qco.ctrl` with a sole `qco.x`, `qco.y`, `qco.z`,
-    `qco.rx`, `qco.ry`, `qco.rz`, `qco.swap`, or `qco.p` body, and
+    `qco.rx`, `qco.ry`, `qco.rz`, `qco.rxx`, `qco.ryy`, `qco.rzx`, `qco.rzz`,
+    `qco.swap`, or `qco.p` body, and
     `qco.rccx`. Rotation and phase angles may be constants or runtime SSA values,
     including classical expressions inside the control region.
     Controls over composite bodies are distributed across their operations
@@ -606,32 +715,39 @@ def DecomposeMultiControlled
     bodies are unrolled in reverse order; power bodies require a constant integer
     exponent and operations on disjoint wires.
 
+    With `use-target=true`, retain target-native operations on all-to-all
+    targets or already placed programs. Allocated program qubits on an explicit topology
+    still use target-independent decomposition before routing. The default
+    ignores attached target metadata.
+
     | Family | Width (qubits) | Decomposition |
     | ------ | -------------- | ------------- |
     | X/Z | 3 | Elementary CCX/CCZ; `rccx` when `min-qubits` is at most 3 |
     | X/Z | 4 | Elementary CCCX/CCCZ |
-    | X/Z | 5 | Specialized ancilla-free relative-phase `C^4(Z)` |
-    | X/Z | 6–33 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
-    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with partitioned incrementers |
+    | X/Z | 5–9 | Phase-corrected MCP(π) via relative-phase RZ half-gates |
+    | X/Z | 10–23 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
+    | X/Z | ≥24 | Huang-Palsberg (HP24) phase ladder with relative-phase partitioned incrementers |
     | Y | ≥3 | X decomposition with `S†` before and `S` after on the target |
-    | RX/RY/RZ | ≥3 | Balanced control halves with exact MCX and quarter-angle rotations; RX uses H-conjugated RZ |
+    | RX/RY/RZ | ≥3 | Relative-phase control halves with quarter-angle RZ rotations; basis changes give RX/RY |
+    | RXX/RYY/RZX/RZZ | ≥3 | Pauli basis changes and two CX gates around a controlled RZ on the second target |
     | Phase | 3 | Optimized `C^2(P)` |
-    | Phase | 4–5 | Vale (Barenco-relative residual) |
-    | Phase | ≥6 | da Silva-Park SP22 linear-depth |
+    | Phase | 4–9 | Relative-phase RZ construction with recursive scalar-phase correction |
+    | Phase | ≥10 | da Silva-Park SP22 linear-depth |
     | Constant phase | any (`±π`) | Routed through the Z path |
     | SWAP | ≥ `min-qubits` | `MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b)` |
 
     Width is the total number of qubits the gate acts on (controls plus
     targets).
 
-    HP24 uses one dirty helper for an odd number of controls and two for an
-    even number. These helpers are borrowed from the gate's qubits and restored;
-    no additional qubits are allocated.
+    HP24 borrows one of the gate's qubits as a dirty ancilla for odd control
+    counts and two for even counts. The exact adjoint restores them and cancels
+    the incrementer's relative phases. The CX-equivalent cost model selects
+    MCP(π) through 22 controls and HP24 from 23 controls.
 
     Rotation synthesis uses a linear number of gates and no additional
-    qubits. Each half-MCX may borrow controls from the opposite half and
-    restores them coherently. The decomposition preserves phase, including
-    the conditional phase of a rotation by `2π`.
+    qubits. Each relative-phase half borrows controls from the opposite half;
+    forward and inverse halves cancel all residual phases, preserving the
+    conditional phase of a rotation by `2π`.
 
     Phase synthesis needs no additional qubits and uses a quadratic number of
     gates. Runtime angles require only power-of-two scaling.
@@ -644,8 +760,16 @@ def DecomposeMultiControlled
     Intermediate building blocks may be left as `qco.ctrl` / `qco.rccx` when
     `min-qubits` keeps them; the greedy rewriter lowers further when the
     threshold allows.
+
+    The pass can borrow qubits defined before the gate and consumed after it
+    in the same block, including provably occupied tensor slots. It uses them
+    as ancilla qubits when this reduces estimated CX equivalents before routing.
+    It allocates no qubits and restores each ancilla qubit's state and
+    correlations. Allocations and resets can prove a clean zero. For target
+    compilation, declared allocations must fit the target. On explicit
+    topologies, the pass borrows only before physical sites are assigned.
   }];
-  let options = [Option<
+  let options = targetOptions#[Option<
       "minQubits", "min-qubits", "uint64_t", "3",
       "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and qco.rccx "
       "that act on at least this many qubits (must be at least 3; default 3 "

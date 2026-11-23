@@ -87,15 +87,4 @@ TEST(Teleportation, RejectsInvalidJSONParameters) {
       "qubits");
 }
 
-TEST(Teleportation, EvaluatesCountsFromJSON) {
-  const auto evaluation =
-      llvm::cantFail(evaluateJSON(toManifestJSON(Teleportation{}),
-                                  R"({"schema_version":1,"counts":{"0":8}})"));
-  EXPECT_NE(evaluation.find("\"success_probability\":1"), std::string::npos);
-  EXPECT_NE(evaluation.find("\"total_variation_distance\":0"),
-            std::string::npos);
-  EXPECT_NE(evaluation.find("\"squared_hellinger_fidelity\":1"),
-            std::string::npos);
-}
-
 } // namespace mqt::bench

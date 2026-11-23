@@ -36,10 +36,10 @@ class PayloadSpecAttr;
 class TargetEnvAttr;
 } // namespace mqt
 
-/// Payload representation encoding.
+/// Text or binary program encoding.
 enum class PayloadEncoding : uint8_t { Text, Binary };
 
-/// Selected payload family, accepted versions, profile, and encoding.
+/// Selected program format, accepted versions, profile, and encoding.
 struct PayloadFormat {
   std::string id;
   std::string version;
@@ -49,7 +49,7 @@ struct PayloadFormat {
   friend bool operator==(const PayloadFormat&, const PayloadFormat&) = default;
 };
 
-/// One typed constraint on a payload capability.
+/// One limit on a supported program feature.
 struct ProgramConstraint {
   /// IDs of control-flow constraints understood by the compiler.
   static constexpr llvm::StringLiteral MAX_NESTING_DEPTH =
@@ -57,6 +57,12 @@ struct ProgramConstraint {
   static constexpr llvm::StringLiteral MAX_ITERATION_COUNT =
       "max-iteration-count";
   static constexpr llvm::StringLiteral MAX_CASE_COUNT = "max-case-count";
+  static constexpr llvm::StringLiteral MAX_CONDITION_WIDTH =
+      "max-condition-width";
+  static constexpr llvm::StringLiteral REQUIRES_REGISTER_EQUALITY =
+      "requires-register-equality";
+  static constexpr llvm::StringLiteral UNITARY_ONLY_BRANCHES =
+      "unitary-only-branches";
 
   std::string id;
   uint64_t value = 0;
@@ -65,7 +71,7 @@ struct ProgramConstraint {
                          const ProgramConstraint&) = default;
 };
 
-/// One extensible payload execution capability.
+/// One program feature supported for execution.
 struct ProgramCapability {
   /// IDs of structural control-flow capabilities understood by the compiler.
   static constexpr llvm::StringLiteral FORWARD_BRANCHING = "forward-branching";
@@ -73,6 +79,9 @@ struct ProgramCapability {
   static constexpr llvm::StringLiteral CONDITIONAL_LOOP = "conditional-loop";
   static constexpr llvm::StringLiteral MULTIWAY_BRANCHING =
       "multiway-branching";
+
+  static constexpr llvm::StringLiteral CLASSICAL_ASSIGNMENT =
+      "classical-assignment";
 
   std::string id;
   uint64_t value = 0;
@@ -82,11 +91,15 @@ struct ProgramCapability {
                          const ProgramCapability&) = default;
 };
 
-/// Context-free selected execution payload contract.
+/// Whether a capability describes classical control flow or assignment.
+[[nodiscard]] bool isControlFlowCapability(llvm::StringRef id);
+
+/// The format and program features selected for execution.
 ///
-/// Producers must include every effective capability, including
-/// payload-format baselines. The knowledge bit states whether the list also
-/// contains all optional device capabilities.
+/// This value is independent of an MLIR context. It describes one format and
+/// the features a program may use, such as branches or loops. The capability
+/// list must include the format's baseline features. optionalCapabilitiesKnown
+/// states whether the list also contains all optional device capabilities.
 class PayloadSpecification {
 public:
   /// Return compiler-supported capabilities for OpenQASM 3 or a QIR profile.
@@ -96,7 +109,7 @@ public:
   forProgramFormat(ProgramFormat format,
                    PayloadEncoding encoding = PayloadEncoding::Text);
 
-  /// Create and validate a selected payload specification.
+  /// Create and validate an execution format and its supported features.
   ///
   /// Versions accept numeric ceilings or comma-conjoined >=, <, <= bounds.
   /// Bare versions retain a same-major ceiling; omitted components are zero.
@@ -109,7 +122,7 @@ public:
   [[nodiscard]] static llvm::Expected<PayloadSpecification>
   create(mqt::PayloadSpecAttr attribute);
 
-  /// Return the selected payload format and receiver-version constraint.
+  /// Return the selected program format and accepted receiver versions.
   [[nodiscard]] const PayloadFormat& format() const noexcept;
 
   /// Return the parsed receiver interval, or no interval for unversioned
@@ -117,16 +130,16 @@ public:
   [[nodiscard]] const std::optional<mqt::PayloadVersionRange>&
   versionRange() const noexcept;
 
-  /// Return the compiler output selected by the payload format.
+  /// Return the compiler output selected by the program format.
   [[nodiscard]] llvm::Expected<ProgramFormat> compilerOutput() const;
 
-  /// Return effective payload capabilities in reported order.
+  /// Return the supported program features in reported order.
   [[nodiscard]] llvm::ArrayRef<ProgramCapability> capabilities() const noexcept;
 
   /// Return whether optional capability metadata is complete.
   [[nodiscard]] bool optionalCapabilitiesKnown() const noexcept;
 
-  /// Restrict capabilities to those supported by both payloads.
+  /// Restrict program features to those supported by both specifications.
   ///
   /// Keep this format. Across different formats, only structural control-flow
   /// capabilities are comparable; format-specific capabilities remain
@@ -137,7 +150,8 @@ public:
   /// Whether generated switches may have arbitrary nesting and case counts.
   [[nodiscard]] bool supportsUnrestrictedMultiwayBranching() const noexcept;
 
-  /// Materialize the selected contract as a typed MLIR attribute.
+  /// Store the selected format and supported features in a typed MLIR
+  /// attribute.
   [[nodiscard]] mqt::PayloadSpecAttr materialize(MLIRContext& context) const;
 
 private:
@@ -152,7 +166,7 @@ private:
   bool optionalCapabilitiesKnown_;
 };
 
-/// Context-free hardware target and selected payload specification.
+/// Hardware target and execution format, independent of an MLIR context.
 class TargetEnvironment {
 public:
   TargetEnvironment(const CompilerTarget& target, PayloadSpecification payload);
@@ -164,14 +178,16 @@ public:
   /// Return the compiler target.
   [[nodiscard]] const CompilerTarget& target() const noexcept;
 
-  /// Return the selected payload specification.
+  /// Return the selected execution format and supported program features.
   [[nodiscard]] const PayloadSpecification&
   payloadSpecification() const noexcept;
 
   /// Whether indexed qubits can retain runtime addresses through placement.
   ///
-  /// Requires Adaptive QIR and an all-to-all target whose operations have no
-  /// site-specific restrictions. Other payload control-flow limits still apply.
+  /// Requires Adaptive QIR and an all-to-all target. Site-restricted extras
+  /// require a synthesis basis usable at unknown sites. Advertised
+  /// measurement and reset operations must also support unknown sites. The
+  /// execution format's other control-flow limits still apply.
   [[nodiscard]] bool supportsIndexedQubits() const noexcept;
 
   /// Materialize the pair as a typed MLIR attribute.
@@ -183,13 +199,17 @@ private:
 };
 
 /// Attach the canonical typed target environment to a module.
+///
+/// Abandons any execution-environment restoration saved by staged compilation.
 void attachTargetEnvironment(ModuleOp moduleOp,
                              const TargetEnvironment& environment);
 
 /// Cached, validated view of a module's canonical target environment.
 class TargetEnvironmentAnalysis {
 public:
-  explicit TargetEnvironmentAnalysis(Operation* operation);
+  /// Prefer the prepared environment; otherwise decode the module attribute.
+  explicit TargetEnvironmentAnalysis(
+      Operation* operation, const TargetEnvironment* environment = nullptr);
 
   /// Attach and cache a prepared environment without rebuilding its target.
   void initialize(const TargetEnvironment& environment);

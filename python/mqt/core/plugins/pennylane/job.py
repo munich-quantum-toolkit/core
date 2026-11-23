@@ -10,26 +10,39 @@
 
 from __future__ import annotations
 
-__lazy_modules__ = {"mqt.core.plugins.pennylane.exceptions", "mqt.core.plugins.qdmi_batch", "numpy"}
+__lazy_modules__ = {
+    "mqt.core.mlir._pennylane",
+    "mqt.core.plugins.pennylane.exceptions",
+    "mqt.core.plugins.qdmi_batch",
+    "mqt.core.qdmi",
+    "numpy",
+    "pennylane",
+    "pennylane.measurements",
+}
 
 from contextlib import contextmanager
 from time import monotonic
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
+from pennylane import math
+from pennylane.measurements import CountsMP, ExpectationMP, ProbabilityMP, VarianceMP
 
+from mqt.core.mlir._pennylane import aggregate, samples
 from mqt.core.plugins.pennylane.exceptions import PennyLaneExecutionError
-from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
+from mqt.core.plugins.qdmi_batch import Batch, BatchEntry, JobAttempt
+from mqt.core.qdmi import Job
 
 if TYPE_CHECKING:
-    from collections.abc import Generator, Sequence
+    from collections.abc import Callable, Generator, Sequence
 
+    from pennylane.measurements import SampleMeasurement
+    from pennylane.tape import QuantumScript
     from pennylane.typing import Result, ResultBatch
+    from pennylane.wires import Wires
 
-    from mqt.core.plugins.pennylane.converter import _ConvertedProgram
+    from mqt.core.mlir import CompiledProgram
     from mqt.core.plugins.pennylane.device import QDMIDevice
-    from mqt.core.qdmi import Job
-    from mqt.core.typing import QDMIJobParameters
 
 __all__ = ["PennyLaneJob"]
 
@@ -40,114 +53,151 @@ class PennyLaneJob:
     Obtain this handle through ``device.last_job`` or an execution error's
     ``job`` attribute. Results have the device's preprocessed tape shape; they
     do not reconstruct an interrupted QNode or gradient calculation. Automatic
-    retries use the device's setting captured at creation and its lifetime limit
-    per failed entry. Cancelled or uncertain jobs are never retried.
+    retries use the device's setting at creation, applied over each entry's
+    lifetime. Cancelled or uncertain jobs are never retried automatically.
     """
 
     def __init__(
         self,
         device: QDMIDevice,
-        prepared: Sequence[tuple[_ConvertedProgram, tuple[int, ...]]],
-        partitioned: tuple[bool, ...],
+        prepared: Sequence[tuple[CompiledProgram | None, tuple[int, ...]]],
+        tapes: Sequence[QuantumScript],
         *,
         single: bool,
-        parameters: QDMIJobParameters,
         max_retries: int,
+        submit_programs: Callable[[Sequence[int], Sequence[CompiledProgram], int], Job | None],
     ) -> None:
         """Snapshot prepared programs and shot partitions before the first submission."""
         self._device = device
-        self._partitioned = partitioned
+        self._submit_group = submit_programs
+        self._tapes = tuple(tapes)
+        self._wires = tuple(device._tape_wires(tape) for tape in tapes)  # ruff:ignore[private-member-access] Match the compiled tape wire order.
         self._single = single
-        self._prepared = tuple((program, shots) for program, copies in prepared for shots in copies)
-        self._parameters = parameters.copy()
-        self._batch: Batch[np.ndarray] = Batch(
-            [BatchEntry(index, copy) for index, (_, copies) in enumerate(prepared) for copy in range(len(copies))],
-            submit=self._submit,
-            decode=self._samples,
-            submit_programs=self._submit_programs,
-            group_by=[(program.program_format, shots) for program, shots in self._prepared],
-            submission_error=lambda msg: PennyLaneExecutionError(msg, job=self),
-            execution_error=lambda msg: PennyLaneExecutionError(msg, job=self),
+        self._prepared = tuple(
+            (program, shots, len(wires), tape_index)
+            for tape_index, ((program, copies), wires) in enumerate(zip(prepared, self._wires, strict=True))
+            for shots in copies
+        )
+        self._batch: Batch[PennyLaneJob, object] = Batch(
+            self,
+            [
+                BatchEntry(
+                    index,
+                    copy,
+                    attempts=(JobAttempt(status=Job.Status.DONE, result=self._local_result(index, shots)),)
+                    if program is None
+                    else (),
+                )
+                for index, (program, copies) in enumerate(prepared)
+                for copy, shots in enumerate(copies)
+            ],
+            submit=PennyLaneJob._submit,
+            decode=PennyLaneJob._readout,
+            submit_programs=PennyLaneJob._submit_programs,
+            supports_programs=PennyLaneJob._supports_programs,
+            group_by=[(program.program_format if program else None, shots) for program, shots, _, _ in self._prepared],
+            submission_error=lambda job, msg: PennyLaneExecutionError(msg, job=job),
+            execution_error=lambda job, msg: PennyLaneExecutionError(msg, job=job),
             max_retries=max_retries,
-            on_submit=self._record_submission,
+            on_submit=PennyLaneJob._record_submission,
         )
 
     @property
-    def entries(self) -> tuple[BatchEntry[np.ndarray], ...]:
-        """Ordered snapshots of inputs, submission attempts, results, and failures."""
+    def entries(self) -> tuple[BatchEntry[object], ...]:
+        """Ordered attempts with completed per-tape measurement results."""
         return self._batch.entries
 
+    def _program(self, index: int) -> CompiledProgram:
+        program = self._prepared[index][0]
+        assert program is not None
+        return program
+
     def _submit(self, index: int) -> Job:
-        converted, shots = self._prepared[index]
-        return self._device.qdmi_device.submit_job(
-            converted.payload, converted.program_format, shots, **self._parameters
-        )
+        job = self._submit_programs([index])
+        if job is None:
+            msg = "Device declined the compiled program before submission."
+            raise RuntimeError(msg)
+        return job
 
     def _submit_programs(self, indices: Sequence[int]) -> Job | None:
-        converted, shots = self._prepared[indices[0]]
-        return self._device.qdmi_device.try_submit_job(
-            [self._prepared[index][0].payload for index in indices],
-            converted.program_format,
-            shots,
-            **self._parameters,
-        )
+        _, shots, _, _ = self._prepared[indices[0]]
+        return self._submit_group(indices, [self._program(index) for index in indices], shots)
+
+    def _supports_programs(self, indices: Sequence[int]) -> bool:
+        _, shots, _, _ = self._prepared[indices[0]]
+        context = self._device._context  # ruff:ignore[private-member-access] Check the device that submits the batch.
+        return context.supports(self._program(indices[0]).program_format, len(indices), shots)
+
+    def _local_result(self, tape_index: int, shots: int) -> object:
+        wires = self._wires[tape_index]
+        measured = []
+        samples = None
+        for measurement in self._tapes[tape_index].measurements:
+            if type(measurement) is CountsMP:
+                selected = measurement.wires or wires
+                measured.append(self._counts(measurement, selected, {"0" * len(selected): shots}))
+            elif type(measurement) in {ProbabilityMP, ExpectationMP, VarianceMP}:
+                # Repeating one outcome leaves its probabilities and moments unchanged.
+                measured.append(
+                    cast("SampleMeasurement", measurement).process_samples(
+                        np.zeros((1, len(wires)), dtype=np.int8), wires
+                    )
+                )
+            else:
+                if samples is None:
+                    samples = np.zeros((shots, len(wires)), dtype=np.int8)
+                measured.append(cast("SampleMeasurement", measurement).process_samples(samples, wires))
+        return measured[0] if len(measured) == 1 else tuple(measured)
 
     @staticmethod
-    def _shots_or_counts(job: Job, program_index: int = 0) -> tuple[list[str], list[int] | None]:
-        """Read individual shots or distinct outcomes with their multiplicities.
+    def _counts(measurement: CountsMP, wires: Wires, counts: dict[str, int]) -> dict:
+        # PennyLane needs explicit wires to include unobserved outcomes.
+        processor = measurement if measurement.wires else CountsMP(wires=wires, all_outcomes=measurement.all_outcomes)
+        return processor.process_counts(counts, wires)
 
-        Returns:
-            Bit strings and optional repetition counts for histogram results.
+    def _process_samples(self, tape_index: int, values: np.ndarray) -> object:
+        measured = tuple(
+            cast("SampleMeasurement", measurement).process_samples(values, self._wires[tape_index])
+            for measurement in self._tapes[tape_index].measurements
+        )
+        return measured[0] if len(measured) == 1 else measured
 
-        Raises:
-            PennyLaneExecutionError: If the job exposes neither result representation.
-        """
-        shots_error = None
-        try:
-            if shots := job.get_shots(program_index):
-                return shots, None
-        except RuntimeError as exc:
-            shots_error = exc
-
-        try:
-            counts = job.get_counts(program_index)
-        except RuntimeError as exc:
-            msg = f"Could not read QDMI samples: shots: {shots_error}; counts: {exc}"
-            causes = [cause for cause in (shots_error, exc) if cause is not None]
-            raise PennyLaneExecutionError(msg) from ExceptionGroup("QDMI result retrieval failed", causes)
-        bitstrings = sorted(bitstring for bitstring, count in counts.items() if count)
-        return bitstrings, [counts[bitstring] for bitstring in bitstrings]
-
-    def _samples(self, index: int, job: Job, program_index: int) -> np.ndarray:
-        """Convert QDMI bit strings to PennyLane sample rows.
-
-        Returns:
-            A shot-by-wire array in PennyLane measurement order.
-
-        Raises:
-            PennyLaneExecutionError: If QDMI returns malformed or incomplete results.
-        """
-        converted, shots = self._prepared[index]
-        bitstrings, repeats = self._shots_or_counts(job, program_index)
-        num_samples = len(bitstrings) if repeats is None else sum(repeats)
-        if num_samples != shots:
-            msg = f"QDMI returned {num_samples} samples for a {shots}-shot job."
-            raise PennyLaneExecutionError(msg)
-
-        width = len(converted.wire_map)
-        cleaned: list[str] = []
-        for bitstring in bitstrings:
-            clean = bitstring.replace(" ", "")
-            if len(clean) != width or clean.strip("01"):
-                msg = f"QDMI returned an invalid {width}-wire shot: {bitstring!r}."
-                raise PennyLaneExecutionError(msg)
-            cleaned.append(clean)
-        if not bitstrings:
-            return np.asarray([], dtype=np.int8)
-        packed = np.frombuffer("".join(cleaned).encode("ascii"), dtype=np.int8).reshape(len(bitstrings), width)
-        # QDMI spells the highest-index site first; PennyLane starts with wire zero.
-        samples = packed[:, ::-1][:, converted.measurement_order] - ord("0")
-        return samples if repeats is None else np.repeat(samples, repeats, axis=0)
+    def _readout(self, index: int, job: Job, program_index: int) -> object:
+        _, shots, width, tape_index = self._prepared[index]
+        tape = self._tapes[tape_index]
+        if not all(
+            type(m) in {CountsMP, ProbabilityMP} or (type(m) in {ExpectationMP, VarianceMP} and bool(m.wires))
+            for m in tape.measurements
+        ):
+            return self._process_samples(
+                tape_index, samples(job, width, shots, program_index, self._program(index).result_layout)
+            )
+        wires = self._wires[tape_index]
+        selected = [measurement.wires or wires for measurement in tape.measurements]
+        marginals = aggregate(
+            job,
+            width,
+            shots,
+            [
+                ([wires.index(wire) for wire in selection], type(measurement) is CountsMP)
+                for measurement, selection in zip(tape.measurements, selected, strict=True)
+            ],
+            program_index,
+            self._program(index).result_layout,
+        )
+        measured = []
+        for measurement, selection, value in zip(tape.measurements, selected, marginals, strict=True):
+            if type(measurement) is CountsMP:
+                measured.append(self._counts(measurement, selection, cast("dict[str, int]", value)))
+            elif type(measurement) is ProbabilityMP:
+                measured.append(value)
+            else:
+                eigvals = measurement.eigvals()
+                if type(measurement) is VarianceMP:
+                    eigvals = math.asarray(eigvals, dtype="float64")
+                mean = math.dot(value, eigvals)
+                measured.append(mean if type(measurement) is ExpectationMP else math.dot(value, eigvals**2) - mean**2)
+        return measured[0] if len(measured) == 1 else tuple(measured)
 
     def _record_submission(self, indices: Sequence[int]) -> None:
         self._device._submitted_jobs += 1  # ruff:ignore[private-member-access] Update the device's read-only total.
@@ -173,7 +223,7 @@ class PennyLaneJob:
         with self._record_time():
             self._batch.submit(indices)
 
-    def collect(self) -> tuple[BatchEntry[np.ndarray], ...]:
+    def collect(self) -> tuple[BatchEntry[object], ...]:
         """Read existing jobs without replacement executions or aggregate errors.
 
         Returns:
@@ -190,17 +240,17 @@ class PennyLaneJob:
         with this batch handle.
 
         Returns:
-            Raw samples for the preprocessed input tapes.
+            Measurement results for the preprocessed input tapes.
         """
         with self._record_time():
             self._batch.complete()
-            tape_results: list[list[np.ndarray]] = [[] for _ in self._partitioned]
+            tape_results: list[list[object]] = [[] for _ in self._tapes]
             for entry in self.entries:
                 assert entry.result is not None
                 tape_results[entry.input_index].append(entry.result)
             results = tuple(
-                tuple(samples) if partitioned else samples[0]
-                for partitioned, samples in zip(self._partitioned, tape_results, strict=True)
+                tuple(samples) if tape.shots.has_partitioned_shots else samples[0]
+                for tape, samples in zip(self._tapes, tape_results, strict=True)
             )
             if self._single:
                 return cast("Result", results[0])

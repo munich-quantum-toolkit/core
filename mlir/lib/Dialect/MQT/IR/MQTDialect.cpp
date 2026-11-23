@@ -474,8 +474,9 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     auto count = dyn_cast<IntegerAttr>(attribute.getValue());
     if (!isa<ModuleOp>(operation) || !count ||
         !count.getType().isSignlessInteger(64) || count.getInt() < 0) {
-      return operation->emitError(
-          "source qubit count requires a nonnegative i64 on a module");
+      return operation->emitError()
+             << attribute.getName()
+             << " requires a nonnegative i64 on a module";
     }
     return success();
   }
@@ -491,11 +492,17 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
       return operation->emitError("source qubit indices require one i64 entry "
                                   "per fixed allocation slot");
     }
+    auto moduleOp = operation->getParentOfType<ModuleOp>();
+    auto count =
+        moduleOp ? moduleOp->getAttrOfType<IntegerAttr>(kSourceQubitCountAttr)
+                 : IntegerAttr{};
     llvm::SmallDenseSet<int64_t> seen;
     for (auto index : indices.asArrayRef()) {
-      if (index < 0 || !seen.insert(index).second) {
+      if (index < 0 || (count && index >= count.getInt()) ||
+          !seen.insert(index).second) {
         return operation->emitError(
-            "source qubit indices must be distinct and nonnegative");
+            "source qubit indices must be distinct, nonnegative, and smaller "
+            "than the module's source count");
       }
     }
     return success();
@@ -507,7 +514,8 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     return success(succeeded(QubitLayout::fromAttr(
         attribute.getValue(), [&] { return operation->emitError(); })));
   }
-  if (attribute.getName() == TargetEnvAttr::name) {
+  if (attribute.getName() == TargetEnvAttr::name ||
+      attribute.getName() == ORIGINAL_TARGET_ENV_ATTR) {
     if (!isa<ModuleOp>(operation)) {
       return operation->emitError()
              << "attribute '" << attribute.getName().getValue()

@@ -32,8 +32,8 @@ The full Python suite passes with Qiskit 2.6.0 (1,985 tests). The five
 `qiskit-compat` compiler suites pass with Qiskit 2.5.2 (702 tests). The Qiskit
 plugin and QDMI suites pass with Qiskit 2.1.0 (627 tests, one expected
 MLIR-translation skip). The existing register-rejection test also checks invalid
-UTF-8; no new test function was needed. Independent Ponytail review found no
-remaining issues. Stub generation leaves no tracked changes.
+UTF-8; no new test function was needed. Stub generation leaves no tracked
+changes.
 
 For 30 register conditions on either minor, Python profiling shows import
 removes 60 `equal` and 120 `lift` calls and reduces `find_bit` calls from 240 to

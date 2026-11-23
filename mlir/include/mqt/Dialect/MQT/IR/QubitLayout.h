@@ -35,7 +35,11 @@ inline constexpr llvm::StringLiteral kSourceQubitIndicesAttr =
 /// Layout metadata; see the MQT dialect reference for the schema.
 ///
 /// initial maps program qubits to device positions. routing maps those
-/// positions to final device positions. inputCount excludes workspace qubits.
+/// positions to final device positions. Thus routing[initial[i]] is the final
+/// position of program qubit i when routing is present; otherwise use
+/// initial[i]. sites maps a device position to a target site ID when present.
+/// inputCount excludes workspace qubits. These maps do not describe classical
+/// result order.
 struct QubitLayout {
   std::vector<int64_t> initial;
   std::optional<std::vector<int64_t>> routing;
@@ -48,5 +52,12 @@ struct QubitLayout {
   fromAttr(Attribute attribute,
            llvm::function_ref<InFlightDiagnostic()> emitError);
 };
+
+/// Read the circuit-wire layout of a module with @p count source qubits.
+///
+/// Return the identity if no layout is attached. Emit an error unless an
+/// attached layout has no sites and one position per source qubit.
+[[nodiscard]] FailureOr<QubitLayout> getCircuitLayout(ModuleOp moduleOp,
+                                                      int64_t count);
 
 } // namespace mlir::mqt

@@ -102,10 +102,8 @@ provide complete execution support.
 
 Local validation on the revised implementation passed 985 native tests (254
 compiler, 86 native synthesis, 126 mapping, 315 decomposition, 204 optimization)
-and 631 Python MLIR/Qiskit tests. Binding stubs were regenerated. Independent
-correctness and Ponytail reviews found a missing `canonical_name` stub override
-and obsolete includes; both were corrected. No remaining design or correctness
-finding was identified. Repository lint and full changed-file C++ lint passed.
+and 631 Python MLIR/Qiskit tests. Binding stubs were regenerated. Repository
+lint and full changed-file C++ lint passed.
 
 The docs session now rebuilds the local package with documentation generation
 enabled, preventing cached builds from omitting MLIR reference pages. The full
@@ -139,12 +137,12 @@ uvx nox --non-interactive -s docs
 
 Adapter tests must also inspect native spellings, radians, placements, and
 rules.
-[devices]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-devices.html
-[gates]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-submit-tasks.html
-[dynamic]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-experimental-capabilities.html
-[verbatim]: https://docs.aws.amazon.com/braket/latest/developerguide/braket-constructing-circuit.html#verbatim-compilation
-[qiskit-target]: https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.transpiler.Target
-[pennylane-capabilities]: https://github.com/PennyLaneAI/pennylane/blob/master/pennylane/devices/capabilities.py
-[pennylane-decomposition]: https://github.com/PennyLaneAI/pennylane/blob/master/pennylane/devices/preprocess.py
-[cudaq-backend]: https://nvidia.github.io/cuda-quantum/latest/using/extending/backend.html
-[qdk-native]: https://learn.microsoft.com/en-us/azure/quantum/neutral-atom-noise-models
+[devices]: <https://docs.aws.amazon.com/braket/latest/developerguide/braket-devices.html>
+[gates]: <https://docs.aws.amazon.com/braket/latest/developerguide/braket-submit-tasks.html>
+[dynamic]: <https://docs.aws.amazon.com/braket/latest/developerguide/braket-experimental-capabilities.html>
+[verbatim]: <https://docs.aws.amazon.com/braket/latest/developerguide/braket-constructing-circuit.html#verbatim-compilation>
+[qiskit-target]: <https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.transpiler.Target>
+[pennylane-capabilities]: <https://github.com/PennyLaneAI/pennylane/blob/master/pennylane/devices/capabilities.py>
+[pennylane-decomposition]: <https://github.com/PennyLaneAI/pennylane/blob/master/pennylane/devices/preprocess.py>
+[cudaq-backend]: <https://nvidia.github.io/cuda-quantum/latest/using/extending/backend.html>
+[qdk-native]: <https://learn.microsoft.com/en-us/azure/quantum/neutral-atom-noise-models>

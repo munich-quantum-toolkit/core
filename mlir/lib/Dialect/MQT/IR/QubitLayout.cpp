@@ -19,6 +19,7 @@
 #include "llvm/Support/Casting.h"
 
 #include <cstdint>
+#include <numeric>
 #include <utility>
 #include <vector>
 
@@ -104,4 +105,28 @@ QubitLayout::fromAttr(Attribute attribute,
                          sitesAttr.asArrayRef().end());
   }
   return result;
+}
+
+FailureOr<QubitLayout> mlir::mqt::getCircuitLayout(ModuleOp moduleOp,
+                                                   int64_t count) {
+  auto attribute = moduleOp->getAttr("mqt.layout");
+  if (!attribute) {
+    QubitLayout identity{
+        .initial = std::vector<int64_t>(count),
+        .inputCount = count,
+    };
+    std::iota(identity.initial.begin(), identity.initial.end(), int64_t{0});
+    return identity;
+  }
+  auto layout =
+      QubitLayout::fromAttr(attribute, [&] { return moduleOp.emitError(); });
+  if (failed(layout)) {
+    return failure();
+  }
+  if (layout->sites || std::cmp_not_equal(layout->initial.size(), count)) {
+    return moduleOp.emitError("expected a circuit-wire layout with one "
+                              "position per source qubit; discard other "
+                              "layout metadata");
+  }
+  return layout;
 }

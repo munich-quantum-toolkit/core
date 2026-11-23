@@ -8,10 +8,11 @@ mystnb:
 
 # Using QDMI drivers
 
-The source-installed C++ QDMI library (`MQT::CoreQDMI`) provides owning wrappers
-for the standard QDMI Client Interface. Applications can replace the driver
-without rebuilding. The library calls every driver through that interface. Each
-driver handles its own device implementations, configuration, and authorization.
+A QDMI driver connects an application to device implementations. MQT Core's C++
+library (`MQT::CoreQDMI`, available from a source installation) and Python API
+use the standard QDMI Client Interface, so an application can select a different
+driver without rebuilding. The selected driver determines which devices are
+available and how they are configured and authenticated.
 
 The builtin MQT Core QDMI driver (`MQT::CoreQDMIDriver`, exposed in Python as
 `builtin_driver`) loads devices such as [the SC device](sc_device.md) and
@@ -34,10 +35,10 @@ global destructors.
 
 The builtin MQT Core QDMI driver shares device libraries across path aliases
 with the same symbol prefix. Independent sessions keep their own parameters.
-Initializing one device does not block initialization of unrelated devices.
-Standard sessions borrow a fixed device catalog; targeted sessions own their
-device. Devices own their jobs and release them before closing the device
-session.
+Initializing one device does not block initialization of unrelated devices. A
+regular session keeps a fixed catalog of devices, while opening a single
+configured device creates a session for that device. Jobs are released before
+their device session closes.
 
 The builtin driver returns `QDMI_ERROR_OUTOFMEM` when allocating a session or
 job handle fails. Internal registry and configuration allocations are not
@@ -55,6 +56,17 @@ device = open_device("example.device", driver_path="/path/to/libdriver.so", toke
 The driver defines how it uses the token and which devices it exposes. Only the
 builtin driver accepts per-device session overrides from manifests.
 
+Use {py:class}`~mqt.core.qdmi.Session` to reuse a driver session across device
+lookups:
+
+```{code-cell} ipython3
+from mqt.core.qdmi import Session
+
+session = Session()
+device = session.get_device("mqt.ddsim.default")
+print(device.id)
+```
+
 ## Opening configured devices
 
 The following discovery and configuration conveniences are specific to the MQT
@@ -70,32 +82,51 @@ from mqt.core.qdmi import builtin_driver
 device = builtin_driver.open_device("mqt.ddsim.default")
 ```
 
+The read-only {py:attr}`~mqt.core.qdmi.Device.id` property returns the stable ID
+of an opened device. Save the ID to open the same configured device later. The
+C++ equivalent is {cpp-api:func}`qdmi::Device::getId`.
+
 Use {py:func}`mqt.core.qdmi.builtin_driver.registered_device_ids` to list
 enabled configured IDs without loading device libraries or contacting devices.
 Register manifests before the first enumeration or device opening.
 
+The Python `mqt-core` command forwards installed providers' advertised manifests
+to the native executable without importing provider modules. Its
+`compile --qdmi-list-devices` command enumerates these IDs without contacting
+the devices. `run source.qasm --qdmi-device=<id>` opens only the selected device
+and shares its session between compilation and submission. See the
+[CLI guide](../installation.md#run-on-a-qdmi-device).
+
 The Qiskit `QDMIBackend.from_device_id` factory and PennyLane's
-`qml.device("mqt.ddsim.default", wires=4)` use this opening API. Python
+`qp.device("mqt.ddsim.default", wires=4)` use this opening API. Python
 {py:class}`mqt.core.typing.QDMISessionParameters` describes the supported
 overrides for device session parameters. To use another driver with these SDKs,
 pass an already-open `Device` to the backend constructor.
 
-The builtin MQT Core QDMI driver provides optional private functions for
-manifest registration, metadata-only ID enumeration, and targeted session
-allocation. Standard-interface drivers need none of them. The generic `Session`
-and `open_device` APIs use only the standard Client Interface. The driver's C++
-implementation is internal; only the Client Interface and these three C
-extensions are exported from its shared library.
+Manifest registration, listing configured IDs without opening devices, and
+opening a single configured device use MQT Core driver extensions. Use the
+generic `Session` and `open_device` APIs with other drivers; these APIs require
+only the standard QDMI Client Interface. The builtin driver's shared library
+exports that interface and the three C extensions, while keeping its C++
+implementation internal.
 
 ## Multi-program jobs
 
 `Device.submit_job` accepts one program or an ordered program list with one
 format and common job parameters. `num_shots` applies to each program. Text
 programs carry one terminating null byte; binary programs retain their exact
-bytes. `try_submit_job` returns `None` only when the device reports that it
-cannot accept the format or program count before submission. Device
-unavailability and submission errors propagate, since retrying an uncertain
-submission could duplicate execution.
+bytes. Text strings can include one final null byte. Embedded null bytes are
+invalid. `try_submit_job` returns `None` only when the device reports that it
+cannot accept the format or program count before submission. The device judges
+the count with the requested shot count and custom parameters, which are set
+before the programs. Device unavailability and submission errors propagate,
+since retrying an uncertain submission could duplicate execution.
+
+The Qiskit and PennyLane adapters split a declined list into consecutive groups.
+They probe program counts to find an upper limit and divide the list into nearly
+equal groups within that limit. If the limit is unknown or the device still
+declines a group, they halve it until it is accepted or a single program is
+declined.
 
 Use `job.num_programs` and the optional `program_index` argument on result
 methods to retrieve results in input order. Use `job.get_program(index)` for
@@ -105,44 +136,48 @@ supported, or `None` otherwise. A successful program's results remain available
 if another program fails or is cancelled. Cancelling uses the shared native job
 handle.
 
+```{code-cell} ipython3
+from mqt.core.qdmi import ProgramFormat
+
+program = "OPENQASM 3; qubit q; bit c; c = measure q;"
+job = device.submit_job([program, program], ProgramFormat.QASM3, num_shots=32)
+assert job.wait()
+for index in range(job.num_programs):
+    print(job.get_program_status(index), job.get_counts(index))
+```
+
 ## Building the Bundled Devices
 
-Standalone MQT Core builds include the DDSIM and superconducting QDMI device
-libraries by default. When MQT Core is embedded in another CMake project using
-{code}`FetchContent` or {code}`add_subdirectory`, these device libraries are
-disabled by default so the consumer does not build implementations it may not
-use. They can be selected independently before making MQT Core available:
+All builds include the DDSIM QDMI device and require LLVM/MLIR. DDSIM uses
+`mqt-core simulate --worker-socket <socket>` in a separate process for OpenQASM
+and QIR programs.
 
-- {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
-- {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
-
-All source builds require LLVM/MLIR. The DDSIM device uses the compiler for both
-OpenQASM and QIR programs.
-
-For example, an embedded simulator consumer can enable only the DDSIM device,
-while CUDA-Q can enable the DDSIM and superconducting devices used by its
-integration tests.
+The superconducting device is controlled by
+{code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`. It is enabled by default in standalone
+builds and disabled by default when MQT Core is embedded through
+{code}`FetchContent` or {code}`add_subdirectory`. C++ test builds require it to
+be enabled.
 
 The driver is a shared library. The C++ QDMI library follows the project’s
-static/shared build setting and is shared in Python wheels. Device-free builds
-can use another QDMI driver through `driver_path` or `MQT_CORE_QDMI_DRIVER`. The
-builtin MQT Core QDMI driver can load external device libraries through
-[QDMI device configuration](configuration.md). C++ test builds require both
-bundled devices.
+static/shared build setting and is shared in Python wheels. Applications can use
+another QDMI driver through `driver_path` or `MQT_CORE_QDMI_DRIVER`. The builtin
+MQT Core QDMI driver can load external device libraries through
+[QDMI device configuration](configuration.md).
 
 ## Python Bindings
 
-The C++ QDMI library adds owning wrappers for driver sessions, devices, sites,
-operations, and jobs. Each wrapper retains the driver session that owns its raw
-handle. The Python module exposes the same entities through
-{py:mod}`mqt.core.qdmi`.
+The C++ QDMI library provides classes for driver sessions, devices, sites,
+operations, and jobs. Each object keeps its driver session alive for as long as
+the object's handle is needed. The library uses the QDMI Client interface and
+does not depend on MQT Core's builtin driver implementation. The Python module
+exposes the same entities through {py:mod}`mqt.core.qdmi`.
 
 Native device opening, property queries, job calls, and compiler-target
 snapshots release Python's GIL. Other Python threads can run while a device
 waits for a remote response. Python argument and result conversion still holds
 the GIL. Concurrent calls into a shared device or job must satisfy the device
-implementation's thread safety contract; releasing the GIL does not serialize
-device access.
+implementation's thread safety requirements; releasing the GIL does not
+serialize device access.
 
 ### Custom job parameter types
 
@@ -151,14 +186,14 @@ The `custom1` through `custom5` arguments of
 {py:func}`mqt.core.mlir.submit_program` use the device's documented types.
 Strings include a null terminator; `bool`, `int`, and `float` use C++ `bool`,
 `int`, and `double`. Integers outside the C++ `int` range raise `TypeError`. For
-a device-defined binary payload, pass nonempty `bytes`:
+a custom parameter containing device-defined binary data, pass nonempty `bytes`:
 
 ```python
 job = device.submit_job(program, program_format, custom1=b"\x01\x00\xff")
 ```
 
-QDMI copies raw bytes without a terminator; empty payloads raise `ValueError`.
-The device defines their meaning and size. In C++, pass a
+QDMI copies raw bytes without a terminator; empty byte strings raise
+`ValueError`. The device defines their meaning and size. In C++, pass a
 `std::span<const std::byte>` whose buffer stays valid until submission returns.
 The bytes describe a local QDMI ABI value, not a network encoding.
 
@@ -181,3 +216,17 @@ All session keywords map to standard QDMI parameters. They are `token`,
 `auth_file`, `auth_url`, `username`, `password`, `project_id`, and `custom1`
 through `custom5`. The selected driver defines validation, precedence, and the
 meaning of these values.
+
+## Temporary compiler metadata
+
+These versioned properties carry compiler facts until QDMI standardizes them.
+Device execution capabilities are opt-in: a program format alone does not enable
+control flow or classical assignment. DDSIM advertises its supported
+capabilities; hardware-only SC models do not accept programs for execution.
+
+| Property            | Meaning                                              |
+| ------------------- | ---------------------------------------------------- |
+| Device `CUSTOM2`    | `mqt.compiler-target.v1:all-to-all-homogeneous`      |
+| Device `CUSTOM3`    | `mqt.payload-capabilities.v1` JSON                   |
+| Operation `CUSTOM1` | `mqt.compiler-target.v1:arbitrary-positive-controls` |
+| Operation `CUSTOM2` | `mqt.operation-parameters.v1` JSON                   |

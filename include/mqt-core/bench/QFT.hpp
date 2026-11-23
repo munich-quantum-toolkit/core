@@ -34,7 +34,7 @@ struct QFTOptions {
   static constexpr size_t MAX_QUBITS = 1'000'000;
   static constexpr size_t MAX_PERIOD_EXPONENT = 1'074;
 
-  /// Number of transformed qubits.
+  /// Transform width and number of output bits; may exceed allocated qubits.
   size_t qubits;
   /// Exponent \f$k\f$ of the input period \f$2^k\f$.
   size_t periodExponent;
@@ -43,6 +43,11 @@ struct QFTOptions {
 };
 
 /// A validated QFT benchmark.
+///
+/// The semiclassical method replaces controlled gates before measurement with
+/// classical feedback. For this benchmark's input states, it also prepares each
+/// input bit as needed and reuses one measured and reset qubit. The standard
+/// method uses a full register. Both methods return the same number of bits.
 class MQT_CORE_BENCH_EXPORT QFT final {
 public:
   [[nodiscard]] static llvm::Expected<QFT> create(QFTOptions options);
