@@ -17,7 +17,7 @@ permissions: {}
 jobs:
   change-detection:
     name: 🔍 Change
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@a52d66a9ae6961047a1bfa2733c4d28e8b49b752 # zizmor: ignore[stale-action-refs]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@e0e9c2b9705ddd51afb523d669b86c2e73ffe6ad # zizmor: ignore[stale-action-refs]
     with:
       additional-python-files: '["mlir/**"]'
       additional-cd-files: >-
@@ -30,12 +30,13 @@ jobs:
     name: 📚 Docs
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-docs)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@a52d66a9ae6961047a1bfa2733c4d28e8b49b752 # zizmor: ignore[stale-action-refs]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@e0e9c2b9705ddd51afb523d669b86c2e73ffe6ad # zizmor: ignore[stale-action-refs]
     with:
       apt-packages: doxygen
-      preview-version-variable: VCS_VERSIONING_PRETEND_VERSION_FOR_MQT_CORE
     permissions:
+      actions: read # Shared publisher downloads docs artifacts
       contents: read
+      pull-requests: read # Shared publisher verifies preview commits
 
   cpp-tests-ubuntu:
     name: 🇨 Test 🐧
