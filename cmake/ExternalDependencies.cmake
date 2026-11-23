@@ -43,12 +43,12 @@ if(MSVC AND TARGET capnp)
 endif()
 
 if(BUILD_MQT_CORE_TESTS)
-  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
-  # Disable the install instructions for GTest, as we do not need them.
-  set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-  set(GTEST_VERSION 1.17.0 CACHE STRING "Google Test version")
-  set(GTEST_URL https://github.com/google/googletest/archive/refs/tags/v${GTEST_VERSION}.tar.gz)
-  fetchcontent_declare(googletest URL ${GTEST_URL} FIND_PACKAGE_ARGS ${GTEST_VERSION} NAMES GTest)
+  set(GTEST_VERSION 1.18.0 CACHE STRING "Google Test version")
+  fetchcontent_declare(
+    googletest
+    URL https://github.com/google/googletest/archive/refs/tags/v${GTEST_VERSION}.tar.gz
+    EXCLUDE_FROM_ALL
+    FIND_PACKAGE_ARGS ${GTEST_VERSION} NAMES GTest)
   list(APPEND FETCH_PACKAGES googletest)
 endif()
 
