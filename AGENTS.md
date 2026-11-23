@@ -45,6 +45,9 @@ Use relevant sections of the [development policy](docs/development.md) and the
 
 ## Documentation
 
+Always use the full project name “MQT Core” in prose, including documentation,
+comments, commit messages, and pull requests. Never shorten it to “Core”.
+
 Follow the [prose policy](docs/development.md#prose-and-terminology) and
 Orwell's rules. Write for readers unfamiliar with the implementation and its
 history. Explain tasks and concepts first, integrate additions into existing

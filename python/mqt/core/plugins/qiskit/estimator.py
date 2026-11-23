@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Exact Qiskit expectations using Core's decision-diagram engine."""
+"""Exact Qiskit expectations using MQT Core's decision-diagram engine."""
 
 from __future__ import annotations
 

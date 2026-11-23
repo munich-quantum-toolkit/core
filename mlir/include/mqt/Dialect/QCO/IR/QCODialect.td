@@ -35,7 +35,7 @@ def QCODialect : Dialect {
     arguments; the entry-point verifier checks this allocation rule.
 
     The exactly-one-use rule does not determine which output continues which
-    input wire. Core's `WireOpInterface` specifies that correspondence
+    input wire. MQT Core's `WireOpInterface` specifies that correspondence
     positionally: the first quantum result continues the first quantum operand,
     and so on. A SWAP exchanges their states, not their wire identities.
     `qco::verifyLinearity` checks use counts as well as correspondence through

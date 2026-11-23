@@ -10,4 +10,4 @@
 
 
 class UntestedVersionWarning(UserWarning):
-    """An optional integration uses a newer interface than Core has tested."""
+    """An optional integration uses a newer interface than MQT Core has tested."""

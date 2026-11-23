@@ -300,9 +300,10 @@ their no-MLIR variants. Set `MLIR_DIR` to the SDK's `lib/cmake/mlir` directory.
 Python wheels retain the QDMI C runtime and native tools, but no longer provide
 the C++ development libraries. For C++ DD, QDMI client, or benchmark use,
 install from source and request `COMPONENTS Development`. Use an LLVM SDK with
-the same major and minor version as the one used to build Core. The DD library
-is now static. Rebuild native consumers and update explicit shared-library ABI
-suffixes from `4.0` to `4.1`. Wheel libraries use unversioned filenames.
+the same major and minor version as the one used to build MQT Core. The DD
+library is now static. Rebuild native consumers and update explicit
+shared-library ABI suffixes from `4.0` to `4.1`. Wheel libraries use unversioned
+filenames.
 
 Set build policies in the consuming project. The exported policy modules and
 `MQT::ProjectOptions`/`MQT::ProjectWarnings` are removed. See the
@@ -314,7 +315,7 @@ for the runtime and development components.
 QDMI clients replace `qdmi/Client.hpp` with `qdmi/QDMI.hpp`. Open devices
 through `qdmi::Session` or `qdmi::builtin_driver::openDevice` instead of the
 removed sessionless raw-handle factory. External QDMI drivers and devices must
-use the QDMI 1.4 interfaces. Driver ABI major and minor versions must match
+use the QDMI 1.4 interfaces. Driver ABI major and minor versions must match MQT
 Core.
 
 Replace `qdmi::unreachable()` with `llvm_unreachable("reason")` and include
@@ -684,7 +685,7 @@ and `qmap::replaceMCXWithMCZ`, respectively. Include
 
 The public `constructDAG` function and the `DAG`, `DAGIterator`,
 `DAGReverseIterator`, `DAGIterators`, and `DAGReverseIterators` aliases have no
-Core replacement. Build the small traversal structure in the package that
+MQT Core replacement. Build the small traversal structure in the package that
 consumes it. MQT QMAP and MQT QuSAT demonstrate this migration.
 
 The public `removeIdentities`, `removeOperation`, `collectBlocks`, and

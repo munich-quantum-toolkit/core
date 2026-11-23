@@ -326,7 +326,7 @@ full operation counts.)pb")
             requireValid(program);
             return program.numGates();
           },
-          R"pb(Return Core's static gate count of the entry-point IR.
+          R"pb(Return MQT Core's static gate count of the entry-point IR.
 
 Unitary operations, measurements, and resets each count once. Barriers are
 excluded. Each modifier or call counts once without expanding its body. Gates
@@ -2075,7 +2075,7 @@ Args:
     native_num_qubits: Build a gate-set target without device placement.
         Pass the circuit's positive width to skip wider gates. None retains
         the device topology.
-    strict: Raise ValueError for an applicable gate or constraint that Core
+    strict: Raise ValueError for an applicable gate or constraint that MQT Core
         cannot represent. By default, warn and omit unsupported gates.
 
 Returns:
@@ -2196,7 +2196,7 @@ Includes declarations in helper functions and excludes nested modules.)pb")
 Includes branches and region-control operations in helper functions, but
 excludes nested modules.)pb")
       .def_ro("num_gates", &mlir::QuantumProgramInfo::numGates,
-              "Core's static entry-point gate count.\n\nSee "
+              "MQT Core's static entry-point gate count.\n\nSee "
               ":meth:`QCProgram.num_gates`.")
       .def_ro("num_single_qubit_gates",
               &mlir::QuantumProgramInfo::numSingleQubitGates,

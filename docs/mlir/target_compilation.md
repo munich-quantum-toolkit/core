@@ -229,7 +229,7 @@ exits and loop backedges must retain compatible physical sites.
 
 The
 [GPi/GPi2 gate set](https://docs.ionq.com/features/getting-started-with-native-gates)
-uses half and quarter turns about an equatorial axis. Core's `gpi` synthesis
+uses half and quarter turns about an equatorial axis. MQT Core's `gpi` synthesis
 option represents these using `R(π, φ)` and `R(π/2, φ)`, where `φ` is the axis
 angle in radians. These rotation matrices differ from the native gate matrices
 by
@@ -240,12 +240,12 @@ by
 ```
 
 Native OpenQASM export therefore emits `gphase(-π/2)` when replacing `R(π, φ)`
-with `gpi(φ)`; `gpi2` needs no phase correction. Core's OpenQASM angles are in
-radians. IonQ's API expresses the phase in turns, so the same axis angle there
-is `φ / (2π)`. Check the destination interface's units when exchanging these
-gates.
+with `gpi(φ)`; `gpi2` needs no phase correction. MQT Core's OpenQASM angles are
+in radians. IonQ's API expresses the phase in turns, so the same axis angle
+there is `φ / (2π)`. Check the destination interface's units when exchanging
+these gates.
 
-Core's default OpenQASM import mode accepts `gpi(φ)`, `gpi2(φ)`, and the
+MQT Core's default OpenQASM import mode accepts `gpi(φ)`, `gpi2(φ)`, and the
 two-qubit `zz(θ)` alias of `rzz(θ)` with these radian definitions. Native QIR
 keeps both `R(θ, φ)` arguments in `gpi` and `gpi2` calls. The DDSIM device
 executes both payload kinds, so target-native IonQ programs can be simulated
@@ -545,7 +545,7 @@ snapshots for staged compilation with a `TargetEnvironment`.
 
 ## Qiskit export
 
-Qiskit output for a device uses physical qubit indices. By default, Core
+Qiskit output for a device uses physical qubit indices. By default, MQT Core
 attaches available placement and routing information, including unused sites, as
 a `TranspileLayout`. Apply the layout when remapping observables. See
 [transpiler layouts](qiskit.md#transpiler-layouts) for layout options.
@@ -558,17 +558,17 @@ keeps the static indices and omits the recorded physical layout.
 
 ## Layout metadata
 
-When compiling allocated program qubits for a device, Core attaches placement
-and routing metadata if the input has fixed-size entry-block allocations.
-Programs with static device-site references already name physical sites;
-compilation preserves those IDs and does not attach a layout. Static device-site
-references and allocated program qubits cannot be mixed. Native target
-compilation composes an attached layout without sites, such as an imported
-Qiskit layout, with its own placement and routing. The program keeps its program
-qubits and output permutation, including SWAPs that Qiskit elided. This requires
-every qubit to be allocated in the entry block; other attached layouts are
-rejected. See [custom pass sequences](#custom-pass-sequences) for layout
-preservation between passes and
+When compiling allocated program qubits for a device, MQT Core attaches
+placement and routing metadata if the input has fixed-size entry-block
+allocations. Programs with static device-site references already name physical
+sites; compilation preserves those IDs and does not attach a layout. Static
+device-site references and allocated program qubits cannot be mixed. Native
+target compilation composes an attached layout without sites, such as an
+imported Qiskit layout, with its own placement and routing. The program keeps
+its program qubits and output permutation, including SWAPs that Qiskit elided.
+This requires every qubit to be allocated in the entry block; other attached
+layouts are rejected. See [custom pass sequences](#custom-pass-sequences) for
+layout preservation between passes and
 [transpiler layouts](qiskit.md#transpiler-layouts) for the import and export
 requirements.
 

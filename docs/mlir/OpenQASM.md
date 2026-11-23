@@ -76,7 +76,7 @@ version require 3.1.
 | Classical arrays           | Global, fixed-size arrays of `bool`, `int`, `uint`, `float`, and `angle`, with up to seven dimensions and the scalar widths above.                                                                                                                                 |
 | Unsupported language areas | Subroutines, `extern`, calibrations, duration expressions, and other array forms are diagnosed.                                                                                                                                                                    |
 
-Core reads and writes per-wire delays, such as `delay[32dt] q[0];` or
+MQT Core reads and writes per-wire delays, such as `delay[32dt] q[0];` or
 `delay[10ns] $0;`. Use a separate statement for each qubit that should wait
 independently. Listing several qubits in one OpenQASM delay synchronizes them.
 Their shared wait starts when the last qubit is ready.

@@ -263,7 +263,8 @@ Prefer established terms from quantum computing, LLVM/MLIR, HPC, and computer
 science. Explain specialist language where readers first need it; a glossary
 link alone does not introduce a concept. Use a consistent term for each concept,
 but do not invent a compound name for an ordinary action or implementation
-detail. Preserve project names such as `jeff` and `jeff-mlir`.
+detail. Write the project name as “MQT Core” in full. Preserve the spelling of
+other project names, such as `jeff` and `jeff-mlir`.
 
 The {doc}`glossary` helps readers interpret recurring terms across guides. It is
 not an inventory of classes or a place to establish new field-wide definitions.

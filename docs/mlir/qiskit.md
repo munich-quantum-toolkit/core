@@ -133,12 +133,12 @@ the source, including when export fails. Pass `copy=True` to preserve it.
 | Empty registers, root aliases, or interleaved root membership           | Rejected             | Rejected                           |
 | Complete transpiler layout metadata                                     | Preserved            | Reconstructed when still valid     |
 
-Core accepts Qiskit delays with literal durations in device ticks or SI units.
-For example, `circuit.delay(32, [0, 1], unit="dt")` inserts an independent
-32-tick wait on each of the two qubits. Core preserves each wait and its order
-relative to gates on that wire through placement. QPY retains exact integer tick
-counts and the units of SI durations. Schedule with Qiskit when execution
-requires explicit start times or idle padding.
+MQT Core accepts Qiskit delays with literal durations in device ticks or SI
+units. For example, `circuit.delay(32, [0, 1], unit="dt")` inserts an
+independent 32-tick wait on each qubit. Each wait stays ordered with the gates
+on its wire through placement. QPY retains exact integer tick counts and the
+units of SI durations. Schedule with Qiskit when execution requires explicit
+start times or idle padding.
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
@@ -310,17 +310,17 @@ Compiling a mapped circuit to Qiskit or QPY requires a device target or an
 explicit `ignore_input_layout=True`. Use `to_qiskit()` for a direct conversion
 that preserves the layout.
 
-Device compilation composes an imported layout with Core's placement and
+Device compilation composes an imported layout with MQT Core's placement and
 routing. The compiled circuit keeps the program qubits and final layout of the
 input, including the output permutation of SWAPs that Qiskit elided. To treat
 the current wires of a mapped circuit as fresh program qubits instead, pass
 `ignore_input_layout=True` to `compile_program`. Pass
 `include_output_layout=False` to omit the layout from a Qiskit circuit or
 explicit `OutputFormat.QPY` result while keeping the physical wires and
-measurement destinations. Core raises `ValueError` if the input or output format
-does not support the requested option.
+measurement destinations. MQT Core raises `ValueError` if the input or output
+format does not support the requested option.
 
-In Core's `mqt.layout`, `initial[i]` maps program qubit `i` to its device
+In MQT Core's `mqt.layout`, `initial[i]` maps program qubit `i` to its device
 position before routing. If `routing` is present, `routing[initial[i]]` is its
 final position. The optional `sites` array maps positions to target site IDs;
 imported Qiskit layouts without this array use circuit-wire positions. These
