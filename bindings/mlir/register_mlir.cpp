@@ -376,14 +376,16 @@ such as ``scf.yield`` are excluded.)pb")
           },
           R"pb(Compute depth of the entry-point IR.
 
-Gates, measurements, and resets add one layer. Measurements include the bit
-they are stored to. Barriers align their qubits without adding a layer. A gate
+Gates, measurements, and resets add one layer. Measurements include the bit they
+are stored to. Barriers align their qubits without adding a layer. A gate
 modifier or an ``if`` adds exactly one layer over every qubit and bit it uses,
-regardless of the depth of its body.
+regardless of the depth of its body. Operations also wait for the bits that
+their classical operands and conditions read. A bit copy and a classical ``if``
+that only computes a condition, such as a lowered ``&&``, add no layer.
 
 Returns ``None`` for loops, calls, other control flow, qubits without a known
-wire, and an ``if`` nested in a modifier or ``if`` body. The same applies to
-qubit stores in an ``if`` body, as the branch may not run.)pb");
+wire, qubit stores at unknown slots, conditions that read no known bit, and an
+``if`` nested in a modifier or ``if`` body.)pb");
 }
 
 template <class ProgramType>

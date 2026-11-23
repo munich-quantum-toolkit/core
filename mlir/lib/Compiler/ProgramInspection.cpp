@@ -27,7 +27,9 @@
 #include "mlir/Interfaces/CallInterfaces.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Interfaces/LoopLikeInterface.h"
+#include "mlir/Interfaces/ViewLikeInterface.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
@@ -46,6 +48,10 @@
 #include <utility>
 
 namespace mlir {
+
+// A wire is the register value and the index within it.
+using Wire = std::pair<Value, int64_t>;
+
 template <class Gate> static std::string gateName(Gate op) {
   auto symbol = op.getBaseSymbol().str();
   if (!isa<qc::CtrlOp, qco::CtrlOp, qc::InvOp, qco::InvOp, qc::PowOp,
@@ -88,6 +94,15 @@ countOperationsIf(Operation* root, function_ref<bool(Operation*)> predicate) {
     });
   }
   return counts;
+}
+
+// Whether `type` is a qubit or a register of qubits, such as a QC memref or a
+// QCO tensor.
+static bool holdsQubits(Type type) {
+  if (auto shaped = dyn_cast<ShapedType>(type)) {
+    type = shaped.getElementType();
+  }
+  return isa<qc::QubitType, qco::QubitType>(type);
 }
 
 static bool isMeasurement(Operation* op) {
@@ -149,104 +164,27 @@ static void forEachGate(ModuleOp moduleOp,
   });
 }
 
-// A key is the register value and the index within it.
-using Key = std::pair<Value, int64_t>;
-
-// The key of a register slot, if its index is a known constant.
-static std::optional<Key> slotKey(Value reg, Value index) {
+// The wire of a register slot, if its index is a known constant.
+static std::optional<Wire> slotWire(Value reg, Value index) {
   if (auto constant = getConstantIntValue(index)) {
-    return Key(reg, *constant);
+    return Wire(reg, *constant);
   }
   return std::nullopt;
 }
 
-// Set all wires/keys to their highest current depth, plus one if `addLayer`.
-static void bumpLayer(ArrayRef<Key> keys, bool addLayer,
-                      llvm::DenseMap<Key, size_t>& depthOf) {
-  size_t maxDepth = 0;
-  for (const Key& key : keys) {
-    maxDepth = std::max(maxDepth, depthOf.lookup(key));
+// Whether `ifOp` only computes classical values, such as a lowered `&&`.
+static bool isClassicalIf(scf::IfOp ifOp) {
+  if (ifOp.getNumResults() == 0) {
+    return false;
   }
-  if (addLayer) {
-    maxDepth += 1;
-  }
-  for (const Key& key : keys) {
-    depthOf[key] = maxDepth;
-  }
-}
-
-// Add the key of `in` to `keys` and continue its wire at `out`.
-static void continueWire(Value in, Value out, SmallVectorImpl<Key>& keys,
-                         llvm::DenseMap<Value, Key>& keyOf) {
-  if (auto it = keyOf.find(in); it != keyOf.end()) {
-    keys.push_back(it->second);
-    keyOf[out] = keys.back();
-  }
-}
-
-// Add a layer over the keys behind `inputs`. Inputs and outputs correspond by
-// position: in QC they are the same values, in QCO each output continues the
-// register slot of its input.
-static void increaseDepth(ValueRange inputs, ValueRange outputs, bool addLayer,
-                          llvm::DenseMap<Key, size_t>& depthOf,
-                          llvm::DenseMap<Value, Key>& keyOf) {
-  SmallVector<Key> keys;
-  for (auto [in, out] : llvm::zip_equal(inputs, outputs)) {
-    continueWire(in, out, keys, keyOf);
-  }
-  bumpLayer(keys, addLayer, depthOf);
-}
-
-// A measurement is one layer over its qubit and the bit it is stored to.
-// The bit is found by following the result to its `cbit.store`.
-static void increaseDepthMeasurement(Value qubitIn, Value qubitOut,
-                                     Value result,
-                                     llvm::DenseMap<Key, size_t>& depthOf,
-                                     llvm::DenseMap<Value, Key>& keyOf) {
-  SmallVector<Key> keys;
-  continueWire(qubitIn, qubitOut, keys, keyOf);
-
-  for (Operation* user : result.getUsers()) {
-    if (auto store = dyn_cast<cbit::StoreOp>(user)) {
-      if (auto bit = slotKey(store.getReg(), store.getIndex())) {
-        keys.push_back(*bit);
-        keyOf[result] = *bit;
-      }
-    }
-  }
-  bumpLayer(keys, true, depthOf);
-}
-
-// Add the keys of the classical bits that a condition depends on. Frontends may
-// derive the condition from loaded bits, for example with `arith.cmpi`.
-static LogicalResult addConditionKeys(Value cond, SmallVectorImpl<Key>& keys,
-                                      const llvm::DenseMap<Value, Key>& keyOf) {
-  if (auto it = keyOf.find(cond); it != keyOf.end()) {
-    keys.push_back(it->second);
-    return success();
-  }
-  llvm::SetVector<Operation*> slice;
-  if (failed(getBackwardSlice(cond, &slice))) {
-    return failure();
-  }
-  const size_t numKeys = keys.size();
-  for (Operation* op : slice) {
-    if (auto load = dyn_cast<cbit::LoadOp>(op)) {
-      auto it = keyOf.find(load.getResult());
-      if (it == keyOf.end()) {
-        return failure();
-      }
-      keys.push_back(it->second);
-    }
-  }
-  return success(keys.size() > numKeys);
-}
-
-// The register that a tensor continues, or the tensor itself.
-static Value rootOf(Value tensor,
-                    const llvm::DenseMap<Value, Value>& registerOf) {
-  Value root = registerOf.lookup(tensor);
-  return root ? root : tensor;
+  return !ifOp->walk([&](Operation* inner) {
+                return llvm::any_of(inner->getOperandTypes(), holdsQubits) ||
+                               llvm::any_of(inner->getResultTypes(),
+                                            holdsQubits)
+                           ? WalkResult::interrupt()
+                           : WalkResult::advance();
+              })
+              .wasInterrupted();
 }
 
 static bool isQubitStore(Operation* op) {
@@ -254,61 +192,20 @@ static bool isQubitStore(Operation* op) {
   return store && isa<qc::QubitType>(store.getValue().getType());
 }
 
-// Record which wire the value or register of `op` belongs to. This never
-// changes a depth, so it is safe in both the main walk and body walks.
-static void trackWire(Operation* op, llvm::DenseMap<Value, Key>& keyOf,
-                      llvm::DenseMap<Value, Value>& registerOf,
-                      llvm::DenseMap<Key, Key>& qubitInSlot) {
-  if (auto load = dyn_cast<memref::LoadOp>(op)) {
-    // QC qubits keep their value, so the load fixes the slot for all uses.
-    if (isa<qc::QubitType>(load.getType()) && load.getIndices().size() == 1) {
-      if (auto slot = slotKey(load.getMemRef(), load.getIndices().front())) {
-        auto held = qubitInSlot.find(*slot);
-        keyOf[load.getResult()] =
-            held != qubitInSlot.end() ? held->second : *slot;
-      }
-    }
-  } else if (isQubitStore(op)) {
-    auto store = cast<memref::StoreOp>(op);
-    if (store.getIndices().size() == 1) {
-      if (auto slot = slotKey(store.getMemRef(), store.getIndices().front())) {
-        if (auto it = keyOf.find(store.getValue()); it != keyOf.end()) {
-          qubitInSlot[*slot] = it->second;
-        }
-      }
-    }
-  } else if (auto load = dyn_cast<cbit::LoadOp>(op)) {
-    // A loaded bit stands for its register slot
-    if (auto bit = slotKey(load.getReg(), load.getIndex())) {
-      keyOf[load.getResult()] = *bit;
-    }
-  } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
-    // QCO: Extraction assigns new variables to a new tensor
-    Value reg = rootOf(extract.getTensor(), registerOf);
-    registerOf[extract.getOutTensor()] = reg;
-    if (auto slot = slotKey(reg, extract.getIndex())) {
-      keyOf[extract.getResult()] = *slot;
-    }
-  } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
-    // QCO: Insertion changes the tensor, so we keep track.
-    registerOf[insert.getResult()] = rootOf(insert.getDest(), registerOf);
-  } else if (isa<qc::AllocOp, qco::AllocOp>(op)) {
-    Value qubit = op->getResult(0);
-    keyOf[qubit] = Key(qubit, 0);
-  } else {
-    // Equal indices are the same physical qubit, so the key has no register.
-    TypeSwitch<Operation*>(op).Case<qc::StaticOp, qco::StaticOp>(
-        [&](auto qubit) {
-          keyOf[qubit.getResult()] =
-              Key(Value(), static_cast<int64_t>(qubit.getIndex()));
-        });
+// The slot of a QC qubit register access, if it has one constant index.
+static std::optional<Wire> qubitSlot(Value buffer, ValueRange indices) {
+  while (auto cast = buffer.getDefiningOp<memref::CastOp>()) {
+    buffer = cast.getSource();
   }
+  if (indices.size() != 1 || buffer.getDefiningOp<ViewLikeOpInterface>()) {
+    return std::nullopt;
+  }
+  return slotWire(buffer, indices.front());
 }
 
 // Whether depth does not support `op` inside a conditional or modifier body.
-// A store in a branch may not run, so the qubit in its slot would be unknown.
 static bool isUnsupportedInBody(Operation* op) {
-  return isControlFlow(op) || isLoop(op) || isCallOp(op) || isQubitStore(op);
+  return isControlFlow(op) || isLoop(op) || isCallOp(op);
 }
 
 // Whether the body of a operation holds an unsupported operation.
@@ -325,29 +222,117 @@ static bool containsUnsupportedOp(Operation* op) {
   return false;
 }
 
-// Add the keys of all wires used in the branches of a conditional. The bodies
-// add no layers themselves, as the conditional is one layer. Fails if a body
-// holds an unsupported operation.
-static LogicalResult addBodyKeys(Operation* conditional,
-                                 SmallVectorImpl<Key>& keys,
-                                 llvm::DenseMap<Value, Key>& keyOf,
-                                 llvm::DenseMap<Value, Value>& registerOf,
-                                 llvm::DenseMap<Key, Key>& qubitInSlot) {
-  for (Region& region : conditional->getRegions()) {
-    WalkResult result = region.walk([&](Operation* inner) {
-      if (isUnsupportedInBody(inner)) {
-        return WalkResult::interrupt();
+// The highest current depth of `wires`.
+static size_t maxDepth(ArrayRef<Wire> wires,
+                       const llvm::DenseMap<Wire, size_t>& depthOf) {
+  size_t depth = 0;
+  for (const Wire& wire : wires) {
+    depth = std::max(depth, depthOf.lookup(wire));
+  }
+  return depth;
+}
+
+// Set all wires to their highest current depth, plus one if `addLayer`.
+static void bumpLayer(ArrayRef<Wire> wires, bool addLayer,
+                      llvm::DenseMap<Wire, size_t>& depthOf) {
+  const size_t depth = maxDepth(wires, depthOf) + (addLayer ? 1 : 0);
+  for (const Wire& wire : wires) {
+    depthOf[wire] = depth;
+  }
+}
+
+// Add the wire of `in` to `wires` and continue its wire at `out`.
+static void continueWire(Value in, Value out, SmallVectorImpl<Wire>& wires,
+                         llvm::DenseMap<Value, Wire>& wireOf) {
+  if (auto it = wireOf.find(in); it != wireOf.end()) {
+    wires.push_back(it->second);
+    wireOf[out] = wires.back();
+  }
+}
+
+// Add a layer over the wires behind `inputs` and the `classical` bit wires.
+// Inputs and outputs correspond by position: in QC they are the same values, in
+// QCO each output continues the register slot of its input.
+static void increaseDepth(ValueRange inputs, ValueRange outputs, bool addLayer,
+                          llvm::DenseMap<Wire, size_t>& depthOf,
+                          llvm::DenseMap<Value, Wire>& wireOf,
+                          ArrayRef<Wire> classical = {}) {
+  SmallVector<Wire> wires(classical);
+  for (auto [in, out] : llvm::zip_equal(inputs, outputs)) {
+    continueWire(in, out, wires, wireOf);
+  }
+  bumpLayer(wires, addLayer, depthOf);
+}
+
+// A measurement is one layer over its qubit and the bit it is stored to.
+// The bit is found by following the result to its `cbit.store`. A result that
+// is never stored gets its own wire, so values derived from it still wait for
+// the measurement.
+static void increaseDepthMeasurement(Value qubitIn, Value qubitOut,
+                                     Value result,
+                                     llvm::DenseMap<Wire, size_t>& depthOf,
+                                     llvm::DenseMap<Value, Wire>& wireOf) {
+  SmallVector<Wire> wires;
+  continueWire(qubitIn, qubitOut, wires, wireOf);
+
+  for (Operation* user : result.getUsers()) {
+    if (auto store = dyn_cast<cbit::StoreOp>(user)) {
+      if (auto bit = slotWire(store.getReg(), store.getIndex())) {
+        wires.push_back(*bit);
+        wireOf[result] = *bit;
       }
-      trackWire(inner, keyOf, registerOf, qubitInSlot);
-      for (Value operand : inner->getOperands()) {
-        if (auto it = keyOf.find(operand); it != keyOf.end()) {
-          keys.push_back(it->second);
+    }
+  }
+  if (!wireOf.contains(result)) {
+    wires.emplace_back(result, 0);
+    wireOf[result] = wires.back();
+  }
+  bumpLayer(wires, true, depthOf);
+}
+
+// Add the wires of the classical bits that `value` depends on. Frontends may
+// derive values from loaded bits, for example with `arith.cmpi`, or read whole
+// registers with `cbit.read`. Fails if a bit has no known wire.
+static LogicalResult
+addClassicalWires(Value value, SmallVectorImpl<Wire>& wires,
+                  const llvm::DenseMap<Value, Wire>& wireOf) {
+  if (auto it = wireOf.find(value); it != wireOf.end()) {
+    wires.push_back(it->second);
+    return success();
+  }
+  if (isa<BlockArgument>(value)) {
+    return success();
+  }
+  BackwardSliceOptions options;
+  options.inclusive = true;
+  options.omitBlockArguments = true;
+  options.omitUsesFromAbove = false;
+  llvm::SetVector<Operation*> slice;
+  if (failed(getBackwardSlice(value, &slice, options))) {
+    return failure();
+  }
+  for (Operation* op : slice) {
+    WalkResult result = op->walk([&](Operation* inner) {
+      if (auto load = dyn_cast<cbit::LoadOp>(inner)) {
+        auto it = wireOf.find(load.getResult());
+        if (it == wireOf.end()) {
+          return WalkResult::interrupt();
         }
-      }
-      if (auto store = dyn_cast<cbit::StoreOp>(inner)) {
-        if (auto bit = slotKey(store.getReg(), store.getIndex())) {
-          keys.push_back(*bit);
+        wires.push_back(it->second);
+      } else if (auto read = dyn_cast<cbit::ReadOp>(inner)) {
+        const unsigned width = read.getType().getWidth();
+        for (unsigned index = 0; index < width; ++index) {
+          wires.emplace_back(read.getReg(), index);
         }
+      } else if (isMeasurement(inner)) {
+        Value bit = isa<qc::MeasureOp>(inner)
+                        ? cast<qc::MeasureOp>(inner).getResult()
+                        : cast<qco::MeasureOp>(inner).getResult();
+        auto it = wireOf.find(bit);
+        if (it == wireOf.end()) {
+          return WalkResult::interrupt();
+        }
+        wires.push_back(it->second);
       }
       return WalkResult::advance();
     });
@@ -358,33 +343,209 @@ static LogicalResult addBodyKeys(Operation* conditional,
   return success();
 }
 
+// Like addClassicalWires(), but a condition must depend on at least one bit.
+static LogicalResult
+addConditionWires(Value cond, SmallVectorImpl<Wire>& wires,
+                  const llvm::DenseMap<Value, Wire>& wireOf) {
+  const size_t numWires = wires.size();
+  if (failed(addClassicalWires(cond, wires, wireOf))) {
+    return failure();
+  }
+  return success(wires.size() > numWires);
+}
+
+// Add the bit wires behind the classical operands of `op`, including values
+// that its body uses from above.
+static LogicalResult
+addClassicalOperandWires(Operation* op, SmallVectorImpl<Wire>& wires,
+                         const llvm::DenseMap<Value, Wire>& wireOf) {
+  llvm::SetVector<Value> values;
+  values.insert(op->operand_begin(), op->operand_end());
+  getUsedValuesDefinedAbove(op->getRegions(), values);
+  for (Value value : values) {
+    // Qubit wires are tracked separately; only classical values read bits.
+    if (!holdsQubits(value.getType()) &&
+        failed(addClassicalWires(value, wires, wireOf))) {
+      return failure();
+    }
+  }
+  return success();
+}
+
+// The register that a tensor continues, or the tensor itself.
+static Value rootOf(Value tensor,
+                    const llvm::DenseMap<Value, Value>& registerOf) {
+  Value root = registerOf.lookup(tensor);
+  return root ? root : tensor;
+}
+
+// Record which wire the value or register of `op` belongs to. This never
+// changes a depth, so it is safe in both the main walk and body walks.
+// A value whose wire is unknown gets no entry; its first use then fails. Fails
+// only where a wire would otherwise be lost without such a use.
+static LogicalResult trackWire(Operation* op,
+                               llvm::DenseMap<Value, Wire>& wireOf,
+                               llvm::DenseMap<Value, Value>& registerOf,
+                               llvm::DenseMap<Wire, Wire>& qubitInSlot) {
+  if (auto load = dyn_cast<memref::LoadOp>(op)) {
+    // QC qubits keep their value, so the load fixes the slot for all uses.
+    if (!isa<qc::QubitType>(load.getType())) {
+      return success();
+    }
+    if (auto slot = qubitSlot(load.getMemRef(), load.getIndices())) {
+      auto held = qubitInSlot.find(*slot);
+      wireOf[load.getResult()] =
+          held != qubitInSlot.end() ? held->second : *slot;
+    }
+  } else if (isQubitStore(op)) {
+    // An unknown slot would lose which qubit later loads refer to.
+    auto store = cast<memref::StoreOp>(op);
+    auto slot = qubitSlot(store.getMemRef(), store.getIndices());
+    if (!slot) {
+      return failure();
+    }
+    if (auto it = wireOf.find(store.getValue()); it != wireOf.end()) {
+      qubitInSlot[*slot] = it->second;
+    }
+  } else if (auto load = dyn_cast<cbit::LoadOp>(op)) {
+    // A loaded bit stands for its register slot
+    if (auto bit = slotWire(load.getReg(), load.getIndex())) {
+      wireOf[load.getResult()] = *bit;
+    }
+  } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
+    // QCO: Extraction assigns new variables to a new tensor
+    Value reg = rootOf(extract.getTensor(), registerOf);
+    registerOf[extract.getOutTensor()] = reg;
+    if (auto slot = slotWire(reg, extract.getIndex())) {
+      auto held = qubitInSlot.find(*slot);
+      wireOf[extract.getResult()] =
+          held != qubitInSlot.end() ? held->second : *slot;
+    }
+  } else if (auto pack = dyn_cast<qtensor::FromElementsOp>(op)) {
+    // QCO: Each slot of a packed tensor holds the wire of its element.
+    for (auto [index, element] : llvm::enumerate(pack.getElements())) {
+      if (auto it = wireOf.find(element); it != wireOf.end()) {
+        qubitInSlot[Wire(pack.getResult(), index)] = it->second;
+      }
+    }
+  } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
+    // QCO: Insertion changes the tensor, so we keep track.
+    registerOf[insert.getResult()] = rootOf(insert.getDest(), registerOf);
+  } else if (isa<qc::AllocOp, qco::AllocOp>(op)) {
+    Value qubit = op->getResult(0);
+    wireOf[qubit] = Wire(qubit, 0);
+  } else if (auto qubit = dyn_cast<qc::StaticOp>(op)) {
+    // Equal indices are the same physical qubit, so the wire has no register.
+    wireOf[qubit.getResult()] =
+        Wire(Value(), static_cast<int64_t>(qubit.getIndex()));
+  } else if (auto qubit = dyn_cast<qco::StaticOp>(op)) {
+    wireOf[qubit.getResult()] =
+        Wire(Value(), static_cast<int64_t>(qubit.getIndex()));
+  }
+  return success();
+}
+
+// Add all wires used in the branches of a conditional. The bodies add no
+// layers themselves, as the conditional is one layer. Fails if a body holds an
+// unsupported operation or a qubit without a known wire.
+static LogicalResult addBodyWires(Operation* conditional,
+                                  SmallVectorImpl<Wire>& wires,
+                                  llvm::DenseMap<Value, Wire>& wireOf,
+                                  llvm::DenseMap<Value, Value>& registerOf,
+                                  llvm::DenseMap<Wire, Wire>& qubitInSlot) {
+  for (Region& region : conditional->getRegions()) {
+    WalkResult result = region.walk<WalkOrder::PreOrder>([&](Operation* inner) {
+      if (isUnsupportedInBody(inner) ||
+          (isGateModifier(inner) && containsUnsupportedOp(inner))) {
+        return WalkResult::interrupt();
+      }
+      if (failed(trackWire(inner, wireOf, registerOf, qubitInSlot))) {
+        return WalkResult::interrupt();
+      }
+      for (Value operand : inner->getOperands()) {
+        if (auto it = wireOf.find(operand); it != wireOf.end()) {
+          wires.push_back(it->second);
+        } else if (isa<qc::QubitType, qco::QubitType>(operand.getType())) {
+          return WalkResult::interrupt();
+        }
+      }
+      if (auto store = dyn_cast<cbit::StoreOp>(inner)) {
+        if (auto bit = slotWire(store.getReg(), store.getIndex())) {
+          wires.push_back(*bit);
+        }
+      }
+      // QCO: Outputs continue the wires of their inputs, so later operations
+      // in the body resolve.
+      if (auto gate = dyn_cast<qco::UnitaryOpInterface>(inner)) {
+        for (auto [in, out] :
+             llvm::zip_equal(gate.getInputQubits(), gate.getOutputQubits())) {
+          continueWire(in, out, wires, wireOf);
+        }
+      } else if (auto measure = dyn_cast<qco::MeasureOp>(inner)) {
+        continueWire(measure.getQubitIn(), measure.getQubitOut(), wires,
+                     wireOf);
+      } else if (auto reset = dyn_cast<qco::ResetOp>(inner)) {
+        continueWire(reset.getQubitIn(), reset.getQubitOut(), wires, wireOf);
+      }
+      // A modifier's operands are its wires; its body uses block arguments
+      // that alias them and have no wires.
+      return isGateModifier(inner) ? WalkResult::skip() : WalkResult::advance();
+    });
+    if (result.wasInterrupted()) {
+      return failure();
+    }
+  }
+  return success();
+}
+
+// A conditional is one layer over the bits of `cond`, the bits behind its
+// classical operands, and every wire that its branches use.
+static LogicalResult
+addConditionalLayer(Operation* conditional, Value cond,
+                    llvm::DenseMap<Wire, size_t>& depthOf,
+                    llvm::DenseMap<Value, Wire>& wireOf,
+                    llvm::DenseMap<Value, Value>& registerOf,
+                    llvm::DenseMap<Wire, Wire>& qubitInSlot) {
+  SmallVector<Wire> wires;
+  if (failed(addConditionWires(cond, wires, wireOf)) ||
+      failed(addClassicalOperandWires(conditional, wires, wireOf)) ||
+      failed(
+          addBodyWires(conditional, wires, wireOf, registerOf, qubitInSlot))) {
+    return failure();
+  }
+  bumpLayer(wires, true, depthOf);
+  return success();
+}
+
 // Compute the depth by assigning every qubit and bit to a wire, and every
 // operation to the layer after the deepest wire it uses.
 static std::optional<size_t> computeDepth(ModuleOp moduleOp) {
   auto entryPoint = mqt::getEntryPoint(moduleOp);
-
   if (!entryPoint) {
     return std::nullopt;
   }
 
-  // Map to track the depth of wires/keys
-  llvm::DenseMap<Key, size_t> depthOf;
+  // The depth that each wire has reached.
+  llvm::DenseMap<Wire, size_t> depthOf;
 
-  // Map to track which key/wire a value is coming from
-  llvm::DenseMap<Value, Key> keyOf;
+  // The wire that each qubit or bit value belongs to.
+  llvm::DenseMap<Value, Wire> wireOf;
 
-  // QCO: Which register a register is coming from
+  // QCO: The register that each tensor continues.
   llvm::DenseMap<Value, Value> registerOf;
 
-  // QC: Which qubit a register slot holds after a store
-  llvm::DenseMap<Key, Key> qubitInSlot;
+  // The wire of the qubit that a register slot holds after a QC store or a QCO
+  // packing.
+  llvm::DenseMap<Wire, Wire> qubitInSlot;
 
   WalkResult result = entryPoint.walk<WalkOrder::PreOrder>([&](Operation* op) {
-    trackWire(op, keyOf, registerOf, qubitInSlot);
+    if (failed(trackWire(op, wireOf, registerOf, qubitInSlot))) {
+      return WalkResult::interrupt();
+    }
     // A qubit without a wire has no known depth, so the result would be wrong.
     for (Value operand : op->getOperands()) {
       if (isa<qc::QubitType, qco::QubitType>(operand.getType()) &&
-          !keyOf.contains(operand)) {
+          !wireOf.contains(operand)) {
         return WalkResult::interrupt();
       }
     }
@@ -392,64 +553,101 @@ static std::optional<size_t> computeDepth(ModuleOp moduleOp) {
       return WalkResult::interrupt();
     }
     if (isStandardGate(op) || isGateModifier(op) || isBarrier(op)) {
+      // A gate on no qubit, such as a global phase, has no layer and must not
+      // delay the bits its operands read.
+      if (llvm::none_of(op->getOperandTypes(), [](Type type) {
+            return isa<qc::QubitType, qco::QubitType>(type);
+          })) {
+        return WalkResult::skip();
+      }
       // Barriers only align their qubits.
       const bool addLayer = !isBarrier(op);
+      // Classical operands, such as angles, wait for the bits they read.
+      SmallVector<Wire> classical;
+      if (failed(addClassicalOperandWires(op, classical, wireOf))) {
+        return WalkResult::interrupt();
+      }
       if (auto gate = dyn_cast<qc::UnitaryOpInterface>(op)) {
         increaseDepth(gate.getQubits(), gate.getQubits(), addLayer, depthOf,
-                      keyOf);
+                      wireOf, classical);
       } else if (auto gate = dyn_cast<qco::UnitaryOpInterface>(op)) {
         increaseDepth(gate.getInputQubits(), gate.getOutputQubits(), addLayer,
-                      depthOf, keyOf);
+                      depthOf, wireOf, classical);
+      }
+    } else if (auto store = dyn_cast<cbit::StoreOp>(op)) {
+      // c1 becomes ready once the stored value is; a copy adds no layer.
+      auto bit = slotWire(store.getReg(), store.getIndex());
+      if (!bit) {
+        return WalkResult::interrupt();
+      }
+      SmallVector<Wire> sources;
+      if (failed(addClassicalWires(store.getValue(), sources, wireOf))) {
+        return WalkResult::interrupt();
+      }
+      const size_t ready = maxDepth(sources, depthOf);
+      size_t& depth = depthOf[*bit];
+      depth = std::max(depth, ready);
+    } else if (auto write = dyn_cast<cbit::WriteOp>(op)) {
+      // A register write, such as `d = c` or `d = ~c`, adds no layer. Like in
+      // Qiskit, every written bit waits for all bits that the value reads.
+      const unsigned width = write.getValue().getType().getWidth();
+      SmallVector<Wire> sources;
+      if (failed(addClassicalWires(write.getValue(), sources, wireOf))) {
+        return WalkResult::interrupt();
+      }
+      const size_t ready = maxDepth(sources, depthOf);
+      for (unsigned index = 0; index < width; ++index) {
+        size_t& depth = depthOf[Wire(write.getReg(), index)];
+        depth = std::max(depth, ready);
       }
     } else if (isMeasurement(op)) {
       if (auto measure = dyn_cast<qc::MeasureOp>(op)) {
         increaseDepthMeasurement(measure.getQubit(), measure.getQubit(),
-                                 measure.getResult(), depthOf, keyOf);
+                                 measure.getResult(), depthOf, wireOf);
       } else if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
         increaseDepthMeasurement(measure.getQubitIn(), measure.getQubitOut(),
-                                 measure.getResult(), depthOf, keyOf);
+                                 measure.getResult(), depthOf, wireOf);
       }
     } else if (isReset(op)) {
       if (auto reset = dyn_cast<qc::ResetOp>(op)) {
-        increaseDepth(reset.getQubit(), reset.getQubit(), true, depthOf, keyOf);
+        increaseDepth(reset.getQubit(), reset.getQubit(), true, depthOf,
+                      wireOf);
       } else if (auto reset = dyn_cast<qco::ResetOp>(op)) {
         increaseDepth(reset.getQubitIn(), reset.getQubitOut(), true, depthOf,
-                      keyOf);
+                      wireOf);
       }
     } else if (isControlFlow(op)) {
-      if (auto ifop = dyn_cast<scf::IfOp>(op)) {
-        SmallVector<Key> keys;
-        if (failed(addConditionKeys(ifop.getCondition(), keys, keyOf)) ||
-            failed(addBodyKeys(ifop, keys, keyOf, registerOf, qubitInSlot))) {
-          return WalkResult::interrupt();
+      if (auto ifOp = dyn_cast<scf::IfOp>(op)) {
+        if (isClassicalIf(ifOp)) {
+          // Track the bits that the body reads for the condition using it.
+          return WalkResult::advance();
         }
-        bumpLayer(keys, true, depthOf);
-        return WalkResult::skip();
+        return succeeded(addConditionalLayer(ifOp, ifOp.getCondition(), depthOf,
+                                             wireOf, registerOf, qubitInSlot))
+                   ? WalkResult::skip()
+                   : WalkResult::interrupt();
       }
-      if (auto ifop = dyn_cast<qco::IfOp>(op)) {
+      if (auto ifOp = dyn_cast<qco::IfOp>(op)) {
         // The block arguments and the results continue the registers and
         // qubits passed in.
         for (auto [in, thenArg, elseArg, out] : llvm::zip_equal(
-                 ifop.getQubits(), ifop.thenBlock()->getArguments(),
-                 ifop.elseBlock()->getArguments(), ifop.getLinearResults())) {
+                 ifOp.getQubits(), ifOp.thenBlock()->getArguments(),
+                 ifOp.elseBlock()->getArguments(), ifOp.getLinearResults())) {
           Value reg = rootOf(in, registerOf);
           registerOf[thenArg] = reg;
           registerOf[elseArg] = reg;
           registerOf[out] = reg;
-          if (auto it = keyOf.find(in); it != keyOf.end()) {
-            Key key = it->second;
-            keyOf[thenArg] = key;
-            keyOf[elseArg] = key;
-            keyOf[out] = key;
+          if (auto it = wireOf.find(in); it != wireOf.end()) {
+            Wire wire = it->second;
+            wireOf[thenArg] = wire;
+            wireOf[elseArg] = wire;
+            wireOf[out] = wire;
           }
         }
-        SmallVector<Key> keys;
-        if (failed(addConditionKeys(ifop.getCondition(), keys, keyOf)) ||
-            failed(addBodyKeys(ifop, keys, keyOf, registerOf, qubitInSlot))) {
-          return WalkResult::interrupt();
-        }
-        bumpLayer(keys, true, depthOf);
-        return WalkResult::skip();
+        return succeeded(addConditionalLayer(ifOp, ifOp.getCondition(), depthOf,
+                                             wireOf, registerOf, qubitInSlot))
+                   ? WalkResult::skip()
+                   : WalkResult::interrupt();
       }
       // Complex control flow
       return WalkResult::interrupt();
@@ -468,10 +666,9 @@ static std::optional<size_t> computeDepth(ModuleOp moduleOp) {
   }
 
   size_t depth = 0;
-  for (const auto& [key, nodeDepth] : depthOf) {
-    depth = std::max(depth, nodeDepth);
+  for (const auto& [wire, wireDepth] : depthOf) {
+    depth = std::max(depth, wireDepth);
   }
-
   return depth;
 }
 
@@ -481,12 +678,7 @@ static QuantumProgramInfo inspectProgram(ModuleOp moduleOp) {
   info.operationCounts =
       countOperationsIf(moduleOp, [](Operation*) { return true; });
   info.controlFlowCounts = countOperationsIf(entry, isControlFlow);
-  if (entry && llvm::none_of(entry.getArgumentTypes(), [](Type type) {
-        return isa<qc::QubitType, qco::QubitType>(type) ||
-               (isa<ShapedType>(type) &&
-                isa<qc::QubitType, qco::QubitType>(
-                    cast<ShapedType>(type).getElementType()));
-      })) {
+  if (entry && llvm::none_of(entry.getArgumentTypes(), holdsQubits)) {
     info.numQubits = 0;
   }
   const auto addAllocation = [&](const uint64_t size) {
