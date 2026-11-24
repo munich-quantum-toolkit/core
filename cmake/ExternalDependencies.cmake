@@ -12,17 +12,15 @@ include(FetchContent)
 include(CMakeDependentOption)
 set(FETCH_PACKAGES "")
 
-# cibuildwheel clears this stamp before the first wheel. A new isolated Python
-# environment resets CMake's FetchContent stamps between ABIs.
+# Each cibuildwheel run starts with an empty stamp directory. Its wheels share
+# dependency sources even when isolated Python environments reset CMake's cache.
 if(PROJECT_IS_TOP_LEVEL AND "$ENV{CIBUILDWHEEL}" STREQUAL "1")
-  set(_wheel_stamp "${PROJECT_SOURCE_DIR}/build/cibuildwheel-deps")
-  if(EXISTS "${_wheel_stamp}")
-    file(READ "${_wheel_stamp}" _populated_dir)
-    if(_populated_dir STREQUAL FETCHCONTENT_BASE_DIR)
-      set(FETCHCONTENT_FULLY_DISCONNECTED ON)
-    endif()
+  cmake_path(HASH FETCHCONTENT_BASE_DIR _deps_key)
+  set(_wheel_stamp "${PROJECT_SOURCE_DIR}/build/cibuildwheel-stamps/${_deps_key}")
+  if(IS_DIRECTORY "${FETCHCONTENT_BASE_DIR}" AND EXISTS "${_wheel_stamp}")
+    set(FETCHCONTENT_FULLY_DISCONNECTED ON)
   endif()
-  file(GENERATE OUTPUT "${_wheel_stamp}" CONTENT "${FETCHCONTENT_BASE_DIR}")
+  file(GENERATE OUTPUT "${_wheel_stamp}" CONTENT "")
 endif()
 
 if(BUILD_MQT_CORE_BINDINGS)

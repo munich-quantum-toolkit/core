@@ -277,7 +277,7 @@ archs = "auto64"
 build-frontend = "uv"
 config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
 environment = { DEPLOY = "ON" }
-before-all = 'cmake -E rm -f "{package}/build/cibuildwheel-deps"'
+before-all = 'cmake -E rm -rf "{package}/build/cibuildwheel-stamps"'
 test-command = "pytest test/python --maxprocesses=2 --dist=worksteal"
 test-groups = [ "test" ]
 test-sources = [
