@@ -63,7 +63,7 @@ Set `options.mapping` explicitly when a fixed search budget matters. Native
 synthesis can omit very small runtime entanglers within a per-decomposition
 average gate fidelity floor of `1 - 1e-12`. Repeated approximations can
 accumulate; this is not a whole-program error budget. The
-[target compilation guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/target_compilation.html)
+[target compilation guide](https://mqt.readthedocs.io/projects/core/latest/mlir/target_compilation.html)
 covers output selection, ownership, and custom pipelines.
 
 ### Qiskit and QDMI execution
@@ -72,7 +72,7 @@ Upgrade Qiskit to **2.5 or later**. Bundled adapters cover Qiskit 2.5 and 2.6;
 later minor versions use the newest compatible adapter optimistically. Qiskit's
 experimental native ABI can change between minors, so pin a tested minor for a
 fixed compatibility baseline. See the
-[Qiskit guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/qiskit.html#version-compatibility).
+[Qiskit guide](https://mqt.readthedocs.io/projects/core/latest/mlir/qiskit.html#version-compatibility).
 
 Remove calls to `register_program_serializer`, `unregister_program_serializer`,
 and `program_serializer`, imports of `ProgramSerializer`, and provider
@@ -88,9 +88,9 @@ changes measurement order. Decode raw job results with `decode_counts` or
 `decode_shots` and its `result_layout`; Qiskit and PennyLane apply this mapping
 automatically. Source submission that needs a nonidentity result layout now
 requires explicit compilation. The
-[QDMI backend guide](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html)
+[QDMI backend guide](https://mqt.readthedocs.io/projects/core/latest/qdmi/qdmi_backend.html)
 and
-[direct submission example](https://mqt.readthedocs.io/projects/core/en/latest/mlir/target_compilation.html#terminal-readout-and-results)
+[direct submission example](https://mqt.readthedocs.io/projects/core/latest/mlir/target_compilation.html#terminal-readout-and-results)
 cover these workflows.
 
 ### PennyLane devices
@@ -100,7 +100,7 @@ Catalyst. Ordinary QNodes still need only `mqt-core[pennylane]`; install
 `mqt-core[pennylane,catalyst]` to use `qjit`. Keep the device alive while using
 compiled functions. Replace catches of `PennyLaneUnsupportedFormatError` and
 `PennyLaneUnsupportedOperationError` with `PennyLaneTranslationError`. The
-[PennyLane guide](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/pennylane_device.html)
+[PennyLane guide](https://mqt.readthedocs.io/projects/core/latest/qdmi/pennylane_device.html)
 covers supported gates, measurements, and device lifetimes.
 
 ### QDMI results and DDSIM sampling
@@ -115,7 +115,7 @@ Seeded adaptive sampling now depends on the requested worker setting, rather
 than the number of worker slots granted during execution. Keep that setting
 fixed to reproduce samples; use `custom3=1` for serial sampling. Sampling
 optimizations can change exact seeded outcomes from 4.1. The
-[DDSIM guide](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/ddsim_device.html)
+[DDSIM guide](https://mqt.readthedocs.io/projects/core/latest/qdmi/ddsim_device.html)
 describes the session and worker controls.
 
 ### Command-line tools and Slurm
@@ -124,7 +124,7 @@ Replace `mqt-cc` with `mqt-core compile` and `mqt-core-bench` with
 `mqt-core bench`. Use `mqt-core simulate` for local DDSIM execution and
 `mqt-core run --qdmi-device=...` for a QDMI device. The same commands are
 available through `uvx mqt-core` and `python -m mqt.core`. See the
-[command-line guide](https://mqt.readthedocs.io/projects/core/en/latest/installation.html#command-line-tools).
+[command-line guide](https://mqt.readthedocs.io/projects/core/latest/installation.html#command-line-tools).
 
 Replace `mqt-core-cli` with `mqt-core`. The directory flags now use hyphens:
 `mqt-core-cli --include_dir` becomes `mqt-core --include-dir`, and
@@ -152,7 +152,7 @@ use. Use an LLVM/MLIR 23.1.x SDK. The wheel's `Runtime` component needs no SDK.
 CMake now downloads a compatible LLVM/MLIR SDK when none is available. Set
 `MQT_CORE_AUTO_INSTALL_MLIR=OFF` and supply `MLIR_DIR` for offline or cross
 builds. See the
-[installation guide](https://mqt.readthedocs.io/projects/core/en/latest/installation.html#setting-up-mlir)
+[installation guide](https://mqt.readthedocs.io/projects/core/latest/installation.html#setting-up-mlir)
 for supported hosts and download controls.
 
 ### C++ interfaces
@@ -163,7 +163,7 @@ results and consume or propagate every error. Use fallible factories such as
 `dd::Package::create(...)` and `qdmi::Session::create(...)` instead of direct
 construction. Operations using a caller-owned MLIR context retain
 `LogicalResult` or `FailureOr<T>`. The
-[C++ guide](https://mqt.readthedocs.io/projects/core/en/latest/cpp_api.html#handle-native-errors)
+[C++ guide](https://mqt.readthedocs.io/projects/core/latest/cpp_api.html#handle-native-errors)
 provides a checked construction example.
 
 Replace `std::ostream` sinks with `llvm::raw_ostream`, and pass bytes to
@@ -211,7 +211,7 @@ the routing edges. `synthesis_basis.entangler` now holds an `Entangler` object
 or `None`. Read its `gate` field where code previously used the gate kind. To
 request a new placement for a Qiskit circuit, compile the original logical
 circuit. Target compilation rejects attached layout metadata. The
-[target compilation guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/target_compilation.html)
+[target compilation guide](https://mqt.readthedocs.io/projects/core/latest/mlir/target_compilation.html)
 describes these requirements and the mapping options.
 
 ### Qiskit export ownership
@@ -229,21 +229,21 @@ assert program.is_valid
 ```
 
 The
-[Qiskit guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/qiskit.html)
+[Qiskit guide](https://mqt.readthedocs.io/projects/core/latest/mlir/qiskit.html)
 describes the supported export subset.
 
 ### Quantum program contracts
 
 OpenQASM import no longer inserts runtime assertions. Validate runtime inputs
 against the preconditions in the
-[OpenQASM guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/OpenQASM.html)
+[OpenQASM guide](https://mqt.readthedocs.io/projects/core/latest/mlir/OpenQASM.html)
 before execution. Invalid values have no guaranteed result or diagnostic.
 OpenQASM and QIR export reject explicit `cf.assert` operations.
 
 Quantum helpers and structured regions must return quantum values in input
 order. Use SWAP gates to exchange states instead of permuting result handles.
 See the
-[quantum resource contract](https://mqt.readthedocs.io/projects/core/en/latest/mlir/index.html#quantum-resource-contract)
+[quantum resource contract](https://mqt.readthedocs.io/projects/core/latest/mlir/index.html#quantum-resource-contract)
 when building programs.
 
 QC gate totals and single-qubit counts now include measurements and resets.
@@ -262,7 +262,7 @@ with `mqt.core.qdmi.builtin_driver`. This includes `open_device` and
 JSON manifests and register them with `builtin_driver.add_manifest(path)` before
 the first device lookup. Top-level `device_ids()` now queries a driver session.
 Use `builtin_driver.registered_device_ids()` for the local catalogue. The
-[configuration guide](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/configuration.html)
+[configuration guide](https://mqt.readthedocs.io/projects/core/latest/qdmi/configuration.html)
 covers manifest registration and driver selection.
 
 Unset `MQT_CORE_QDMI_CONFIG_FILE` and `MQT_CORE_QDMI_CONFIG_JSON` to use
@@ -272,7 +272,7 @@ they cause configuration errors.
 The Slurm device-opening adapters are removed. Pass the device ID to
 `builtin_driver.open_device` and request its matching license in the job script.
 The
-[Slurm guide](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/slurm.html)
+[Slurm guide](https://mqt.readthedocs.io/projects/core/latest/qdmi/slurm.html)
 covers the shared playground and site setup.
 
 ### QDMI jobs and DDSIM sampling
@@ -288,7 +288,7 @@ fixed seed reproduces shots for the same effective worker count. For DDSIM jobs,
 use `custom3=1` for serial adaptive sampling. QIR runtime failures now fail the
 affected QDMI program rather than propagating C++ exceptions. Handle them
 through the job. The
-[DDSIM guide](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/ddsim_device.html)
+[DDSIM guide](https://mqt.readthedocs.io/projects/core/latest/qdmi/ddsim_device.html)
 describes worker controls and result handling.
 
 ### C++ libraries and source builds
@@ -307,7 +307,7 @@ filenames.
 
 Set build policies in the consuming project. The exported policy modules and
 `MQT::ProjectOptions`/`MQT::ProjectWarnings` are removed. See the
-[installation guide](https://mqt.readthedocs.io/projects/core/en/latest/installation.html)
+[installation guide](https://mqt.readthedocs.io/projects/core/latest/installation.html)
 for the runtime and development components.
 
 ### C++ interfaces
@@ -327,7 +327,7 @@ example, replace `edge.getVector()` with `dd::getVector(edge)` and
 DD methods keep their interfaces. Use `dd::ComplexNumbers::setTolerance` to set
 a positive normal floating-point tolerance before creating DD packages. Invalid
 values now throw `std::invalid_argument`. See the
-[DD guide](https://mqt.readthedocs.io/projects/core/en/latest/dd_package.html).
+[DD guide](https://mqt.readthedocs.io/projects/core/latest/dd_package.html).
 
 Replace static calls to `dd::RealNumberUniqueTable::hash(value)` with
 `table.hash(value)` on the relevant table instance. Bucket indices now depend on
@@ -346,7 +346,7 @@ Callbacks passed to `mlir::qco::walkProgramGraph` now accept
 `llvm::SmallVectorImpl<mlir::Operation*>&` as their second parameter. Replace
 explicit `mlir::qco::ReleasedOps&` callback parameters with this type;
 `ReleasedOps` remains available for owning storage. The
-[C++ compiler guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/target_compilation.html#c-source-tree-api)
+[C++ compiler guide](https://mqt.readthedocs.io/projects/core/latest/mlir/target_compilation.html#c-source-tree-api)
 covers the source-tree interfaces.
 
 ## [4.0.0]
@@ -394,7 +394,7 @@ Port one representative program through import, compilation, and execution
 before migrating the rest of an application. Check its unitary, statevector, or
 sampled outputs as appropriate, then update downstream dependencies that still
 require the classic circuit types. The
-[executable compiler tutorials](https://mqt.readthedocs.io/projects/core/en/latest/tutorials/index.html)
+[executable compiler tutorials](https://mqt.readthedocs.io/projects/core/latest/tutorials/index.html)
 cover these workflows without requiring prior MLIR knowledge.
 
 ### Understand the new compiler model
@@ -416,7 +416,7 @@ Use `compile_program` to run the shared pipeline and choose where it stops with
 `OutputFormat`. Supplying a device target adds compilation for its operations,
 topology, and payload contract. Submission is a separate step, so a compiled
 payload can be reused while that contract still matches the destination. The
-[compiler guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/mqt_compiler_collection.html)
+[compiler guide](https://mqt.readthedocs.io/projects/core/latest/mlir/mqt_compiler_collection.html)
 also covers explicit passes and custom pipelines.
 
 Code that rewrites operation lists must be adapted to program builders or
@@ -455,9 +455,9 @@ print(qco.ir)
 ```
 
 Supported OpenQASM and Qiskit inputs are described in the
-[OpenQASM guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/OpenQASM.html)
+[OpenQASM guide](https://mqt.readthedocs.io/projects/core/latest/mlir/OpenQASM.html)
 and
-[Qiskit guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/qiskit.html).
+[Qiskit guide](https://mqt.readthedocs.io/projects/core/latest/mlir/qiskit.html).
 
 `compile_program` preserves input program objects by default. Direct
 representation-changing methods such as `qc.to_qco()` consume their source; pass
@@ -528,7 +528,7 @@ program types; `mqt/Compiler/Pipeline.h` owns compilation;
 the corresponding `MQTCompilerPrograms`, `MQTCompilerPipeline`, or
 `MQTCompilerQDMIAdapter` target in an embedded source build. These are not
 installed public-header replacements for `MQT::CoreIR`. See the
-[C++ compiler example](https://mqt.readthedocs.io/projects/core/en/latest/mlir/target_compilation.html#c-source-tree-api).
+[C++ compiler example](https://mqt.readthedocs.io/projects/core/latest/mlir/target_compilation.html#c-source-tree-api).
 
 Rebuild downstream native libraries against v4. The shared-library ABI version
 changes from `3.10` to `4.0`; update any explicit library filenames or wheel
@@ -615,9 +615,9 @@ output forces per-shot execution and does not retain an uncollapsed state;
 OpenQASM and zero-shot jobs reject capture.
 
 For the exact resource, result-use, and lifetime restrictions, see the
-[QIR execution contracts](https://mqt.readthedocs.io/projects/core/en/latest/qir/index.html)
+[QIR execution contracts](https://mqt.readthedocs.io/projects/core/latest/qir/index.html)
 and
-[DDSIM guide](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/ddsim_device.html).
+[DDSIM guide](https://mqt.readthedocs.io/projects/core/latest/qdmi/ddsim_device.html).
 
 ### Other API changes
 
@@ -632,7 +632,7 @@ The new typed benchmark API is available through `MQT::CoreBench` and
 `mqt.core.bench`; generation also requires the compiler. `mqt-core-bench` is its
 command-line interface. These are not drop-in replacements for the circuit
 factories removed in v3.10.0. See the
-[benchmark guide](https://mqt.readthedocs.io/projects/core/en/latest/benchmarks.html)
+[benchmark guide](https://mqt.readthedocs.io/projects/core/latest/benchmarks.html)
 for family options, instance specifications, and result evaluation.
 
 ## [3.10.0]
@@ -783,7 +783,7 @@ reconstruction is available.
 `backend.run(memory=True)` preserves shot order. Results include classical
 register boundaries; failed jobs and invalid results raise on collection, and
 unsupported execution options are rejected. See the
-[circuit execution guide](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/qdmi_backend.html#circuit-execution).
+[circuit execution guide](https://mqt.readthedocs.io/projects/core/stable/qdmi/qdmi_backend.html#circuit-execution).
 
 ### Private `nlohmann_json` dependency
 
@@ -1410,7 +1410,7 @@ access to QDMI devices.
 Install with Qiskit support: `uv pip install "mqt-core[qiskit]"`
 
 See the
-[Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/qdmi_backend.html)
+[Qiskit Backend documentation](https://mqt.readthedocs.io/projects/core/stable/qdmi/qdmi_backend.html)
 for details.
 
 ### Argument name changes in `QuantumComputation` and `CompoundOperation` dunder methods
