@@ -107,7 +107,6 @@ QCProgram::intoOpenQASM3(const TargetEnvironment* environment) && {
   if (failed(runWithPassManager(
           *storage.mod,
           [](OpPassManager& pm) {
-            pm.addPass(mqt::createSimplifyClassicalControl());
             pm.addPass(mqt::createPromoteClassicalMemory());
           },
           "failed to prepare QC for OpenQASM export"))) {
@@ -491,7 +490,11 @@ FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
   }
   if (output == ProgramFormat::OpenQASM3 ||
       output == ProgramFormat::OpenQASM2) {
-    if (failed(runWithPassManager(qc.module(), populateQCExportPipeline,
+    // OpenQASM 3 promotes memory in intoOpenQASM3 after canonicalization.
+    const auto cleanup = output == ProgramFormat::OpenQASM3
+                             ? populateQCStructuralCleanupPipeline
+                             : populateQCExportPipeline;
+    if (failed(runWithPassManager(qc.module(), cleanup,
                                   "failed to clean up compiled QC", options))) {
       return failure();
     }

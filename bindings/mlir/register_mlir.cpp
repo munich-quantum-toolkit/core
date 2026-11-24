@@ -2316,8 +2316,8 @@ Args:
           nb::kw_only(), "copy"_a = false,
           R"pb(Emit this QC program as OpenQASM 3.
 
-Classical memory and control flow are legalized for the source format. Use
-``compile_program`` for optimization before export.
+Export promotes eligible classical storage to SSA values. Use ``compile_program``
+for optimization before export.
 
 The source is consumed, including when export fails. Set ``copy=True`` to preserve it.
 

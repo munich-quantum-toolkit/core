@@ -109,7 +109,11 @@ runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
 /// dead-value removal.
 void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 
-/// Run QC cleanup that preserves defined values on every syntactic loop edge.
+/// Normalize phases, canonicalize QC, and remove unused qubits and symbols.
+void populateQCStructuralCleanupPipeline(mlir::OpPassManager& pm);
+
+/// Simplify classical control, promote memory, and run QC structural cleanup.
+/// Preserve defined values on every syntactic loop edge.
 ///
 /// Source formats cannot represent the poison backedge values introduced by
 /// RemoveDeadValues, even when those edges are unreachable.
