@@ -6,6 +6,11 @@
 #
 # Licensed under the MIT License
 
+# Reuse optimized machine code when relinking the bindings for free-threaded Python.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+  list(TRANSFORM CMAKE_CXX_LINK_OPTIONS_IPO REPLACE "^/LTCG$" "/LTCG:INCREMENTAL")
+endif()
+
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-bindings)
 nanobind_add_module(
   ${TARGET_NAME}
