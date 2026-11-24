@@ -1758,27 +1758,19 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
       if (!body || body.getNumQubits() != controlled.getNumTargets()) {
         return false;
       }
-      if (supports(body.getBaseSymbol(), controlled.getNumQubits(),
-                   body.getNumParams(),
-                   /*variadicOnly=*/true, [&](size_t index) {
-                     return mqt::valueToConstantDouble(
-                         body.getParameter(index));
-                   })) {
-        return true;
+      const auto parameterAt = [&](size_t index) {
+        return mqt::valueToConstantDouble(body.getParameter(index));
+      };
+      if (controlled.getNumControls() == 1 && controlled.getNumTargets() == 1 &&
+          nativeOperationsKind() == NativeOperations::Kind::Explicit &&
+          qc::lookupStandardGateByOperationSymbol(
+              body->getName().stripDialect()) != nullptr) {
+        return findOperation(body.getBaseSymbol(), 2, body.getNumParams(),
+                             parameterAt, sites, 1)
+                   .capability != nullptr;
       }
-      if (controlled.getNumControls() != 1 || controlled.getNumTargets() != 1) {
-        return false;
-      }
-      if (isa<qco::XOp>(body.getOperation())) {
-        return supports("cx", 2, 0);
-      }
-      if (isa<qco::YOp>(body.getOperation())) {
-        return supports("cy", 2, 0);
-      }
-      if (isa<qco::ZOp>(body.getOperation())) {
-        return supports("cz", 2, 0);
-      }
-      return false;
+      return supports(body.getBaseSymbol(), controlled.getNumQubits(),
+                      body.getNumParams(), /*variadicOnly=*/true, parameterAt);
     }
     if (auto exchange = dyn_cast<qco::XXPlusYYOp>(operation)) {
       if (supports("sqrt_iswap", 2, 0) &&
