@@ -23,11 +23,13 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Verifier.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -104,7 +106,8 @@ const std::vector<Scenario> SCENARIOS{
 } // namespace
 
 static CompilerTarget starTarget(const Scenario& scenario,
-                                 bool directCoupling = false) {
+                                 bool directCoupling = false,
+                                 const char* czName = "cz") {
   using Capability = CompilerTarget::OperationCapability;
   using Tuple = CompilerTarget::SiteTuple;
   std::vector<Tuple> unary;
@@ -140,7 +143,9 @@ static CompilerTarget starTarget(const Scenario& scenario,
       CompilerTarget::NativeOperations::fromOperations({
           llvm::cantFail(Capability::create("r", 1, 2, unary)),
           llvm::cantFail(Capability::create("measure", 1, 0, unary)),
-          llvm::cantFail(Capability::create("cz", 2, 0, tuples(scenario.czs))),
+          llvm::cantFail(Capability::create(czName, 2, 0, tuples(scenario.czs),
+                                            std::nullopt, std::nullopt, {},
+                                            "cz")),
           llvm::cantFail(
               Capability::create("move", 2, 0, tuples(scenario.moves))),
           llvm::cantFail(
@@ -240,6 +245,33 @@ TEST_P(ResonatorRouting, ExportsTargetCompiledCheckpointsThroughQC) {
       }
     }
     EXPECT_EQ(moves, scenario.expectedMoves);
+  }
+}
+
+TEST(ResonatorRouting, PreservesNativeCZSpellingWithVirtualConnections) {
+  constexpr auto source =
+      "OPENQASM 3; include \"stdgates.inc\"; bit[3] c; "
+      "h $5; cz $5,$17; cz $17,$19; "
+      "c[0]=measure $5; c[1]=measure $17; c[2]=measure $19;";
+  for (const bool implicitPlacements : {false, true}) {
+    SCOPED_TRACE(implicitPlacements);
+    auto scenario = SCENARIOS[3];
+    if (implicitPlacements) {
+      scenario.czs.clear();
+    } else {
+      scenario.czs.push_back({5, 17});
+    }
+    const TargetEnvironment environment(
+        starTarget(scenario, true, "controlled_phase"),
+        llvm::cantFail(
+            PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM3)));
+    auto result =
+        runDefaultPipeline(CompilerInput(OpenQASMProgram(source)), environment);
+    ASSERT_TRUE(static_cast<bool>(result))
+        << llvm::toString(result.takeError());
+    const StringRef qasm = std::get<OpenQASMProgram>(*result).source();
+    EXPECT_EQ(qasm.count("controlled_phase $"), 2U) << qasm.str();
+    EXPECT_EQ(qasm.count("move $"), 2U) << qasm.str();
   }
 }
 

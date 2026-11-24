@@ -148,8 +148,17 @@ projectPlacementTarget(const CompilerTarget& target,
     }
   }
   if (!virtualCZs.empty()) {
-    operations.push_back(
-        llvm::cantFail(Capability::create("cz", 2, 0, std::move(virtualCZs))));
+    const auto* const nativeCZ =
+        llvm::find_if(target.operations(), [](const auto& op) {
+          return op.canonicalName() == "cz" &&
+                 op.arity() == Capability::Arity::fixed(2) &&
+                 op.numParameters() == 0;
+        });
+    const auto spelling =
+        nativeCZ == target.operations().end() ? "cz" : nativeCZ->name();
+    operations.push_back(llvm::cantFail(
+        Capability::create(spelling.str(), 2, 0, std::move(virtualCZs),
+                           std::nullopt, std::nullopt, {}, "cz")));
   }
   const std::vector<CompilerTarget::Coupling> couplings(edges.begin(),
                                                         edges.end());
