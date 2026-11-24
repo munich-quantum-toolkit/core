@@ -245,9 +245,10 @@ public:
   ///
   /// Base uses static result IDs and inserts the call in the measurements
   /// block. Adaptive allocates result slots once in the entry block and
-  /// measures at the current insertion point. Finalization records selected
-  /// results and releases dynamic slots. With `build`'s `staticResults` option,
-  /// Adaptive uses static IDs and permits explicit `staticResult()` calls.
+  /// measures at the current insertion point. Finalization releases unrecorded
+  /// slots before output and recorded slots after their final use. With
+  /// `build`'s `staticResults` option, output calls can directly precede the
+  /// return, and explicit `staticResult()` calls are permitted.
   /// Mixing static and dynamic result allocation is a usage error.
   ///
   /// @param qubit The qubit to measure
@@ -1105,11 +1106,8 @@ private:
   /// Qubit-array pointers to be deallocated at the end of the program
   SmallVector<Value> qubitArrays;
 
-  /// Result pointers to be deallocated at the end of the program
-  SmallVector<Value> resultPtrs;
-
-  /// Result-array pointers to be deallocated at the end of the program
-  SmallVector<Value> resultArrays;
+  /// Dynamic scalar result slots in allocation order.
+  SmallVector<int64_t> dynamicResultIndices;
 
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;

@@ -239,7 +239,7 @@ Value QIRProgramBuilder::getResult(int64_t index, bool record,
       auto zero = LLVM::ZeroOp::create(*this, ptrType);
       result = LLVM::CallOp::create(*this, declaration, zero.getResult())
                    .getResult();
-      resultPtrs.push_back(result);
+      dynamicResultIndices.push_back(index);
     } else {
       result = createPointerFromIndex(*this, getLoc(), index);
     }
@@ -377,7 +377,6 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
       auto zero = LLVM::ZeroOp::create(*this, ptrType);
       LLVM::CallOp::create(*this, allocate,
                            ValueRange{sizeValue, reg.array, zero});
-      resultArrays.push_back(reg.array);
     }
   }
   auto storage = registerStorage(reg);
@@ -1036,6 +1035,7 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
     }
   }
 
+  auto beforeOutput = saveInsertionPoint();
   setInsertionPointToEnd(outputBlock);
   LLVM::ReturnOp::create(*this, returnValue);
   setInsertionPoint(outputBlock->getTerminator());
@@ -1043,23 +1043,35 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
   // Generate output recording in output block
   generateOutputRecording();
 
-  if (isAdaptive) {
-    if (!resultPtrs.empty()) {
+  if (resultAllocationMode == AllocationMode::Dynamic) {
+    // Output calls read their handles. All other results can be released
+    // before entering the output block.
+    const auto setReleasePoint = [&](bool recorded) {
+      if (recorded) {
+        setInsertionPoint(outputBlock->getTerminator());
+      } else {
+        restoreInsertionPoint(beforeOutput);
+      }
+    };
+    if (!dynamicResultIndices.empty()) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec = getOrCreateFunctionDeclaration(*this, *moduleOp_,
                                                 QIR_RESULT_RELEASE, sig);
-      for (auto result : resultPtrs) {
-        LLVM::CallOp::create(*this, dec, result);
+      for (auto index : dynamicResultIndices) {
+        const auto& result = scalarResults.at(index);
+        setReleasePoint(result.record);
+        LLVM::CallOp::create(*this, dec, result.pointer);
       }
     }
 
-    if (!resultArrays.empty()) {
+    if (!cregs.empty()) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
       auto dec = getOrCreateFunctionDeclaration(*this, *moduleOp_,
                                                 QIR_RESULT_ARRAY_RELEASE, sig);
-      for (auto array : resultArrays) {
-        auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-        LLVM::CallOp::create(*this, dec, ValueRange{size, array});
+      for (const auto& [storage, reg] : cregs) {
+        auto size = reg.array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+        setReleasePoint(reg.record);
+        LLVM::CallOp::create(*this, dec, ValueRange{size, reg.array});
       }
     }
   }
