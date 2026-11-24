@@ -12,6 +12,19 @@ include(FetchContent)
 include(CMakeDependentOption)
 set(FETCH_PACKAGES "")
 
+# cibuildwheel clears this stamp before the first wheel. A new isolated Python
+# environment resets CMake's FetchContent stamps between ABIs.
+if(PROJECT_IS_TOP_LEVEL AND "$ENV{CIBUILDWHEEL}" STREQUAL "1")
+  set(_wheel_stamp "${PROJECT_SOURCE_DIR}/build/cibuildwheel-deps")
+  if(EXISTS "${_wheel_stamp}")
+    file(READ "${_wheel_stamp}" _populated_dir)
+    if(_populated_dir STREQUAL FETCHCONTENT_BASE_DIR)
+      set(FETCHCONTENT_FULLY_DISCONNECTED ON)
+    endif()
+  endif()
+  file(GENERATE OUTPUT "${_wheel_stamp}" CONTENT "${FETCHCONTENT_BASE_DIR}")
+endif()
+
 if(BUILD_MQT_CORE_BINDINGS)
   # Detect the installed nanobind package and import it into CMake
   execute_process(

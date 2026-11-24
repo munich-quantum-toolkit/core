@@ -275,12 +275,9 @@ build = "cp3*"
 skip = [ "*-musllinux_*", "cp314t-*" ]
 archs = "auto64"
 build-frontend = "uv"
-config-settings = { build-dir = "build/wheel", "cmake.define.ENABLE_IPO" = "ON", "cmake.define.CMAKE_PROJECT_TOP_LEVEL_INCLUDES" = "{package}/cmake/WheelDependencies.cmake" }
+config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
 environment = { DEPLOY = "ON" }
-before-all = """\
-  python -c \"import sys; from pathlib import Path; Path(sys.argv[1]).unlink(missing_ok=True)\" \
-  \"{package}/build/wheel/dependencies-ready\"\
-  """
+before-all = 'cmake -E rm -f "{package}/build/cibuildwheel-deps"'
 test-command = "pytest test/python --maxprocesses=2 --dist=worksteal"
 test-groups = [ "test" ]
 test-sources = [
