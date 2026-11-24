@@ -4765,6 +4765,33 @@ def test_invalid_named_qubit_register_export_is_rejected(size: int, name: str, e
         program.to_qiskit()
 
 
+def test_export_loaded_qubit_references() -> None:
+    """Keep the wire index through nested references and a named view."""
+    program = QCProgram.from_mlir_str("""module {
+  func.func @main() attributes {mqt.entry_point} {
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %wires = memref.alloc() : memref<2x!qc.qubit>
+    %refs = memref.alloca() : memref<1x!qc.qubit>
+    %view = memref.alloca() {mqt.register_name = "selected"} : memref<1x!qc.qubit>
+    %wire = memref.load %wires[%c1] : memref<2x!qc.qubit>
+    memref.store %wire, %refs[%c0] : memref<1x!qc.qubit>
+    %ref = memref.load %refs[%c0] : memref<1x!qc.qubit>
+    memref.store %ref, %view[%c0] : memref<1x!qc.qubit>
+    %selected = memref.load %view[%c0] : memref<1x!qc.qubit>
+    qc.x %selected : !qc.qubit
+    memref.dealloc %wires : memref<2x!qc.qubit>
+    return
+  }
+}""")
+    circuit = program.to_qiskit()
+    (gate,) = circuit.data
+    assert gate.operation.name == "x"
+    bit = circuit.find_bit(gate.qubits[0])
+    assert bit.index == 1
+    assert [(reg.name, index) for reg, index in bit.registers] == [("selected", 0)]
+
+
 @pytest.mark.parametrize(("slots", "error"), [((1, 0), "consecutive qubits"), ((0, 1), "must not overlap")])
 def test_invalid_named_quantum_register_spans(slots: tuple[int, int], error: str) -> None:
     """Reject reversed wires and overlap with the physical target register."""

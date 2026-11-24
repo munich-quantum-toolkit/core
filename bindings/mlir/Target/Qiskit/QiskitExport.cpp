@@ -366,7 +366,7 @@ struct ExportState {
   llvm::DenseMap<mlir::Value, uint32_t> qubits;
   llvm::DenseMap<mlir::Value, uint32_t> quantumBases;
   llvm::DenseMap<mlir::Value, uint32_t> quantumSizes;
-  llvm::DenseMap<mlir::Value, llvm::SmallVector<uint32_t>> qubitReferences;
+  llvm::DenseMap<mlir::Value, llvm::SmallVector<mlir::Value>> qubitReferences;
   llvm::DenseMap<mlir::Value, ClassicalRegisterInfo> classicalRegisterInfo;
   llvm::DenseSet<mlir::Operation*> expressionOperations;
   llvm::DenseMap<mlir::Value, size_t> expressionDepths;
@@ -976,33 +976,8 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
       throw std::runtime_error(
           "QC to Qiskit export encountered invalid qubit references");
     }
-    auto& indices = state.qubitReferences[storage.getResult()];
-    for (auto qubit : *references) {
-      const auto index = state.qubits.find(qubit);
-      if (index == state.qubits.end()) {
-        throw std::runtime_error(
-            "QC to Qiskit export could not resolve a qubit reference");
-      }
-      indices.push_back(index->second);
-    }
-    if (const auto name = storage->getAttrOfType<mlir::StringAttr>(
-            mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
-      if (indices.empty()) {
-        throw std::runtime_error(
-            "Qiskit does not support empty quantum registers");
-      }
-      for (auto [offset, bit] : llvm::enumerate(indices)) {
-        if (bit != indices.front() + offset) {
-          throw std::runtime_error(
-              "Qiskit quantum registers require consecutive qubits");
-        }
-      }
-      state.quantumRegisters.push_back({
-          .name = name.str(),
-          .start = indices.front(),
-          .size = static_cast<uint32_t>(indices.size()),
-      });
-    }
+    state.qubitReferences.try_emplace(storage.getResult(),
+                                      std::move(*references));
   }
   function.walk([&](mlir::memref::LoadOp load) {
     if (!llvm::isa<mlir::qc::QubitType>(load.getResult().getType()) ||
@@ -1021,7 +996,12 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
         throw std::runtime_error(
             "QC to Qiskit export encountered an out-of-bounds qubit index");
       }
-      state.qubits[load.getResult()] = references->second[checked];
+      const auto qubit = state.qubits.find(references->second[checked]);
+      if (qubit == state.qubits.end()) {
+        throw std::runtime_error(
+            "QC to Qiskit export could not resolve a qubit reference");
+      }
+      state.qubits[load.getResult()] = qubit->second;
       return;
     }
     const auto base = state.quantumBases.find(load.getMemRef());
@@ -1036,6 +1016,29 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
     }
     state.qubits[load.getResult()] = checkedAdd(base->second, checked, "qubit");
   });
+
+  for (const auto& [storage, references] : state.qubitReferences) {
+    if (const auto name =
+            storage.getDefiningOp()->getAttrOfType<mlir::StringAttr>(
+                mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
+      const auto indices = mapQubits(references, state.qubits);
+      if (indices.empty()) {
+        throw std::runtime_error(
+            "Qiskit does not support empty quantum registers");
+      }
+      for (auto [offset, bit] : llvm::enumerate(indices)) {
+        if (bit != indices.front() + offset) {
+          throw std::runtime_error(
+              "Qiskit quantum registers require consecutive qubits");
+        }
+      }
+      state.quantumRegisters.push_back({
+          .name = name.str(),
+          .start = indices.front(),
+          .size = static_cast<uint32_t>(indices.size()),
+      });
+    }
+  }
 
   auto returnOp =
       llvm::cast<mlir::func::ReturnOp>(function.front().getTerminator());
