@@ -7,8 +7,7 @@ permissions: {}
 
 jobs:
   docs:
-    # Temporary PR #522 pin; replace with a released commit before merging.
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@bd3b7c28d77cacb71d466ff69823e74d1a31d008 # zizmor: ignore[stale-action-refs]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@b2b736dc2b5e2cc870d1456f825eaa5642a3a296 # zizmor: ignore[stale-action-refs]
     with:
       apt-packages: doxygen
     permissions:
