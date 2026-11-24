@@ -45,6 +45,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
@@ -58,7 +59,7 @@
 
 namespace mlir {
 
-static llvm::Expected<CompilerTarget>
+llvm::Expected<CompilerTarget>
 projectPlacementTarget(const CompilerTarget& target,
                        ArrayRef<CompilerTarget::SiteId> computational,
                        ArrayRef<CompilerTarget::SiteId> placeable) {
@@ -67,9 +68,13 @@ projectPlacementTarget(const CompilerTarget& target,
   }
   DenseSet<CompilerTarget::SiteId> selected(placeable.begin(), placeable.end());
   std::set<CompilerTarget::Coupling> edges;
+  SmallVector<CompilerTarget::Coupling, 0> mediatedCouplings;
   for (const auto& edge : target.couplings()) {
     if (selected.contains(edge.first) && selected.contains(edge.second)) {
       edges.insert(edge);
+      if (std::ranges::binary_search(target.mediatedCouplings(), edge)) {
+        mediatedCouplings.push_back(edge);
+      }
     }
   }
   std::set<CompilerTarget::Coupling> virtualPairs;
@@ -79,7 +84,11 @@ projectPlacementTarget(const CompilerTarget& target,
     }
     virtualPairs.emplace(a, b);
     virtualPairs.emplace(b, a);
-    edges.emplace(a, b);
+    const auto [edge, added] = edges.emplace(std::minmax(a, b));
+    if (added && target.connectivityKind() ==
+                     CompilerTarget::Connectivity::Kind::Explicit) {
+      mediatedCouplings.push_back(*edge);
+    }
   });
   if (target.connectivityKind() !=
       CompilerTarget::Connectivity::Kind::AllToAll) {
@@ -107,9 +116,11 @@ projectPlacementTarget(const CompilerTarget& target,
         selected.erase(site);
       }
     }
-    std::erase_if(edges, [&](const auto& edge) {
+    const auto isOutsideComponent = [&](const auto& edge) {
       return !selected.contains(edge.first) || !selected.contains(edge.second);
-    });
+    };
+    std::erase_if(edges, isOutsideComponent);
+    llvm::erase_if(mediatedCouplings, isOutsideComponent);
   }
   std::vector<CompilerTarget::Site> sites;
   for (const auto& site : target.sites()) {
@@ -159,11 +170,11 @@ projectPlacementTarget(const CompilerTarget& target,
           : CompilerTarget::Connectivity::fromCouplings(couplings);
   const auto native =
       CompilerTarget::NativeOperations::fromOperations(operations);
-  return target.name() ? CompilerTarget::create(target.name()->str(),
-                                                std::move(sites), connectivity,
-                                                native, target.durationUnit())
-                       : CompilerTarget::create(std::move(sites), connectivity,
-                                                native, target.durationUnit());
+  const auto name = target.name();
+  return CompilerTarget::createImpl(
+      name ? std::optional(name->str()) : std::nullopt, std::move(sites),
+      connectivity, native, target.durationUnit(), true,
+      std::move(mediatedCouplings));
 }
 
 static llvm::Expected<CompilerTarget>

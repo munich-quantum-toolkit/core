@@ -174,8 +174,9 @@ public:
   /// The reported name is retained verbatim while @ref canonicalName identifies
   /// its compiler operation. By default it is derived from the reported name;
   /// an explicit override describes named instances such as rx_90. Operations
-  /// with no site tuples accept any valid placement. A two-site placement must
-  /// be a coupling. A nonempty list restricts operand order and placement.
+  /// with no site tuples accept any valid placement on the device. Two-site
+  /// placements require a coupling. Mediated routing edges need an explicit
+  /// placement. A nonempty list restricts operand order and placement.
   /// Missing tuple calibration values inherit the operation defaults.
   class OperationCapability {
   public:
@@ -468,6 +469,9 @@ public:
   /// Return sorted canonical undirected couplings in target site IDs.
   [[nodiscard]] llvm::ArrayRef<Coupling> couplings() const noexcept;
 
+  /// Return the sorted subset of couplings with explicit placements only.
+  [[nodiscard]] llvm::ArrayRef<Coupling> mediatedCouplings() const noexcept;
+
   /// Return whether two valid dense compiler vertices are adjacent.
   [[nodiscard]] bool areAdjacent(size_t source, size_t target) const;
 
@@ -607,11 +611,17 @@ private:
 
   explicit CompilerTarget(std::shared_ptr<const Storage> storage);
 
+  friend llvm::Expected<CompilerTarget>
+  projectPlacementTarget(const CompilerTarget& target,
+                         llvm::ArrayRef<SiteId> computational,
+                         llvm::ArrayRef<SiteId> placeable);
+
   [[nodiscard]] static llvm::Expected<CompilerTarget>
   createImpl(std::optional<std::string> name, std::vector<Site> sites,
              Connectivity connectivity, NativeOperations nativeOperations,
              std::optional<DurationUnit> durationUnit,
-             bool deviceConstraints = true);
+             bool deviceConstraints = true,
+             llvm::SmallVector<Coupling, 0> mediated = {});
 
   [[nodiscard]] bool
   supportsImpl(::mlir::Operation* operation,

@@ -189,9 +189,11 @@ def CouplingAttr : MQTAttr<"Coupling", "coupling"> {
   let description = [{
     A coupling joins two target site identifiers. For example,
     `#mqt.coupling<source = 4, target = 7>` permits interactions between sites
-    4 and 7.
+    4 and 7. A projected routing target sets the optional `mediated`
+    marker on edges that require an explicit operation placement.
   }];
-  let parameters = (ins "int64_t":$source, "int64_t":$target);
+  let parameters = (ins "int64_t":$source, "int64_t":$target,
+      OptionalParameter<"UnitAttr">:$mediated);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
 }

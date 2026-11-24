@@ -23,11 +23,13 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Verifier.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <variant>
@@ -451,6 +453,65 @@ TEST(ResonatorPlacement, PreservesExistingMoveSymbol) {
     ++calls;
   });
   EXPECT_EQ(calls, 2U);
+}
+
+TEST(ResonatorRouting, ImplicitOperationsRequirePhysicalCouplingsAfterReload) {
+  using Capability = CompilerTarget::OperationCapability;
+  for (const bool directCoupling : {false, true}) {
+    SCOPED_TRACE(directCoupling);
+    auto scenario = SCENARIOS[3];
+    scenario.czs.clear();
+    const auto star = starTarget(scenario, directCoupling);
+    std::vector<CompilerTarget::Coupling> couplings(star.couplings().begin(),
+                                                    star.couplings().end());
+    if (directCoupling) {
+      couplings.emplace_back(5, 19);
+    }
+    std::vector<Capability> operations(star.operations().begin(),
+                                       star.operations().end());
+    operations.push_back(llvm::cantFail(Capability::create("cx", 2, 0)));
+    operations.push_back(llvm::cantFail(
+        Capability::create("x", Capability::Arity::variadic(1), 0)));
+    const TargetEnvironment environment(
+        llvm::cantFail(CompilerTarget::create(
+            {star.sites().begin(), star.sites().end()},
+            CompilerTarget::Connectivity::fromCouplings(couplings),
+            CompilerTarget::NativeOperations::fromOperations(operations))),
+        llvm::cantFail(
+            PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM3)));
+    auto source = llvm::cantFail(QCProgram::fromOpenQASMString(
+        "OPENQASM 3; include \"stdgates.inc\"; bit[2] c; "
+        "h $17; cx $17,$19; c[0]=measure $17; c[1]=measure $19;"));
+    auto program = std::move(source).intoQCO();
+    ASSERT_TRUE(succeeded(program));
+    ASSERT_TRUE(succeeded(program->runPassPipeline("mqt-target-prepare", {},
+                                                   &environment, true)));
+
+    auto checkpoint =
+        llvm::cantFail(QCOProgram::fromMLIRString(program->str()));
+    const TargetEnvironmentAnalysis analysis(checkpoint.module());
+    ASSERT_TRUE(analysis) << analysis.error().str();
+    const auto& projected = analysis.environment().target();
+    EXPECT_EQ(projected.supportsOperation("cx", 2, 0), directCoupling);
+    EXPECT_EQ(projected.supportsOperation("cx", 2, 0, {5, 17}), directCoupling);
+    EXPECT_FALSE(projected.supportsOperation("cx", 2, 0, {17, 19}));
+    EXPECT_TRUE(projected.supportsOperation("x", 1, 0, {17}));
+    EXPECT_FALSE(projected.supportsOperation("x", 2, 0, {17, 19}));
+    EXPECT_TRUE(projected.supportsOperation("x", 3, 0, {5, 17, 19}));
+    EXPECT_TRUE(projected.supportsOperation("cz", 2, 0, {17, 19}));
+    EXPECT_FALSE(
+        projected.findOperation("x", 2, {}, std::nullopt, 1).capability);
+    EXPECT_TRUE(
+        projected.findOperation("z", 2, {}, std::nullopt, 1).capability);
+
+    ASSERT_TRUE(succeeded(checkpoint.runPassPipeline("mqt-target-finalize")));
+    auto qc = std::move(checkpoint).intoQC();
+    ASSERT_TRUE(succeeded(qc));
+    auto payload = CompiledProgram::serialize(std::move(*qc), environment);
+    ASSERT_TRUE(static_cast<bool>(payload))
+        << llvm::toString(payload.takeError());
+    EXPECT_EQ(StringRef(payload->payload()).count("move $"), 2U);
+  }
 }
 
 } // namespace

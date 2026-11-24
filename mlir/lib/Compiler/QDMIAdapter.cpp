@@ -949,7 +949,8 @@ Error validateTargetCompatibility(const TargetEnvironment& compiled,
     return incompatible("site name mapping differs");
   }
   if (lhs.connectivityKind() != rhs.connectivityKind() ||
-      lhs.couplings() != rhs.couplings()) {
+      lhs.couplings() != rhs.couplings() ||
+      lhs.mediatedCouplings() != rhs.mediatedCouplings()) {
     return incompatible("connectivity differs");
   }
   const auto& lhsUnit = lhs.durationUnit();

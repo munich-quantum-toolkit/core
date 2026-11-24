@@ -653,6 +653,7 @@ struct CompilerTarget::Storage {
   Storage(std::optional<std::string> targetName, std::vector<Site> targetSites,
           Connectivity::Kind targetConnectivityKind,
           SmallVector<Coupling> targetCouplings,
+          SmallVector<Coupling, 0> targetMediatedCouplings,
           NativeOperations::Kind targetNativeOperationsKind,
           SmallVector<OperationCapability> targetOperations,
           std::optional<DurationUnit> targetDurationUnit);
@@ -660,6 +661,11 @@ struct CompilerTarget::Storage {
   [[nodiscard]] llvm::Error initialize(bool deviceConstraints);
   [[nodiscard]] bool containsCoupling(SiteId a, SiteId b) const {
     return std::ranges::binary_search(couplings, Coupling{std::minmax(a, b)});
+  }
+  [[nodiscard]] bool isMediatedCoupling(SiteId a, SiteId b) const {
+    return !mediatedCouplings.empty() &&
+           std::ranges::binary_search(mediatedCouplings,
+                                      Coupling{std::minmax(a, b)});
   }
   [[nodiscard]] bool permitsPlacement(ArrayRef<SiteId> placement) const;
   void computeDistances(size_t source, MutableArrayRef<size_t> row) const;
@@ -679,7 +685,8 @@ struct CompilerTarget::Storage {
   [[nodiscard]] std::optional<SynthesisBasis>
   resolveSingleQubitBasis(std::optional<ArrayRef<SiteId>> locus) const;
   [[nodiscard]] std::optional<SynthesisBasis> resolveSynthesisBasis();
-  [[nodiscard]] bool coversAllSites(const OperationCapability& operation) const;
+  [[nodiscard]] bool coversAllSites(const OperationCapability& operation,
+                                    size_t arity) const;
 
   std::optional<std::string> name;
   std::optional<DurationUnit> durationUnit;
@@ -688,6 +695,7 @@ struct CompilerTarget::Storage {
   llvm::DenseMap<SiteId, size_t> siteToVertex;
   Connectivity::Kind connectivityKind;
   SmallVector<Coupling> couplings;
+  SmallVector<Coupling, 0> mediatedCouplings;
   // Keep per-site storage compact.
   SmallVector<SmallVector<size_t, 4>> adjacency;
   mutable SmallVector<size_t> distances;
@@ -710,12 +718,14 @@ CompilerTarget::Storage::Storage(
     std::optional<std::string> targetName, std::vector<Site> targetSites,
     Connectivity::Kind targetConnectivityKind,
     SmallVector<Coupling> targetCouplings,
+    SmallVector<Coupling, 0> targetMediatedCouplings,
     NativeOperations::Kind targetNativeOperationsKind,
     SmallVector<OperationCapability> targetOperations,
     std::optional<DurationUnit> targetDurationUnit)
     : name(std::move(targetName)), durationUnit(std::move(targetDurationUnit)),
       sites(std::move(targetSites)), connectivityKind(targetConnectivityKind),
       couplings(std::move(targetCouplings)),
+      mediatedCouplings(std::move(targetMediatedCouplings)),
       nativeOperationsKind(targetNativeOperationsKind),
       operations(std::move(targetOperations)) {}
 
@@ -739,7 +749,8 @@ bool CompilerTarget::Storage::permitsPlacement(
     ArrayRef<SiteId> placement) const {
   if (placement.size() == 2 &&
       connectivityKind == Connectivity::Kind::Explicit) {
-    return containsCoupling(placement[0], placement[1]);
+    return containsCoupling(placement[0], placement[1]) &&
+           !isMediatedCoupling(placement[0], placement[1]);
   }
   return llvm::all_of(llvm::enumerate(placement), [&](const auto& entry) {
     const auto [index, site] = entry;
@@ -786,6 +797,15 @@ llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
     }
     std::ranges::sort(couplings);
     couplings.erase(std::ranges::unique(couplings).begin(), couplings.end());
+
+    std::ranges::sort(mediatedCouplings);
+    mediatedCouplings.erase(std::ranges::unique(mediatedCouplings).begin(),
+                            mediatedCouplings.end());
+    if (!mediatedCouplings.empty() &&
+        nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
+      return invalidTarget("Compiler target mediated couplings require "
+                           "explicit native operations");
+    }
 
     adjacency.resize(sites.size());
     for (const auto& [source, target] : couplings) {
@@ -887,7 +907,10 @@ llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
     if (coverageComputed[index]) {
       continue;
     }
-    if (operation.siteTuples().empty()) {
+    const bool restrictedWildcard =
+        !mediatedCouplings.empty() &&
+        operation.arity() == OperationCapability::Arity::fixed(2);
+    if (operation.siteTuples().empty() && !restrictedWildcard) {
       allSiteCoverage[index] = true;
       continue;
     }
@@ -936,9 +959,18 @@ llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
         }
       }
     }
+    bool covers = covered.size() == count;
+    if (unrestricted && !covers) {
+      // A wildcard covers the physical edges. Explicit tuples can complete
+      // the same native signature's coverage on mediated edges.
+      covers = !restrictedWildcard ||
+               static_cast<size_t>(llvm::count_if(covered, [&](auto sites) {
+                 return isMediatedCoupling(sites[0], sites[1]);
+               })) == 2 * mediatedCouplings.size();
+    }
     for (const auto candidateIndex : group) {
       coverageComputed[candidateIndex] = true;
-      allSiteCoverage[candidateIndex] = unrestricted || covered.size() == count;
+      allSiteCoverage[candidateIndex] = covers;
     }
   }
 
@@ -967,8 +999,11 @@ llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
 }
 
 bool CompilerTarget::Storage::coversAllSites(
-    const OperationCapability& operation) const {
-  return allSiteCoverage[static_cast<size_t>(&operation - operations.data())];
+    const OperationCapability& operation, size_t arity) const {
+  return allSiteCoverage[static_cast<size_t>(&operation - operations.data())] &&
+         (arity != 2 || mediatedCouplings.empty() ||
+          operation.arity().kind() !=
+              OperationCapability::Arity::Kind::Variadic);
 }
 
 static bool
@@ -996,9 +1031,13 @@ bool CompilerTarget::Storage::supportsOperation(
       (orderedSites && orderedSites->size() != arity)) {
     return false;
   }
+  const auto permitsImplicitPlacement = [&] {
+    return orderedSites ? permitsPlacement(*orderedSites)
+                        : arity != 2 || mediatedCouplings.empty() ||
+                              mediatedCouplings.size() < couplings.size();
+  };
   if (nativeOperationsKind == NativeOperations::Kind::Unrestricted) {
-    return !operationName.trim().empty() &&
-           (!orderedSites || permitsPlacement(*orderedSites));
+    return !operationName.trim().empty() && permitsImplicitPlacement();
   }
   auto found = capabilities.find(operationName);
   if (found == capabilities.end()) {
@@ -1013,10 +1052,10 @@ bool CompilerTarget::Storage::supportsOperation(
                                  OperationCapability::Arity::Kind::Variadic) &&
            operation.arity().accepts(arity) &&
            (!numParameters || operation.numParameters() == *numParameters) &&
-           (!orderedSites ||
-            (operationSites[index].empty()
-                 ? permitsPlacement(*orderedSites)
-                 : operationSites[index].contains(*orderedSites))) &&
+           (operationSites[index].empty()
+                ? permitsImplicitPlacement()
+                : !orderedSites ||
+                      operationSites[index].contains(*orderedSites)) &&
            (capabilityFilter ? capabilityFilter(operation)
                              : matchesParameters(operation, parameterAt));
   });
@@ -1069,7 +1108,7 @@ std::optional<CompilerTarget::SynthesisBasis>
 CompilerTarget::Storage::resolveSingleQubitBasis(
     std::optional<ArrayRef<SiteId>> locus) const {
   const auto coversLocus = [&](const OperationCapability& operation) {
-    return locus.has_value() || coversAllSites(operation);
+    return locus.has_value() || coversAllSites(operation, 1);
   };
   const auto supports = [&](GateKind gate) {
     return supportsGate(gate, locus, AngleSupport::Fixed, coversLocus);
@@ -1181,7 +1220,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() {
       return false;
     }
     if (supportsGate(gate, std::nullopt, angles, [&](const auto& operation) {
-          return coversAllSites(operation);
+          return coversAllSites(operation, 2);
         })) {
       return true;
     }
@@ -1341,10 +1380,15 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
   }
 
   std::vector<Coupling> couplings;
+  SmallVector<Coupling, 0> mediatedCouplings;
   if (attribute.getConnectivity() == mqt::ConnectivityKind::Explicit) {
     couplings.reserve(attribute.getCouplings().size());
     for (const auto coupling : attribute.getCouplings()) {
       couplings.emplace_back(coupling.getSource(), coupling.getTarget());
+      if (coupling.getMediated()) {
+        mediatedCouplings.emplace_back(
+            std::minmax(couplings.back().first, couplings.back().second));
+      }
     }
   }
   auto connectivity =
@@ -1438,17 +1482,19 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
 
   return createImpl(std::move(name), std::move(sites), std::move(connectivity),
                     std::move(nativeOperations), std::move(durationUnit),
-                    !attribute.getGateSet());
+                    !attribute.getGateSet(), std::move(mediatedCouplings));
 }
 
 llvm::Expected<CompilerTarget> CompilerTarget::createImpl(
     std::optional<std::string> name, std::vector<Site> sites,
     Connectivity connectivity, NativeOperations nativeOperations,
-    std::optional<DurationUnit> durationUnit, bool deviceConstraints) {
+    std::optional<DurationUnit> durationUnit, bool deviceConstraints,
+    SmallVector<Coupling, 0> mediated) {
   auto storage = std::make_shared<Storage>(
       std::move(name), std::move(sites), connectivity.kind_,
-      std::move(connectivity.couplings_), nativeOperations.kind_,
-      std::move(nativeOperations.operations_), std::move(durationUnit));
+      std::move(connectivity.couplings_), std::move(mediated),
+      nativeOperations.kind_, std::move(nativeOperations.operations_),
+      std::move(durationUnit));
   if (auto error = storage->initialize(deviceConstraints)) {
     return std::move(error);
   }
@@ -1521,7 +1567,7 @@ std::vector<SiteId>
 CompilerTarget::singleQubitSynthesisSites(ArrayRef<SiteId> candidates) const {
   // Uniform capabilities cannot yield a local basis if the global one failed.
   if (!synthesisBasis() && llvm::none_of(operations(), [&](const auto& op) {
-        return op.arity().accepts(1) && !storage_->coversAllSites(op);
+        return op.arity().accepts(1) && !storage_->coversAllSites(op, 1);
       })) {
     return {};
   }
@@ -1561,6 +1607,11 @@ CompilerTarget::connectivityKind() const noexcept {
 
 ArrayRef<CompilerTarget::Coupling> CompilerTarget::couplings() const noexcept {
   return storage_->couplings;
+}
+
+ArrayRef<CompilerTarget::Coupling>
+CompilerTarget::mediatedCouplings() const noexcept {
+  return storage_->mediatedCouplings;
 }
 
 bool CompilerTarget::areAdjacent(size_t source, size_t target) const {
@@ -1696,7 +1747,7 @@ CompilerTarget::OperationMatch CompilerTarget::findOperation(
     const bool supported = storage_->supportsOperation(
         spelling, arity, numParameters, sites, variadicOnly, nullptr,
         [&](const OperationCapability& operation) {
-          if ((!sites && !storage_->coversAllSites(operation)) ||
+          if ((!sites && !storage_->coversAllSites(operation, arity)) ||
               !matchesParameters(operation, parameterAt) ||
               (filter && !filter(operation))) {
             return false;
@@ -1740,7 +1791,7 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
         return storage_->supportsOperation(
             name, arity, parameters, sites, variadicOnly, nullptr,
             [&](const auto& capability) {
-              return (sites || storage_->coversAllSites(capability)) &&
+              return (sites || storage_->coversAllSites(capability, arity)) &&
                      matchesParameters(capability, parameterAt);
             });
       };
@@ -1816,7 +1867,7 @@ bool CompilerTarget::supports(GateKind gate, ArrayRef<SiteId> sites) const {
 bool CompilerTarget::supports(Entangler entangler) const {
   return storage_->supportsGate(entangler.gate, std::nullopt, entangler.angles,
                                 [&](const auto& operation) {
-                                  return storage_->coversAllSites(operation);
+                                  return storage_->coversAllSites(operation, 2);
                                 });
 }
 
@@ -1835,8 +1886,11 @@ CompilerTarget::synthesisBasis() const noexcept {
 }
 
 bool CompilerTarget::supportsIndexedSynthesis() const noexcept {
-  if (llvm::all_of(storage_->allSiteCoverage,
-                   [](bool covered) { return covered; })) {
+  if (llvm::all_of(operations(), [&](const auto& operation) {
+        return storage_->coversAllSites(
+            operation,
+            operation.arity().accepts(2) ? 2 : operation.arity().value());
+      })) {
     return true;
   }
   if (!storage_->basis ||
@@ -1851,7 +1905,8 @@ bool CompilerTarget::supportsIndexedSynthesis() const noexcept {
                                storage_->supportsOperation(
                                    name, 1, 0, std::nullopt, false, nullptr,
                                    [&](const auto& operation) {
-                                     return storage_->coversAllSites(operation);
+                                     return storage_->coversAllSites(operation,
+                                                                     1);
                                    });
                       });
 }
@@ -1891,8 +1946,10 @@ CompilerTarget::materialize(MLIRContext& context) const {
   SmallVector<mqt::CouplingAttr> couplingAttrs;
   couplingAttrs.reserve(couplings().size());
   for (const auto& [source, target] : couplings()) {
-    couplingAttrs.emplace_back(
-        mqt::CouplingAttr::get(&context, source, target));
+    couplingAttrs.emplace_back(mqt::CouplingAttr::get(
+        &context, source, target,
+        storage_->isMediatedCoupling(source, target) ? builder.getUnitAttr()
+                                                     : UnitAttr{}));
   }
 
   SmallVector<mqt::NativeOperationAttr> operationAttrs;

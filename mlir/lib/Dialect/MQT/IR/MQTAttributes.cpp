@@ -163,7 +163,7 @@ SiteAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
 
 LogicalResult
 CouplingAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
-                     const int64_t source, const int64_t target) {
+                     const int64_t source, const int64_t target, UnitAttr) {
   if (source < 0 || target < 0) {
     return emitError() << "compiler target coupling sites must be nonnegative";
   }
@@ -349,6 +349,11 @@ LogicalResult CompilationTargetAttr::verify(
       }
       if (!edges.insert(std::minmax(source, target)).second) {
         return emitError() << "compiler target contains a duplicate coupling";
+      }
+      if (coupling.getMediated() &&
+          nativeOperations != NativeOperationsKind::Explicit) {
+        return emitError() << "compiler target mediated couplings require "
+                              "explicit native operations";
       }
     }
   }
