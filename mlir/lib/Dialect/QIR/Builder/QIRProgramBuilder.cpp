@@ -37,6 +37,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <utility>
 #include <variant>
@@ -248,7 +249,7 @@ Value QIRProgramBuilder::getResult(int64_t index, bool record,
 
   // Update result count
   if (std::cmp_greater_equal(index, numResults)) {
-    numResults = static_cast<size_t>(index) + 1;
+    numResults = static_cast<uint64_t>(index) + 1;
   }
 
   return result;
@@ -331,6 +332,11 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
     llvm::reportFatalUsageError("Size must be positive");
   }
 
+  if (std::cmp_greater(numResults,
+                       std::numeric_limits<int64_t>::max() - (size - 1))) {
+    llvm::reportFatalUsageError(
+        "Classical register exceeds the result slot range");
+  }
   ClassicalRegister reg;
   reg.label = "c" + std::to_string(cregs.size());
   reg.size = size;
@@ -348,11 +354,15 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
           staticResult(static_cast<int64_t>(numResults), false));
     }
   } else {
+    reg.resultOffset = static_cast<int64_t>(numResults);
+    numResults += static_cast<uint64_t>(size);
     auto sizeValue = intConstant(size);
     reg.array = LLVM::AllocaOp::create(*this, ptrType, ptrType, sizeValue);
     if (staticResults) {
+      ensureResultAllocationMode(AllocationMode::Static);
       for (int64_t i = 0; i < size; ++i) {
-        auto result = staticResult(static_cast<int64_t>(numResults), false);
+        auto result =
+            createPointerFromIndex(*this, getLoc(), reg.resultOffset + i);
         auto element = LLVM::GEPOp::create(*this, ptrType, ptrType, reg.array,
                                            intConstant(i));
         auto store = LLVM::StoreOp::create(*this, result, element);
@@ -393,7 +403,20 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t index,
                                  bool record) {
   checkFinalized();
 
-  // Get or create result pointer
+  if (profile == Profile::Adaptive && std::cmp_less(index, numResults)) {
+    // Registers reserve increasing, disjoint ranges in allocation order.
+    const auto* const next =
+        llvm::upper_bound(cregs, index, [](int64_t slot, const auto& entry) {
+          return slot < entry.second.resultOffset;
+        });
+    if (next != cregs.begin()) {
+      const auto& reg = std::prev(next)->second;
+      if (index - reg.resultOffset < std::get<int64_t>(reg.size)) {
+        llvm::reportFatalUsageError("Scalar result slot belongs to a classical "
+                                    "register; use measure(qubit, reg, index)");
+      }
+    }
+  }
   auto result = getResult(index, record,
                           profile == Profile::Adaptive && !staticResults
                               ? AllocationMode::Dynamic

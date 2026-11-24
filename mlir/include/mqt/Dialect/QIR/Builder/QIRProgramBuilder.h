@@ -205,6 +205,10 @@ public:
   /// Adaptive registers contain dynamic result pointers unless `build` enables
   /// static results. Base registers always use static result IDs.
   ///
+  /// In Adaptive, the register reserves consecutive slots above all previously
+  /// allocated slots. Measure into them with the register overload. An indexed
+  /// scalar measurement targeting one of these slots is a usage error.
+  ///
   /// @param size Number of bits (must be positive)
   /// @param record Whether the register should be recorded in the output
   /// @return A `ClassicalRegister` structure
@@ -1129,8 +1133,8 @@ private:
   /// The number of used qubits.
   size_t numQubits{0};
 
-  /// The number of result values.
-  size_t numResults{0};
+  /// First result slot above all allocated registers and indexed scalars.
+  uint64_t numResults{0};
 
   /// Helper to create a LLVM CallOp
   ///

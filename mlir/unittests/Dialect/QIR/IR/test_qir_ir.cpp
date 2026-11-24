@@ -230,7 +230,8 @@ TEST_F(QIRTest, AdaptiveBuilderRecordsAndReleasesResourcesInAllocationOrder) {
   QIRProgramBuilder builder(context.get());
   builder.initialize();
   std::array<SmallVector<Value>, 4> allocated;
-  for (int64_t i = 0; i < 12; ++i) {
+  // Each scalar is followed by a one-slot register.
+  for (int64_t i = 0; i < 24; i += 2) {
     auto qubit = builder.allocQubit();
     allocated[0].push_back(qubit);
     auto qubits = builder.allocQubitRegister(1);
@@ -337,6 +338,22 @@ TEST_F(QIRTest, AdaptiveBuilderDoesNotReleaseExplicitStaticResults) {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   EXPECT_FALSE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_RESULT_RELEASE));
+}
+
+TEST_F(QIRTest, AdaptiveScalarMeasurementRejectsRegisterSlots) {
+  const auto overlap = [](QIRProgramBuilder& builder) {
+    auto qubit = builder.allocQubit();
+    const auto reg = builder.allocClassicalBitRegister(1);
+    builder.measure(qubit, reg, 0);
+    builder.measure(qubit, 0);
+    return builder.intConstant(0);
+  };
+  for (const bool staticResults : {false, true}) {
+    EXPECT_DEATH(QIRProgramBuilder::build(context.get(), overlap,
+                                          QIRProgramBuilder::Profile::Adaptive,
+                                          staticResults),
+                 "result slot belongs to a classical register");
+  }
 }
 
 TEST_F(QIRTest, BuilderRejectsMixedResultAllocationModes) {
