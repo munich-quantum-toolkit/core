@@ -22,7 +22,6 @@
 
 #include <cmath>
 #include <complex>
-#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -66,11 +65,4 @@ void GPhaseOp::getOptimizationPatterns(RewritePatternSet& results,
 
 Matrix1x1 GPhaseOp::unitaryMatrix(const double theta) {
   return Matrix1x1::fromElements(std::polar(1.0, theta));
-}
-
-std::optional<Matrix1x1> GPhaseOp::getUnitaryMatrix() {
-  if (const auto theta = valueToDouble(getTheta())) {
-    return unitaryMatrix(*theta);
-  }
-  return std::nullopt;
 }

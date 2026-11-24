@@ -4566,6 +4566,30 @@ TEST_F(TargetSynthesisTest,
   EXPECT_EQ(returnOp.getOperand(1), unitary.getOutputQubit(0));
 }
 
+TEST_F(TargetSynthesisTest, FoldedCliffordAngleUsesNumericalSynthesis) {
+  auto expected = build([](QCOProgramBuilder& builder) {
+    auto quarter = builder.floatConstant(std::numbers::pi / 4.);
+    auto angle = mlir::arith::AddFOp::create(builder, builder.getLoc(), quarter,
+                                             quarter);
+    auto [a, b] = builder.rxx(angle.getResult(), builder.staticQubit(0),
+                              builder.staticQubit(1));
+    builder.sink(a);
+    builder.sink(b);
+    return llvm::SmallVector<Value>{};
+  });
+  auto actual = OwningOpRef<ModuleOp>(expected->clone());
+  const auto target = makeUCxTarget();
+  auto gate = *mainFunction(*actual).getOps<RXXOp>().begin();
+  mlir::qco::NativeCostAnalysis analysis(2023);
+  EXPECT_EQ(
+      analysis.operationCost(gate, target, std::array<Target::SiteId, 2>{0, 1}),
+      1U);
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *actual, target, mlir::qco::createTargetNativeSynthesis())));
+  EXPECT_EQ(countOps<CtrlOp>(*actual), 1U);
+  expectEquivalent(expected, actual);
+}
+
 TEST_F(TargetSynthesisTest,
        UnsupportedRuntimeParameterizedGateHasLocalDiagnostic) {
   auto module = mlir::parseSourceString<ModuleOp>(R"mlir(

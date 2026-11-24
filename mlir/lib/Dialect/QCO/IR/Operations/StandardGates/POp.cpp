@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
@@ -21,7 +21,6 @@
 
 #include <cmath>
 #include <complex>
-#include <optional>
 #include <variant>
 
 using namespace mlir;
@@ -43,11 +42,4 @@ void POp::getOptimizationPatterns(RewritePatternSet& results,
 Matrix2x2 POp::unitaryMatrix(const double theta) {
   return Matrix2x2::fromElements(1, 0,                       // row 0
                                  0, std::polar(1.0, theta)); // row 1
-}
-
-std::optional<Matrix2x2> POp::getUnitaryMatrix() {
-  if (const auto theta = valueToDouble(getTheta())) {
-    return unitaryMatrix(*theta);
-  }
-  return std::nullopt;
 }
