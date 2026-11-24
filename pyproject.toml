@@ -275,8 +275,12 @@ build = "cp3*"
 skip = [ "*-musllinux_*", "cp314t-*" ]
 archs = "auto64"
 build-frontend = "uv"
-config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
+config-settings = { build-dir = "build/wheel", "cmake.define.ENABLE_IPO" = "ON", "cmake.define.CMAKE_PROJECT_TOP_LEVEL_INCLUDES" = "{package}/cmake/WheelDependencies.cmake" }
 environment = { DEPLOY = "ON" }
+before-all = """\
+  python -c \"import sys; from pathlib import Path; Path(sys.argv[1]).unlink(missing_ok=True)\" \
+  \"{package}/build/wheel/dependencies-ready\"\
+  """
 test-command = "pytest test/python --maxprocesses=2 --dist=worksteal"
 test-groups = [ "test" ]
 test-sources = [
@@ -304,6 +308,7 @@ before-test = "uvx sccache --show-stats"
 # QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
 # containers used to build and test MQT Core's broadly compatible wheels.
 test-groups = [ "test-base" ]
+inherit.before-all = "append"
 inherit.config-settings = "append"
 inherit.environment = "append"
 
