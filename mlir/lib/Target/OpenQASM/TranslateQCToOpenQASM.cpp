@@ -347,7 +347,7 @@ private:
   SmallVector<std::string> gateDefinitions_;
   std::optional<DataFlowSolver> ranges;
   std::optional<CompilerTarget> nativeTarget_;
-  DenseMap<Value, Attribute> constantParameters_;
+  DenseMap<Value, Attribute> constantValues_;
   Operation* expressionConsumer = nullptr;
   size_t nextQubit = 0;
   size_t nextBit = 0;
@@ -2789,11 +2789,11 @@ private:
         compare && compare.getPredicate() == arith::CmpIPredicate::eq) {
       selector = compare.getLhs();
       auto constant = dyn_cast_or_null<IntegerAttr>(
-          mqt::valueToConstantAttr(compare.getRhs()));
+          mqt::valueToConstantAttr(compare.getRhs(), constantValues_));
       if (!constant) {
         selector = compare.getRhs();
         constant = dyn_cast_or_null<IntegerAttr>(
-            mqt::valueToConstantAttr(compare.getLhs()));
+            mqt::valueToConstantAttr(compare.getLhs(), constantValues_));
       }
       if (!constant) {
         return fail(ifOp,
@@ -3151,12 +3151,12 @@ private:
 
   [[nodiscard]] std::optional<double> constantGateParameter(Value value) {
     return mqt::attributeToDouble(
-        mqt::foldToConstantAttr(value, constantParameters_));
+        mqt::foldToConstantAttr(value, constantValues_));
   }
 
   [[nodiscard]] FailureOr<std::string> emitGateParameter(Value value) {
     if (version2_ && !gateNames_.contains(function)) {
-      if (auto constant = mqt::foldToConstantAttr(value, constantParameters_)) {
+      if (auto constant = mqt::foldToConstantAttr(value, constantValues_)) {
         return emitConstant(constant, value.getLoc());
       }
       return failExpression(
@@ -3531,7 +3531,8 @@ private:
     SmallVector<std::pair<Value, Attribute>> exponents;
     const auto walk = modifier.getRegion().walk([&](Operation* operation) {
       if (auto power = dyn_cast<PowOp>(operation)) {
-        auto exponent = mqt::valueToConstantAttr(power.getExponent());
+        auto exponent =
+            mqt::valueToConstantAttr(power.getExponent(), constantValues_);
         if (!exponent) {
           std::ignore = fail(power, "powers nested in composite gates require "
                                     "constant exponents");

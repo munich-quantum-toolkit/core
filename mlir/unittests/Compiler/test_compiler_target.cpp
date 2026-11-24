@@ -1231,8 +1231,10 @@ TEST(CompilerTargetTest, ChecksFixedValuesInsideNativeControls) {
   for (double angle : {0.25, 0.5}) {
     auto program = mlir::qco::QCOProgramBuilder::build(
         &context, [&](mlir::qco::QCOProgramBuilder& builder) {
-          auto [control, qubit] = builder.crz(angle, builder.staticQubit(0),
-                                              builder.staticQubit(1));
+          auto half = builder.floatConstant(angle / 2);
+          auto sum = mlir::arith::AddFOp::create(builder, half, half);
+          auto [control, qubit] = builder.crz(
+              sum.getResult(), builder.staticQubit(0), builder.staticQubit(1));
           builder.sink(control);
           builder.sink(qubit);
           return llvm::SmallVector<mlir::Value>{};
