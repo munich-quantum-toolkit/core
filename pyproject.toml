@@ -277,6 +277,7 @@ archs = "auto64"
 build-frontend = "uv"
 config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
 environment = { DEPLOY = "ON" }
+before-all = 'cmake -E rm -rf "{package}/build/cibuildwheel-stamps"'
 test-command = "pytest test/python --maxprocesses=2 --dist=worksteal"
 test-groups = [ "test" ]
 test-sources = [
@@ -296,14 +297,12 @@ repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg 
 select = "*-manylinux_*"
 config-settings = { "cmake.define.CMAKE_LINKER_TYPE" = "LLD" }
 environment = { CC = "clang", CXX = "clang++", PATH = "/opt/clang/bin:$PATH:/root/.local/bin" }
-before-all = """
-manylinux-install-clang -v 22.1.8.1
-uv tool install "sccache>=0.10.0"
-"""
+before-all = [ "manylinux-install-clang -v 22.1.8.1", "uv tool install 'sccache>=0.10.0'" ]
 before-test = "uvx sccache --show-stats"
 # QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
 # containers used to build and test MQT Core's broadly compatible wheels.
 test-groups = [ "test-base" ]
+inherit.before-all = "append"
 inherit.config-settings = "append"
 inherit.environment = "append"
 
