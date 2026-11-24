@@ -4496,9 +4496,12 @@ module {
     %a = qco.alloc : !qco.qubit
     %b = qco.alloc : !qco.qubit
     %c = qco.alloc : !qco.qubit
-    %a1, %b1 = qco.xx_plus_yy(%angle, %angle) %a, %b : !qco.qubit, !qco.qubit
-    %b2, %c1 = qco.xx_plus_yy(%angle, %angle) %b1, %c : !qco.qubit, !qco.qubit
-    %c2, %a2 = qco.xx_plus_yy(%angle, %angle) %c1, %a1 : !qco.qubit, !qco.qubit
+    %a1, %b1 = qco.pow(%angle) (%x = %a, %y = %b) {
+      %s, %t = qco.swap %x, %y : !qco.qubit, !qco.qubit
+      qco.yield %s, %t : !qco.qubit, !qco.qubit
+    } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
+    %b2, %c1 = qco.rzz(%angle) %b1, %c : !qco.qubit, !qco.qubit
+    %c2, %a2 = qco.rzz(%angle) %c1, %a1 : !qco.qubit, !qco.qubit
     %a3, %r0 = qco.measure %a2 : !qco.qubit
     %b3, %r1 = qco.measure %b2 : !qco.qubit
     %c3, %r2 = qco.measure %c2 : !qco.qubit

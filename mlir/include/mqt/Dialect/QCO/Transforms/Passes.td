@@ -495,11 +495,15 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     fusion preserves native runs and uses only direct Euler identities;
     other runs are left for individual lowering to retain exportability.
 
-    Unknown native-operation metadata is valid when no
-    surviving unitary operation needs it. Otherwise, the pass fails when the
-    metadata is unknown, no complete basis exists, or an operation has no
-    compile-time unitary matrix and cannot be synthesized as a parameterized
-    single-qubit gate or a single-controlled phase gate.
+    Runtime synthesis supports single-qubit Euler rotations, two-qubit Pauli
+    rotations, single-controlled Pauli and phase rotations, and XX+YY and
+    XX-YY exchange gates. An exchange with a relative phase uses local Z
+    rotations around its zero-phase core. A target can supply that core
+    directly or provide a complete synthesis basis.
+
+    Unknown native-operation metadata is valid when no surviving unitary
+    needs it. The pass diagnoses an operation it cannot lower from its
+    constant matrix or a supported runtime recipe.
 
     Numerical decomposition failure is diagnosed before emitting a replacement.
     The input may be modified on failure.

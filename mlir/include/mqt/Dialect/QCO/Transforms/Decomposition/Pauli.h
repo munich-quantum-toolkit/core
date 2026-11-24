@@ -92,8 +92,11 @@ struct PauliRotationSequence {
 };
 
 /// Recognizes exact Pauli-generator decompositions without changing the IR.
+///
+/// With @p ignoreExchangePhase, return the core of an exchange whose relative
+/// phase is handled by an enclosing local Z frame.
 [[nodiscard]] std::optional<PauliRotationSequence>
-getPauliRotations(Operation* operation);
+getPauliRotations(Operation* operation, bool ignoreExchangePhase = false);
 
 /// Counts used to compare native entanglers without inspecting angles again.
 struct PauliRotationCounts {

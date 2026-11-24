@@ -64,6 +64,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -856,6 +857,80 @@ static U2Op nativeControlledU2(Operation* operation,
   return match.capability != nullptr ? u2 : U2Op{};
 }
 
+namespace {
+
+struct FramedExchange {
+  Value phase; ///< Empty when a whole turn needs only local gates.
+  std::optional<double> theta;
+  bool nativeCore = false;
+  bool nativeFrame = false;
+
+  [[nodiscard]] Matrix4x4 coreMatrix(UnitaryOpInterface op) const {
+    assert(theta);
+    return isa<XXPlusYYOp>(op.getOperation())
+               ? XXPlusYYOp::unitaryMatrix(*theta, 0.)
+               : XXMinusYYOp::unitaryMatrix(*theta, 0.);
+  }
+};
+
+} // namespace
+
+/// Both exchanges are conjugated by RZ(beta) on the second wire.
+static std::optional<FramedExchange>
+planFramedExchange(UnitaryOpInterface op, const CompilerTarget& target,
+                   NativeCostAnalysis::Sites sites) {
+  const bool plus = isa<XXPlusYYOp>(op.getOperation());
+  if (!plus && !isa<XXMinusYYOp>(op.getOperation())) {
+    return std::nullopt;
+  }
+  auto phase = op.getParameter(1);
+  const auto beta = mqt::valueToConstantDouble(phase);
+  if (beta == 0. || (beta && !std::isfinite(*beta))) {
+    return std::nullopt;
+  }
+  const auto theta = mqt::valueToConstantDouble(op.getParameter(0));
+  if (theta && !std::isfinite(*theta)) {
+    return std::nullopt;
+  }
+  const auto& basis = target.synthesisBasis();
+  // A whole turn leaves only diagonal local factors and possibly global phase.
+  if (theta && basis && std::abs(std::sin(*theta / 2.)) <= MATRIX_TOLERANCE) {
+    return FramedExchange{.phase = {}, .theta = theta};
+  }
+  const std::array parameters{theta, std::optional{0.}};
+  const auto hasNativeCore = [&](NativeCostAnalysis::Sites placement) {
+    return (plus && isSqrtISwap(theta, 0.) &&
+            target.findOperation("sqrt_iswap", 2, {}, placement).capability !=
+                nullptr) ||
+           target.findOperation(op.getBaseSymbol(), 2, parameters, placement)
+                   .capability != nullptr;
+  };
+  const bool nativeCore =
+      hasNativeCore(sites) ||
+      (sites && hasNativeCore(std::array{(*sites)[1], (*sites)[0]}));
+
+  // Fully constant gates can take the ordinary numerical path. Framing also
+  // works without a general entangler when the target accepts the core.
+  if (!nativeCore && (!basis || !basis->entangler || (theta && beta))) {
+    return std::nullopt;
+  }
+  const auto frameSite =
+      sites ? std::optional{sites->slice(1, 1)} : std::nullopt;
+  const auto inverse = beta ? std::optional{-*beta} : std::nullopt;
+  const bool nativeFrame =
+      target.findOperation("rz", 1, {beta}, frameSite).capability != nullptr &&
+      target.findOperation("rz", 1, {inverse}, frameSite).capability != nullptr;
+  if (!nativeFrame && !basis) {
+    return std::nullopt;
+  }
+  return FramedExchange{
+      .phase = phase,
+      .theta = theta,
+      .nativeCore = nativeCore,
+      .nativeFrame = nativeFrame,
+  };
+}
+
 std::optional<size_t>
 NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
                                   const CompilerTarget& target, Sites sites) {
@@ -865,6 +940,15 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
   if (nativeOrientation(operation, target, sites) ||
       nativeControlledU2(operation, target, sites)) {
     return operation.isTwoQubit() ? 1 : 0;
+  }
+  const auto exchange = planFramedExchange(operation, target, sites);
+  if (exchange) {
+    if (!exchange->phase) {
+      return 0;
+    }
+    if (exchange->nativeCore) {
+      return 1;
+    }
   }
   if (!target.synthesisBasis()) {
     return std::nullopt;
@@ -877,12 +961,18 @@ NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
     }
     return std::nullopt;
   }
-  if (const auto sequence = decomposition::getPauliRotations(operation)) {
+  if (const auto sequence =
+          decomposition::getPauliRotations(operation, exchange.has_value())) {
     const auto counts = decomposition::countPauliRotations(*sequence);
     if (const auto choice =
             counts ? select(*counts, target, sites) : std::nullopt) {
       return choice->count;
     }
+  }
+  if (exchange) {
+    return exchange->theta
+               ? matrixCost(exchange->coreMatrix(operation), target, sites)
+               : std::nullopt;
   }
   Matrix4x4 matrix;
   if (!assignTwoQubitOpMatrix(operation, matrix)) {
@@ -1177,6 +1267,50 @@ static LogicalResult synthesizeTargetOperation(
     rewriter.replaceOpWithNewOp<UOp>(u2, u2.getQubitIn(), std::numbers::pi / 2.,
                                      u2.getPhi(), u2.getLambda());
     return success();
+  }
+  if (const auto exchange = planFramedExchange(op, target, sites)) {
+    const auto loc = op.getLoc();
+    rewriter.setInsertionPoint(op);
+    if (!exchange->phase) {
+      std::array outputs{op.getInputQubit(0), op.getInputQubit(1)};
+      if (std::cos(*exchange->theta / 2.) < 0.) {
+        // RZ(pi) on each wire gives -ZZ. XX+YY reverses that sign on
+        // odd whole turns.
+        for (auto& wire : outputs) {
+          wire = decomposition::synthesizePauliRotation1Q(
+              rewriter, loc, wire, decomposition::PauliAxis::Z,
+              std::numbers::pi, *basis);
+        }
+        if (isa<XXPlusYYOp>(operation)) {
+          decomposition::emitGPhaseIfNeeded(rewriter, loc, std::numbers::pi);
+        }
+      }
+      rewriter.replaceOp(op, outputs);
+      return success();
+    }
+    const auto rotate = [&](Value qubit, Value angle) -> Value {
+      if (exchange->nativeFrame) {
+        return RZOp::create(rewriter, loc, qubit, angle).getQubitOut();
+      }
+      return decomposition::synthesizePauliRotation1Q(
+          rewriter, loc, qubit, decomposition::PauliAxis::Z, angle, *basis);
+    };
+    auto input0 = op.getInputQubit(0);
+    auto input1 =
+        rotate(op.getInputQubit(1),
+               rewriter.createOrFold<arith::NegFOp>(loc, exchange->phase));
+    auto theta = op.getParameter(0);
+    UnitaryOpInterface core;
+    if (isa<XXPlusYYOp>(operation)) {
+      core = XXPlusYYOp::create(rewriter, loc, input0, input1, theta, 0.);
+    } else {
+      core = XXMinusYYOp::create(rewriter, loc, input0, input1, theta, 0.);
+    }
+    auto output1 = rotate(core.getOutputQubit(1), exchange->phase);
+    rewriter.replaceOp(op, ValueRange{core.getOutputQubit(0), output1});
+    // The generated core has zero relative phase, so the call cannot reframe.
+    return synthesizeTargetOperation(rewriter, core, target, basis, sites,
+                                     analysis, canEmitRuntimeBranches);
   }
   const auto unsupported = [&](StringRef reason) -> LogicalResult {
     return operation->emitError()

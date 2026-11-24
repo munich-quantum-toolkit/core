@@ -1388,25 +1388,15 @@ module {
         }
       }
     }
-    if (exchange) {
-      mlir::OpBuilder builder(context.get());
-      builder.setInsertionPoint(gate);
-      const auto beta =
-          mlir::mqt::constantFromScalar(builder, gate.getLoc(), 0.25);
-      gate.getParameter(1).replaceAllUsesWith(beta);
-      if (name == "xx_minus_yy") {
-        EXPECT_EQ(analysis.operationCost(gate, native, sites), 1U);
-        auto synthesized = OwningOpRef<ModuleOp>(moduleOp->clone());
-        ASSERT_TRUE(mlir::succeeded(runTargetPass(
-            *synthesized, native, mlir::qco::createTargetNativeSynthesis())));
-        ASSERT_TRUE(mlir::succeeded(runTargetPass(
-            *synthesized, native, mlir::qco::createVerifyTargetConformance())));
-      }
-      EXPECT_FALSE(analysis.operationCost(gate, makeUCxTarget(), sites));
-      EXPECT_NE(expectTargetFailure(*moduleOp, makeUCxTarget(),
-                                    mlir::qco::createTargetNativeSynthesis())
-                    .find("not available at compile time"),
-                std::string::npos);
+    if (name == "xx_minus_yy") {
+      mlir::OpBuilder builder(gate);
+      gate.getParameter(1).replaceAllUsesWith(
+          mlir::mqt::constantFromScalar(builder, gate.getLoc(), 0.25));
+      EXPECT_EQ(analysis.operationCost(gate, native, sites), 1U);
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *moduleOp, native, mlir::qco::createTargetNativeSynthesis())));
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *moduleOp, native, mlir::qco::createVerifyTargetConformance())));
     }
   }
 }
@@ -4606,30 +4596,81 @@ TEST_F(TargetSynthesisTest, FoldedCliffordAngleUsesNumericalSynthesis) {
   expectEquivalent(expected, actual);
 }
 
-TEST_F(TargetSynthesisTest,
-       UnsupportedRuntimeParameterizedGateHasLocalDiagnostic) {
-  auto module = mlir::parseSourceString<ModuleOp>(R"mlir(
+TEST_F(TargetSynthesisTest, SynthesizesExchangeRelativePhase) {
+  auto original = mlir::parseSourceString<ModuleOp>(R"mlir(
     module {
-      func.func @main(%theta: f64) -> (!qco.qubit, !qco.qubit) {
+      func.func @main(%theta: f64, %beta: f64) -> (!qco.qubit, !qco.qubit) {
         %q0 = qco.static 0 : !qco.qubit
         %q1 = qco.static 1 : !qco.qubit
-        %q2, %q3 = qco.xx_plus_yy(%theta, %theta) %q0, %q1 : !qco.qubit, !qco.qubit
-        return %q2, %q3 : !qco.qubit, !qco.qubit
+        %quarter = arith.constant 0.27 : f64
+        %half = arith.addf %quarter, %quarter : f64
+        %turn = arith.constant 6.283185307179586 : f64
+        %a, %b = qco.xx_plus_yy(%theta, %beta) %q0, %q1 : !qco.qubit, !qco.qubit
+        %c, %d = qco.xx_minus_yy(%half, %beta) %a, %b : !qco.qubit, !qco.qubit
+        %e, %f = qco.xx_plus_yy(%turn, %beta) %c, %d : !qco.qubit, !qco.qubit
+        return %e, %f : !qco.qubit, !qco.qubit
       }
     }
   )mlir",
-                                                  context.get());
-  ASSERT_TRUE(module);
-  const auto target = makeUCxTarget();
-  const auto diagnostics = expectTargetFailure(
-      *module, target, mlir::qco::createTargetNativeSynthesis());
-  EXPECT_NE(diagnostics.find("target-native synthesis cannot lower operation "
-                             "'qco.xx_plus_yy'"),
-            std::string::npos)
-      << diagnostics;
-  EXPECT_NE(diagnostics.find("unitary matrix is not available at compile time"),
-            std::string::npos)
-      << diagnostics;
+                                                    context.get());
+  ASSERT_TRUE(original);
+  const auto native = valid(Target::create(
+      2, Connectivity::allToAll(),
+      NativeOperations::fromOperations({
+          valid(OperationCapability::create("rz", 1, 1,
+                                            {valid(SiteTuple::create({1}))})),
+          valid(OperationCapability::create(
+              "xx_plus_yy", 2, 2, {valid(SiteTuple::create({1, 0}))},
+              std::nullopt, std::nullopt, {std::nullopt, 0.})),
+          valid(OperationCapability::create(
+              "xx_minus_yy", 2, 2, {valid(SiteTuple::create({1, 0}))},
+              std::nullopt, std::nullopt, {std::nullopt, 0.})),
+      })));
+  const auto cx = valid(Target::create(
+      2, Connectivity::allToAll(),
+      NativeOperations::fromOperations({
+          valid(OperationCapability::create("u", 1, 3)),
+          valid(OperationCapability::create("gphase", 0, 1)),
+          valid(OperationCapability::create("cx", 2, 0)),
+          valid(OperationCapability::create("xx_plus_yy", 2, 2, {},
+                                            std::nullopt, std::nullopt,
+                                            {2. * std::numbers::pi, 0.})),
+      })));
+  const auto bind = [](ModuleOp moduleOp) {
+    auto function = mainFunction(moduleOp);
+    mlir::OpBuilder builder = mlir::OpBuilder::atBlockBegin(&function.front());
+    for (auto [arg, angle] :
+         llvm::zip_equal(function.getArguments(), std::array{0.71, -0.39})) {
+      arg.replaceAllUsesWith(
+          mlir::mqt::constantFromScalar(builder, function.getLoc(), angle));
+    }
+  };
+  auto expected = OwningOpRef<ModuleOp>(original->clone());
+  bind(*expected);
+  for (const auto& [target, costs] : {
+           std::pair{cx, std::array{2U, 2U, 0U}},
+           std::pair{native, std::array{1U, 1U, 1U}},
+       }) {
+    mlir::qco::NativeCostAnalysis analysis(2023);
+    const std::array<Target::SiteId, 2> sites{0, 1};
+    for (auto [gate, cost] : llvm::zip_equal(
+             mainFunction(*original).getOps<mlir::qco::UnitaryOpInterface>(),
+             costs)) {
+      EXPECT_EQ(analysis.operationCost(gate, target, sites), cost);
+    }
+    auto actual = OwningOpRef<ModuleOp>(original->clone());
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *actual, target, mlir::qco::createTargetNativeSynthesis())));
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *actual, target, mlir::qco::createVerifyTargetConformance())));
+    size_t emitted = 0;
+    actual->walk([&](mlir::qco::UnitaryOpInterface gate) {
+      emitted += static_cast<size_t>(gate.isTwoQubit());
+    });
+    EXPECT_EQ(emitted, costs[0] + costs[1] + costs[2]);
+    bind(*actual);
+    ::mqt::test::expectFullUnitaryEqual(*expected, *actual, 2, 1e-12);
+  }
 }
 
 TEST_F(TargetSynthesisTest,
@@ -4642,7 +4683,10 @@ TEST_F(TargetSynthesisTest,
         %phase = arith.constant 0.25 : f64
         qco.gphase(%phase)
         %q2 = qco.rz(%theta) %q0 : !qco.qubit
-        %q3, %q4 = qco.xx_plus_yy(%theta, %theta) %q2, %q1 : !qco.qubit, !qco.qubit
+        %q3, %q4 = qco.pow(%theta) (%a = %q2, %b = %q1) {
+          %s, %t = qco.swap %a, %b : !qco.qubit, !qco.qubit
+          qco.yield %s, %t : !qco.qubit, !qco.qubit
+        } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
         return %q3, %q4 : !qco.qubit, !qco.qubit
       }
     }

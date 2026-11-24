@@ -135,7 +135,8 @@ Operation* emitPauliRotation2Q(OpBuilder& builder, Location loc, Value qubit0,
   }
 }
 
-std::optional<PauliRotationSequence> getPauliRotations(Operation* operation) {
+std::optional<PauliRotationSequence>
+getPauliRotations(Operation* operation, bool ignoreExchangePhase) {
   auto unitary = dyn_cast<UnitaryOpInterface>(operation);
   if (!unitary) {
     return std::nullopt;
@@ -152,8 +153,8 @@ std::optional<PauliRotationSequence> getPauliRotations(Operation* operation) {
     }
   }
   if (isa<XXPlusYYOp, XXMinusYYOp>(unitary.getOperation())) {
-    const auto beta = mqt::valueToConstantDouble(unitary.getParameter(1));
-    if (beta != 0.) {
+    if (!ignoreExchangePhase &&
+        mqt::valueToConstantDouble(unitary.getParameter(1)) != 0.) {
       return std::nullopt;
     }
     using enum PauliAxis;
