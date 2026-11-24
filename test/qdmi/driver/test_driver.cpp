@@ -1596,15 +1596,17 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   EXPECT_EQ(queryName(probe), baseline);
 }
 
-TEST(DeviceRegistrationTest, ValidatesHistogramKeyValueCounts) {
+TEST(DeviceRegistrationTest, ValidatesHistogramKeys) {
   registerSessionTestDevice();
+  const auto device =
+      value(qdmi::builtin_driver::openDevice("test.session-overrides"));
+  const auto submit = [&](std::span<const char> keys) {
+    return value(device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2,
+                                  std::nullopt, std::as_bytes(keys)));
+  };
   for (const auto* keys : {"", "00", "00,", ",", "00,11", ",00", "00,,"}) {
-    const auto device = value(qdmi::builtin_driver::openDevice(
-        "test.session-overrides",
-        std::string{R"({"custom3":")"} + keys + R"("})"));
-    const auto job =
-        value(device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2));
     const std::string_view input(keys);
+    const auto job = submit({keys, input.size() + 1});
     if (input == "00,11" || input == ",00" || input == "00,,") {
       EXPECT_TRUE(errorStatus([&] { return job.getCounts(); }).has_value());
     } else {
@@ -1613,6 +1615,9 @@ TEST(DeviceRegistrationTest, ValidatesHistogramKeyValueCounts) {
       EXPECT_EQ(counts.at(input.starts_with("00") ? "00" : ""), 5);
     }
   }
+  constexpr std::array unterminated{'1', '0'};
+  const auto job = submit(unterminated);
+  EXPECT_EQ(errorStatus([&] { return job.getCounts(); }), QDMI_ERROR_FATAL);
 }
 
 TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {

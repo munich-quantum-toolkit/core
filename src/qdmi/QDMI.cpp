@@ -116,6 +116,10 @@ Expected<std::map<std::string, T>> getSparseResult(
                            "Querying " + llvm::Twine(description) + " keys")) {
     return error;
   }
+  if (keys.back() != '\0') {
+    return qdmi::makeError(
+        QDMI_ERROR_FATAL, "Unterminated " + llvm::Twine(description) + " keys");
+  }
   keys.pop_back();
 
   size_t valuesSize = 0;
