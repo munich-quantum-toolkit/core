@@ -1151,15 +1151,29 @@ TEST_F(TargetSynthesisTest, SharedNativeCostsPreserveSwapOrientations) {
   using mlir::qco::decomposition::TwoQubitWeylDecomposition;
   const auto local = Matrix4x4::kron(UOp::unitaryMatrix(0.3, -0.7, 1.1),
                                      UOp::unitaryMatrix(-0.5, 0.2, 0.9));
+  const auto right = Matrix4x4::kron(UOp::unitaryMatrix(0.35, -0.2, 1.6),
+                                     UOp::unitaryMatrix(-0.9, 0.7, 0.8));
+  const auto chamber = [&](double angle) {
+    return local *
+           TwoQubitWeylDecomposition::getCanonicalMatrix(std::numbers::pi / 4,
+                                                         angle, -angle / 2) *
+           local.adjoint();
+  };
   const auto swap = SWAPOp::getUnitaryMatrix();
   for (const uint64_t seed : {7U, 2023U}) {
-    for (const double angle : {0., 1e-12, 1e-6, 0.19, std::numbers::pi / 4}) {
-      SCOPED_TRACE(testing::Message()
-                   << "seed=" << seed << ", angle=" << angle);
-      const auto matrix = local *
-                          TwoQubitWeylDecomposition::getCanonicalMatrix(
-                              std::numbers::pi / 4, angle, -angle / 2) *
-                          local.adjoint();
+    // Include a matrix whose reversed orientation is on a numerical cost
+    // boundary.
+    for (const auto& matrix : {
+             local *
+                 TwoQubitWeylDecomposition::getCanonicalMatrix(
+                     0.4, 0.1, 1.0536712231612455e-8) *
+                 right,
+             chamber(0.),
+             chamber(1e-6),
+             chamber(0.19),
+             chamber(std::numbers::pi / 4),
+         }) {
+      SCOPED_TRACE(seed);
       auto moduleOp = build([&](QCOProgramBuilder& builder) {
         auto values = builder.unitary(
             ValueRange{builder.staticQubit(0), builder.staticQubit(1)},

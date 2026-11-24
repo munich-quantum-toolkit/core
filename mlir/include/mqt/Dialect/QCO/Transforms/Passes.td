@@ -395,8 +395,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     searches and releases it when the trial finishes. Final SWAP insertion uses
     separate storage after the trials finish. Target distance caches, wire
     layouts, and native-cost tracking use additional memory. Concurrent trials
-    share precomputed Weyl coordinates for repeated two-qubit matrices and
-    keep their own numerical caches.
+    share precomputed Weyl coordinates for exact ordered two-qubit matrices
+    and keep their own numerical caches.
 
     For straight-line scalar interactions and scalar `scf.for` loops with
     positive static trip counts, the pass first checks the identity layout.
