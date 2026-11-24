@@ -28,4 +28,9 @@ namespace mlir::mqt {
 [[nodiscard]] LogicalResult normalizeGlobalPhases(ModuleOp moduleOp,
                                                   RewriterBase& rewriter);
 
+/// Normalize global phases and discard the program entry point's global phase.
+/// Controlled operations retain their relative phase.
+[[nodiscard]] LogicalResult normalizeAndDropEntryPhase(ModuleOp moduleOp,
+                                                       RewriterBase& rewriter);
+
 } // namespace mlir::mqt
