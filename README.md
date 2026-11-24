@@ -61,21 +61,21 @@ uvx mqt-core simulate circuit.bc --shots 1024
 OpenQASM files can also run directly with `uvx mqt-core simulate input.qasm`.
 Use `mqt-core run input.qasm --qdmi-device=<id>` to compile and submit through
 one QDMI device session. See the
-[command-line guide](https://mqt.readthedocs.io/projects/core/en/stable/installation.html#command-line-tools)
+[command-line guide](https://mqt.readthedocs.io/projects/core/stable/installation.html#command-line-tools)
 for installation paths and command options.
 
 For other installation options, follow the
-[source-build instructions](https://mqt.readthedocs.io/projects/core/en/stable/installation.html).
+[source-build instructions](https://mqt.readthedocs.io/projects/core/stable/installation.html).
 Then choose a starting point:
 
-| Task                                 | Start here                                                                                                                                                                                                                                                                    |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Compile and execute a program**    | Factor 21 with [Shor's algorithm](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html); explore [compilation and execution](https://mqt.readthedocs.io/projects/core/en/stable/compilation/index.html).                                                   |
-| **Connect or implement a device**    | [Discover devices](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/driver.html#python-bindings), [integrate SDKs, or implement an interface](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/index.html).                                                     |
-| **Use decision diagrams**            | Represent states and operations in C++ or Python: [DD quickstart](https://mqt.readthedocs.io/projects/core/en/stable/dd_package.html#quickstart).                                                                                                                             |
-| **Generate and evaluate benchmarks** | [Configure quantum programs](https://mqt.readthedocs.io/projects/core/en/stable/benchmarks.html#configure-a-typed-instance) and compare results with references.                                                                                                              |
-| **Exchange quantum programs**        | [Qiskit to QIR](https://mqt.readthedocs.io/projects/core/en/stable/qir/index.html#from-a-qiskit-circuit-to-qir), [OpenQASM](https://mqt.readthedocs.io/projects/core/en/stable/mlir/OpenQASM.html), and [jeff](https://mqt.readthedocs.io/projects/core/en/stable/jeff.html). |
-| **Embed or extend MQT Core**         | [Use the C++ libraries](https://mqt.readthedocs.io/projects/core/en/stable/cpp_api.html#use-the-c-development-libraries) or [extend the MLIR compiler](https://mqt.readthedocs.io/projects/core/en/stable/development.html#mlir).                                             |
+| Task                                 | Start here                                                                                                                                                                                                                                                           |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Compile and execute a program**    | Factor 21 with [Shor's algorithm](https://mqt.readthedocs.io/projects/core/stable/getting_started.html); explore [compilation and execution](https://mqt.readthedocs.io/projects/core/stable/compilation/index.html).                                                |
+| **Connect or implement a device**    | [Discover devices](https://mqt.readthedocs.io/projects/core/stable/qdmi/driver.html#python-bindings), [integrate SDKs, or implement an interface](https://mqt.readthedocs.io/projects/core/stable/qdmi/index.html).                                                  |
+| **Use decision diagrams**            | Represent states and operations in C++ or Python: [DD quickstart](https://mqt.readthedocs.io/projects/core/stable/dd_package.html#quickstart).                                                                                                                       |
+| **Generate and evaluate benchmarks** | [Configure quantum programs](https://mqt.readthedocs.io/projects/core/stable/benchmarks.html#configure-a-typed-instance) and compare results with references.                                                                                                        |
+| **Exchange quantum programs**        | [Qiskit to QIR](https://mqt.readthedocs.io/projects/core/stable/qir/index.html#from-a-qiskit-circuit-to-qir), [OpenQASM](https://mqt.readthedocs.io/projects/core/stable/mlir/OpenQASM.html), and [jeff](https://mqt.readthedocs.io/projects/core/stable/jeff.html). |
+| **Embed or extend MQT Core**         | [Use the C++ libraries](https://mqt.readthedocs.io/projects/core/stable/cpp_api.html#use-the-c-development-libraries) or [extend the MLIR compiler](https://mqt.readthedocs.io/projects/core/stable/development.html#mlir).                                          |
 
 ## Getting Started
 
@@ -110,19 +110,19 @@ QASM3: (3, 7)
 ```
 
 The
-[factoring walkthrough](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html)
+[factoring walkthrough](https://mqt.readthedocs.io/projects/core/stable/getting_started.html)
 explains the measured phase, continued fractions, and verified factor recovery.
 
 ## Development
 
 Source builds require a C++20 compiler and CMake 3.28 or newer. CMake reuses an
 installed
-[LLVM/MLIR 23.1 SDK](https://mqt.readthedocs.io/projects/core/en/stable/installation.html#setting-up-mlir)
+[LLVM/MLIR 23.1 SDK](https://mqt.readthedocs.io/projects/core/stable/installation.html#setting-up-mlir)
 or downloads one into the build directory. Prebuilt Python wheels include the
 compiler and simulator. Graphviz is optional for exporting DD visualizations.
 
 See the
-[contribution guide](https://mqt.readthedocs.io/projects/core/en/stable/contributing.html)
+[contribution guide](https://mqt.readthedocs.io/projects/core/stable/contributing.html)
 for development setup and checks. For questions and suggestions, open a
 [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an
 [issue](https://github.com/munich-quantum-toolkit/core/issues).
@@ -164,7 +164,7 @@ To support this endeavor, please consider:
   requests
 - Citing the MQT in your publications (see [Cite This](#cite-this))
 - Citing our research in your publications (see
-  [References](https://mqt.readthedocs.io/projects/core/en/stable/references.html))
+  [References](https://mqt.readthedocs.io/projects/core/stable/references.html))
 - Using the MQT in research and teaching, and sharing feedback and use cases
 - Sponsoring us on GitHub: <https://github.com/sponsors/munich-quantum-toolkit>
 
