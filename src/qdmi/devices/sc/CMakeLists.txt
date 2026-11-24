@@ -60,6 +60,8 @@ if(NOT TARGET ${TARGET_NAME})
 
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon MQT::CoreQDMIScDeviceConfig)
 
+  configure_qdmi_exports(TARGET ${TARGET_NAME} INTERFACE device PREFIX ${QDMI_PREFIX})
+
   mqt_configure_qdmi_device(
     ${TARGET_NAME}
     ID
