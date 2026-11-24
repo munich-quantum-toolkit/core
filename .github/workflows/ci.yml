@@ -37,7 +37,7 @@ jobs:
     name: 📚 Docs
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-docs)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@b2b736dc2b5e2cc870d1456f825eaa5642a3a296 # zizmor: ignore[stale-action-refs]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@186f7987e940652c4284c63314569a6b3e4587d3 # zizmor: ignore[stale-action-refs]
     with:
       apt-packages: doxygen
     permissions:
