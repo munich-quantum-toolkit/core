@@ -118,8 +118,9 @@ def NormalizeGlobalPhases : Pass<"normalize-global-phases", "mlir::ModuleOp"> {
     computations in verified modifier bodies move once, in source order, before
     the outermost enclosing `inv` or `ctrl`.
 
-    Constant angles are reduced modulo 2π. Symbolic sums are balanced and
-    reduced with `2 * atan(tan(angle / 2))` to keep runtime phases in range.
+    Constant sums retain their rounding residual until reduction modulo 2π.
+    The pass balances the symbolic terms and reduces their sum with
+    `2 * atan(tan(angle / 2))` before adding the constant offset.
     Function, CFG, structured-control-flow, and unknown region boundaries are
     preserved. The pass does not scan an enclosing module from individual
     rewrite patterns.

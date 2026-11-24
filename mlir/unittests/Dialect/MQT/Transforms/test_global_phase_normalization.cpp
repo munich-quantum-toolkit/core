@@ -33,6 +33,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
@@ -339,39 +340,36 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
 
 TEST_F(GlobalPhaseNormalizationTest,
        FoldsDerivedPhasesWithinPracticalAngleLimit) {
-  // QV_n100 also produces mulf(sitofp(i64), f64) phase expressions.
-  for (bool integerLeaf : {false, true}) {
-    SCOPED_TRACE(integerLeaf);
-    OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
-    OpBuilder builder(context.get());
-    builder.setInsertionPointToStart(moduleOp->getBody());
-    const auto loc = moduleOp->getLoc();
-    constexpr int phaseCount = 4000;
-    for (int i = 0; i < phaseCount; ++i) {
-      Value lhs;
-      if (integerLeaf) {
-        auto integer = arith::ConstantOp::create(builder, loc,
-                                                 builder.getI64IntegerAttr(3));
-        lhs = arith::SIToFPOp::create(builder, loc, builder.getF64Type(),
-                                      integer);
-      } else {
-        lhs = mlir::mqt::constantFromScalar(builder, loc, 1.5);
-      }
-      auto rhs = mlir::mqt::constantFromScalar(builder, loc, 2.0);
-      auto angle = arith::MulFOp::create(builder, loc, lhs, rhs);
-      qco::GPhaseOp::create(builder, loc, angle.getResult());
+  // Module bodies can end in a phase without a trailing terminator.
+  auto moduleOp = parse(R"mlir(
+    module {
+      %integer = arith.constant 5000 : i64
+      %converted = arith.sitofp %integer : i64 to f64
+      %float = arith.constant 5000.0 : f64
+      %small = arith.constant 9.0e-13 : f64
+      %two = arith.constant 2.0 : f64
+      %a = arith.mulf %converted, %two : f64
+      %b = arith.mulf %float, %two : f64
+      qc.gphase(%a)
+      qc.gphase(%small)
+      qc.gphase(%b)
+      qc.gphase(%small)
+      qc.gphase(%a)
+      qc.gphase(%small)
+      qc.gphase(%b)
+      qc.gphase(%small)
     }
-    ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    // Fold constant contributions without creating a dead accumulation tree.
-    EXPECT_TRUE(moduleOp->getBody()->getOps<arith::AddFOp>().empty());
-    auto phases = llvm::to_vector(moduleOp->getBody()->getOps<qco::GPhaseOp>());
-    ASSERT_EQ(phases.size(), 1);
-    EXPECT_TRUE(phases.front().getTheta().getDefiningOp<arith::ConstantOp>());
-    expectFoldableGlobalPhase(
-        phases.front().getTheta(),
-        mlir::mqt::normalizeAngle(phaseCount * (integerLeaf ? 6.0 : 3.0)));
-  }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(moduleOp->getOps<arith::AddFOp>().empty());
+  auto phases = moduleOp->getOps<qc::GPhaseOp>();
+  ASSERT_TRUE(llvm::hasSingleElement(phases));
+  const auto angle = mlir::mqt::valueToDouble((*phases.begin()).getTheta());
+  ASSERT_TRUE(angle);
+  const auto expected = std::polar(1.0, 40000.0) * std::polar(1.0, 3.6e-12);
+  EXPECT_NEAR(std::abs(std::polar(1.0, *angle) - expected), 0.0, 1e-12);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
@@ -920,13 +918,14 @@ TEST_F(GlobalPhaseNormalizationTest, SCFLoopRegionRemainsAnIndependentScope) {
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
-       ExactSpecialConstantsCancelWithoutTolerance) {
+       PreservesExactCancellationsAndSmallOffsets) {
   OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
   OpBuilder builder(context.get());
   builder.setInsertionPointToStart(moduleOp->getBody());
   const auto loc = moduleOp->getLoc();
-  auto function = func::FuncOp::create(builder, loc, "test",
-                                       builder.getFunctionType({}, {}));
+  auto function =
+      func::FuncOp::create(builder, loc, "test",
+                           builder.getFunctionType({builder.getF64Type()}, {}));
   auto* entry = function.addEntryBlock();
   builder.setInsertionPointToStart(entry);
   for (const double angle : {
@@ -943,6 +942,35 @@ TEST_F(GlobalPhaseNormalizationTest,
 
   ASSERT_TRUE(mlir::mqt::normalizeGlobalPhases(*moduleOp).succeeded());
   EXPECT_TRUE(function.getBody().getOps<qco::GPhaseOp>().empty());
+
+  builder.setInsertionPoint(entry->getTerminator());
+  // A full turn beside a symbolic phase needs no runtime addition.
+  qco::GPhaseOp::create(builder, loc, entry->getArgument(0));
+  qco::GPhaseOp::create(
+      builder, loc,
+      mlir::mqt::constantFromScalar(builder, loc, 2.0 * std::numbers::pi));
+  ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+  auto phases = function.getBody().getOps<qco::GPhaseOp>();
+  ASSERT_TRUE(llvm::hasSingleElement(phases));
+  EXPECT_EQ((*phases.begin()).getTheta(), entry->getArgument(0));
+
+  // This offset is smaller than half an ulp at the bound runtime angle.
+  constexpr double offset = 0x1p-41;
+  builder.setInsertionPoint(entry->getTerminator());
+  qco::GPhaseOp::create(builder, loc,
+                        mlir::mqt::constantFromScalar(builder, loc, offset));
+  ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+  phases = function.getBody().getOps<qco::GPhaseOp>();
+  ASSERT_TRUE(llvm::hasSingleElement(phases));
+  constexpr double boundAngle = mlir::mqt::MAX_GLOBAL_PHASE_ANGLE;
+  llvm::DenseMap<Value, Attribute> bindings{
+      {entry->getArgument(0), builder.getF64FloatAttr(boundAngle)},
+  };
+  const auto actual = mlir::mqt::attributeToDouble(
+      mlir::mqt::valueToConstantAttr((*phases.begin()).getTheta(), bindings));
+  ASSERT_TRUE(actual);
+  const auto expected = std::polar(1.0, boundAngle) * std::polar(1.0, offset);
+  EXPECT_NEAR(std::abs(std::polar(1.0, *actual) - expected), 0.0, 1e-14);
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
@@ -1011,52 +1039,52 @@ TEST_F(GlobalPhaseNormalizationTest,
        SymbolicPhaseSumIsBalancedBoundedAndStable) {
   constexpr size_t count = 257;
   for (bool useQCO : {false, true}) {
-    for (double angle : {0.37, 6000.0, -6000.0, std::numbers::pi / 65.0}) {
-      SCOPED_TRACE(useQCO);
-      SCOPED_TRACE(angle);
-      auto moduleOp = parse(R"mlir(
+    SCOPED_TRACE(useQCO);
+    auto moduleOp = parse(R"mlir(
         func.func @test(%theta: f64, %other: f64) { return }
       )mlir");
-      ASSERT_TRUE(moduleOp);
-      auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
-      OpBuilder builder(function);
-      builder.setInsertionPoint(function.getBody().front().getTerminator());
-      for (size_t i = 0; i < count; ++i) {
-        auto theta = function.getArgument(i % 2);
-        if (useQCO) {
-          qco::GPhaseOp::create(builder, function.getLoc(), theta);
-        } else {
-          qc::GPhaseOp::create(builder, function.getLoc(), theta);
-        }
+    ASSERT_TRUE(moduleOp);
+    auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+    OpBuilder builder(function);
+    builder.setInsertionPoint(function.getBody().front().getTerminator());
+    for (size_t i = 0; i < count; ++i) {
+      auto theta = function.getArgument(i % 2);
+      if (useQCO) {
+        qco::GPhaseOp::create(builder, function.getLoc(), theta);
+      } else {
+        qc::GPhaseOp::create(builder, function.getLoc(), theta);
       }
-      ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
-      ASSERT_TRUE(succeeded(verify(*moduleOp)));
-      llvm::DenseMap<Value, size_t> depths;
-      size_t maxDepth = 0;
-      Value phase;
-      size_t phaseCount = 0;
-      moduleOp->walk([&](Operation* operation) {
-        if (auto add = dyn_cast<arith::AddFOp>(operation)) {
-          const auto depth = 1 + std::max(depths.lookup(add.getLhs()),
-                                          depths.lookup(add.getRhs()));
-          depths[add.getResult()] = depth;
-          maxDepth = std::max(maxDepth, depth);
-        } else if (isa<qc::GPhaseOp, qco::GPhaseOp>(operation)) {
-          phase = operation->getOperand(0);
-          ++phaseCount;
-        }
-      });
-      ASSERT_EQ(phaseCount, 1U);
-      EXPECT_LE(maxDepth, std::bit_width(count - 1));
-      const auto operationCount = llvm::range_size(function.getBody().front());
-      ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
-      EXPECT_EQ(llvm::range_size(function.getBody().front()), operationCount);
-      builder.setInsertionPointToStart(&function.getBody().front());
-      function.getArgument(0).replaceAllUsesWith(
-          mlir::mqt::constantFromScalar(builder, function.getLoc(), angle));
-      function.getArgument(1).replaceAllUsesWith(mlir::mqt::constantFromScalar(
-          builder, function.getLoc(), -angle / 2));
-      const auto actual = mlir::mqt::valueToConstantDouble(phase);
+    }
+    ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    const auto operationCount = llvm::range_size(function.getBody().front());
+    ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+    EXPECT_EQ(llvm::range_size(function.getBody().front()), operationCount);
+    llvm::DenseMap<Value, size_t> depths;
+    size_t maxDepth = 0;
+    Value phase;
+    size_t phaseCount = 0;
+    moduleOp->walk([&](Operation* operation) {
+      if (auto add = dyn_cast<arith::AddFOp>(operation)) {
+        const auto depth = 1 + std::max(depths.lookup(add.getLhs()),
+                                        depths.lookup(add.getRhs()));
+        depths[add.getResult()] = depth;
+        maxDepth = std::max(maxDepth, depth);
+      } else if (isa<qc::GPhaseOp, qco::GPhaseOp>(operation)) {
+        phase = operation->getOperand(0);
+        ++phaseCount;
+      }
+    });
+    ASSERT_EQ(phaseCount, 1U);
+    EXPECT_LE(maxDepth, std::bit_width(count - 1));
+    for (double angle : {0.37, 6000.0, -6000.0, std::numbers::pi / 65.0}) {
+      SCOPED_TRACE(angle);
+      llvm::DenseMap<Value, Attribute> bindings{
+          {function.getArgument(0), builder.getF64FloatAttr(angle)},
+          {function.getArgument(1), builder.getF64FloatAttr(-angle / 2)},
+      };
+      const auto actual = mlir::mqt::attributeToDouble(
+          mlir::mqt::valueToConstantAttr(phase, bindings));
       ASSERT_TRUE(actual);
       EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*actual));
       constexpr double pairs = (count - 1.0) / 2.0;

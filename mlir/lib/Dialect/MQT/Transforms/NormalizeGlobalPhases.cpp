@@ -38,9 +38,11 @@
 #include "llvm/ADT/SmallVector.h"
 
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
+#include <numbers>
 #include <optional>
 #include <utility>
 #include <variant>
@@ -55,9 +57,49 @@ namespace {
 struct Add final {};
 struct Negate final {};
 
-using PhaseInstruction = std::variant<double, Value, Add, Negate>;
+// Keep the low bits until the sum has been reduced to the principal interval.
+struct ConstantPhase {
+  double angle;
+  double error = 0.0;
 
-/// A postfix phase expression.
+  void add(ConstantPhase other) {
+    if (other.angle == -other.error) {
+      return;
+    }
+    const double sum = angle + other.angle;
+    // TwoSum recovers the low bits lost when adding the two leading terms.
+    const double rhs = sum - angle;
+    const double residual = (angle - (sum - rhs)) + (other.angle - rhs);
+    error += other.error + residual;
+    angle = sum;
+  }
+
+  [[nodiscard]] bool isZero() const {
+    if (angle == -error) {
+      return true;
+    }
+    // Elide encoded whole turns only while their phase factor is still unity
+    // within tolerance. A large multiple of binary64 2π can lose phase.
+    return error == 0.0 && std::abs(angle) >= 2.0 * std::numbers::pi &&
+           normalizeAngle(angle) == 0.0 &&
+           classifyPhaseGate(angle) == PhaseGate::Identity;
+  }
+
+  [[nodiscard]] double reduced() const {
+    const auto wrap = [](double radians) {
+      if (std::abs(radians) > std::numbers::pi) {
+        // Let libm reduce the argument using its extended-precision π.
+        radians = 2.0 * std::atan(std::tan(radians / 2.0));
+      }
+      return radians == -std::numbers::pi ? std::numbers::pi : radians;
+    };
+    return wrap(wrap(angle) + error);
+  }
+};
+
+using PhaseInstruction = std::variant<Value, Add, Negate>;
+
+/// A constant offset and a postfix expression for the symbolic terms.
 ///
 /// Keeping modifier transformations symbolic avoids repeatedly walking and
 /// moving an ever-growing SSA arithmetic chain through nested modifiers. The
@@ -65,56 +107,52 @@ using PhaseInstruction = std::variant<double, Value, Add, Negate>;
 /// bubbling.
 class PhaseExpression final {
 public:
-  PhaseExpression(Value angle, std::optional<double> constant) {
-    if (constant) {
-      instructions.emplace_back(normalizeAngle(*constant));
-    } else {
-      instructions.emplace_back(angle);
+  PhaseExpression(Value angle, std::optional<double> constant)
+      : constant_{constant.value_or(0.0)} {
+    if (!constant) {
+      instructions_.emplace_back(angle);
     }
   }
 
   [[nodiscard]] bool isZero() const {
-    const auto constant = getConstant();
-    return constant && *constant == 0.0;
+    return instructions_.empty() && constant_.isZero();
   }
 
-  void add(PhaseExpression&& other) {
-    if (isZero()) {
-      *this = std::move(other);
+  [[nodiscard]] bool needsNormalization() const {
+    return instructions_.empty() &&
+           (constant_.angle == 0.0 || constant_.angle <= -std::numbers::pi ||
+            constant_.angle > std::numbers::pi);
+  }
+
+  void add(PhaseExpression& other) {
+    constant_.add(other.constant_);
+    if (other.instructions_.empty()) {
       return;
     }
-    if (other.isZero()) {
+    if (instructions_.empty()) {
+      instructions_ = std::move(other.instructions_);
       return;
     }
-    const auto lhs = getConstant();
-    const auto rhs = other.getConstant();
-    if (lhs && rhs) {
-      instructions.clear();
-      instructions.emplace_back(normalizeAngle(*lhs + *rhs));
-      return;
-    }
-    instructions.append(std::make_move_iterator(other.instructions.begin()),
-                        std::make_move_iterator(other.instructions.end()));
-    instructions.emplace_back(Add{});
+    instructions_.append(other.instructions_.begin(),
+                         other.instructions_.end());
+    instructions_.emplace_back(Add{});
   }
 
   void negate() {
-    if (const auto constant = getConstant()) {
-      instructions.front() = normalizeAngle(-*constant);
-      return;
+    constant_ = {-constant_.angle, -constant_.error};
+    if (!instructions_.empty()) {
+      instructions_.emplace_back(Negate{});
     }
-    instructions.emplace_back(Negate{});
   }
 
   [[nodiscard]] Value materialize(RewriterBase& rewriter,
                                   const Location loc) const {
+    if (instructions_.empty()) {
+      return constantFromScalar(rewriter, loc, constant_.reduced());
+    }
     SmallVector<Value> stack;
     bool hasSum = false;
-    for (const auto& instruction : instructions) {
-      if (const auto* constant = std::get_if<double>(&instruction)) {
-        stack.push_back(constantFromScalar(rewriter, loc, *constant));
-        continue;
-      }
+    for (const auto& instruction : instructions_) {
       if (const auto* value = std::get_if<Value>(&instruction)) {
         stack.push_back(*value);
         continue;
@@ -133,27 +171,24 @@ public:
     }
     assert(stack.size() == 1);
     Value result = stack.front();
-    if (hasSum) {
-      // Keep dynamic sums within the phase range using exporter-supported ops.
+    const bool hasOffset = !constant_.isZero();
+    if (hasSum || hasOffset) {
+      // Reduce the symbolic subtotal before adding a possibly tiny offset.
       rewriter.getContext()->getOrLoadDialect<math::MathDialect>();
       const FloatExpression angle(rewriter, loc, result);
       const auto two = FloatExpression::constant(rewriter, loc, 2.0);
-      return (two * (angle / two).tan().atan()).getValue();
+      result = (two * (angle / two).tan().atan()).getValue();
+    }
+    if (hasOffset) {
+      auto offset = constantFromScalar(rewriter, loc, constant_.reduced());
+      result = rewriter.createOrFold<arith::AddFOp>(loc, result, offset);
     }
     return result;
   }
 
 private:
-  [[nodiscard]] std::optional<double> getConstant() const {
-    if (instructions.size() == 1) {
-      if (const auto* constant = std::get_if<double>(&instructions.front())) {
-        return *constant;
-      }
-    }
-    return std::nullopt;
-  }
-
-  SmallVector<PhaseInstruction> instructions;
+  ConstantPhase constant_;
+  SmallVector<PhaseInstruction> instructions_;
 };
 
 enum class PhaseDialect : std::uint8_t { QC, QCO };
@@ -163,10 +198,10 @@ struct PhaseContribution final {
   Location loc;
   PhaseExpression expression;
 
-  void add(PhaseContribution other) {
+  void add(PhaseContribution& other) {
     assert(dialect == other.dialect &&
            "QC and QCO operations cannot occur in the same program");
-    expression.add(std::move(other.expression));
+    expression.add(other.expression);
   }
 };
 
@@ -313,6 +348,11 @@ private:
   [[nodiscard]] std::optional<PhaseContribution>
   normalizeBlock(Block& block, Operation* extractionBoundary) {
     SmallVector<PhaseContribution> contributions;
+    size_t phaseCount = 0;
+    const auto mergeLastPair = [&] {
+      contributions[contributions.size() - 2].add(contributions.back());
+      contributions.pop_back();
+    };
     SmallVector<Operation*> directPhases;
     auto insertionPoint = block.end();
     const bool discard = extractionBoundary == nullptr &&
@@ -358,16 +398,18 @@ private:
       }
       insertionPoint = next;
       contributions.push_back(std::move(*phase));
+      // Merge adjacent groups of equal size. Each set bit in the count
+      // represents one remaining subtotal.
+      for (size_t n = ++phaseCount; n % 2 == 0; n /= 2) {
+        mergeLastPair();
+      }
     }
 
     if (contributions.empty()) {
       return std::nullopt;
     }
-    // Keep accumulated phase depth logarithmic for symbolic exporters.
-    for (size_t stride = 1; stride < contributions.size(); stride *= 2) {
-      for (size_t i = 0; i + stride < contributions.size(); i += 2 * stride) {
-        contributions[i].add(std::move(contributions[i + stride]));
-      }
+    while (contributions.size() > 1) {
+      mergeLastPair();
     }
     auto aggregate = std::move(contributions.front());
     if (extractionBoundary != nullptr) {
@@ -378,13 +420,9 @@ private:
     }
 
     // Preserve a single normalized phase, including dynamic angles.
-    if (contributions.size() == 1 && directPhases.size() == 1) {
-      const auto constant =
-          getConstantAngle(directPhases.front()->getOperand(0));
-      if (!constant ||
-          (normalizeAngle(*constant) == *constant && *constant != 0.0)) {
-        return std::nullopt;
-      }
+    if (phaseCount == 1 && directPhases.size() == 1 &&
+        !aggregate.expression.needsNormalization()) {
+      return std::nullopt;
     }
 
     for (auto* phase : directPhases) {
