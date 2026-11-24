@@ -437,21 +437,26 @@ verifyRegisterName(Operation* operation, const NamedAttribute attribute) {
            << "' requires an allocation in a function entry block";
   }
 
-  const auto name = cast<StringAttr>(attribute.getValue());
-  for (unsigned index = 0; index < function.getNumArguments(); ++index) {
-    if (function.getArgAttrOfType<StringAttr>(
-            index, MQTDialect::InputNameAttrHelper::getNameStr()) == name) {
-      return operation->emitError()
-             << "duplicate program name '" << name.getValue() << "'";
+  // Only the first named register checks uniqueness across the entry block.
+  const auto registerName = attribute.getName();
+  for (auto* prev = operation->getPrevNode(); prev != nullptr;
+       prev = prev->getPrevNode()) {
+    if (prev->hasAttr(registerName)) {
+      return success();
     }
   }
-  for (Operation& candidate : function.getFunctionBody().front()) {
-    if (&candidate == operation) {
-      continue;
+  DenseSet<StringAttr> names;
+  for (unsigned index = 0; index < function.getNumArguments(); ++index) {
+    if (auto input = function.getArgAttrOfType<StringAttr>(
+            index, MQTDialect::InputNameAttrHelper::getNameStr())) {
+      names.insert(input);
     }
-    if (candidate.getAttrOfType<StringAttr>(
-            MQTDialect::RegisterNameAttrHelper::getNameStr()) == name) {
-      return operation->emitError()
+  }
+  for (auto* candidate = operation; candidate != nullptr;
+       candidate = candidate->getNextNode()) {
+    if (auto name = candidate->getAttrOfType<StringAttr>(registerName);
+        name && !names.insert(name).second) {
+      return candidate->emitError()
              << "duplicate program name '" << name.getValue() << "'";
     }
   }
@@ -603,8 +608,8 @@ LogicalResult MQTDialect::verifyRegionArgAttribute(
 
   // The first named input owns cross-argument checks. Register-name
   // verification owns collisions between inputs and registers.
-  for (unsigned index = 0; index < argIndex; ++index) {
-    if (function.getArgAttr(index, attributeName)) {
+  for (unsigned index = argIndex; index > 0; --index) {
+    if (function.getArgAttr(index - 1, attributeName)) {
       return success();
     }
   }
