@@ -238,12 +238,12 @@ TEST_F(QIRTest, AdaptiveBuilderRecordsAndReleasesResourcesInAllocationOrder) {
     auto index = builder.intConstant(0);
     builder.x(builder.loadQubit(qubits.value, index));
     builder.x(builder.loadQubit(qubits.value, index));
-    auto result = builder.measure(qubit, i);
+    auto result = builder.measure(qubit, i, /*record=*/i != 0);
     auto allocation = result.getDefiningOp<LLVM::CallOp>();
     ASSERT_TRUE(allocation);
     EXPECT_EQ(allocation.getCallee(), QIR_RESULT_ALLOC);
     allocated[2].push_back(result);
-    auto results = builder.allocClassicalBitRegister(1);
+    auto results = builder.allocClassicalBitRegister(1, /*record=*/i != 0);
     builder.measure(qubit, results, 0);
     allocated[3].push_back(results.array);
   }
@@ -251,22 +251,31 @@ TEST_F(QIRTest, AdaptiveBuilderRecordsAndReleasesResourcesInAllocationOrder) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   std::array<SmallVector<Value>, 4> released;
-  SmallVector<Value> recorded;
+  std::array<SmallVector<Value>, 2> recorded;
+  bool outputStarted = false;
   moduleOp->walk([&](LLVM::CallOp call) {
     if (call.getCallee() == QIR_QUBIT_RELEASE) {
       released[0].push_back(call.getOperand(0));
     } else if (call.getCallee() == QIR_QUBIT_ARRAY_RELEASE) {
       released[1].push_back(call.getOperand(1));
     } else if (call.getCallee() == QIR_RESULT_RELEASE) {
+      // The first allocation is scratch storage.
+      EXPECT_EQ(outputStarted, !released[2].empty());
       released[2].push_back(call.getOperand(0));
     } else if (call.getCallee() == QIR_RESULT_ARRAY_RELEASE) {
+      EXPECT_EQ(outputStarted, !released[3].empty());
       released[3].push_back(call.getOperand(1));
+    } else if (call.getCallee() == QIR_RECORD_OUTPUT) {
+      outputStarted = true;
+      recorded[0].push_back(call.getOperand(0));
     } else if (call.getCallee() == QIR_RESULT_ARRAY_RECORD_OUTPUT) {
-      recorded.push_back(call.getOperand(1));
+      outputStarted = true;
+      recorded[1].push_back(call.getOperand(1));
     }
   });
   EXPECT_EQ(released, allocated);
-  EXPECT_EQ(recorded, allocated[3]);
+  EXPECT_TRUE(llvm::equal(recorded[0], ArrayRef(allocated[2]).drop_front()));
+  EXPECT_TRUE(llvm::equal(recorded[1], ArrayRef(allocated[3]).drop_front()));
 }
 
 TEST_F(QIRTest, AdaptiveBuilderUsesAnArrayForWideClassicalRegisters) {
