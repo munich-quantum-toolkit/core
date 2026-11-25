@@ -10,6 +10,16 @@ If this PR does not fix an issue, please remove the line.
 -->
 Fixes #(issue)
 
+## Proposed changelog entry
+
+<!---
+For a noteworthy change to behavior, compatibility, security, or performance,
+write the proposed entry here, starting with an appropriate gitmoji and using
+imperative mood. To associate this change with an existing changelog entry,
+write "Associate with <PR link>" instead.
+Remove this section if the change warrants no changelog entry.
+-->
+
 ## Checklist
 
 <!---

@@ -448,7 +448,7 @@ guidelines and workflows, see {doc}`contributing`.
    repository, clone the repository locally.
 
    ```console
-   git clone git@github.com/munich-quantum-toolkit/core.git mqt-core
+   git clone git@github.com:munich-quantum-toolkit/core.git mqt-core
    ```
 
    :::
@@ -517,7 +517,7 @@ guidelines and workflows, see {doc}`contributing`.
    running:
 
    ```console
-   nox -s lint
+   uvx nox -s lint
    ```
 
    They can also be run automatically on every commit via [{code}`prek`][prek]

@@ -204,6 +204,14 @@ gitmoji convention:
 - Preserve legitimate human `Co-authored-by` trailers. Record AI assistance with
   `Assisted-by`, never by representing an AI system as an author.
 
+## Pull request descriptions
+
+Use the repository's PR template. Explain what changed and why, including any
+dependencies, user-facing limitations, or migration details reviewers need. Omit
+validation commands, test counts, and pass/fail summaries; CI reports these
+results. Mention tests added or changed only when they help explain behavior or
+regression coverage.
+
 ## Prose and terminology
 
 Write for someone who knows the task but has not read the implementation or
@@ -336,9 +344,19 @@ or when explicitly asked. Feature and fix PR descriptions must explain
 user-facing changes, limitations, and required migrations, with relevant labels
 for Release Drafter.
 
-During release preparation, record notable user-facing changes with PR
-references and all contributing human authors. Group entries by user workflow
-and subsystem. Fold refinements to functionality that has never shipped into its
+For changes that warrant a changelog entry, include the proposed text in the PR
+description's "Proposed changelog entry" section, starting with the appropriate
+gitmoji and using imperative mood. If the change should be associated with an
+existing entry, write `Associate with <PR link>` instead, linking to the PR
+associated with that entry. Remove the section when no changelog entry is
+needed.
+
+During release preparation, record noteworthy changes to behavior,
+compatibility, security, or performance with PR references and all contributing
+human authors. Judge significance by user impact, not diff size. Omit entries
+for minor documentation edits, formatting, test-only changes, or internal
+maintenance without noteworthy user impact. Group entries by user workflow and
+subsystem. Fold refinements to functionality that has never shipped into its
 feature entry. After release, describe subsequent changes relative to that
 published behavior.
 
@@ -386,6 +404,10 @@ direct unit tests when they protect a distinct contract that workflows cannot
 observe clearly or cheaply, such as numerical limits, ownership, error recovery,
 or bounded resource use. Do not fabricate impossible internal states merely to
 increase coverage. Investigate whether unreachable branches should exist.
+
+Existing tests are sufficient when they already protect the changed behavior. Do
+not add tests solely for routine dependency or version bumps, metadata,
+formatting, or documentation edits. Run the relevant existing checks instead.
 
 Assign each contract to its owning layer. C++ tests cover native semantics;
 Python tests cover SDK behavior, argument conversion, exceptions, object

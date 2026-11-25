@@ -63,9 +63,12 @@ circuit qubits; distinguish placement, allocation, and fault-tolerant encoding.
 Keep conversation and iteration history out of docs, comments, and PR bodies.
 Follow the
 [release documentation policy](docs/development.md#release-documentation):
-describe user-facing changes and released-API migrations in PR descriptions.
-Edit `CHANGELOG.md` or `UPGRADING.md` only for release preparation or on
-request; changelog entries credit the PR and all contributing authors.
+describe user-facing changes and released-API migrations in PR descriptions. For
+noteworthy changes, propose a gitmoji-prefixed changelog entry or link the PR
+whose entry should include the change. Remove the proposed-entry section when no
+entry is needed. Edit `CHANGELOG.md` or `UPGRADING.md` only for release
+preparation or on request; changelog entries credit the PR and all contributing
+authors.
 
 ## Testing
 
@@ -167,7 +170,7 @@ overrides may select another supported preset.
 Use `debug` for debug builds. Run component binaries directly with GoogleTest
 filters when useful, such as
 `build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler`. Python
-3.14 test sessions are `tests-3.14` and `minimums-3.14`.
+3.15 test sessions are `tests-3.15` and `minimums-3.15`.
 
 Choose build configurations that exercise the change, including affected
 libraries and bindings. Before removing a build setting, check its history and
@@ -212,6 +215,8 @@ nor rejection of an independently useful design improvement.
   constraints.
 - Preserve human authorship trailers. Record AI assistance with `Assisted-by`,
   never an AI `Co-authored-by` trailer.
+- Use the repository's PR template and follow the
+  [PR description policy](docs/development.md#pull-request-descriptions).
 - Act only within the human's delegated scope. Do not push, open or merge PRs,
   post GitHub text, or otherwise change remote state without authorization.
   Request fresh authorization for external actions outside that scope.
