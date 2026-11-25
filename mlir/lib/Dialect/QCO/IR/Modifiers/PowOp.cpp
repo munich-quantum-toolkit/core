@@ -327,8 +327,8 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
 
 /// Fold pow(r) around gates into simpler operations.
 ///
-/// - Rotation gates: multiply a constant angle by an integer exponent when
-///   the product meets the constant-angle rounding bound
+/// - Scale constant rotation angles when the exponent is integral or the
+///   gate's eigenphases lie in (−π, π)
 /// - Hermitian gates (integer exponent): even → erase, odd → gate
 /// - Constant U gates (positive integer exponent): synthesize as a U gate and
 ///   phase
@@ -379,17 +379,15 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
       }
     }
 
-    // Scaling a gate parameter represents a principal matrix power only for an
-    // integral exponent unless the parameter is known to remain within the
-    // principal branch. Keep arbitrary parameters inside fractional powers.
     std::optional<double> scaledParameter;
     if (isa<GPhaseOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp, RZXOp, RZZOp,
             XXPlusYYOp, XXMinusYYOp>(innerOp)) {
-      if (!mqt::isIntegerExponent(r)) {
-        return failure();
-      }
       const auto parameter = valueToDouble(bodyUnitary.getParameter(0));
-      if (!parameter) {
+      // Phase gates have eigenphase θ. Rotations have eigenphases ±θ/2.
+      const double limit = isa<GPhaseOp, POp>(innerOp) ? std::numbers::pi
+                                                       : 2.0 * std::numbers::pi;
+      if (!parameter ||
+          (std::abs(*parameter) >= limit && !mqt::isIntegerExponent(r))) {
         return failure();
       }
       scaledParameter = scaleConstantAngle(*parameter, r);

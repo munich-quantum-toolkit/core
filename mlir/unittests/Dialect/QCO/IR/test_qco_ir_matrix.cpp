@@ -12,6 +12,7 @@
 #include "mqt/Dialect/MQT/Utils/GatePowering.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
@@ -973,31 +974,33 @@ TEST_F(QCOMatrixTest, FractionalPowURemainsUnchanged) {
             1U);
 }
 
-TEST_F(QCOMatrixTest, FractionalParameterizedPowDoesNotFold) {
-  for (const double angle : {
-           std::numbers::pi - 1e-12,
-           std::numbers::pi + 1e-12,
-           3.0 * std::numbers::pi,
+TEST_F(QCOMatrixTest, FractionalRotationPowersUsePrincipalEigenphases) {
+  constexpr double pi = std::numbers::pi;
+  for (const auto& [phase, angle, rootAngle, mustLower] : {
+           std::tuple{false, 1.5 * pi, 0.75 * pi, true},
+           std::tuple{false, 3.0 * pi, -0.5 * pi, false},
+           std::tuple{true, 4.0, 2.0 - pi, false},
        }) {
     SCOPED_TRACE(angle);
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
-      auto q = b.allocQubit();
-      q = b.pow(0.5, q, [&](Value arg) { return b.rx(angle, arg); });
+      auto q = b.pow(0.5, b.allocQubit(), [&](Value target) {
+        return phase ? b.p(angle, target) : b.rx(angle, target);
+      });
       return b.measure(q).second;
     });
     ASSERT_TRUE(moduleOp);
-    const auto expected = firstPowOp(*moduleOp).getUnitaryMatrix();
-    ASSERT_TRUE(expected);
-
     ASSERT_TRUE(succeeded(simplify(*moduleOp)));
-    auto powOps =
-        llvm::to_vector(cast<func::FuncOp>(moduleOp->getBody()->front())
-                            .getBody()
-                            .getOps<PowOp>());
-    ASSERT_EQ(powOps.size(), 1);
-    const auto actual = powOps.front().getUnitaryMatrix();
-    ASSERT_TRUE(actual);
-    EXPECT_TRUE(actual->isApprox(*expected));
+    auto func = *moduleOp->getOps<func::FuncOp>().begin();
+    auto gates = func.getBody().getOps<UnitaryOpInterface>();
+    ASSERT_TRUE(llvm::hasSingleElement(gates));
+    auto gate = *gates.begin();
+    if (mustLower) {
+      EXPECT_FALSE(isa<PowOp>(gate.getOperation()));
+    }
+    const auto matrix = gate.getUnitaryMatrix<Matrix2x2>();
+    ASSERT_TRUE(matrix);
+    EXPECT_TRUE(matrix->isApprox(phase ? POp::unitaryMatrix(rootAngle)
+                                       : RXOp::unitaryMatrix(rootAngle)));
   }
 }
 

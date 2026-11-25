@@ -30,6 +30,8 @@ def LowerQuantumModifiers : Pass<"lower-quantum-modifiers"> {
     Lowers nested controls, inverses and supported powers, preserving controlled
     relative phase and folding generated arithmetic. Fixed single-qubit QCO
     gates support runtime powers; other powers require constant parameters.
+    A fractional power can scale a constant rotation angle when its magnitude is
+    below 2π, or below π for phase gates (`p` and `gphase`).
     Unsupported powers remain for the consuming conversion to diagnose.
 
     Run after inlining and modifier unrolling to prepare gates for conversion.
