@@ -1160,6 +1160,69 @@ int64_t NativeCostTracker::swapCostAdjustment(size_t first, size_t second,
          static_cast<int64_t>(standaloneCost);
 }
 
+static LogicalResult
+lowerDiscreteRoutingOperation(IRRewriter& rewriter, UnitaryOpInterface op,
+                              const CompilerTarget& target,
+                              std::optional<ArrayRef<SiteId>> sites) {
+  const bool swap = isa<SWAPOp>(op.getOperation());
+  if (!swap && !singleControlledGate<XOp>(op.getOperation())) {
+    return failure();
+  }
+  const auto supportsCX = [&](size_t control) {
+    if (!sites) {
+      return target.findOperation("x", 2, {}, std::nullopt, 1).capability !=
+             nullptr;
+    }
+    const std::array ordered{(*sites)[control], (*sites)[1 - control]};
+    return target.findOperation("x", 2, {}, knownSites(ordered), 1)
+               .capability != nullptr;
+  };
+  const bool forward = supportsCX(0);
+  const std::array direct{forward, sites ? supportsCX(1) : forward};
+  if (!direct[0] && !direct[1]) {
+    return failure();
+  }
+  // Reversing a CX needs H on both sites.
+  if (sites && (!direct[0] || (swap && !direct[1])) &&
+      !llvm::all_of(*sites, [&](SiteId site) {
+        return target.supportsOperation("h", 1, 0, std::array{site});
+      })) {
+    return failure();
+  }
+  rewriter.setInsertionPoint(op);
+  const auto loc = op->getLoc();
+  std::array wires{op.getInputQubit(0), op.getInputQubit(1)};
+  const auto emitCX = [&](size_t control) {
+    const bool reverse = !direct[control];
+    const auto applyHadamards = [&] {
+      for (auto& wire : wires) {
+        wire = HOp::create(rewriter, loc, wire).getOutputQubit(0);
+      }
+    };
+    if (reverse) {
+      applyHadamards();
+      control = 1 - control;
+    }
+    auto cx = CtrlOp::create(
+        rewriter, loc, wires[control], wires[1 - control], [&](Value wire) {
+          return XOp::create(rewriter, loc, wire).getOutputQubit(0);
+        });
+    wires[control] = cx.getOutputControl(0);
+    wires[1 - control] = cx.getOutputTarget(0);
+    if (reverse) {
+      applyHadamards();
+    }
+  };
+  const size_t first = swap && !direct[0] ? 1 : 0;
+  emitCX(first);
+  if (swap) {
+    emitCX(1 - first);
+    emitCX(first);
+  }
+  rewriter.replaceOp(op, wires);
+  return success();
+}
+
 static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
     std::optional<CompilerTarget::SynthesisBasis> basis,
@@ -1184,6 +1247,10 @@ static LogicalResult synthesizeTargetOperation(
            << operation->getName() << "': " << reason;
   };
   if (!basis) {
+    if (op.isTwoQubit() &&
+        succeeded(lowerDiscreteRoutingOperation(rewriter, op, target, sites))) {
+      return success();
+    }
     return unsupported("the target has no usable synthesis basis");
   }
   rewriter.setInsertionPoint(operation);
