@@ -88,12 +88,12 @@ if(NOT MLIR_FOUND)
         FATAL_ERROR "No compatible LLVM/MLIR SDK found and downloading is disabled. Set MLIR_DIR.")
     endif()
     include(FetchContent)
-    # Keep the installer and its version manifest at the same revision.
+    # Pin setup-mlir v1.6.0 together with its version manifest.
     fetchcontent_declare(
       setup_mlir
       URL
-        https://github.com/munich-quantum-software/setup-mlir/archive/99b656780d0b96000c7df1510dd853879fe530b1.tar.gz
-      URL_HASH SHA256=5753016aac6e074f6e54c2a8e3e1cc75e5fcf1bdf580018cf00f945cf07d09b2)
+        https://github.com/munich-quantum-software/setup-mlir/archive/1f96f72c996c013f34264af39c131d2bf9487d19.tar.gz
+      URL_HASH SHA256=42217de951f6aac9800bb8708cb77035e432227b0d01b8557c7f0190411b2f89)
     fetchcontent_makeavailable(setup_mlir)
     if(WIN32)
       set(_mqt_mlir_command

@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 # set required cmake version
-cmake_minimum_required(VERSION 3.28...4.4)
+cmake_minimum_required(VERSION 3.29...4.5)
 
 project(
   mqt-core
@@ -84,33 +84,18 @@ project(
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
 include(SetupMLIR)
-if(PROJECT_IS_TOP_LEVEL
-   AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
-   AND "$ENV{CIBUILDWHEEL}" STREQUAL "1")
-  set(mqt_linux_wheel ON)
-endif()
 
-include(SetupLinker)
-
-set(ipo_supported FALSE)
-if(ENABLE_IPO)
-  include(CheckIPOSupported)
-  check_ipo_supported(RESULT ipo_supported OUTPUT ipo_output)
-  if(NOT ipo_supported AND CMAKE_LINKER_TYPE STREQUAL "mqt_sdk_mold" AND NOT mqt_require_sdk_mold)
-    unset(CMAKE_LINKER_TYPE)
-    check_ipo_supported(RESULT ipo_supported OUTPUT ipo_output)
+if(MQT_CORE_USE_SDK_MOLD AND NOT DEFINED CMAKE_LINKER_TYPE)
+  set(CMAKE_LINKER_TYPE mqt_sdk_mold)
+  set(mold_flags "--ld-path=\"${LLVM_TOOLS_BINARY_DIR}/ld.mold\"")
+  if(CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+    list(APPEND mold_flags -Xlinker -plugin -Xlinker "\"${LLVM_LIBRARY_DIR}/LLVMgold.so\"")
   endif()
-  if(NOT ipo_supported)
-    message(DEBUG "IPO is not supported: ${ipo_output}")
-  endif()
+  foreach(lang IN ITEMS C CXX)
+    set(CMAKE_${lang}_USING_LINKER_mqt_sdk_mold "${mold_flags}")
+    list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES CMAKE_${lang}_USING_LINKER_mqt_sdk_mold)
+  endforeach()
 endif()
-if(mqt_require_sdk_mold AND NOT CMAKE_LINKER_TYPE STREQUAL "mqt_sdk_mold")
-  message(FATAL_ERROR "Linux wheels require mold with the LLVM SDK.")
-elseif(mqt_linux_wheel AND NOT ipo_supported)
-  message(FATAL_ERROR "Link-time optimization is unavailable for this Linux wheel:\n${ipo_output}")
-endif()
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ${ipo_supported}
-    CACHE BOOL "Enable Interprocedural Optimization" FORCE)
 
 include(cmake/ExternalDependencies.cmake)
 

@@ -295,6 +295,7 @@ repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg 
 
 [[tool.cibuildwheel.overrides]]
 select = "*-manylinux_*"
+config-settings = { "cmake.define.MQT_CORE_USE_SDK_MOLD" = "ON" }
 environment = { CC = "clang", CXX = "clang++", PATH = "/opt/clang/bin:$PATH:/root/.local/bin" }
 before-all = [
   "manylinux-install-clang -v 23.1.6.0 -c f2f15b723880761ec9c852dc8a46f0de6244b99e59fc632ae998a88fb5ddfeed",
@@ -305,6 +306,7 @@ before-test = "uvx sccache --show-stats"
 # containers used to build and test MQT Core's broadly compatible wheels.
 test-groups = [ "test-base" ]
 inherit.before-all = "append"
+inherit.config-settings = "append"
 inherit.environment = "append"
 
 [[tool.cibuildwheel.overrides]]

@@ -12,7 +12,7 @@ function(enable_project_options target_name)
 
   # CMake records the linker ID when first enabling the language.
   set(linker_id "${CMAKE_CXX_COMPILER_LINKER_ID}")
-  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.29 AND CMAKE_LINKER_TYPE)
+  if(CMAKE_LINKER_TYPE)
     set(linker_id "${CMAKE_LINKER_TYPE}")
   endif()
 

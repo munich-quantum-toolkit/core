@@ -115,7 +115,7 @@ explains the measured phase, continued fractions, and verified factor recovery.
 
 ## Development
 
-Source builds require a C++20 compiler and CMake 3.28 or newer. CMake reuses an
+Source builds require a C++20 compiler and CMake 3.29 or newer. CMake reuses an
 installed
 [LLVM/MLIR 23.1 SDK](https://mqt.readthedocs.io/projects/core/stable/installation.html#setting-up-mlir)
 or downloads one into the build directory. Prebuilt Python wheels include the

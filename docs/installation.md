@@ -84,10 +84,10 @@ development libraries and headers require a source installation.
 
 The wheels use portable CPU settings and the pinned LLVM/MLIR SDK with
 assertions and ABI-breaking checks disabled. Linux builds target manylinux_2_28
-using Clang 23.1.6, ThinLTO, and mold from the SDK. The Linux linker uses safe
-identical code folding. macOS builds use Apple Clang and ThinLTO with a macOS
-13.3 deployment target. Windows builds use MSVC and interprocedural optimization
-(IPO), except for DLLs that require automatic symbol exports.
+using Clang 23.1.6, mold from the SDK, and ThinLTO. macOS builds use Apple Clang
+and ThinLTO with a macOS 13.3 deployment target. Windows builds use MSVC and
+interprocedural optimization (IPO), except for DLLs that require automatic
+symbol exports.
 
 ### Command-line tools
 
@@ -240,19 +240,17 @@ pip install mqt.core --no-binary mqt.core
 
 This requires a C++20-capable
 [C++ compiler](https://en.wikipedia.org/wiki/List_of_compilers#C++_compilers)
-and [CMake](https://cmake.org/) 3.28 or newer. CMake downloads a compatible
+and [CMake](https://cmake.org/) 3.29 or newer. CMake downloads a compatible
 LLVM/MLIR SDK when none is available; see {ref}`setting-up-mlir` for supported
 platforms and offline builds.
 
-Local Release source builds use native CPU tuning and enable LTO when the
-toolchain supports it. On Linux, top-level native builds with CMake 3.29 or
-newer use mold from the LLVM SDK when it includes mold 3 or newer. Clang LTO
-with the SDK linker needs an LLVMgold plugin that matches the compiler version.
-GCC uses its own LTO plugin. An explicit linker choice takes precedence. This
-example uses Clang 23.1.6 with the downloaded SDK's linker.
+Local Release source builds default to `DEPLOY=OFF`, which enables native CPU
+tuning and LTO when the compiler supports them. To use mold from the SDK with
+matching Clang 23.1.6 on Linux, pass the same setting as the release wheels.
 
 ```console
-CC=clang CXX=clang++ uv pip install mqt.core --no-binary mqt.core
+CC=clang-23 CXX=clang++-23 uv pip install mqt.core --no-binary mqt.core \
+  -Ccmake.define.MQT_CORE_USE_SDK_MOLD=ON
 ```
 
 Keep native builds on compatible CPUs. For redistribution, set
@@ -261,24 +259,24 @@ baseline. Cibuildwheel sets deployment mode explicitly for release wheels. The
 `DEPLOY` environment variable overrides the CMake setting.
 
 Clang and Apple Clang use ThinLTO through CMake's `ENABLE_IPO` option. For a
-local C++ build, `cmake --preset release` selects the same release defaults. Use
-`-DENABLE_IPO=OFF` to disable LTO. With CMake 3.29 or newer, set
-`-DCMAKE_LINKER_TYPE=SYSTEM` to select the system linker.
+local C++ build, `cmake --preset release` selects the same release defaults;
+pass `-DENABLE_IPO=OFF` to disable LTO. GCC can use mold 3 or newer with
+`-DCMAKE_LINKER_TYPE=MOLD`. Clang with mold also needs a matching LLVM LTO
+plugin; LLD includes the required support. MSVC IPO applies to static libraries
+and DLLs with explicit exports; CMake cannot extract automatic exports from MSVC
+IPO objects. MSVC builds with native tests default IPO off because each test
+link otherwise repeats code generation from the libraries. Use `-DENABLE_IPO=ON`
+to test IPO explicitly. CI builds default IPO off on all platforms; release
+wheels explicitly enable it.
 
-MSVC IPO applies to static libraries and DLLs with explicit exports because
-CMake's automatic export scanner cannot read MSVC IPO objects. MSVC builds with
-native tests default IPO off to avoid repeated code generation at each test
-link. Use `-DENABLE_IPO=ON` to test IPO explicitly. CI builds default IPO off on
-all platforms. Release wheels explicitly enable it.
-
-Clang with the SDK's mold or LLD on Linux and Apple Clang with Apple's linker
-cache ThinLTO results under `thinlto-cache-<configuration>` in the build
-directory. The linkers prune this cache automatically. Linux uses a 1 GiB size
-policy. Linux builds that use the SDK's mold or LLD use safe identical code
-folding outside Debug builds. `-DENABLE_CACHE=OFF` disables automatic compiler
-and linker caching. Explicit `CMAKE_C_COMPILER_LAUNCHER` and
-`CMAKE_CXX_COMPILER_LAUNCHER` settings take precedence over compiler-cache
-detection, including an empty value to disable it for one language.
+On Linux, Clang caches ThinLTO results when using LLD or mold from the SDK.
+Apple Clang also caches them with Apple's linker. The linkers prune the
+`thinlto-cache-<configuration>` directory automatically. Linux uses a 1 GiB
+cache limit and enables safe identical code folding outside Debug builds with
+these linkers. `-DENABLE_CACHE=OFF` disables automatic compiler and linker
+caching. Explicit `CMAKE_C_COMPILER_LAUNCHER` and `CMAKE_CXX_COMPILER_LAUNCHER`
+settings take precedence over compiler-cache detection, including an empty value
+to disable it for one language.
 
 Native tuning and LTO apply to the MQT Core code being compiled. Prebuilt
 LLVM/MLIR SDK libraries retain their own build settings, and LTO does not
