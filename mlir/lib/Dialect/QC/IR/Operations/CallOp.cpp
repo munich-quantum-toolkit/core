@@ -8,11 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Utils/UnitaryCall.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
@@ -43,23 +42,5 @@ OperandRange CallOp::getQubits() {
 }
 
 LogicalResult CallOp::verifySymbolUses(SymbolTableCollection& symbolTable) {
-  auto function =
-      symbolTable.lookupNearestSymbolFrom<func::FuncOp>(*this, getCalleeAttr());
-  if (!function) {
-    return emitOpError() << "'" << getCallee()
-                         << "' does not reference a valid function";
-  }
-  if (!mqt::isUnitaryFunction(function)) {
-    return emitOpError() << "callee '" << getCallee()
-                         << "' is not marked with mqt.unitary";
-  }
-  if (function.getArgumentTypes() != getOperandTypes()) {
-    return emitOpError() << "operand types " << getOperandTypes()
-                         << " do not match callee argument types "
-                         << function.getArgumentTypes();
-  }
-  if (function.getNumResults() != 0) {
-    return emitOpError("unitary QC callee must not return values");
-  }
-  return success();
+  return mqt::verifyUnitaryCall(*this, symbolTable);
 }

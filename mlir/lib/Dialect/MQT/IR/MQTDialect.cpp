@@ -36,7 +36,6 @@
 #include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/Operation.h"
-#include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/TypeUtilities.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Verifier.h"
@@ -151,40 +150,6 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
   return verifyQuantumAllocations(moduleOp);
 }
 
-template <typename CallOp>
-[[nodiscard]] static LogicalResult
-verifyNoUnitaryRecursion(func::FuncOp function) {
-  // A cycle of unitary calls passes local body checks without any control flow.
-  DenseSet<Operation*> visited;
-  SmallVector<func::FuncOp> worklist{function};
-  while (!worklist.empty()) {
-    auto current = worklist.pop_back_val();
-    if (!visited.insert(current).second) {
-      continue;
-    }
-    WalkResult result = current.walk([&](CallOp call) {
-      if (failed(verify(call))) {
-        return WalkResult::interrupt();
-      }
-      auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
-          call, call.getCalleeAttr());
-      if (!callee) {
-        return WalkResult::advance();
-      }
-      if (callee == function) {
-        function.emitError("unitary function must not be recursive");
-        return WalkResult::interrupt();
-      }
-      worklist.emplace_back(callee);
-      return WalkResult::advance();
-    });
-    if (result.wasInterrupted()) {
-      return failure();
-    }
-  }
-  return success();
-}
-
 [[nodiscard]] static LogicalResult verifyQCUnitaryBody(func::FuncOp function) {
   bool valid = true;
   function.walk([&](Operation* nested) {
@@ -213,7 +178,7 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
            << "unitary QC function body contains an unsupported operation";
   }
 
-  return verifyNoUnitaryRecursion<qc::CallOp>(function);
+  return success();
 }
 
 [[nodiscard]] static LogicalResult verifyQCOUnitaryBody(func::FuncOp function) {
@@ -242,10 +207,7 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
   }
 
   DenseMap<Value, Value> origins;
-  if (failed(qco::collectWireOrigins(function, origins))) {
-    return failure();
-  }
-  return verifyNoUnitaryRecursion<qco::CallOp>(function);
+  return qco::collectWireOrigins(function, origins);
 }
 
 [[nodiscard]] static LogicalResult
