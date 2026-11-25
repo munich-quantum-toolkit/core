@@ -12,6 +12,7 @@
 
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/QIR/Utils/QIRProfile.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
@@ -41,13 +42,6 @@ class OpPassManager;
 
 /// Register dialects and bufferization interfaces for constant tensor reads.
 void registerQIRClassicalTensorDialects(DialectRegistry& registry);
-
-/// Qubit allocation mode
-enum class AllocationMode : std::uint8_t {
-  Unset,   //!< No allocation mode has been established yet.
-  Static,  //!< The module uses static qubit allocation.
-  Dynamic, //!< The module uses dynamic qubit allocation.
-};
 
 /// State object for tracking lowering information during QIR conversion
 struct LoweringState {
@@ -111,31 +105,21 @@ struct LoweringState {
   Block* entryBlock{};
   Block* measurementsBlock{};
   Block* outputBlock{};
-
-  /// The qubit allocation mode used in the module
-  AllocationMode allocationMode = AllocationMode::Unset;
-
-  /// Sets or validates the allocation mode, or emits an error if it conflicts.
-  [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
-                                                   Operation* op);
 };
 
 /// Check a target payload matching the requested QIR profile before lowering.
 ///
-/// The profile is the payload identifier, "base" or "adaptive".
 /// Return no payload when the module has no matching QIR target. Otherwise,
 /// return a copy with proved counted-loop constraints discharged. Run child
 /// passes through the caller to preserve instrumentation and reproducers.
 [[nodiscard]] FailureOr<std::optional<PayloadSpecification>>
-prepareQIRTarget(ModuleOp moduleOp, StringRef profile, LoweringState& state,
+prepareQIRTarget(ModuleOp moduleOp, QIRProfile profile, LoweringState& state,
                  function_ref<LogicalResult(OpPassManager&)> runPipeline,
                  const TargetEnvironment* environment = nullptr);
 
 /// Attach QIR metadata and validate emitted requirements for a matching target.
-///
-/// The profile is the payload identifier, "base" or "adaptive".
 [[nodiscard]] LogicalResult
-finalizeQIRMetadata(ModuleOp moduleOp, StringRef profile,
+finalizeQIRMetadata(ModuleOp moduleOp, QIRProfile profile,
                     const std::optional<PayloadSpecification>& payload,
                     function_ref<LogicalResult(OpPassManager&)> runPipeline);
 

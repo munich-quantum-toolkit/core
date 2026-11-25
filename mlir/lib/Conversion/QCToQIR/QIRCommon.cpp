@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
+#include "mqt/Conversion/QCToQIR/QIRCommon.h"
 
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
@@ -133,19 +133,6 @@ public:
 
 } // namespace
 
-LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
-                                                  Operation* op) {
-  if (allocationMode == AllocationMode::Unset) {
-    allocationMode = requested;
-    return success();
-  }
-  if (allocationMode == requested) {
-    return success();
-  }
-  return op->emitOpError(
-      "cannot mix static and dynamic qubit allocation modes in conversion");
-}
-
 void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
   registry.insert<affine::AffineDialect, bufferization::BufferizationDialect,
                   memref::MemRefDialect, scf::SCFDialect, tensor::TensorDialect,
@@ -155,7 +142,7 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
 }
 
 FailureOr<std::optional<PayloadSpecification>>
-prepareQIRTarget(ModuleOp moduleOp, StringRef profile, LoweringState& state,
+prepareQIRTarget(ModuleOp moduleOp, QIRProfile profile, LoweringState& state,
                  function_ref<LogicalResult(OpPassManager&)> runPipeline,
                  const TargetEnvironment* preparedEnvironment) {
   if (preparedEnvironment != nullptr) {
@@ -175,10 +162,12 @@ prepareQIRTarget(ModuleOp moduleOp, StringRef profile, LoweringState& state,
   }
   auto payload = environment.environment().payloadSpecification();
   const auto& format = payload.format();
-  if (format.id != "qir" || format.profile != profile) {
+  const bool adaptive = profile == QIRProfile::Adaptive;
+  if (format.id != "qir" ||
+      format.profile != (adaptive ? "adaptive" : "base")) {
     return std::optional<PayloadSpecification>{};
   }
-  if (profile == "adaptive" &&
+  if (adaptive &&
       llvm::any_of(payload.capabilities(), [](const auto& capability) {
         return (capability.id == ProgramCapability::COUNTED_ITERATION ||
                 capability.id == ProgramCapability::MULTIWAY_BRANCHING) &&
@@ -212,11 +201,11 @@ prepareQIRTarget(ModuleOp moduleOp, StringRef profile, LoweringState& state,
 }
 
 LogicalResult
-finalizeQIRMetadata(ModuleOp moduleOp, StringRef profile,
+finalizeQIRMetadata(ModuleOp moduleOp, QIRProfile profile,
                     const std::optional<PayloadSpecification>& payload,
                     function_ref<LogicalResult(OpPassManager&)> runPipeline) {
   OpPassManager metadata(ModuleOp::getOperationName());
-  populateQIRCleanupPipeline(metadata, profile == "adaptive");
+  populateQIRCleanupPipeline(metadata, profile == QIRProfile::Adaptive);
   if (failed(runPipeline(metadata))) {
     return failure();
   }
@@ -503,10 +492,6 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
                   ConversionPatternRewriter& rewriter) const override {
     const auto index = static_cast<int64_t>(op.getIndex());
     auto& state = getState();
-    if (failed(state.ensureAllocationMode(AllocationMode::Static,
-                                          op.getOperation()))) {
-      return failure();
-    }
 
     const OpBuilder::InsertionGuard guard(rewriter);
 

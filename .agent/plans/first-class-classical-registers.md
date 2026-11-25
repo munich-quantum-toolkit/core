@@ -35,10 +35,9 @@ outputs.
   with `ClassicalRegisterInitialization::Zero`.
 
 - QIR and OpenQASM contain separate reconstructions of the same missing
-  semantics. Evidence: `mlir/lib/Conversion/QCToQIR/QIRCommon/QIRCommon.cpp`
-  scans result memrefs, while
-  `mlir/lib/Dialect/QC/Translation/OpenQASMToQCEmitter.cpp` tracks both SSA bit
-  values and classical-register memrefs.
+  semantics. Evidence: `mlir/lib/Conversion/QCToQIR/QIRCommon.cpp` scans result
+  memrefs, while `mlir/lib/Dialect/QC/Translation/OpenQASMToQCEmitter.cpp`
+  tracks both SSA bit values and classical-register memrefs.
 
 - This LLVM 22 TableGen setup requires explicit enum and attribute generation in
   addition to operation and type generation. Generated enum declarations also
@@ -280,12 +279,11 @@ returned CBit registers and CBit operations without scanning generic memrefs.
 QC-to-QCO and QCO-to-QC live in `mlir/lib/Conversion/QCToQCO/QCToQCO.cpp` and
 `mlir/lib/Conversion/QCOToQC/QCOToQC.cpp`. Their conversion targets must mark
 CBit legal and their type converters must preserve `!cbit.reg<N>` exactly. QIR
-result handling is shared in
-`mlir/lib/Conversion/QCToQIR/QIRCommon/QIRCommon.cpp`; replace its generic
-classical memref scan and leading-zero recognition with direct CBit handling.
-The Base profile retains static-index restrictions. The Adaptive profile keeps
-dynamic-index behavior. Unsupported non-measurement output stores must name the
-unsupported operation in a precise diagnostic.
+result handling is shared in `mlir/lib/Conversion/QCToQIR/QIRCommon.cpp`;
+replace its generic classical memref scan and leading-zero recognition with
+direct CBit handling. The Base profile retains static-index restrictions. The
+Adaptive profile keeps dynamic-index behavior. Unsupported non-measurement
+output stores must name the unsupported operation in a precise diagnostic.
 
 QCO decision-diagram execution is in
 `mlir/lib/Dialect/QCO/Utils/DDFunctionality.cpp`. Add register storage plus an

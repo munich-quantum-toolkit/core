@@ -8,9 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mqt/Conversion/QCToQIR/QCToQIR.h"
 
-#include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Conversion/QCToQIR/QIRCommon.h"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
@@ -23,6 +24,7 @@
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
 #include "mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h"
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
@@ -32,31 +34,397 @@
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Region.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/WalkPatternRewriteDriver.h"
 
 #include "llvm/ADT/STLExtras.h"
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
+#include <memory>
+#include <optional>
 #include <utility>
+#include <variant>
 
 namespace mlir {
+
+#define GEN_PASS_DEF_QCTOQIR
+#include "mqt/Conversion/QCToQIR/QCToQIR.h.inc"
+
+//===----------------------------------------------------------------------===//
+// Base Profile
+//===----------------------------------------------------------------------===//
+
+namespace base {
 
 using namespace qc;
 using namespace qir;
 
-#define GEN_PASS_DEF_QCTOQIRADAPTIVE
-#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h.inc"
+/// Returns the result pointer the `qc::MeasureOp` @p op writes to, or
+/// a null value if it does not write into a classical register.
+static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
+                                                   Operation* op) {
+  const auto it = state.cregMeasurements.find(op);
+  if (it == state.cregMeasurements.end()) {
+    return Value{};
+  }
+  auto [registerIndex, index] = it->second;
+  const auto indexValue = getConstantIntValue(index);
+  if (!indexValue) {
+    op->emitError("QIR Base Profile requires constant classical-register "
+                  "measurement indices");
+    return failure();
+  }
+  const auto& results = state.cregs[registerIndex].results;
+  if (*indexValue < 0 || static_cast<size_t>(*indexValue) >= results.size()) {
+    op->emitError("classical-register measurement index is out of bounds");
+    return failure();
+  }
+  return results[static_cast<size_t>(*indexValue)];
+}
+
+namespace {
+
+/// Converts `cbit.alloc` to static result
+/// pointers represented by `llvm.inttoptr` operations
+///
+/// Allocate static result pointers for each bit in a classical register.
+struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const auto it = state.cregIndices.find(op.getOperation());
+    if (it == state.cregIndices.end()) {
+      return op.emitError(
+          "QIR conversion requires CBit allocations in the entry function");
+    }
+    auto& reg = state.cregs[it->second];
+    const auto* size = std::get_if<int64_t>(&reg.size);
+    if (size == nullptr) {
+      op.emitError(
+          "QIR Base Profile requires statically sized classical registers");
+      return failure();
+    }
+
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+    reg.results.reserve(static_cast<size_t>(*size));
+    for (int64_t i = 0; i < *size; ++i) {
+      const auto index = static_cast<int64_t>(state.numScalarResults++);
+      auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
+      reg.results.push_back(result);
+    }
+
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+struct RejectCBitLoadOp final : OpConversionPattern<cbit::LoadOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::LoadOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& /*rewriter*/) const override {
+    return op.emitError(
+        "QIR Base Profile does not support classical-register loads");
+  }
+};
+
+struct RejectCBitReadOp final : OpConversionPattern<cbit::ReadOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::ReadOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& /*rewriter*/) const override {
+    return op.emitError(
+        "QIR Base Profile does not support classical-register reads");
+  }
+};
+
+struct RejectCBitWriteOp final : OpConversionPattern<cbit::WriteOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::WriteOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& /*rewriter*/) const override {
+    return op.emitError(
+        "QIR Base Profile does not support classical-register writes");
+  }
+};
+
+struct ConvertMemRefAllocOp final
+    : StatefulOpConversionPattern<memref::AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/// Converts a qubit-register `memref.load` to `llvm.inttoptr`
+///
+/// Converts a load operation to an LLVM pointer by creating a constant with the
+/// next available static qubit index and converting it to a pointer. The
+/// pointer is cached in the lowering state for reuse.
+///
+/// @par Example:
+/// ```mlir
+/// %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
+/// ```
+/// is converted to
+/// ```mlir
+/// %c0 = llvm.mlir.constant(0 : i64) : i64
+/// %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+/// ```
+struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::LoadOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    auto shape = op.getMemref().getType().getShape();
+    if (shape.size() != 1) {
+      return rewriter.notifyMatchFailure(
+          op, "Only one-dimensional registers are supported");
+    }
+    const auto index = getConstantIntValue(op.getIndices().front());
+    if (!index || ShapedType::isDynamic(shape.front()) ||
+        !op.getMemref().getDefiningOp<memref::AllocOp>()) {
+      return op.emitError("QIR Base Profile requires constant indices into "
+                          "statically allocated qubit registers");
+    }
+    if (*index < 0 || *index >= shape.front()) {
+      return op.emitError("qubit-register index is out of bounds");
+    }
+    auto& qubit = state.staticRegisterQubits[{op.getMemref(), *index}];
+    if (!qubit) {
+      const OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+      const auto id = static_cast<int64_t>(state.staticQubits.size());
+      qubit = createPointerFromIndex(rewriter, op.getLoc(), id);
+      state.staticQubits.try_emplace(id, qubit);
+    }
+    rewriter.replaceOp(op, qubit);
+
+    return success();
+  }
+};
+
+/// Erases memref.dealloc during the QIR Base Profile conversion
+struct ConvertMemRefDeallocOp final
+    : StatefulOpConversionPattern<memref::DeallocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/// Converts qc.alloc to llvm.inttoptr
+///
+/// Converts a qubit allocation to an LLVM pointer by creating a constant
+/// with the next available static qubit index and converting it to a pointer.
+/// The pointer is cached in the lowering state for reuse.
+///
+/// @par Example:
+/// ```mlir
+/// %q = qc.alloc : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// %c0 = llvm.mlir.constant(0 : i64) : i64
+/// %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+/// ```
+struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+    const OpBuilder::InsertionGuard guard(rewriter);
+
+    rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+
+    const auto nqubits = state.staticQubits.size();
+    auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
+                                        static_cast<int64_t>(nqubits));
+    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits), qubit);
+    rewriter.replaceOp(op, qubit);
+
+    return success();
+  }
+};
+
+/// Erases qc.dealloc during the QIR Base Profile conversion
+struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(DeallocOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/// Converts qc.measure to QIR measurement
+///
+/// For measurements with register information, a static result is used at
+/// the given index + register offset. Otherwise a static result at
+/// the next index is used.
+///
+/// @par Example (without register):
+/// ```mlir
+/// %result = qc.measure %q : !qc.qubit -> i1
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
+/// ```
+struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(MeasureOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState();
+
+    auto* ctx = getContext();
+    auto ptrType = LLVM::LLVMPointerType::get(ctx);
+    auto voidType = LLVM::LLVMVoidType::get(ctx);
+
+    OpBuilder::InsertionGuard guard(rewriter);
+
+    auto registerResult = resolveRegisterMeasurement(state, op.getOperation());
+    if (failed(registerResult)) {
+      return failure();
+    }
+    auto result = *registerResult;
+    if (!result) {
+      result = getResultPtr(state, op.getOperation(), rewriter);
+    }
+
+    if (auto it = state.measuredResults.find(op);
+        it != state.measuredResults.end()) {
+      it->second.value = result;
+    }
+
+    // Preserve instruction order until terminal measurements are verified.
+    rewriter.setInsertionPoint(op);
+    auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
+    auto fnDec =
+        getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSig);
+    auto call = LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
+                                     ValueRange{adaptor.getQubit(), result});
+    if (failed(state.nameNativeCall(call, "measure", adaptor.getQubit()))) {
+      return failure();
+    }
+
+    rewriter.eraseOp(op);
+
+    return success();
+  }
+};
+} // namespace
+
+/// Populates the Base Profile conversion patterns.
+static void populatePatterns(RewritePatternSet& patterns,
+                             QCToQIRTypeConverter& typeConverter,
+                             MLIRContext* ctx, LoweringState& state) {
+  patterns.add<ConvertCBitAllocOp, ConvertMemRefAllocOp, ConvertMemRefLoadOp,
+               ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCMeasureOp,
+               ConvertQCDeallocOp>(typeConverter, ctx, &state);
+  patterns.add<RejectCBitLoadOp, RejectCBitReadOp, RejectCBitWriteOp>(
+      typeConverter, ctx);
+}
+
+/// Arrange the entry point into initialization, gates, measurements, and
+/// output blocks, connected in that order by unconditional branches.
+static void ensureBlocks(LLVM::LLVMFuncOp main, LoweringState& state) {
+  // Get the existing block
+  auto* bodyBlock = &main.front();
+  OpBuilder builder(main.getBody());
+
+  // Create the required blocks
+  auto* entryBlock = builder.createBlock(&main.getBody());
+  // Move the entry block before the body block
+  main.getBlocks().splice(Region::iterator(bodyBlock), main.getBlocks(),
+                          entryBlock);
+  Block* measurementsBlock = builder.createBlock(&main.getBody());
+  Block* outputBlock = builder.createBlock(&main.getBody());
+
+  state.entryBlock = entryBlock;
+  state.measurementsBlock = measurementsBlock;
+  state.outputBlock = outputBlock;
+
+  auto& bodyBlockOps = bodyBlock->getOperations();
+  auto& outputBlockOps = outputBlock->getOperations();
+
+  // Move operations to appropriate blocks
+  for (auto it = bodyBlock->begin(); it != bodyBlock->end();) {
+    // Ensure iterator remains valid after potential move
+    if (auto& op = *it++; isa<LLVM::ReturnOp>(op)) {
+      // Move return to output block
+      outputBlockOps.splice(outputBlock->end(), bodyBlockOps,
+                            Block::iterator(op));
+    } else if (op.hasTrait<OpTrait::ConstantLike>()) {
+      // Move allocations and constant-like operations to entry block
+      entryBlock->getOperations().splice(entryBlock->end(), bodyBlockOps,
+                                         Block::iterator(op));
+    }
+    // All other operations (gates, etc.) stay in body block
+  }
+
+  // Add unconditional jumps between blocks
+  builder.setInsertionPointToEnd(entryBlock);
+  LLVM::BrOp::create(builder, main->getLoc(), bodyBlock);
+
+  builder.setInsertionPointToEnd(bodyBlock);
+  LLVM::BrOp::create(builder, main->getLoc(), measurementsBlock);
+
+  builder.setInsertionPointToEnd(measurementsBlock);
+  LLVM::BrOp::create(builder, main->getLoc(), outputBlock);
+}
+
+} // namespace base
+
+//===----------------------------------------------------------------------===//
+// Adaptive Profile
+//===----------------------------------------------------------------------===//
+
+namespace adaptive {
+
+using namespace qc;
+using namespace qir;
 
 namespace {
 
@@ -201,11 +569,6 @@ static LogicalResult
 convertQubitMemRefAllocOp(memref::AllocOp op, memref::AllocOp::Adaptor adaptor,
                           LoweringState& state,
                           ConversionPatternRewriter& rewriter) {
-  if (failed(state.ensureAllocationMode(AllocationMode::Dynamic,
-                                        op.getOperation()))) {
-    return failure();
-  }
-
   auto loc = op.getLoc();
   auto* ctx = op.getContext();
   auto ptrType = LLVM::LLVMPointerType::get(ctx);
@@ -547,12 +910,6 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   LogicalResult
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
-    if (failed(state.ensureAllocationMode(AllocationMode::Dynamic,
-                                          op.getOperation()))) {
-      return failure();
-    }
-
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
@@ -702,12 +1059,10 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 };
 } // namespace
 
-/// Populates conversion patterns for QC-to-QIR-Adaptive lowering.
-static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
-                                            QCToQIRTypeConverter& typeConverter,
-                                            MLIRContext* ctx,
-                                            LoweringState& state) {
-  populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
+/// Populates the Adaptive Profile conversion patterns.
+static void populatePatterns(RewritePatternSet& patterns,
+                             QCToQIRTypeConverter& typeConverter,
+                             MLIRContext* ctx, LoweringState& state) {
   patterns.add<ConvertQubitAllocaOp, ConvertQubitStoreOp>(typeConverter, ctx);
   patterns.add<ConvertCBitAllocOp, ConvertCBitLoadOp, ConvertCBitStoreOp,
                ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertQubitCastOp,
@@ -716,195 +1071,193 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                                      &state);
 }
 
+/// Add an entry block for constants and initialization and an output block
+/// for output recording around the existing control flow.
+///
+/// Quantum releases remain at their source locations.
+static void ensureBlocks(LLVM::LLVMFuncOp main, LoweringState& state) {
+  OpBuilder builder(main.getBody());
+  auto* firstBlock = &main.front();
+  LLVM::ReturnOp returnOp;
+  main.walk([&](LLVM::ReturnOp op) { returnOp = op; });
+  auto* returnBlock = returnOp->getBlock();
+
+  auto* entryBlock = builder.createBlock(&main.getBody());
+  main.getBlocks().splice(Region::iterator(firstBlock), main.getBlocks(),
+                          entryBlock);
+  Block* outputBlock = builder.createBlock(&main.getBody());
+
+  state.entryBlock = entryBlock;
+  state.outputBlock = outputBlock;
+
+  builder.setInsertionPointToEnd(entryBlock);
+  LLVM::BrOp::create(builder, main->getLoc(), firstBlock);
+  returnOp->moveBefore(outputBlock, outputBlock->end());
+
+  builder.setInsertionPointToEnd(returnBlock);
+  LLVM::BrOp::create(builder, main->getLoc(), outputBlock);
+
+  // Move up all constants to the beginning
+  auto& entryOps = entryBlock->getOperations();
+  for (auto& block : main.getBlocks()) {
+    if (&block == entryBlock || &block == outputBlock) {
+      continue;
+    }
+    for (auto it = block.begin(); it != block.end();) {
+      if (auto& op = *it++; op.hasTrait<OpTrait::ConstantLike>()) {
+        entryOps.splice(entryBlock->getTerminator()->getIterator(),
+                        block.getOperations(), op.getIterator());
+      }
+    }
+  }
+}
+
+/// Reserve static result IDs for returned result registers.
+static LogicalResult reserveRegisterResults(ModuleOp moduleOp,
+                                            LoweringState& state) {
+  for (auto& reg : state.cregs) {
+    if (!reg.record || reg.booleanStorage) {
+      continue;
+    }
+    reg.resultOffset = state.staticRegisterResults;
+    const auto width = std::get<int64_t>(reg.size);
+    if (width >
+        std::numeric_limits<int64_t>::max() - state.staticRegisterResults) {
+      return moduleOp.emitError("static result IDs exceed the supported range");
+    }
+    state.staticRegisterResults += width;
+  }
+  return success();
+}
+
+/// Lower structured control flow to the cf dialect before function conversion.
+static LogicalResult lowerStructuredControlFlow(ModuleOp moduleOp,
+                                                ConversionTarget& target) {
+  RewritePatternSet patterns(moduleOp.getContext());
+  target.addIllegalDialect<scf::SCFDialect>();
+  target.addLegalDialect<cf::ControlFlowDialect, arith::ArithDialect>();
+  populateSCFToControlFlowConversionPatterns(patterns);
+  return applyPartialConversion(moduleOp, target, std::move(patterns));
+}
+
+} // namespace adaptive
+
+//===----------------------------------------------------------------------===//
+// Pass
+//===----------------------------------------------------------------------===//
+
 namespace {
 
-/// Lower supported QC operations to QIR Adaptive runtime calls and LLVM IR.
+/// Lower supported QC operations to QIR runtime calls and LLVM IR.
 ///
 /// Matching target payloads are checked before and after lowering.
-struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
-  using QCToQIRAdaptiveBase::QCToQIRAdaptiveBase;
-  explicit QCToQIRAdaptive(const TargetEnvironment& target)
-      : environment(target) {}
+struct QCToQIR final : impl::QCToQIRBase<QCToQIR> {
+  using QCToQIRBase::QCToQIRBase;
+  QCToQIR(const QCToQIROptions& options, const TargetEnvironment& target)
+      : QCToQIRBase(options), environment(target) {}
   std::optional<TargetEnvironment> environment;
 
   void getDependentDialects(DialectRegistry& registry) const override {
-    QCToQIRAdaptiveBase::getDependentDialects(registry);
+    QCToQIRBase::getDependentDialects(registry);
     registerQIRClassicalTensorDialects(registry);
     mqt::createPromoteClassicalMemory()->getDependentDialects(registry);
     mqt::createLegalizeControlFlow()->getDependentDialects(registry);
   }
 
-  /// Ensures proper block structure for QIR Adaptive Profile
-  ///
-  /// The Adaptive Profile requires an entry block and an output block with an
-  /// arbitrary number of blocks between them.
-  /// 1. **Entry block**: Contains constant operations and initialization
-  /// 2. **Intermediate blocks**: Original function structure containing
-  /// quantum operations
-  /// 3. **Output block**: Contains output recording calls.
-  /// Quantum releases remain at their source locations.
-  ///
-  /// @param main The main LLVM function to restructure
-  /// @param state The LoweringState of the conversion pass
-  static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
-    OpBuilder builder(main.getBody());
-    auto* firstBlock = &main.front();
-    LLVM::ReturnOp returnOp;
-    main.walk([&](LLVM::ReturnOp op) { returnOp = op; });
-    auto* returnBlock = returnOp->getBlock();
-
-    auto* entryBlock = builder.createBlock(&main.getBody());
-    main.getBlocks().splice(Region::iterator(firstBlock), main.getBlocks(),
-                            entryBlock);
-    Block* outputBlock = builder.createBlock(&main.getBody());
-
-    state.entryBlock = entryBlock;
-    state.outputBlock = outputBlock;
-
-    builder.setInsertionPointToEnd(entryBlock);
-    LLVM::BrOp::create(builder, main->getLoc(), firstBlock);
-    returnOp->moveBefore(outputBlock, outputBlock->end());
-
-    builder.setInsertionPointToEnd(returnBlock);
-    LLVM::BrOp::create(builder, main->getLoc(), outputBlock);
-
-    // Move up all constants to the beginning
-    auto& entryOps = entryBlock->getOperations();
-    for (auto& block : main.getBlocks()) {
-      if (&block == entryBlock || &block == outputBlock) {
-        continue;
-      }
-      for (auto it = block.begin(); it != block.end();) {
-        if (auto& op = *it++; op.hasTrait<OpTrait::ConstantLike>()) {
-          entryOps.splice(entryBlock->getTerminator()->getIterator(),
-                          block.getOperations(), op.getIterator());
-        }
-      }
+protected:
+  void runOnOperation() override {
+    if (failed(lower())) {
+      signalPassFailure();
     }
   }
 
-protected:
-  void runOnOperation() override {
+private:
+  LogicalResult lower() {
     MLIRContext* ctx = &getContext();
     auto moduleOp = getOperation();
+    const bool adaptive = profile == QIRProfile::Adaptive;
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
-      signalPassFailure();
-      return;
+      return failure();
     }
     auto entryPoint = mqt::getEntryPoint(moduleOp);
     if (!entryPoint) {
-      moduleOp->emitError("no main function with mqt.entry_point found");
-      signalPassFailure();
-      return;
+      return moduleOp->emitError("no main function with mqt.entry_point found");
     }
     if (entryPoint.getNumArguments() != 0) {
-      entryPoint.emitError(
-          "QIR Adaptive lowering does not support entry-point arguments; "
-          "bind program parameters before lowering");
-      signalPassFailure();
-      return;
+      return entryPoint.emitError(
+          "QIR entry points do not support arguments; bind program parameters "
+          "before lowering");
+    }
+    if (!adaptive && !entryPoint.getBody().hasOneBlock()) {
+      return entryPoint.emitError(
+          "QIR Base Profile requires a single-block entry function");
     }
     auto entryPointName = entryPoint.getSymNameAttr();
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
-      signalPassFailure();
-      return;
+      return failure();
     }
     const auto run = [&](OpPassManager& pm) {
       return runPipeline(pm, moduleOp);
     };
     LoweringState state;
-    auto payload = prepareQIRTarget(moduleOp, "adaptive", state, run,
+    auto payload = prepareQIRTarget(moduleOp, profile, state, run,
                                     environment ? &*environment : nullptr);
     if (failed(payload)) {
-      signalPassFailure();
-      return;
+      return failure();
     }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);
-
     target.addLegalDialect<LLVM::LLVMDialect>();
+
+    if (adaptive) {
+      RewritePatternSet patterns(ctx);
+      cbit::populateCBitDecompositionPatterns(patterns);
+      walkAndApplyPatterns(moduleOp,
+                           FrozenRewritePatternSet(std::move(patterns)));
+    }
+    if (failed(prepareClassicalResults(moduleOp, state,
+                                       /*allowComputedOutputs=*/adaptive,
+                                       /*deferMeasurementStores=*/adaptive))) {
+      return failure();
+    }
+    if (adaptive &&
+        (failed(adaptive::reserveRegisterResults(moduleOp, state)) ||
+         failed(adaptive::lowerStructuredControlFlow(moduleOp, target)) ||
+         failed(adaptive::prepareCBitRegisterAccesses(moduleOp, state)))) {
+      return failure();
+    }
 
     {
       RewritePatternSet patterns(ctx);
-      cbit::populateCBitDecompositionPatterns(patterns);
-      const FrozenRewritePatternSet frozen(std::move(patterns));
-      walkAndApplyPatterns(moduleOp, frozen);
-    }
-    if (failed(prepareClassicalResults(moduleOp, state,
-                                       /*allowComputedOutputs=*/true,
-                                       /*deferMeasurementStores=*/true))) {
-      signalPassFailure();
-      return;
-    }
-
-    for (auto& reg : state.cregs) {
-      if (reg.record && !reg.booleanStorage) {
-        reg.resultOffset = state.staticRegisterResults;
-        const auto width = std::get<int64_t>(reg.size);
-        if (width >
-            std::numeric_limits<int64_t>::max() - state.staticRegisterResults) {
-          moduleOp.emitError("static result IDs exceed the supported range");
-          signalPassFailure();
-          return;
-        }
-        state.staticRegisterResults += width;
-      }
-    }
-
-    // Stage 1: Convert scf dialect to cf
-    {
-      RewritePatternSet scfPatterns(ctx);
-      target.addIllegalDialect<scf::SCFDialect>();
-      target.addLegalDialect<cf::ControlFlowDialect>();
-      target.addLegalDialect<arith::ArithDialect>();
-      populateSCFToControlFlowConversionPatterns(scfPatterns);
-      if (applyPartialConversion(moduleOp, target, std::move(scfPatterns))
-              .failed()) {
-        signalPassFailure();
-        return;
-      }
-    }
-
-    if (failed(prepareCBitRegisterAccesses(moduleOp, state))) {
-      signalPassFailure();
-      return;
-    }
-
-    // Stage 2.1: Convert func dialect to LLVM
-    {
-      RewritePatternSet funcPatterns(ctx);
       target.addIllegalDialect<func::FuncDialect>();
-      populateFuncToLLVMConversionPatterns(typeConverter, funcPatterns);
-
-      if (applyPartialConversion(moduleOp, target, std::move(funcPatterns))
-              .failed()) {
-        signalPassFailure();
-        return;
+      populateFuncToLLVMConversionPatterns(typeConverter, patterns);
+      if (failed(
+              applyPartialConversion(moduleOp, target, std::move(patterns)))) {
+        return failure();
       }
     }
-
-    finalizeClassicalResults(state);
+    if (adaptive) {
+      finalizeClassicalResults(state);
+    }
 
     auto main = moduleOp.lookupSymbol<LLVM::LLVMFuncOp>(entryPointName);
     if (!main) {
-      moduleOp->emitError("no main function with mqt.entry_point found");
-      signalPassFailure();
-      return;
+      return moduleOp->emitError("no main function with mqt.entry_point found");
     }
     main.setPassthroughAttr(
         ArrayAttr::get(ctx, {StringAttr::get(ctx, ::qir::ENTRY_POINT_ATTR)}));
     mqt::removeEntryPoint(main);
-
-    // Stage 3: Create block structure
-    ensureBlocks(main, state);
-
-    // Stage 4: Insert initialize call
+    if (adaptive) {
+      adaptive::ensureBlocks(main, state);
+    } else {
+      base::ensureBlocks(main, state);
+    }
     addInitialize(main, ctx, state);
 
-    // Stage 5: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet patterns(ctx);
-      target.addIllegalDialect<cbit::CBitDialect, QCDialect>();
+      target.addIllegalDialect<cbit::CBitDialect, qc::QCDialect,
+                               scf::SCFDialect>();
       // Defer classical memory and index types to final MemRef-to-LLVM
       // lowering.
       target.addDynamicallyLegalDialect<memref::MemRefDialect>(
@@ -915,30 +1268,42 @@ protected:
                   return !isa<MemRefType>(type) || typeConverter.isLegal(type);
                 });
           });
-
-      populateQCToQIRAdaptivePatterns(patterns, typeConverter, ctx, state);
-
-      if (applyPartialConversion(moduleOp, target, std::move(patterns))
-              .failed()) {
-        signalPassFailure();
-        return;
+      populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
+      if (adaptive) {
+        adaptive::populatePatterns(patterns, typeConverter, ctx, state);
+      } else {
+        base::populatePatterns(patterns, typeConverter, ctx, state);
       }
-
-      addOutputRecording(main, ctx, state);
+      if (failed(
+              applyPartialConversion(moduleOp, target, std::move(patterns)))) {
+        return failure();
+      }
     }
+    addOutputRecording(main, ctx, state);
 
-    if (failed(finalizeQIRConversion(moduleOp, target, typeConverter)) ||
-        failed(finalizeQIRMetadata(moduleOp, "adaptive", *payload, run))) {
-      signalPassFailure();
+    if (failed(finalizeQIRConversion(moduleOp, target, typeConverter))) {
+      return failure();
     }
+    if (!adaptive) {
+      // Reconcile argument casts before comparing canonical qubit pointers.
+      auto& body = *std::next(main.getBody().begin());
+      if (failed(
+              qir::moveTerminalMeasurements(body, *state.measurementsBlock))) {
+        return failure();
+      }
+    }
+    if (failed(finalizeQIRMetadata(moduleOp, profile, *payload, run))) {
+      return failure();
+    }
+    return adaptive ? success() : qir::verifyBaseInstructions(main);
   }
 };
 
 } // namespace
 
-std::unique_ptr<Pass>
-createQCToQIRAdaptive(const TargetEnvironment& environment) {
-  return std::make_unique<QCToQIRAdaptive>(environment);
+std::unique_ptr<Pass> createQCToQIR(const QCToQIROptions& options,
+                                    const TargetEnvironment& environment) {
+  return std::make_unique<QCToQIR>(options, environment);
 }
 
 } // namespace mlir

@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mqt/Conversion/QCToQIR/QCToQIR.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
@@ -59,6 +59,7 @@ using namespace mlir;
 
 namespace {
 
+using ::mqt::test::expectConversionFailure;
 using ::mqt::test::QIRConversionCase;
 
 class QCToQIRBaseNativeTest : public testing::Test {
@@ -80,20 +81,8 @@ using QCToQIRBaseTest = ::mqt::test::QIRConversionTest;
 static LogicalResult runQCToQIRBaseConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
-  pm.addPass(createQCToQIRBase());
+  pm.addPass(createQCToQIR({.profile = QIRProfile::Base}));
   return pm.run(moduleOp);
-}
-
-static void expectConversionFailure(ModuleOp moduleOp, StringRef expected) {
-  ASSERT_TRUE(succeeded(verify(moduleOp)));
-  bool diagnosed = false;
-  ScopedDiagnosticHandler handler(
-      moduleOp.getContext(), [&](Diagnostic& diagnostic) {
-        diagnosed |= StringRef(diagnostic.str()).contains(expected);
-        return success();
-      });
-  EXPECT_TRUE(failed(runQCToQIRBaseConversion(moduleOp)));
-  EXPECT_TRUE(diagnosed) << expected.str();
 }
 
 static void expectFollowingXIsUncontrolled(
@@ -132,7 +121,7 @@ TEST_F(QCToQIRBaseNativeTest, RejectsExplicitRuntimeAssertions) {
                        "unsupported runtime precondition");
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
-  expectConversionFailure(*moduleOp, "cf.assert");
+  expectConversionFailure(*moduleOp, "cf.assert", runQCToQIRBaseConversion);
 }
 
 TEST_F(QCToQIRBaseNativeTest, RejectsMeasurementFeedbackDuringConversion) {
@@ -175,7 +164,7 @@ TEST_F(QCToQIRBaseNativeTest, CtrlBodyCardinalityIgnoresClassicalOps) {
       return success();
     });
     PassManager pm(&context);
-    pm.addPass(createQCToQIRBase());
+    pm.addPass(createQCToQIR({.profile = QIRProfile::Base}));
     if (numUnitaries == 2) {
       EXPECT_TRUE(failed(pm.run(*moduleOp)));
       EXPECT_TRUE(diagnosed);
@@ -208,7 +197,8 @@ TEST_F(QCToQIRBaseNativeTest, RejectsReorderedOverlappingOutputStores) {
 
   auto module = builder.finalize(reg);
   ASSERT_TRUE(module);
-  expectConversionFailure(*module, "cannot fuse this measurement/store pair");
+  expectConversionFailure(*module, "cannot fuse this measurement/store pair",
+                          runQCToQIRBaseConversion);
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
@@ -225,7 +215,8 @@ TEST_F(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   expectConversionFailure(
-      *moduleOp, "QIR Base Profile requires a single-block entry function");
+      *moduleOp, "QIR Base Profile requires a single-block entry function",
+      runQCToQIRBaseConversion);
   EXPECT_EQ(entryPoint.getBlocks().size(), 2);
 }
 
@@ -244,7 +235,8 @@ static void expectMeasurementOrderRejected(
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  expectConversionFailure(*moduleOp, expectedDiagnostic);
+  expectConversionFailure(*moduleOp, expectedDiagnostic,
+                          runQCToQIRBaseConversion);
 }
 
 TEST_F(QCToQIRBaseNativeTest, RejectsGateAfterMeasurementOnSameQubit) {
@@ -269,7 +261,8 @@ TEST_F(QCToQIRBaseNativeTest, RejectsGateAfterMeasurementOnSameQubit) {
                                               &context);
   ASSERT_TRUE(moduleOp);
   expectConversionFailure(
-      *moduleOp, "QIR Base Profile forbids using a qubit after measurement");
+      *moduleOp, "QIR Base Profile forbids using a qubit after measurement",
+      runQCToQIRBaseConversion);
 }
 
 TEST_F(QCToQIRBaseNativeTest, RejectsGatesWithMeasuredDirectOrPackedOperands) {
@@ -493,9 +486,11 @@ TEST_F(QCToQIRBaseNativeTest, RejectsHelperLocalClassicalResources) {
     })mlir";
     auto module = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(module);
-    expectConversionFailure(*module, "QIR conversion requires measurements and "
-                                     "CBit allocations in the "
-                                     "entry function");
+    expectConversionFailure(*module,
+                            "QIR conversion requires measurements and "
+                            "CBit allocations in the "
+                            "entry function",
+                            runQCToQIRBaseConversion);
     EXPECT_TRUE(succeeded(verify(*module)));
   }
 }
@@ -536,7 +531,7 @@ TEST_F(QCToQIRBaseNativeTest, RejectsUnsupportedEntryOutputs) {
                      "register storage"
                    : "QIR entry return supports only direct measurements and "
                      "CBit allocations";
-    expectConversionFailure(*module, expected);
+    expectConversionFailure(*module, expected, runQCToQIRBaseConversion);
     EXPECT_TRUE(succeeded(verify(*module)));
   }
 }
@@ -633,8 +628,10 @@ TEST_F(QCToQIRBaseNativeTest, RejectsNonMeasurementClassicalStore) {
   auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
-  expectConversionFailure(*module, "does not support non-measurement "
-                                   "stores to returned CBit registers");
+  expectConversionFailure(*module,
+                          "does not support non-measurement "
+                          "stores to returned CBit registers",
+                          runQCToQIRBaseConversion);
 }
 
 TEST_F(QCToQIRBaseNativeTest, RejectsUnmeasuredOutputBits) {
@@ -650,7 +647,8 @@ TEST_F(QCToQIRBaseNativeTest, RejectsUnmeasuredOutputBits) {
       auto moduleOp = builder.finalize(c);
       ASSERT_TRUE(moduleOp);
       expectConversionFailure(*moduleOp,
-                              "requires every output bit to be measured");
+                              "requires every output bit to be measured",
+                              runQCToQIRBaseConversion);
     }
   }
 }
@@ -666,8 +664,10 @@ TEST_F(QCToQIRBaseNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
   auto module = builder.finalize(c);
   ASSERT_TRUE(module);
 
-  expectConversionFailure(*module, "does not support non-measurement "
-                                   "stores to returned CBit registers");
+  expectConversionFailure(*module,
+                          "does not support non-measurement "
+                          "stores to returned CBit registers",
+                          runQCToQIRBaseConversion);
 }
 
 TEST_F(QCToQIRBaseNativeTest, RejectsClassicalMemrefOutput) {
@@ -679,7 +679,8 @@ TEST_F(QCToQIRBaseNativeTest, RejectsClassicalMemrefOutput) {
   auto module = builder.finalize(memref);
   ASSERT_TRUE(module);
 
-  expectConversionFailure(*module, "QIR entry return supports only");
+  expectConversionFailure(*module, "QIR entry return supports only",
+                          runQCToQIRBaseConversion);
 }
 
 TEST_F(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
@@ -696,7 +697,8 @@ TEST_F(QCToQIRBaseNativeTest, RejectsDynamicClassicalRegisterIndex) {
   ASSERT_TRUE(module);
 
   expectConversionFailure(
-      *module, "requires constant classical-register measurement indices");
+      *module, "requires constant classical-register measurement indices",
+      runQCToQIRBaseConversion);
 }
 
 TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
@@ -729,7 +731,7 @@ TEST_P(QCToQIRBaseTest, ProgramEquivalence) {
 }
 
 namespace {
-constexpr auto PROFILE_CASES = std::to_array<QIRConversionCase>({
+constexpr auto BASE_ONLY_CASES = std::to_array<QIRConversionCase>({
     ::mqt::test::qirCase("HWithoutRegister", qc::hWithoutRegister,
                          qir::hWithoutRegisterBase),
     ::mqt::test::qirCase("MeasurementWithoutRegisters",
@@ -742,5 +744,5 @@ INSTANTIATE_TEST_SUITE_P(Common, QCToQIRBaseTest,
                          testing::ValuesIn(::mqt::test::COMMON_QIR_CASES),
                          [](const auto& info) { return info.param.name; });
 INSTANTIATE_TEST_SUITE_P(BaseOnly, QCToQIRBaseTest,
-                         testing::ValuesIn(PROFILE_CASES),
+                         testing::ValuesIn(BASE_ONLY_CASES),
                          [](const auto& info) { return info.param.name; });

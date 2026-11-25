@@ -17,8 +17,7 @@
 #include "mqt/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mqt/Conversion/QCOToQC/QCOToQC.h"
 #include "mqt/Conversion/QCToQCO/QCToQCO.h"
-#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
-#include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mqt/Conversion/QCToQIR/QCToQIR.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Support/Passes.h"
@@ -358,8 +357,7 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
   registerQCOToQC();
   registerJeffToQCO();
   registerQCOToJeff();
-  registerQCToQIRBase();
-  registerQCToQIRAdaptive();
+  registerQCToQIR();
   registerAsmPrinterCLOptions();
   registerMLIRContextCLOptions();
   registerPassManagerCLOptions();

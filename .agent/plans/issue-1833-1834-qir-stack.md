@@ -131,9 +131,9 @@ job service is configured; no implementation was weakened for them.
 ## Code and ownership
 
 The compiler path starts in `mlir/lib/Conversion/QCToQIR/`. Common preparation
-and gate conversion live in `QIRCommon/QIRCommon.cpp`; profile-specific resource
-and control-flow lowering live in `QIRBase/QCToQIRBase.cpp` and
-`QIRAdaptive/QCToQIRAdaptive.cpp`. Function names and output helpers are in
+and gate conversion live in `QIRCommon.cpp`; the `qc-to-qir` pass and its
+profile-specific resource and control-flow lowering live in `QCToQIR.cpp`.
+Function names and output helpers are in
 `mlir/include/mlir/Dialect/QIR/Utils/QIRUtils.h` and
 `mlir/lib/Dialect/QIR/Utils/QIRUtils.cpp`. The public builder in
 `mlir/include/mlir/Dialect/QIR/Builder/QIRProgramBuilder.h` must use the same

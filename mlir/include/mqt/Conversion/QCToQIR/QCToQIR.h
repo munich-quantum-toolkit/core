@@ -10,16 +10,22 @@
 
 #pragma once
 
+#include "mqt/Dialect/QIR/Utils/QIRProfile.h"
+
 #include "mlir/Pass/Pass.h"
+
+#include <memory>
 
 namespace mlir {
 class TargetEnvironment;
+
+#define GEN_PASS_DECL_QCTOQIR
+#include "mqt/Conversion/QCToQIR/QCToQIR.h.inc"
+
 /// Lower with an existing environment without materializing its target in IR.
-std::unique_ptr<Pass>
-createQCToQIRAdaptive(const TargetEnvironment& environment);
-#define GEN_PASS_DECL_QCTOQIRADAPTIVE
-#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h.inc"
+std::unique_ptr<Pass> createQCToQIR(const QCToQIROptions& options,
+                                    const TargetEnvironment& environment);
 
 #define GEN_PASS_REGISTRATION
-#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h.inc"
+#include "mqt/Conversion/QCToQIR/QCToQIR.h.inc"
 } // namespace mlir

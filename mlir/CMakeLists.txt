@@ -62,8 +62,7 @@ add_dependencies(
   QCOToJeffIncGen
   QCOToQCIncGen
   QCToQCOIncGen
-  QCToQIRAdaptiveIncGen
-  QCToQIRBaseIncGen
+  QCToQIRIncGen
   MLIRMQTTransformsIncGen
   MLIRQCTransformsIncGen
   MLIRQCOTransformsIncGen
