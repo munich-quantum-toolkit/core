@@ -1368,53 +1368,58 @@ def test_qiskit_measurement_destination_index(*, dynamic: bool) -> None:
     assert sample(restored, shots=1, seed=1) == {"111" if dynamic else "01": 1}
 
 
-def test_nested_numeric_custom_definitions_are_preserved() -> None:
-    """Keep nested custom Gates as reusable functions after binding."""
+@pytest.mark.parametrize("bound", [False, True])
+def test_nested_custom_definitions_are_preserved(*, bound: bool) -> None:
+    """Share copied nested Gates before and after binding their parameters."""
     theta = Parameter("theta")
     definition = QuantumCircuit(1, name="inner")
     definition.rx(theta, 0)
+    definition.unitary(np.diag([1, 1j]), [0])
     inner = definition.to_gate()
     middle_definition = QuantumCircuit(1, name="outer")
     middle_definition.append(inner, [0])
     outer = middle_definition.to_gate()
     circuit = QuantumCircuit(1)
     circuit.append(outer, [0])
-    circuit.assign_parameters({theta: 0.25}, inplace=True)
+    circuit.append(outer, [0])
+    if bound:
+        circuit.assign_parameters({theta: 0.25}, inplace=True)
 
     program = QCProgram.from_qiskit(circuit)
     assert program.ir.count("mqt.unitary") == 2
     assert "qc.call @inner" in program.ir
     assert "qc.call @outer" in program.ir
     assert "qc.rx" in program.ir
-    assert "2.500000e-01" in program.ir
     restored = program.to_qiskit()
 
-    assert circuit.parameters == set()
+    assert restored.parameters == circuit.parameters
     assert restored.data[0].operation.name == "outer"
+    if not bound:
+        circuit.assign_parameters({theta: 0.25}, inplace=True)
+        restored.assign_parameters({theta: 0.25}, inplace=True)
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
-def test_custom_gate_definitions_are_interned_by_name_and_body() -> None:
-    """Reuse copied definitions and unique distinct same-named bodies."""
-    definition = QuantumCircuit(1, name="shared")
-    definition.h(0)
-    gate = definition.to_gate()
+@pytest.mark.parametrize("dense", [False, True])
+def test_custom_gate_definitions_are_interned_by_name_and_body(*, dense: bool) -> None:
+    """Reuse copied definitions without approximating distinct numeric bodies."""
     circuit = QuantumCircuit(1)
-    circuit.append(gate, [0])
-    circuit.append(gate, [0])
+    delta = 1e-5 if dense else 1e-10
+    for value in (1.5, 1.5 + delta, 1.5):
+        definition = QuantumCircuit(1, name="shared")
+        if dense:
+            definition.unitary(library.RXGate(value).to_matrix(), [0])
+        else:
+            definition.rx(value, 0)
+        circuit.append(definition.to_gate(), [0])
 
-    assert QCProgram.from_qiskit(circuit).ir.count("mqt.unitary") == 1
-
-    conflicting_definition = QuantumCircuit(1, name="shared")
-    conflicting_definition.x(0)
-    circuit.append(conflicting_definition.to_gate(), [0])
     program = QCProgram.from_qiskit(circuit)
     assert program.ir.count("mqt.unitary") == 2
     assert 'mqt.source_name = "shared"' in program.ir
     restored = program.to_qiskit()
 
     assert [item.operation.name for item in restored.data] == ["shared", "shared", "shared"]
-    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+    np.testing.assert_allclose(Operator(restored).data, Operator(circuit).data, atol=1e-12, rtol=0)
 
 
 @pytest.mark.parametrize("wrapper", ["plain", "nested", "controlled", "annotated"])

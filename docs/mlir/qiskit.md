@@ -203,6 +203,10 @@ parameters are represented by the circuit definition rather than scalar program
 inputs. Operations without a supported definition are rejected with a Python
 exception; arbitrary Python parameter objects are not preserved on export.
 
+The expansion limit counts each separately supplied gate definition once per
+gate name. Same-named gates with identical translated bodies share one helper in
+the resulting program.
+
 Controlled-gate import supports multiple targets and open controls. Open
 controls use X conjugation from the gate's circuit definition;
 `AnnotatedOperation` control modifiers must be closed.
