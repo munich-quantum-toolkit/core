@@ -10,8 +10,8 @@
 
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
-#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
-#include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
+#include "mqt/Conversion/QCToQIR/QCToQIR.h"
+#include "mqt/Conversion/QCToQIR/QIRCommon.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
@@ -71,6 +71,7 @@ using namespace mlir;
 
 namespace {
 
+using ::mqt::test::expectConversionFailure;
 using ::mqt::test::QIRConversionCase;
 
 class QCToQIRAdaptiveNativeTest : public testing::Test {
@@ -93,28 +94,14 @@ using QCToQIRAdaptiveTest = ::mqt::test::QIRConversionTest;
 static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
-  pm.addPass(createQCToQIRAdaptive());
+  pm.addPass(createQCToQIR({.profile = QIRProfile::Adaptive}));
   return pm.run(moduleOp);
 }
 
 static LogicalResult runQCToQIRAdaptiveConversionSimple(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
-  pm.addPass(createQCToQIRAdaptive());
+  pm.addPass(createQCToQIR({.profile = QIRProfile::Adaptive}));
   return pm.run(moduleOp);
-}
-
-static void expectConversionFailure(
-    ModuleOp moduleOp, StringRef expected,
-    LogicalResult (*convert)(ModuleOp) = runQCToQIRAdaptiveConversionSimple) {
-  ASSERT_TRUE(succeeded(verify(moduleOp)));
-  bool diagnosed = false;
-  ScopedDiagnosticHandler handler(
-      moduleOp.getContext(), [&](Diagnostic& diagnostic) {
-        diagnosed |= StringRef(diagnostic.str()).contains(expected);
-        return success();
-      });
-  EXPECT_TRUE(failed(convert(moduleOp)));
-  EXPECT_TRUE(diagnosed) << expected.str();
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedTargetRequirements) {
@@ -156,7 +143,8 @@ TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedTargetRequirements) {
         std::move(capabilities)));
     attachTargetEnvironment(*moduleOp, TargetEnvironment(target, payload));
     if (!StringRef(diagnostic).empty()) {
-      expectConversionFailure(*moduleOp, diagnostic);
+      expectConversionFailure(*moduleOp, diagnostic,
+                              runQCToQIRAdaptiveConversionSimple);
     } else {
       ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
       EXPECT_TRUE(succeeded(verify(*moduleOp)));
@@ -216,7 +204,8 @@ TEST_F(QCToQIRAdaptiveNativeTest, ChecksAttachedSwitchBounds) {
         std::move(capabilities)));
     attachTargetEnvironment(*moduleOp, TargetEnvironment(target, payload));
     if (maximum == 1U && !branching) {
-      expectConversionFailure(*moduleOp, "scf.index_switch");
+      expectConversionFailure(*moduleOp, "scf.index_switch",
+                              runQCToQIRAdaptiveConversionSimple);
       continue;
     }
     ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
@@ -342,7 +331,8 @@ TEST_F(QCToQIRAdaptiveNativeTest,
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
   ASSERT_EQ(context.getLoadedDialect<mlir::mqt::MQTDialect>(), nullptr);
-  expectConversionFailure(*module, "dynamic quantum allocations must be");
+  expectConversionFailure(*module, "dynamic quantum allocations must be",
+                          runQCToQIRAdaptiveConversionSimple);
   EXPECT_TRUE(module->lookupSymbol<func::FuncOp>("main"));
 }
 
@@ -356,7 +346,8 @@ TEST_F(QCToQIRAdaptiveNativeTest, RejectsExplicitRuntimeAssertions) {
   })mlir",
                                               &context);
   ASSERT_TRUE(moduleOp);
-  expectConversionFailure(*moduleOp, "cf.assert");
+  expectConversionFailure(*moduleOp, "cf.assert",
+                          runQCToQIRAdaptiveConversionSimple);
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest,
@@ -376,7 +367,8 @@ TEST_F(QCToQIRAdaptiveNativeTest,
   })mlir",
                                             &context);
   ASSERT_TRUE(module);
-  expectConversionFailure(*module, "single return");
+  expectConversionFailure(*module, "single return",
+                          runQCToQIRAdaptiveConversionSimple);
   size_t returns = 0;
   module->walk([&](func::ReturnOp op) {
     ++returns;
@@ -749,8 +741,8 @@ TEST_F(QCToQIRAdaptiveNativeTest, RejectsRegisterCallsAtTheSharedBoundary) {
     SCOPED_TRACE(source);
     auto module = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(module);
-    expectConversionFailure(*module,
-                            "does not support CBit registers in calls");
+    expectConversionFailure(*module, "does not support CBit registers in calls",
+                            runQCToQIRAdaptiveConversionSimple);
   }
 }
 
@@ -888,8 +880,10 @@ TEST_F(QCToQIRAdaptiveNativeTest, RejectsWriteThroughReturnedRegisterMerge) {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
 
-  expectConversionFailure(*module, "does not support non-measurement "
-                                   "writes to returned CBit registers");
+  expectConversionFailure(*module,
+                          "does not support non-measurement "
+                          "writes to returned CBit registers",
+                          runQCToQIRAdaptiveConversionSimple);
 }
 
 TEST_F(QCToQIRAdaptiveNativeTest, RejectsHelperLocalClassicalResources) {
@@ -914,9 +908,11 @@ TEST_F(QCToQIRAdaptiveNativeTest, RejectsHelperLocalClassicalResources) {
     })mlir";
     auto module = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(module);
-    expectConversionFailure(*module, "QIR conversion requires measurements and "
-                                     "CBit allocations in the "
-                                     "entry function");
+    expectConversionFailure(*module,
+                            "QIR conversion requires measurements and "
+                            "CBit allocations in the "
+                            "entry function",
+                            runQCToQIRAdaptiveConversionSimple);
     EXPECT_TRUE(succeeded(verify(*module)));
   }
 }
@@ -944,8 +940,10 @@ TEST_F(QCToQIRAdaptiveNativeTest, RejectsUnsupportedEntryOutputs) {
     auto module = builder.finalize(outputs);
     ASSERT_TRUE(module);
     ASSERT_TRUE(succeeded(verify(*module)));
-    expectConversionFailure(*module, "QIR entry return supports only direct "
-                                     "measurements and CBit allocations");
+    expectConversionFailure(*module,
+                            "QIR entry return supports only direct "
+                            "measurements and CBit allocations",
+                            runQCToQIRAdaptiveConversionSimple);
     EXPECT_TRUE(succeeded(verify(*module)));
   }
 }
@@ -1308,7 +1306,7 @@ TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
 }
 
 namespace {
-constexpr auto PROFILE_CASES = std::to_array<QIRConversionCase>({
+constexpr auto ADAPTIVE_ONLY_CASES = std::to_array<QIRConversionCase>({
     ::mqt::test::qirCase("HWithoutRegister", qc::hWithoutRegister,
                          qir::hWithoutRegister),
     ::mqt::test::qirCase("RepeatedMeasurementToSameBit",
@@ -1372,5 +1370,5 @@ INSTANTIATE_TEST_SUITE_P(Common, QCToQIRAdaptiveTest,
                          testing::ValuesIn(::mqt::test::COMMON_QIR_CASES),
                          [](const auto& info) { return info.param.name; });
 INSTANTIATE_TEST_SUITE_P(AdaptiveOnly, QCToQIRAdaptiveTest,
-                         testing::ValuesIn(PROFILE_CASES),
+                         testing::ValuesIn(ADAPTIVE_ONLY_CASES),
                          [](const auto& info) { return info.param.name; });

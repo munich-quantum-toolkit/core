@@ -14,8 +14,7 @@
 #include "mqt/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mqt/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mqt/Conversion/QCOToQC/QCOToQC.h"
-#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
-#include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mqt/Conversion/QCToQIR/QCToQIR.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
@@ -168,12 +167,10 @@ QCProgram::intoQIR(QIRProfile profile,
             pm.addPass(mqt::createLowerQuantumModifiers());
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(mqt::createPromoteClassicalMemory());
-              pm.addPass(environment ? createQCToQIRAdaptive(*environment)
-                                     : createQCToQIRAdaptive());
-            } else {
-              pm.addPass(environment ? createQCToQIRBase(*environment)
-                                     : createQCToQIRBase());
             }
+            const QCToQIROptions options{.profile = profile};
+            pm.addPass(environment ? createQCToQIR(options, *environment)
+                                   : createQCToQIR(options));
           },
           "failed to convert QC to QIR"))) {
     return failure();

@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QIR/Utils/QIRProfile.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
 #include "mlir/IR/Builders.h"
@@ -78,7 +79,7 @@ namespace qir {
 /// ```
 class QIRProgramBuilder final : public ImplicitLocOpBuilder {
 public:
-  enum class Profile : uint8_t { Base, Adaptive };
+  using Profile = QIRProfile;
 
   /// Construct a new QIRProgramBuilder
   ///

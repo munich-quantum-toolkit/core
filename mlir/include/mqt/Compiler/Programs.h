@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Compiler/CompilationOptions.h"
+#include "mqt/Dialect/QIR/Utils/QIRProfile.h"
 
 #include "capnp/message.h"
 #include "jeff.capnp.h"
@@ -102,14 +103,6 @@ public:
 
 private:
   QuantumProgramInfo info_;
-};
-
-/// The QIR profile represented by a QIR program.
-enum class QIRProfile : uint8_t {
-  /// The QIR Base Profile.
-  Base,
-  /// The QIR Adaptive Profile.
-  Adaptive,
 };
 
 /// Formats accepted and produced by the default compiler pipeline.

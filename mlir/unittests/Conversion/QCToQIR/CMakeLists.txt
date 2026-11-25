@@ -6,5 +6,20 @@
 #
 # Licensed under the MIT License
 
-add_subdirectory(QCToQIRAdaptive)
-add_subdirectory(QCToQIRBase)
+set(target_name mqt-core-mlir-unittest-qc-to-qir)
+add_executable(${target_name} test_qc_to_qir_adaptive.cpp test_qc_to_qir_base.cpp)
+
+target_link_libraries(
+  ${target_name}
+  PRIVATE
+    MLIRParser
+    MLIRSupportMQT
+    GTest::gtest_main
+    MLIRQCProgramBuilder
+    MLIRQIRProgramBuilder
+    MLIRQCPrograms
+    MLIRQIRPrograms
+    MLIRQCToQIR
+    MLIRMQTTransforms)
+
+mqt_mlir_configure_unittest_target(${target_name})

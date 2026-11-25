@@ -127,8 +127,7 @@ add_mlir_library(
   MLIRMQTTransforms
   MLIRQCOToQC
   MLIRQCOToJeff
-  MLIRQCToQIRBase
-  MLIRQCToQIRAdaptive
+  MLIRQCToQIR
   MLIRQIRTranslation
   MLIRQCOTransforms
   MLIRQCOpenQASMTranslation

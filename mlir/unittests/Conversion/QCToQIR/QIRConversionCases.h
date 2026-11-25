@@ -26,8 +26,10 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/Verifier.h"
 
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -265,6 +267,21 @@ inline void expectEquivalentQIR(mlir::ModuleOp actual,
     expected.print(llvm::errs());
     llvm::errs() << '\n';
   }
+}
+
+/// Expect a failed conversion that reports the given diagnostic.
+inline void expectConversionFailure(
+    mlir::ModuleOp moduleOp, llvm::StringRef expected,
+    llvm::function_ref<mlir::LogicalResult(mlir::ModuleOp)> convert) {
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(moduleOp)));
+  bool diagnosed = false;
+  mlir::ScopedDiagnosticHandler handler(
+      moduleOp.getContext(), [&](mlir::Diagnostic& diagnostic) {
+        diagnosed |= llvm::StringRef(diagnostic.str()).contains(expected);
+        return mlir::success();
+      });
+  EXPECT_TRUE(mlir::failed(convert(moduleOp)));
+  EXPECT_TRUE(diagnosed) << expected.str();
 }
 
 } // namespace mqt::test
