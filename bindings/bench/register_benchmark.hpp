@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "bench/Evaluation.hpp"
 #include "bench/JSON.hpp"
 
 #include "nanobind/nanobind.h"
@@ -17,7 +18,10 @@
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
 #include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
+#include <exception>
+#include <functional>
 #include <memory>
 #include <string_view>
 #include <system_error>
@@ -44,6 +48,29 @@ template <class T> T unwrapBenchmark(llvm::Expected<T> result) {
     throw nanobind::value_error(message.c_str());
   }
   return std::move(*result);
+}
+
+// Keep Python exceptions on the binding side of the native callback boundary.
+template <class Benchmark, class Workflow>
+auto runBenchmarkWorkflow(
+    const std::function<bench::Counts(const Benchmark&)>& run,
+    const Workflow& workflow) {
+  std::exception_ptr callbackError;
+  auto result = workflow(
+      [&](const Benchmark& benchmark) -> llvm::Expected<bench::Counts> {
+        try {
+          return run(benchmark);
+        } catch (...) {
+          callbackError = std::current_exception();
+          return llvm::createStringError(std::errc::operation_canceled,
+                                         "benchmark callback failed");
+        }
+      });
+  if (callbackError) {
+    llvm::logAllUnhandledErrors(result.takeError(), llvm::nulls());
+    std::rethrow_exception(callbackError);
+  }
+  return unwrapBenchmark(std::move(result));
 }
 
 template <class Benchmark, class... Args>

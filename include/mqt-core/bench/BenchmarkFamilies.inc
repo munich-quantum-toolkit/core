@@ -34,6 +34,7 @@ MQT_BENCHMARK_FAMILY(MagicStateDistillation, magicStateDistillation,
 MQT_BENCHMARK_FAMILY(ModularMultiplier, modularMultiplier, "modular-multiplier",
                      1)
 MQT_BENCHMARK_FAMILY(Multiplexer, multiplexer, "multiplexer", 1)
+MQT_BENCHMARK_FAMILY(QAE, qae, "qae", 1)
 MQT_BENCHMARK_FAMILY(QAOA, qaoa, "qaoa", 1)
 MQT_BENCHMARK_FAMILY(QFT, qft, "qft", 1)
 MQT_BENCHMARK_FAMILY(QFTAdder, qftAdder, "qft-adder", 1)

@@ -16,6 +16,7 @@
 #include "bench/MagicStateDistillation.hpp"
 #include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
+#include "bench/QAE.hpp"
 #include "bench/QAOA.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"

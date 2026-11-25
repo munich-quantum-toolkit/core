@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, assert_type, cast
 
 import pytest
 
-from mqt.core.bench import qpe, repeat_until_success, shor
+from mqt.core.bench import qae, qpe, repeat_until_success, shor
 from mqt.core.mlir import (
     CompiledProgram,
     CompilerTarget,
@@ -25,6 +25,7 @@ from mqt.core.mlir import (
     QIRProfile,
     TargetEnvironment,
     compile_program,
+    decode_counts,
     sample,
     submit_program,
 )
@@ -325,6 +326,18 @@ def test_shor_device_execution(
     assert result.status == shor.FactorStatus.SUCCESS
     assert result.factors == factors
     assert result.attempts == 1
+
+
+def test_qae_device_execution(ddsim_device: Device) -> None:
+    """Recover the QAE phase distribution through DDSIM's native controlled-Z gates."""
+    problem = qae.Problem(good_states=["01"], amplitude=0.25)
+    benchmark = qae.QAE(qae.Options(problem=problem, precision=3))
+    compiled = compile_program(benchmark.generate(), target=ddsim_device)
+    shots = 1024
+    job = submit_program(compiled, target=ddsim_device, num_shots=shots, custom1=17)
+    job.wait()
+    counts = decode_counts(job.get_counts(), compiled.result_width, shots, compiled.result_layout)
+    assert benchmark.evaluate(counts).total_variation_distance < 0.1
 
 
 @pytest.mark.parametrize(

@@ -16,6 +16,7 @@ set(BENCH_SOURCES
     register_magic_state_distillation.cpp
     register_modular_multiplier.cpp
     register_multiplexer.cpp
+    register_qae.cpp
     register_qaoa.cpp
     register_qft.cpp
     register_qft_adder.cpp

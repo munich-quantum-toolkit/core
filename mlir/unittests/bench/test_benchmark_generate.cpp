@@ -11,6 +11,7 @@
 #include "bench/GHZ.hpp"
 #include "bench/JSON.hpp"
 #include "bench/ModularMultiplier.hpp"
+#include "bench/QAE.hpp"
 #include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
 #include "bench/Shor.hpp"
@@ -151,6 +152,12 @@ TEST(GenerateProgramTest, ExecutesRuntimePhasesThroughJeffAndAdaptiveQIR) {
           2048);
     }
   }
+  expectPortableExecution(
+      llvm::cantFail(QAE::create({
+          .problem = {.goodStates = {"00", "10"}, .amplitude = 0.3},
+          .precision = 3,
+      })),
+      2048);
   expectPortableExecution(llvm::cantFail(QFTAdder::create({
                               .addend = "101",
                               .accumulator = "011",

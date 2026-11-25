@@ -19,6 +19,7 @@
 #include "bench/MagicStateDistillation.hpp"
 #include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
+#include "bench/QAE.hpp"
 #include "bench/QAOA.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"
@@ -40,9 +41,9 @@ namespace mqt::bench {
 /// One validated benchmark instance from the JSON registry.
 using BenchmarkInstance =
     std::variant<BV, FanOut, GHZ, Grover, GroverWeakMeasurement,
-                 MagicStateDistillation, ModularMultiplier, Multiplexer, QAOA,
-                 QFT, QFTAdder, QPE, RepeatUntilSuccess, Shor, Teleportation,
-                 WState>;
+                 MagicStateDistillation, ModularMultiplier, Multiplexer, QAE,
+                 QAOA, QFT, QFTAdder, QPE, RepeatUntilSuccess, Shor,
+                 Teleportation, WState>;
 
 /// Owns a validated benchmark and its canonical manifest metadata.
 struct ParsedBenchmark {

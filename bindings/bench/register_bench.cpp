@@ -27,6 +27,7 @@ void registerGroverWeakMeasurement(const nb::module_& m);
 void registerMagicStateDistillation(const nb::module_& m);
 void registerModularMultiplier(const nb::module_& m);
 void registerMultiplexer(const nb::module_& m);
+void registerQAE(nb::module_& m);
 void registerQAOA(const nb::module_& m);
 void registerQFT(const nb::module_& m);
 void registerQFTAdder(const nb::module_& m);
@@ -93,6 +94,10 @@ void registerBench(nb::module_& m) {
   const nb::module_ multiplexer = m.def_submodule(
       "multiplexer", "Quantum multiplexer benchmark instances and options.");
   registerMultiplexer(multiplexer);
+
+  nb::module_ qae = m.def_submodule(
+      "qae", "Quantum amplitude estimation benchmarks and workflows.");
+  registerQAE(qae);
 
   const nb::module_ qaoa =
       m.def_submodule("qaoa", "QAOA benchmark instances and options.");
