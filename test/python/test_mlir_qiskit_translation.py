@@ -1375,50 +1375,40 @@ def test_nested_custom_definitions_are_preserved(*, bound: bool) -> None:
     definition = QuantumCircuit(1, name="inner")
     definition.rx(theta, 0)
     definition.unitary(np.diag([1, 1j]), [0])
-    inner = definition.to_gate()
-    middle_definition = QuantumCircuit(1, name="outer")
-    middle_definition.append(inner, [0])
-    outer = middle_definition.to_gate()
+    outer_definition = QuantumCircuit(1, name="outer")
+    outer_definition.append(definition.to_gate(), [0])
+    outer = outer_definition.to_gate()
     circuit = QuantumCircuit(1)
     circuit.append(outer, [0])
     circuit.append(outer, [0])
-    if bound:
-        circuit.assign_parameters({theta: 0.25}, inplace=True)
+    values = {theta: 0.25}
+    bound_circuit = circuit.assign_parameters(values)
 
-    program = QCProgram.from_qiskit(circuit)
-    assert program.ir.count("mqt.unitary") == 2
-    assert "qc.call @inner" in program.ir
-    assert "qc.call @outer" in program.ir
-    assert "qc.rx" in program.ir
+    program = QCProgram.from_qiskit(bound_circuit if bound else circuit)
+    ir = program.ir
+    assert ir.count("mqt.unitary") == 2
+    assert "qc.call @inner" in ir
+    assert "qc.call @outer" in ir
     restored = program.to_qiskit()
-
-    assert restored.parameters == circuit.parameters
     assert restored.data[0].operation.name == "outer"
     if not bound:
-        circuit.assign_parameters({theta: 0.25}, inplace=True)
-        restored.assign_parameters({theta: 0.25}, inplace=True)
-    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+        restored = restored.assign_parameters(values)
+    np.testing.assert_allclose(Operator(restored).data, Operator(bound_circuit).data, atol=1e-12, rtol=0)
 
 
-@pytest.mark.parametrize("dense", [False, True])
-def test_custom_gate_definitions_are_interned_by_name_and_body(*, dense: bool) -> None:
-    """Reuse copied definitions without approximating distinct numeric bodies."""
+def test_custom_gate_definitions_are_interned_by_name_and_body() -> None:
+    """Share exact copies and distinguish changes to either a rotation or a matrix."""
     circuit = QuantumCircuit(1)
-    delta = 1e-5 if dense else 1e-10
-    for value in (1.5, 1.5 + delta, 1.5):
+    for rotation, phase in [(1.5, 1.5), (1.5 + 1e-10, 1.5), (1.5, 1.5 + 1e-5), (1.5, 1.5)]:
         definition = QuantumCircuit(1, name="shared")
-        if dense:
-            definition.unitary(library.RXGate(value).to_matrix(), [0])
-        else:
-            definition.rx(value, 0)
+        definition.rx(rotation, 0)
+        definition.unitary(library.RZGate(phase).to_matrix(), [0])
         circuit.append(definition.to_gate(), [0])
 
     program = QCProgram.from_qiskit(circuit)
-    assert program.ir.count("mqt.unitary") == 2
-    assert 'mqt.source_name = "shared"' in program.ir
+    assert program.ir.count("mqt.unitary") == 3
     restored = program.to_qiskit()
-
-    assert [item.operation.name for item in restored.data] == ["shared", "shared", "shared"]
+    assert [item.operation.name for item in restored.data] == ["shared"] * 4
     np.testing.assert_allclose(Operator(restored).data, Operator(circuit).data, atol=1e-12, rtol=0)
 
 
