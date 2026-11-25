@@ -12,6 +12,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -67,6 +68,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <utility>
@@ -117,16 +119,14 @@ static bool assignTwoQubitOpMatrix(UnitaryOpInterface op, Matrix4x4& matrix) {
          op.getUnitaryMatrix4x4(matrix);
 }
 
-template <typename Gate>
-static Gate singleControlledGate(Operation* operation) {
+static Operation* singleControlledGate(Operation* operation) {
   auto controlled = dyn_cast<CtrlOp>(operation);
   if (!controlled || controlled.getNumControls() != 1 ||
       controlled.getNumTargets() != 1) {
-    return {};
+    return nullptr;
   }
-  auto body =
-      mqt::getSoleBodyUnitary<UnitaryOpInterface>(*controlled.getBody());
-  return body ? dyn_cast<Gate>(body.getOperation()) : Gate{};
+  return mqt::getSoleBodyUnitary<UnitaryOpInterface>(*controlled.getBody())
+      .getOperation();
 }
 
 /// Return the constant matrix when `unitary` is a single-qubit run member.
@@ -512,7 +512,9 @@ static bool isOperandSwapInvariant(UnitaryOpInterface unitary) {
   if (isa<XXPlusYYOp>(operation)) {
     return mqt::valueToConstantDouble(unitary.getParameter(1)) == 0.;
   }
-  return static_cast<bool>(singleControlledGate<ZOp>(operation));
+  // A controlled phase shift only changes the |11> amplitude.
+  return isa_and_present<POp, ZOp, SOp, SdgOp, TOp, TdgOp>(
+      singleControlledGate(operation));
 }
 
 static void reorderTwoQubitOperation(IRRewriter& rewriter,
@@ -835,13 +837,33 @@ NativeCostAnalysis::decompose(const Matrix4x4& matrix,
   return std::nullopt;
 }
 
+/// Canonicalization can shorten native controlled U(pi/2, phi, lambda) to U2.
+static U2Op nativeControlledU2(Operation* operation,
+                               const CompilerTarget& target,
+                               NativeCostAnalysis::Sites sites) {
+  auto u2 = dyn_cast_if_present<U2Op>(singleControlledGate(operation));
+  if (!u2) {
+    return {};
+  }
+  const auto match = target.findOperation(
+      "u", 2, 3,
+      [&](size_t index) {
+        return index == 0
+                   ? std::numbers::pi / 2.
+                   : mqt::valueToConstantDouble(u2.getParameter(index - 1));
+      },
+      sites, 1);
+  return match.capability != nullptr ? u2 : U2Op{};
+}
+
 std::optional<size_t>
 NativeCostAnalysis::operationCost(UnitaryOpInterface operation,
                                   const CompilerTarget& target, Sites sites) {
   if (!operation.isSingleQubit() && !operation.isTwoQubit()) {
     return std::nullopt;
   }
-  if (nativeOrientation(operation, target, sites)) {
+  if (nativeOrientation(operation, target, sites) ||
+      nativeControlledU2(operation, target, sites)) {
     return operation.isTwoQubit() ? 1 : 0;
   }
   if (!target.synthesisBasis()) {
@@ -1150,6 +1172,12 @@ static LogicalResult synthesizeTargetOperation(
     }
     return success();
   }
+  if (auto u2 = nativeControlledU2(operation, target, sites)) {
+    rewriter.setInsertionPoint(u2);
+    rewriter.replaceOpWithNewOp<UOp>(u2, u2.getQubitIn(), std::numbers::pi / 2.,
+                                     u2.getPhi(), u2.getLambda());
+    return success();
+  }
   const auto unsupported = [&](StringRef reason) -> LogicalResult {
     return operation->emitError()
            << "target-native synthesis cannot lower operation '"
@@ -1157,17 +1185,6 @@ static LogicalResult synthesizeTargetOperation(
   };
   if (!basis) {
     return unsupported("the target has no usable synthesis basis");
-  }
-  if (auto u2 = singleControlledGate<U2Op>(operation);
-      u2 && basis->singleQubit == CompilerTarget::SingleQubitBasis::U) {
-    // Canonicalization may shorten a native controlled U(pi/2, phi, lambda)
-    // to U2. Restore its native form before attempting matrix synthesis.
-    decomposition::synthesizeParameterizedUnitary1Q(rewriter, u2.getOperation(),
-                                                    *basis);
-    if (sites ? target.supports(operation, *sites)
-              : target.supports(operation)) {
-      return success();
-    }
   }
   rewriter.setInsertionPoint(operation);
   if (op.isSingleQubit()) {

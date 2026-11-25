@@ -23,6 +23,9 @@ from qiskit.circuit.controlflow import IfElseOp, WhileLoopOp
 from qiskit.circuit.library import (
     CCXGate,
     CPhaseGate,
+    CRZGate,
+    CU1Gate,
+    CU3Gate,
     CUGate,
     CXGate,
     CYGate,
@@ -883,7 +886,7 @@ def test_backend_bases_compile(basis: list[str]) -> None:
 
 
 @pytest.mark.parametrize("gate", [CPhaseGate(Parameter("a")), CCXGate(), CUGate(*[Parameter("a")] * 4)])
-def test_unsupported_controlled_gate_does_not_add_routing_edges(gate: Gate) -> None:
+def test_default_controlled_gate_discovery_preserves_routing(gate: Gate) -> None:
     """Circuit import support must not create unusable native routing edges."""
     source = Target(num_qubits=3)
     source.add_instruction(Measure())
@@ -895,8 +898,13 @@ def test_unsupported_controlled_gate_does_not_add_routing_edges(gate: Gate) -> N
         target = CompilerTarget.from_qiskit(source)
     assert target.couplings == [(0, 1), (1, 2)]
     assert gate.name not in {operation.name for operation in target.operations}
-    with pytest.raises(ValueError, match=f"unsupported operation for '{gate.name}'"):
-        CompilerTarget.from_qiskit(source, operation_names=[gate.name])
+    if isinstance(gate, CPhaseGate):
+        selected = CompilerTarget.from_qiskit(source, operation_names=list(source.operation_names))
+        assert selected.supports_operation("cp", 2, 1, [0, 2])
+        assert "cp" in {op.name for op in CompilerTarget.NativeOperations.from_qiskit(source).operations}
+    else:
+        with pytest.raises(ValueError, match=f"unsupported operation for '{gate.name}'"):
+            CompilerTarget.from_qiskit(source, operation_names=[gate.name])
     program = QCProgram.from_openqasm_str('OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; cz q[0], q[1];').to_qco()
     program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
     assert program.to_qiskit(target=target).count_ops()["cx"] == 1
@@ -1051,27 +1059,36 @@ def test_native_r_export_rejects_incompatible_target(angle: float | Parameter) -
         program.to_qiskit(target=target)
 
 
-@pytest.mark.parametrize("name", ["cy", "controlled_y"])
-def test_native_cy_preserves_capability_without_synthesis_entangler(name: str) -> None:
-    """Native CY remains available without claiming a general two-qubit basis."""
+@pytest.mark.parametrize(
+    ("gate", "name"),
+    [
+        (CYGate(), "controlled_y"),
+        (CRZGate(Parameter("a")), "native_crz"),
+        (CU1Gate(Parameter("a")), "cu1"),
+        (CU3Gate(*map(Parameter, ("a", "b", "c"))), "native_cu3"),
+    ],
+)
+def test_native_controlled_gate_preserves_name_and_phase(gate: Gate, name: str) -> None:
+    """Keep a supported two-qubit capability on its ordered sites."""
     source = Target(num_qubits=2)
     source.add_instruction(Measure())
     source.add_instruction(UGate(*map(Parameter, ("theta", "phi", "lambda"))))
-    source.add_instruction(CYGate(), {(0, 1): None}, name=name)
-    target = CompilerTarget.from_qiskit(source, operation_names=["u", name, "measure"])
-    assert target.supports_operation("cy", 2, 0, [0, 1])
-    assert not target.supports_operation("cy", 2, 0, [1, 0])
-    assert target.synthesis_basis is not None
-    assert target.synthesis_basis.entangler is None
+    source.add_instruction(gate, {(0, 1): None}, name=name)
+    target = CompilerTarget.from_qiskit(source, operation_names=list(source.operation_names))
+    basis = target.synthesis_basis
+    assert basis is not None
+    assert basis.entangler is None
     circuit = QuantumCircuit(2)
-    circuit.cy(0, 1)
-    program = QCProgram.from_qiskit(circuit).to_qco()
-    program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
-    exported = program.to_qiskit(target=target)
+    circuit.append(gate, [1, 0] if isinstance(gate, CU1Gate) else [0, 1])
+    exported = compile_program(circuit, target=target)
     assert [item.operation.name for item in exported.data] == [name]
-    restored = QCProgram.from_qiskit(exported).to_qiskit()
-    assert np.allclose(Operator(exported).data, Operator(circuit).data)
-    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+    assert [exported.find_bit(bit).index for bit in exported.data[0].qubits] == [0, 1]
+    values = [0.37, -0.21, 0.63][: len(circuit.parameters)]
+    bound = exported.assign_parameters(values)
+    expected = circuit.assign_parameters(values)
+    restored = QCProgram.from_qiskit(bound).to_qiskit()
+    assert np.allclose(Operator(bound).data, Operator(expected).data)
+    assert np.allclose(Operator(restored).data, Operator(expected).data)
 
 
 @pytest.mark.parametrize(

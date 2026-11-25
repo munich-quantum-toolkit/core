@@ -582,9 +582,9 @@ class CompilerTarget:
 
         Args:
             source: Qiskit Target or BackendV2. Physical import requires a known positive qubit count.
-            operation_names: Qiskit Target operation names to retain. By default,
-                include every representable operation. Explicit selections must all be
-                representable.
+            operation_names: Qiskit Target operation names to retain. Default device
+                discovery includes CX, CY, and CZ among controlled gates. Explicitly
+                select additional supported controls by name.
             name: Override the target name. By default, use the backend name when
                 source is a BackendV2; a Target produces an unnamed snapshot.
 

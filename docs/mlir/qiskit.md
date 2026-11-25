@@ -74,17 +74,23 @@ Gate applicability keeps its original qubit order. The target needs a known,
 positive qubit count and a connected routing graph. Global phase is always
 allowed as circuit metadata.
 
-By default, unrepresentable gates are omitted with a warning. This includes
-other custom gates, unsupported angle bounds, fixed-duration delays, renamed
-measurement, reset, or delay instructions, open controls, and controlled gates
-other than CX, CY, and CZ. Bounded RXX, RYY, RZX, and RZZ gates are retained
-with the conservative interval `[0, pi/2]` when the target accepts that entire
-interval; see {doc}`target compilation <target_compilation>`. Barrier, classical
-control flow, and operations with no applicable qubits are omitted without a
-warning. Pass `operation_names` to retain a subset; every selected name must be
-representable. Calibration, timing, and scheduling data are not copied. A
-`CompilerTarget` also omits backend control-flow support. For Qiskit output,
-this snapshot permits all control-flow forms supported by the exporter.
+Default device snapshots include the controlled gates CX, CY, and CZ. To include
+other standard gates with one closed control, one target, and the same
+parameters as their base gate, pass an explicit `operation_names` list or import
+a gate set. Examples include CP, CRZ, CU1, and CU3. Qiskit's four-parameter CU
+carries an additional phase and is unsupported.
+
+By default, the importer warns when it omits an unsupported instruction. These
+include other custom gates, open controls, unsupported angle bounds,
+fixed-duration delays, and renamed measurement, reset, or delay instructions.
+Bounded RXX, RYY, RZX, and RZZ gates are retained with the conservative interval
+`[0, pi/2]` when the target accepts that entire interval; see
+{doc}`target compilation <target_compilation>`. Barrier, classical control flow,
+and operations with no applicable qubits are omitted without a warning. Every
+explicitly selected name must be representable. Calibration, timing, and
+scheduling data are not copied. A `CompilerTarget` also omits backend
+control-flow support. For Qiskit output, this snapshot permits all control-flow
+forms supported by the exporter.
 
 Target-native synthesis requires a common single-qubit basis across sites and a
 common entangler across routing edges. For explicit pipelines, export with

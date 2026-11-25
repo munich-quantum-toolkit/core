@@ -2177,18 +2177,25 @@ TEST_F(TargetSynthesisTest, SqrtISwapCapabilityHonorsPlacement) {
   });
 }
 
-TEST_F(TargetSynthesisTest, SqrtISwapReversesPlacementWithoutSynthesisBasis) {
+TEST_F(TargetSynthesisTest,
+       ReversesNativePhaseAndExchangeWithoutSynthesisBasis) {
+  const auto forward = valid(SiteTuple::create({0, 1}));
   const auto target = valid(Target::create(
       2, Connectivity::allToAll(),
       NativeOperations::fromOperations({
-          valid(OperationCapability::create(
-              "sqrt_iswap", 2, 0, {valid(SiteTuple::create({0, 1}))})),
+          valid(OperationCapability::create("sqrt_iswap", 2, 0, {forward})),
+          valid(OperationCapability::create("cp", 2, 1, {forward}, std::nullopt,
+                                            std::nullopt,
+                                            {-std::numbers::pi / 2.})),
       })));
   ASSERT_FALSE(target.synthesisBasis());
   const auto circuit = [](QCOProgramBuilder& builder) {
-    [[maybe_unused]] auto qubits =
-        builder.xx_plus_yy(-std::numbers::pi / 2., 0., builder.staticQubit(1),
-                           builder.staticQubit(0));
+    auto theta = mlir::arith::NegFOp::create(
+        builder, builder.getLoc(),
+        builder.floatConstant(std::numbers::pi / 2.));
+    auto [a, b] = builder.xx_plus_yy(
+        theta.getResult(), 0., builder.staticQubit(1), builder.staticQubit(0));
+    std::tie(a, b) = builder.cp(theta.getResult(), a, b);
     return llvm::SmallVector<Value>{};
   };
   auto expected = build(circuit);
@@ -3893,7 +3900,8 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisRestoresControlledU2) {
         %c = qco.static 0 : !qco.qubit
         %q = qco.static 1 : !qco.qubit
         %c1, %q1 = qco.ctrl(%c) targets(%arg = %q) {
-          %rotated = qco.u2(%theta, %theta) %arg : !qco.qubit
+          %phi = arith.constant 3.750000e-01 : f64
+          %rotated = qco.u2(%phi, %theta) %arg : !qco.qubit
           qco.yield %rotated : !qco.qubit
         } : ({!qco.qubit}, {!qco.qubit})
         return %c1, %q1 : !qco.qubit, !qco.qubit
@@ -3902,12 +3910,20 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisRestoresControlledU2) {
   )mlir",
                                                     context.get());
   ASSERT_TRUE(moduleOp);
-  const auto target = valid(
-      Target::create(2, Connectivity::allToAll(),
-                     NativeOperations::fromOperations({
-                         valid(OperationCapability::create(
-                             "u", OperationCapability::Arity::variadic(1), 3)),
-                     })));
+  const auto target = valid(Target::create(
+      2, Connectivity::allToAll(),
+      NativeOperations::fromOperations({
+          valid(OperationCapability::create(
+              "cu", 2, 3, {valid(SiteTuple::create({0, 1}))}, std::nullopt,
+              std::nullopt, {std::numbers::pi / 2., 0.375, std::nullopt})),
+      })));
+  auto controlled = *mainFunction(*moduleOp).getOps<CtrlOp>().begin();
+  mlir::qco::NativeCostAnalysis costs(2023);
+  EXPECT_EQ(costs.operationCost(controlled, target,
+                                std::array<Target::SiteId, 2>{0, 1}),
+            1U);
+  EXPECT_FALSE(costs.operationCost(controlled, target,
+                                   std::array<Target::SiteId, 2>{1, 0}));
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
   EXPECT_EQ(countOps<CtrlOp>(*moduleOp), 1U);

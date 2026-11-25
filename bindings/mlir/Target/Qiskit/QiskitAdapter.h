@@ -817,6 +817,15 @@ versionGate(const std::string_view name) {
 }
 
 [[nodiscard]] static const VersionGate*
+versionGate(const mlir::CompilerTarget::OperationCapability& capability) {
+  // Qiskit CU adds a fourth parameter for a phase on the control.
+  if (capability.canonicalName() == "cu" && capability.numParameters() == 3) {
+    return versionGate("cu3");
+  }
+  return versionGate(capability.canonicalName());
+}
+
+[[nodiscard]] static const VersionGate*
 versionGate(const StandardGateMapping mapping) {
   for (const auto& gate : gateMap()) {
     if (gate.translation == mapping) {
@@ -2473,7 +2482,7 @@ public:
                                            : std::nullopt);
       }
       const auto compatible = [&](const auto& operation) {
-        const auto* candidate = versionGate(operation.canonicalName());
+        const auto* candidate = versionGate(operation);
         return candidate != nullptr &&
                (candidate->translation == mapping ||
                 (operation.arity().kind() ==
@@ -2503,7 +2512,7 @@ public:
       if (selected.capability != nullptr && !selected.genericControls) {
         const auto& operation = *selected.capability;
         if (!fixedExchange) {
-          gate = versionGate(operation.canonicalName());
+          gate = versionGate(operation);
         }
         if (const auto* named = versionGate(operation.name());
             named != nullptr && named->translation == mapping) {
@@ -2649,8 +2658,7 @@ public:
       if (selected.capability == nullptr) {
         throw std::runtime_error("external gate is not native for the target");
       }
-      if (const auto* standard =
-              versionGate(selected.capability->canonicalName())) {
+      if (const auto* standard = versionGate(*selected.capability)) {
         addGate(standard->translation, qubits, parameters);
         return;
       }
@@ -3217,6 +3225,8 @@ public:
       }
     }
 
+    const bool selectNamedControls =
+        activeSites == nullptr || !operationNames.is_none();
     bool hasGlobalInstruction = false;
     bool hasGlobalDelay = false;
     std::vector<Target::OperationCapability> operations;
@@ -3245,7 +3255,7 @@ public:
               ? std::optional<std::string>("measure")
           : nb::isinstance(instruction, circuit.attr("Reset"))
               ? std::optional<std::string>("reset")
-              : nativeGateName(instruction);
+              : nativeGateName(instruction, selectNamedControls);
       if ((!qargs.is_none() && nb::len(qargs) == 0) ||
           nb::issubclass(instructionType, ignoredTypes) ||
           nativeName == "gphase") {
@@ -3544,7 +3554,7 @@ public:
 
 private:
   [[nodiscard]] static std::optional<std::string>
-  nativeGateName(nb::handle operation) {
+  nativeGateName(nb::handle operation, bool selectNamedControls) {
     if (!nb::isinstance(operation,
                         nb::module_::import_("qiskit.circuit").attr("Gate")) ||
         (nb::hasattr(operation, "base_gate") && !canUnwrapControl(operation))) {
@@ -3560,15 +3570,21 @@ private:
       return "gphase";
     }
     const auto* gate = versionGate(name);
-    // The compiler recognizes controlled Pauli gates as native operations.
-    if (gate != nullptr &&
-        (gate->translation.controls != 0 ||
-         gate->translation.gate == mlir::qc::StandardGate::CU) &&
-        gate->name != "cx" && gate->name != "cy" && gate->name != "cz") {
+    if (gate == nullptr ||
+        gate->translation.gate == mlir::qc::StandardGate::CU) {
       return std::nullopt;
     }
-    return gate == nullptr ? std::nullopt
-                           : std::optional{std::string(gate->name)};
+    if (gate->translation.controls == 0) {
+      return std::string(gate->name);
+    }
+    const auto& base =
+        mlir::qc::getStandardGateDescriptor(gate->translation.gate);
+    if (gate->translation.controls != 1 || base.targetCount != 1 ||
+        (!selectNamedControls && name != "cx" && name != "cy" &&
+         name != "cz")) {
+      return std::nullopt;
+    }
+    return "c" + base.operationSymbol.str();
   }
 
   std::shared_ptr<OutputParameters> parameters_ =
