@@ -151,9 +151,11 @@ uvx --with iqm-qdmi mqt-core run circuit.qasm --qdmi-device=iqm.emerald --shots=
 
 `run` compiles OpenQASM, QC MLIR, and `jeff` sources for the selected device. It
 submits QIR (`.ll`, `.bc`), IQM JSON (`.json`), and QPY (`.qpy`) files as
-serialized device programs. The device must support the submitted format.
-Results are printed as counts JSON. `simulate` uses the same execution path with
-DDSIM. `--seed` is specific to DDSIM.
+serialized device programs. The device must support the submitted format. Both
+commands print counts JSON and require compiled sources to return at least one
+classical output bit. To sample the final qubits of an OpenQASM source without
+classical outputs, use {py:func}`mqt.core.mlir.sample`. `simulate` uses DDSIM
+and accepts `--seed` for reproducible sampling.
 
 Source execution reconstructs logical readout using the compiler's result
 layout. Submitting serialized programs returns raw device counts: the program

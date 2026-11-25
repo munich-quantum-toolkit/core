@@ -49,8 +49,13 @@ submit(const qdmi::Device& device, const std::string& path, int64_t shots,
     if (!compiled) {
       return compiled.takeError();
     }
-    layout = compiled->resultLayout();
     width = compiled->resultWidth();
+    if (width.value_or(0) == 0) {
+      return llvm::createStringError(
+          "Counts require a nonempty classical bit output. "
+          "Return measured bits to count their outcomes.");
+    }
+    layout = compiled->resultLayout();
     return mlir::submitProgram(device, *compiled, shots, seed);
   };
   const auto extension = llvm::sys::path::extension(path);
