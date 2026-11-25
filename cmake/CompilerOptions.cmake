@@ -34,6 +34,8 @@ function(enable_project_options target_name)
           INTERFACE
             "LINKER:--thinlto-cache-dir=${lto_cache}"
             "LINKER:--thinlto-cache-policy=cache_size_bytes=1g")
+      elseif(MSVC AND linker_id STREQUAL "LLD")
+        target_link_options(${target_name} INTERFACE "LINKER:/lldltocache:${lto_cache}")
       elseif(APPLE AND linker_id MATCHES "^(AppleClang|DEFAULT|SYSTEM|APPLE_CLASSIC)$")
         target_link_options(${target_name} INTERFACE "LINKER:-cache_path_lto,${lto_cache}")
       endif()

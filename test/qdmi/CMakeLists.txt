@@ -14,6 +14,7 @@ set(TARGET_NAME mqt-core-qdmi-test)
 
 if(TARGET MQT::CoreQDMI)
   add_subdirectory("${qdmi_SOURCE_DIR}/examples/driver" qdmi-example-driver)
+  target_link_libraries(qdmi_example_driver PRIVATE MQT::ProjectOptions)
   foreach(kind IN ITEMS incomplete incompatible)
     add_library(mqt-core-qdmi-${kind}-client SHARED client_abi.cpp)
     target_link_libraries(mqt-core-qdmi-${kind}-client PRIVATE qdmi::qdmi)
