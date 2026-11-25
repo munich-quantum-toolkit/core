@@ -486,7 +486,7 @@ public:
           std::make_error_code(std::errc::invalid_argument),
           "Matrix must have a length of a power of two.");
     }
-    const auto levels = std::bit_width(dimension) - 1;
+    const auto levels = static_cast<size_t>(std::bit_width(dimension) - 1);
     if (levels > qubits()) {
       return llvm::createStringError(
           std::make_error_code(std::errc::state_not_recoverable),

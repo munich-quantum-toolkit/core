@@ -1230,9 +1230,10 @@ private:
                     return user != init &&
                            !dominance.properlyDominates(init, user);
                   })) {
-                fail(init,
-                     "constant array initialization must precede every use "
-                     "of an entry-block allocation");
+                std::ignore =
+                    fail(init,
+                         "constant array initialization must precede every use "
+                         "of an entry-block allocation");
                 return WalkResult::interrupt();
               }
               arrayInitializers_.try_emplace(init.getDest(), data);

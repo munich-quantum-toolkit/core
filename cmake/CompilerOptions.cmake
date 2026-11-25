@@ -26,6 +26,13 @@ function(enable_project_options target_name)
   endif()
 
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+    # Designated initializers intentionally leave omitted members at their defaults.
+    check_cxx_compiler_flag(-Wno-missing-designated-field-initializers
+                            HAS_WNO_MISSING_DESIGNATED_FIELD_INITIALIZERS)
+    if(HAS_WNO_MISSING_DESIGNATED_FIELD_INITIALIZERS)
+      target_compile_options(${target_name} INTERFACE -Wno-missing-designated-field-initializers)
+    endif()
+
     if(ENABLE_CACHE AND CMAKE_INTERPROCEDURAL_OPTIMIZATION)
       set(lto_cache "${PROJECT_BINARY_DIR}/thinlto-cache-$<CONFIG>")
       if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND linker_id MATCHES "^(LLD|mqt_sdk_mold)$")

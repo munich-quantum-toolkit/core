@@ -806,8 +806,7 @@ Device::queryCustomOperations(const CustomProperty property) const {
   if (!handles.has_value()) {
     return std::optional<std::vector<Operation>>{};
   }
-  return std::optional<std::vector<Operation>>{
-      std::move(wrapOperations(*handles))};
+  return std::optional<std::vector<Operation>>{wrapOperations(*handles)};
 }
 
 std::vector<Operation>

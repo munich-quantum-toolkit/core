@@ -496,8 +496,8 @@ static void validateExportParameters(const ExportedCircuit& circuit,
 }
 
 static void collectParameters(mlir::func::FuncOp function, ExportState& state,
-                              size_t count) {
-  for (size_t index = 0U; index < count; ++index) {
+                              unsigned count) {
+  for (unsigned index = 0U; index < count; ++index) {
     auto argument = function.getArgument(index);
     const auto name = function.getArgAttrOfType<mlir::StringAttr>(
         index, mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr());
@@ -847,7 +847,7 @@ collectUnitaryInstruction(mlir::Operation& operation,
     const auto matrix =
         llvm::cast<mlir::DenseElementsAttr>(unitary.getMatrix());
     std::vector<std::complex<double>> values;
-    values.reserve(matrix.size());
+    values.reserve(static_cast<size_t>(matrix.size()));
     llvm::append_range(values, matrix.getValues<std::complex<double>>());
     auto targetQubits = mapQubits(unitary.getQubits(), qubits);
     std::ranges::reverse(targetQubits);
@@ -2887,8 +2887,8 @@ static void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer) {
   }
 }
 
-[[nodiscard]] static size_t gateParameterCount(mlir::func::FuncOp function) {
-  size_t numParameters = 0U;
+[[nodiscard]] static unsigned gateParameterCount(mlir::func::FuncOp function) {
+  unsigned numParameters = 0U;
   while (numParameters < function.getNumArguments() &&
          function.getArgumentTypes()[numParameters].isF64()) {
     ++numParameters;
@@ -2958,7 +2958,7 @@ collectGateFunctions(mlir::ModuleOp moduleOp, mlir::func::FuncOp entryPoint) {
 collectGateDefinition(mlir::func::FuncOp function) {
   const auto numParameters = gateParameterCount(function);
   ExportState state;
-  for (size_t index = 0; index < numParameters; ++index) {
+  for (unsigned index = 0; index < numParameters; ++index) {
     auto parameter = Parameter::symbol("p" + std::to_string(index));
     state.parameters[function.getArgument(index)] = parameter;
     state.inputParameters.push_back(std::move(parameter));

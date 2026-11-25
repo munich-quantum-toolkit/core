@@ -1177,7 +1177,7 @@ fp Package::fidelityOfMeasurementOutcomesRecursive(
       for (const auto& [physical, logical] : permutation) {
         filteredString[logical] = binaryString[physical];
       }
-      const auto parsed = std::from_chars(
+      [[maybe_unused]] const auto parsed = std::from_chars(
           filteredString.data(), std::to_address(filteredString.end()), idx, 2);
       assert(parsed.ec == std::errc{});
     }

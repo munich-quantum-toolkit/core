@@ -478,8 +478,9 @@ bool canSampleBranches(const llvm::Function& entryPoint) {
                  (llvm::isa<llvm::CmpInst>(instruction) &&
                   instruction.getOperand(0)->getType()->isPtrOrPtrVectorTy()) ||
                  (instruction.isTerminator() &&
-                  !llvm::isa<llvm::BranchInst, llvm::SwitchInst,
-                             llvm::ReturnInst>(instruction)) ||
+                  !llvm::isa<llvm::UncondBrInst, llvm::CondBrInst,
+                             llvm::SwitchInst, llvm::ReturnInst>(
+                      instruction)) ||
                  (!llvm::isa<llvm::AllocaInst, llvm::ReturnInst>(instruction) &&
                   (instruction.mayReadOrWriteMemory() ||
                    instruction.mayHaveSideEffects()))) {

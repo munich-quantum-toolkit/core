@@ -104,7 +104,7 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
       const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   const auto originalGetResults = api.device_job_get_results;
   setParameter = api.device_job_set_parameter;
-  const auto restore = llvm::make_scope_exit([&] {
+  const auto restore = llvm::scope_exit([&] {
     api.device_job_get_results = originalGetResults;
     api.device_job_set_parameter = setParameter;
   });
@@ -160,14 +160,15 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   };
   EXPECT_EQ(decodeSamples(job, 4, 2, 0, layout),
             (std::vector<int8_t>{1, 0, 0, 1, 0, 0, 1, 0}));
-  EXPECT_THROW(decodeSamples(job, 3, 2, 0, layout), std::runtime_error);
+  EXPECT_THROW(std::ignore = decodeSamples(job, 3, 2, 0, layout),
+               std::runtime_error);
   returnedKeys = "111";
   returnedCounts = {2};
   queries.clear();
   for (const auto* malformed :
        {"001", "0000,001", "0x1,001", "00\xFF,001", "000,001,001"}) {
     returnedShots = malformed;
-    EXPECT_THROW(decodeSamples(job, 3, 2), std::runtime_error);
+    EXPECT_THROW(std::ignore = decodeSamples(job, 3, 2), std::runtime_error);
   }
   EXPECT_TRUE(std::ranges::all_of(queries, [](const auto& query) {
     return query.second == QDMI_JOB_RESULT_SHOTS;
@@ -190,12 +191,13 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   EXPECT_EQ(decodeSamples(job, 4, 5, 0, layout),
             (std::vector<int8_t>{0, 0, 1, 0, 0, 0, 1, 0, 0, 0,
                                  1, 0, 1, 0, 0, 1, 1, 0, 0, 1}));
-  EXPECT_THROW(decodeSamples(job, 3, 4), std::runtime_error);
-  EXPECT_THROW(decodeSamples(job, 3, 6), std::runtime_error);
+  EXPECT_THROW(std::ignore = decodeSamples(job, 3, 4), std::runtime_error);
+  EXPECT_THROW(std::ignore = decodeSamples(job, 3, 6), std::runtime_error);
   returnedKeys = "10x,001";
-  EXPECT_THROW(decodeSamples(job, 3, 5), std::runtime_error);
+  EXPECT_THROW(std::ignore = decodeSamples(job, 3, 5), std::runtime_error);
   returnedShots = "100,001,001,100,001";
-  EXPECT_THROW(readout(job, 3, 5, 0, std::nullopt, false), std::runtime_error);
+  EXPECT_THROW(std::ignore = readout(job, 3, 5, 0, std::nullopt, false),
+               std::runtime_error);
 }
 
 TEST(CatalystQDMI, AggregateReadoutKeepsCountsAndSamplesFromOneJob) {
@@ -204,7 +206,7 @@ TEST(CatalystQDMI, AggregateReadoutKeepsCountsAndSamplesFromOneJob) {
       const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   const auto original = api.device_job_get_results;
   const auto restore =
-      llvm::make_scope_exit([&] { api.device_job_get_results = original; });
+      llvm::scope_exit([&] { api.device_job_get_results = original; });
   auto context = Context::create(device);
   api.device_job_get_results = getResults;
   for (const bool countsAvailable : {false, true}) {
@@ -327,7 +329,7 @@ TEST(CatalystQDMI, UntouchedWiresNeedNoSubmission) {
       const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   const auto originalSubmit = api.device_job_submit;
   const auto restore =
-      llvm::make_scope_exit([&] { api.device_job_submit = originalSubmit; });
+      llvm::scope_exit([&] { api.device_job_submit = originalSubmit; });
   api.device_job_submit = [](QDMI_Device_Job) -> int {
     ADD_FAILURE() << "Untouched wires must not submit a provider job";
     return QDMI_ERROR_NOTSUPPORTED;
@@ -382,7 +384,7 @@ TEST(CatalystQDMI, FactoryRetainsContextAndRejectsInvalidLifetimes) {
   runtime->ReleaseQubits(replacement);
   runtime.reset();
   second.reset();
-  EXPECT_THROW(createDevice(kwargs.c_str()), std::runtime_error);
+  EXPECT_THROW(std::ignore = createDevice(kwargs.c_str()), std::runtime_error);
 }
 
 TEST(CatalystRecorder, ReleasesInternedAttributesPeriodically) {

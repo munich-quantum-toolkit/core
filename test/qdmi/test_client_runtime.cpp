@@ -51,7 +51,7 @@ TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
   std::filesystem::copy_file(fixture, libraryPath);
   // The temporary directory can be on a different Windows drive.
   const auto previous = std::filesystem::current_path();
-  const auto restore = llvm::make_scope_exit([&] {
+  const auto restore = llvm::scope_exit([&] {
     std::error_code error;
     std::filesystem::current_path(previous, error);
     EXPECT_FALSE(error) << error.message();
@@ -67,7 +67,7 @@ TEST(ClientRuntimeTest, LocatesAbsoluteAndRelativeLoadedLibraries) {
     auto library =
         llvm::sys::DynamicLibrary::getLibrary(encoded->c_str(), &error);
     ASSERT_TRUE(library.isValid()) << error;
-    const auto close = llvm::make_scope_exit(
+    const auto close = llvm::scope_exit(
         [&] { llvm::sys::DynamicLibrary::closeLibrary(library); });
     const auto* anchor =
         library.getAddressOfSymbol("QDMI_driver_get_client_abi_version");

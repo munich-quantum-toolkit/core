@@ -3464,9 +3464,9 @@ public:
         allToAll = true;
       }
       for (const auto& placement : capability.siteTuples()) {
-        const auto sites = placement.sites();
-        couplings.emplace(std::min(sites[0], sites[1]),
-                          std::max(sites[0], sites[1]));
+        const auto tupleSites = placement.sites();
+        couplings.emplace(std::min(tupleSites[0], tupleSites[1]),
+                          std::max(tupleSites[0], tupleSites[1]));
       }
     }
     if (numQubits - 1 <= std::numeric_limits<size_t>::max() / numQubits &&

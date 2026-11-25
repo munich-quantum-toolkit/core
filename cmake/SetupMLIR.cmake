@@ -176,7 +176,8 @@ endfunction()
 
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS})
 include_directories(${MQT_MLIR_SOURCE_INCLUDE_DIR})
-include_directories(${MQT_MLIR_BUILD_INCLUDE_DIR})
+# TableGen output contains unused parameters outside the project's control.
+include_directories(SYSTEM ${MQT_MLIR_BUILD_INCLUDE_DIR})
 separate_arguments(MQT_LLVM_DEFINITIONS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
 add_definitions(${MQT_LLVM_DEFINITIONS})
 

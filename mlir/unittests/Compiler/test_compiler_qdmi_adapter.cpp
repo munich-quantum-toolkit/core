@@ -151,7 +151,7 @@ TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
   static thread_local size_t nameQueries = 0;
   querySite = api->device_session_query_site_property;
   queryOperation = api->device_session_query_operation_property;
-  const auto restore = llvm::make_scope_exit([&] {
+  const auto restore = llvm::scope_exit([&] {
     api->device_session_query_site_property = querySite;
     api->device_session_query_operation_property = queryOperation;
   });
@@ -313,7 +313,7 @@ TEST(CompilerQDMIAdapterTest, SerializesExactHeterogeneousPlacements) {
   static thread_local decltype(QDMI_device_session_query_device_property)*
       queryDevice;
   queryDevice = api->device_session_query_device_property;
-  const auto restore = llvm::make_scope_exit(
+  const auto restore = llvm::scope_exit(
       [&] { api->device_session_query_device_property = queryDevice; });
   api->device_session_query_device_property =
       [](QDMI_Device_Session session, QDMI_Device_Property property,
@@ -395,7 +395,7 @@ TEST(CompilerQDMIAdapterTest, OmitsOperationsWithUnknownSites) {
   static thread_local decltype(QDMI_device_session_query_operation_property)*
       query = nullptr;
   query = api->device_session_query_operation_property;
-  const auto restore = llvm::make_scope_exit(
+  const auto restore = llvm::scope_exit(
       [&] { api->device_session_query_operation_property = query; });
   api->device_session_query_operation_property =
       [](QDMI_Device_Session session, QDMI_Operation operation, size_t numSites,
@@ -461,7 +461,7 @@ TEST(CompilerQDMIAdapterTest,
       query = nullptr;
   static thread_local std::vector<QDMI_Program_Format> formats;
   query = api->device_session_query_device_property;
-  const auto restore = llvm::make_scope_exit(
+  const auto restore = llvm::scope_exit(
       [&] { api->device_session_query_device_property = query; });
   api->device_session_query_device_property =
       [](QDMI_Device_Session session, QDMI_Device_Property property,
@@ -546,7 +546,7 @@ TEST(CompilerQDMIAdapterTest,
 
   {
     const auto resetExporter =
-        llvm::make_scope_exit([] { mlir::setQPYExporter(nullptr); });
+        llvm::scope_exit([] { mlir::setQPYExporter(nullptr); });
     mlir::setQPYExporter(
         +[](mlir::QCProgram program,
             const mlir::TargetEnvironment&) -> llvm::Expected<std::string> {
@@ -576,7 +576,7 @@ TEST(CompilerQDMIAdapterTest,
 
     mlir::setQPYExporter(nullptr);
     const auto createJob = api->device_session_create_device_job;
-    const auto restoreCreateJob = llvm::make_scope_exit(
+    const auto restoreCreateJob = llvm::scope_exit(
         [&] { api->device_session_create_device_job = createJob; });
     static thread_local bool submissionReached;
     submissionReached = false;
@@ -783,7 +783,7 @@ TEST(CompilerQDMIAdapterTest,
   queryDevice = api->device_session_query_device_property;
   querySite = api->device_session_query_site_property;
   const auto createJob = api->device_session_create_device_job;
-  const auto restore = llvm::make_scope_exit([&] {
+  const auto restore = llvm::scope_exit([&] {
     api->device_session_query_device_property = queryDevice;
     api->device_session_query_site_property = querySite;
     api->device_session_create_device_job = createJob;
@@ -861,7 +861,7 @@ TEST(CompilerQDMIAdapterTest,
       createJob = nullptr;
   static thread_local size_t creations = 0;
   createJob = api->device_session_create_device_job;
-  const auto restore = llvm::make_scope_exit(
+  const auto restore = llvm::scope_exit(
       [&] { api->device_session_create_device_job = createJob; });
   creations = 0;
   api->device_session_create_device_job = [](QDMI_Device_Session session,
@@ -1114,7 +1114,7 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
   static thread_local size_t siteLists = 0;
   static thread_local size_t calibrationQueries = 0;
   queryDevice = api->device_session_query_device_property;
-  const auto restore = llvm::make_scope_exit([&] {
+  const auto restore = llvm::scope_exit([&] {
     api->device_session_query_device_property = queryDevice;
     api->device_session_query_site_property = querySite;
   });
@@ -2024,7 +2024,7 @@ TEST(CompilerQDMIAdapterTest, ExcludesUnsupportedIQMDynamicPrimitives) {
       query;
   static thread_local std::string name;
   query = api->device_session_query_operation_property;
-  const auto restore = llvm::make_scope_exit(
+  const auto restore = llvm::scope_exit(
       [&] { api->device_session_query_operation_property = query; });
   api->device_session_query_operation_property =
       [](QDMI_Device_Session session, QDMI_Operation operation, size_t numSites,
@@ -2077,7 +2077,7 @@ TEST(CompilerQDMIAdapterTest, SnapshotsVersionedParameterConstraints) {
   static thread_local std::string metadata;
   constrained = operation;
   query = api->device_session_query_operation_property;
-  const auto restore = llvm::make_scope_exit(
+  const auto restore = llvm::scope_exit(
       [&] { api->device_session_query_operation_property = query; });
   api->device_session_query_operation_property =
       [](QDMI_Device_Session session, QDMI_Operation handle, size_t numSites,
@@ -2309,7 +2309,7 @@ TEST(CompilerQDMIAdapterTest, RejectsInvalidDevicePayloadMetadata) {
   static thread_local bool absentMetadata;
   absentMetadata = false;
   query = api->device_session_query_device_property;
-  const auto restore = llvm::make_scope_exit(
+  const auto restore = llvm::scope_exit(
       [&] { api->device_session_query_device_property = query; });
   api->device_session_query_device_property =
       [](QDMI_Device_Session session, QDMI_Device_Property property,
