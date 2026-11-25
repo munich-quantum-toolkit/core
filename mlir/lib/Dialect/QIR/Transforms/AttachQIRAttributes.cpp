@@ -122,9 +122,15 @@ protected:
       return;
     }
 
+    const bool adaptive = profile == QIRProfile::Adaptive;
+    if (!adaptive && failed(verifyBaseInstructions(main))) {
+      signalPassFailure();
+      return;
+    }
+
     HelperCalls helpers(getOperation());
     Metadata metadata;
-    if (useAdaptive) {
+    if (adaptive) {
       collectAdaptiveFeatures(main, helpers, metadata);
     }
     if (failed(collectResourceCapacities(getOperation(), helpers, metadata))) {
@@ -200,7 +206,8 @@ private:
             {::qir::OUTPUT_LABELING_SCHEMA_ATTR, ::qir::LABELED_SCHEMA}),
         rewriter.getStrArrayAttr({
             ::qir::QIR_PROFILES_ATTR,
-            useAdaptive ? ::qir::ADAPTIVE_PROFILE : ::qir::BASE_PROFILE,
+            profile == QIRProfile::Adaptive ? ::qir::ADAPTIVE_PROFILE
+                                            : ::qir::BASE_PROFILE,
         }),
         rewriter.getStrArrayAttr(
             {"required_num_qubits", std::to_string(metadata.numQubits)}),
@@ -223,7 +230,7 @@ private:
                        "dynamic_result_management", metadata.useDynamicResult),
     });
 
-    if (useAdaptive) {
+    if (profile == QIRProfile::Adaptive) {
       flags.emplace_back(
           createI32Flag(LLVM::ModFlagBehavior::Error, "backwards_branching",
                         static_cast<int32_t>(metadata.backwardsBranching)));

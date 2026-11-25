@@ -1292,10 +1292,7 @@ private:
         return failure();
       }
     }
-    if (failed(finalizeQIRMetadata(moduleOp, profile, *payload, run))) {
-      return failure();
-    }
-    return adaptive ? success() : qir::verifyBaseInstructions(main);
+    return finalizeQIRMetadata(moduleOp, profile, *payload, run);
   }
 };
 

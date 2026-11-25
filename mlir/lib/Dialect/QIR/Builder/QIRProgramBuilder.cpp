@@ -1080,14 +1080,13 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
   auto moduleOp = std::move(moduleOp_);
   clearInsertionPoint();
   if (!isAdaptive &&
-      (failed(moveTerminalMeasurements(*bodyBlock, *measurementsBlock)) ||
-       failed(verifyBaseInstructions(cast<LLVM::LLVMFuncOp>(mainFunc))))) {
+      failed(moveTerminalMeasurements(*bodyBlock, *measurementsBlock))) {
     return {};
   }
   if (failed(runWithPassManager(
           *moduleOp,
           [&](OpPassManager& pm) {
-            pm.addPass(qir::createQIRSetAttributesAndMetadata({isAdaptive}));
+            pm.addPass(qir::createQIRSetAttributesAndMetadata({profile}));
           },
           "Failed to attach attributes"))) {
     return {};

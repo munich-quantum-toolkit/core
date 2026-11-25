@@ -376,10 +376,9 @@ void populateJeffCleanupPipeline(OpPassManager& pm) {
 }
 
 [[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp mod,
-                                                  bool useAdaptive) {
+                                                  QIRProfile profile) {
   return runWithPassManager(
-      mod,
-      [&](OpPassManager& pm) { populateQIRCleanupPipeline(pm, useAdaptive); },
+      mod, [&](OpPassManager& pm) { populateQIRCleanupPipeline(pm, profile); },
       "Failed to run the QIR cleanup pipeline.");
 }
 

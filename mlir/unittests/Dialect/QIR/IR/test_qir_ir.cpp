@@ -77,9 +77,9 @@ static LLVM::ModuleFlagAttr findModuleFlag(ModuleOp moduleOp,
 }
 
 static LogicalResult attachQIRMetadata(ModuleOp module,
-                                       bool useAdaptive = false) {
+                                       QIRProfile profile = QIRProfile::Base) {
   PassManager manager(module.getContext());
-  manager.addPass(qir::createQIRSetAttributesAndMetadata({useAdaptive}));
+  manager.addPass(qir::createQIRSetAttributesAndMetadata({profile}));
   return manager.run(module);
 }
 
@@ -142,8 +142,10 @@ TEST_F(QIRTest, CanonicalizesDuplicateStaticQubits) {
   ASSERT_TRUE(reference);
   ASSERT_TRUE(succeeded(verify(*program)));
   ASSERT_TRUE(succeeded(verify(*reference)));
-  ASSERT_TRUE(succeeded(runQIRCleanupPipeline(program.get(), true)));
-  ASSERT_TRUE(succeeded(runQIRCleanupPipeline(reference.get(), true)));
+  ASSERT_TRUE(
+      succeeded(runQIRCleanupPipeline(program.get(), QIRProfile::Adaptive)));
+  ASSERT_TRUE(
+      succeeded(runQIRCleanupPipeline(reference.get(), QIRProfile::Adaptive)));
   EXPECT_TRUE(succeeded(verify(*program)));
   EXPECT_TRUE(succeeded(verify(*reference)));
   EXPECT_TRUE(
@@ -732,7 +734,7 @@ TEST_F(QIRTest, MetadataCountsResourceRolesAcrossCalls) {
     auto moduleOp = parseSourceString<ModuleOp>(ir, context.get());
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
+    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, QIRProfile::Adaptive)));
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     OpBuilder builder(context.get());
     const auto attributes = getMainFunction(*moduleOp).getPassthroughAttr();
@@ -832,7 +834,7 @@ TEST_F(QIRTest, MetadataClassifiesLoopDependenciesAcrossFunctions) {
     auto moduleOp = parseSourceString<ModuleOp>(ir, context.get());
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, QIRProfile::Adaptive)));
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     const auto flag = findModuleFlag(*moduleOp, "backwards_branching");
     ASSERT_TRUE(flag);
@@ -886,7 +888,8 @@ TEST_F(QIRTest, MetadataIncludesStaticQubitsLoadedFromRegisters) {
                                               context.get());
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(attachQIRMetadata(moduleOp.get(), true)));
+  ASSERT_TRUE(
+      succeeded(attachQIRMetadata(moduleOp.get(), QIRProfile::Adaptive)));
   auto main = getMainFunction(moduleOp.get());
   OpBuilder builder(context.get());
   EXPECT_TRUE(llvm::is_contained(
@@ -1039,7 +1042,7 @@ TEST_F(QIRTest, ResourceRuntimeCallsRequireQIR21) {
                                         .str(),
                                     context.get());
     ASSERT_TRUE(moduleOp);
-    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, QIRProfile::Adaptive)));
     EXPECT_EQ(cast<IntegerAttr>(
                   findModuleFlag(*moduleOp, "qir_minor_version").getValue())
                   .getInt(),
@@ -1068,7 +1071,7 @@ TEST_F(QIRTest, ClassicalStorageRequiresArrayAndElementCapabilities) {
   })mlir",
                                               context.get());
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, QIRProfile::Adaptive)));
   const auto arrays = findModuleFlag(*moduleOp, "arrays");
   ASSERT_TRUE(arrays);
   EXPECT_EQ(cast<IntegerAttr>(arrays.getValue()).getInt(), 1);
@@ -1096,7 +1099,7 @@ TEST_F(QIRTest, OutputLabelPointerDoesNotRequireArrays) {
   })mlir",
                                               context.get());
   ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, true)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp, QIRProfile::Adaptive)));
   const auto arrays = findModuleFlag(*moduleOp, "arrays");
   EXPECT_FALSE(arrays);
   EXPECT_EQ(cast<IntegerAttr>(
@@ -1155,7 +1158,7 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
   builder.setInsertionPointToEnd(caseBlock);
   LLVM::ReturnOp::create(builder, location, doubled);
 
-  ASSERT_TRUE(attachQIRMetadata(moduleOp, true).succeeded());
+  ASSERT_TRUE(attachQIRMetadata(moduleOp, QIRProfile::Adaptive).succeeded());
   const auto integerFlag = findModuleFlag(moduleOp, "int_computations");
   ASSERT_TRUE(integerFlag);
   EXPECT_EQ(integerFlag.getBehavior(), LLVM::ModFlagBehavior::Append);

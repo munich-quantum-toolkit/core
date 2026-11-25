@@ -178,7 +178,8 @@ protected:
   buildQIRReference(const QIRProgramBuilderFn builder) const {
     auto moduleOp = ::mqt::test::buildMLIRProgram(
         context.get(), builder, QIRProgramBuilder::Profile::Adaptive, true);
-    EXPECT_TRUE(runQIRCleanupPipeline(moduleOp.get(), true).succeeded());
+    EXPECT_TRUE(runQIRCleanupPipeline(moduleOp.get(), QIRProfile::Adaptive)
+                    .succeeded());
     return moduleOp;
   }
 
