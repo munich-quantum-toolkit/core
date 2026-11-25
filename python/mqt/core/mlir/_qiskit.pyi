@@ -27,7 +27,7 @@ def readout(
 
     Args:
         job: Completed provider job whose results are read.
-        width: Number of logical classical output bits.
+        width: Number of classical output bits. Zero yields empty counts and memory.
         shots: Expected number of shots.
         program_index: Program within a multi-program job.
         layout: Projection from provider output to logical classical bits.
@@ -40,6 +40,5 @@ def readout(
 
     Raises:
         ResultDecodingError: Results violate the declared shot count or layout.
-        RuntimeError: Provider result retrieval fails. Ordered memory requires
-            SHOTS support and never falls back to a histogram.
+        RuntimeError: The device cannot return the requested counts or shots.
     """

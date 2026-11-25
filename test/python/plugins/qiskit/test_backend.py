@@ -152,7 +152,7 @@ def test_backend_runs_variety_of_circuits(
         circuit.measure_all()
     if barrier:
         circuit.barrier()
-    job = ddsim_backend.run(circuit, shots=shots)
+    job = ddsim_backend.run(circuit, shots=shots, memory=True)
     result = job.result()
     assert result.success
     assert job.status() == JobStatus.DONE
@@ -163,6 +163,9 @@ def test_backend_runs_variety_of_circuits(
         counts = result.get_counts()
         assert sum(counts.values()) == shots
         assert all(len(bits) == width and not set(bits) - {"0", "1"} for bits in counts)
+    else:
+        assert result.get_counts() == {}
+        assert result.get_memory() == []
 
 
 @pytest.mark.parametrize("widths", [(2,), (2, 2, 2), (1, 2)])
