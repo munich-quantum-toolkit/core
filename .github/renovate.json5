@@ -20,15 +20,20 @@
     "github-actions",
     "npm",
     "pep621",
+    "pep723",
     "pip_requirements",
     "pre-commit",
   ],
+  pep723: {
+    managerFilePatterns: ["/\\.py$/"],
+  },
   lockFileMaintenance: {
     enabled: true,
     automerge: true,
   },
   labels: ["dependencies"],
-  schedule: ["every weekend"],
+  // Saturday and Sunday (UTC).
+  schedule: ["* * * * 0,6"],
   packageRules: [
     {
       matchManagers: ["cargo"],
@@ -46,7 +51,7 @@
       commitMessagePrefix: "⬆\uFE0F\uD83D\uDCDC",
     },
     {
-      matchManagers: ["pep621", "pip_requirements"],
+      matchManagers: ["pep621", "pep723", "pip_requirements"],
       addLabels: ["python"],
       commitMessagePrefix: "⬆\uFE0F\uD83D\uDC0D",
     },
