@@ -627,8 +627,12 @@ These documents are maintained during
 {ref}`release preparation <releasing-new-version>`. You do not need to update
 them manually in feature or fix PRs. Include user-facing effects, limitations,
 and migration instructions in your PR description so maintainers can collect
-that information during release preparation. Apply the relevant labels for
-Release Drafter.
+that information during release preparation. For noteworthy changes, use the PR
+template's "Proposed changelog entry" section to propose text starting with a
+gitmoji, or write `Batch with <PR link>` to include the change in that PR's
+existing entry. Remove the section when no changelog entry is needed. See the
+[release documentation policy](development.md#release-documentation) for
+details, and apply the relevant labels for Release Drafter.
 
 (releasing-new-version)=
 
@@ -667,8 +671,8 @@ The changelog format is based on a mixture of [Keep a Changelog] and
 During release preparation, follow these guidelines:
 
 - Cover the user-facing changes included in the release.
-- Write entries in the imperative mood (e.g., "Add support for X" or "Fix bug in
-  Y").
+- Start each entry with an appropriate gitmoji and use the imperative mood
+  (e.g., "✨ Add support for X" or "🐛 Fix bug in Y").
 - A single PR may result in multiple changelog entries.
 - Group related changes so users can find the workflows and subsystems they use.
 - Each entry links to the PR and all contributing authors. The links are defined

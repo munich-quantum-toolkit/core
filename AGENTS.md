@@ -63,9 +63,12 @@ circuit qubits; distinguish placement, allocation, and fault-tolerant encoding.
 Keep conversation and iteration history out of docs, comments, and PR bodies.
 Follow the
 [release documentation policy](docs/development.md#release-documentation):
-describe user-facing changes and released-API migrations in PR descriptions.
-Edit `CHANGELOG.md` or `UPGRADING.md` only for release preparation or on
-request; changelog entries credit the PR and all contributing authors.
+describe user-facing changes and released-API migrations in PR descriptions. For
+noteworthy changes, propose a gitmoji-prefixed changelog entry or link the PR
+whose entry should include the change. Remove the proposed-entry section when no
+entry is needed. Edit `CHANGELOG.md` or `UPGRADING.md` only for release
+preparation or on request; changelog entries credit the PR and all contributing
+authors.
 
 ## Testing
 
