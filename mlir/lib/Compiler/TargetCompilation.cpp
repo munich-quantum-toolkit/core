@@ -44,7 +44,9 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/Threading.h"
 
+#include <algorithm>
 #include <cinttypes>
 #include <cstddef>
 #include <cstdint>
@@ -538,16 +540,6 @@ protected:
 
 } /* namespace */
 
-void registerTargetCompilationPasses() {
-  static const auto REGISTERED = [] {
-    PassRegistration<PrepareStagedTargetCompilationPass>();
-    PassRegistration<FinalizeStagedTargetCompilationPass>();
-    registerPass(createLowerResonatorCZPass);
-    return true;
-  }();
-  static_cast<void>(REGISTERED);
-}
-
 /// Borrow before placement while allocations still prove clean states.
 static void populateDecompositionAndPlacement(OpPassManager& pm,
                                               const CompilerTarget& target) {
@@ -652,65 +644,128 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
 
 namespace {
 
-/// Compile for a target environment and attach it as the execution target.
+/// Compile a QCO module for its attached target environment.
 ///
 /// Device targets select their routing environment from the program and run
 /// the target compilation pipeline; other targets run target synthesis. The
-/// selected pipeline runs as a dynamic pipeline of this pass.
+/// selected pipeline runs as a dynamic pipeline of this pass. Afterwards, the
+/// attached environment is restored as the execution target.
 class CompileForTargetPass final
     : public PassWrapper<CompileForTargetPass, OperationPass<ModuleOp>> {
 public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(CompileForTargetPass)
 
-  CompileForTargetPass(TargetEnvironment environment, MappingOptions mapping)
-      : environment_(std::move(environment)), mapping_(mapping) {}
+  CompileForTargetPass() = default;
+  CompileForTargetPass(const CompileForTargetPass& other)
+      : PassWrapper(other) {}
+
+  explicit CompileForTargetPass(const MappingOptions& mapping) {
+    if (mapping.trials) {
+      trials = *mapping.trials;
+    }
+    iterations = mapping.iterations;
+    lookahead = mapping.lookahead;
+    searchMemoryLimit = mapping.searchMemoryLimit;
+  }
+
+  [[nodiscard]] StringRef getArgument() const override {
+    return "mqt-compile-for-target";
+  }
+  [[nodiscard]] StringRef getDescription() const override {
+    return "Compile QCO for the attached mqt.target_env and keep it as the "
+           "execution target";
+  }
 
   void getDependentDialects(DialectRegistry& registry) const override {
+    // A routed device target schedules every target-dependent pass.
+    const TargetEnvironment environment(
+        llvm::cantFail(CompilerTarget::create(
+            2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
+            CompilerTarget::NativeOperations::unrestricted())),
+        llvm::cantFail(
+            PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM3)));
     OpPassManager pm(ModuleOp::getOperationName());
-    populatePipeline(pm, environment_);
+    populateTargetCompilationPipeline(pm, environment);
+    populateTargetSynthesisPipeline(pm, environment);
     pm.getDependentDialects(registry);
   }
 
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
+    const auto& analysis = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!analysis) {
+      moduleOp.emitError() << "expected a valid mqt.target_env: "
+                           << analysis.error();
+      signalPassFailure();
+      return;
+    }
+    // Copy the target; preparation re-initializes the analysis for routing.
+    const TargetEnvironment environment = analysis.environment();
     auto compilationEnvironment =
-        createTargetCompilationEnvironment(moduleOp, environment_);
+        createTargetCompilationEnvironment(moduleOp, environment);
     if (!compilationEnvironment) {
       moduleOp.emitError() << llvm::toString(
           compilationEnvironment.takeError());
       signalPassFailure();
       return;
     }
+    const MappingOptions mapping{
+        .trials = trials,
+        .iterations = iterations,
+        .lookahead = lookahead,
+        .searchMemoryLimit = searchMemoryLimit,
+    };
     OpPassManager pm(ModuleOp::getOperationName());
-    populatePipeline(pm, *compilationEnvironment);
+    if (environment.target().hasDeviceConstraints()) {
+      populateTargetCompilationPipeline(pm, *compilationEnvironment, mapping);
+    } else {
+      populateTargetSynthesisPipeline(pm, environment, mapping);
+    }
     if (failed(runPipeline(pm, moduleOp))) {
       signalPassFailure();
       return;
     }
-    attachTargetEnvironment(moduleOp, environment_);
+    attachTargetEnvironment(moduleOp, environment);
   }
 
 private:
-  void populatePipeline(OpPassManager& pm,
-                        const TargetEnvironment& environment) const {
-    if (environment_.target().hasDeviceConstraints()) {
-      populateTargetCompilationPipeline(pm, environment, mapping_);
-    } else {
-      populateTargetSynthesisPipeline(pm, environment, mapping_);
-    }
-  }
-
-  TargetEnvironment environment_;
-  MappingOptions mapping_;
+  Option<size_t> trials{
+      *this, "trials",
+      llvm::cl::desc("Positive mapping trial count (default: max(8, logical "
+                     "CPUs))"),
+      llvm::cl::init(std::max<size_t>(
+          8, llvm::hardware_concurrency().compute_thread_count()))};
+  Option<size_t> iterations{
+      *this, "iterations",
+      llvm::cl::desc("Forward/backward layout refinement rounds"),
+      llvm::cl::init(MappingOptions{}.iterations)};
+  Option<size_t> lookahead{
+      *this, "lookahead",
+      llvm::cl::desc("Additional two-qubit gates considered during routing"),
+      llvm::cl::init(MappingOptions{}.lookahead)};
+  Option<size_t> searchMemoryLimit{
+      *this, "search-memory-limit",
+      llvm::cl::desc("Estimated node and layout bytes per routing search"),
+      llvm::cl::init(MappingOptions{}.searchMemoryLimit)};
 };
 
 } // namespace
 
 std::unique_ptr<Pass>
-createCompileForTargetPass(const TargetEnvironment& environment,
-                           const MappingOptions& mapping) {
-  return std::make_unique<CompileForTargetPass>(environment, mapping);
+createCompileForTargetPass(const MappingOptions& mapping) {
+  return std::make_unique<CompileForTargetPass>(mapping);
+}
+
+void registerTargetCompilationPasses() {
+  static const auto REGISTERED = [] {
+    PassRegistration<PrepareStagedTargetCompilationPass>();
+    PassRegistration<FinalizeStagedTargetCompilationPass>();
+    PassRegistration<CompileForTargetPass>();
+    registerPass(createLowerResonatorCZPass);
+    return true;
+  }();
+  static_cast<void>(REGISTERED);
 }
 
 } // namespace mlir

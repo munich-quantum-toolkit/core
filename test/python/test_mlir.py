@@ -709,7 +709,7 @@ def test_mc_borrow_ancillas_wide_measured_roundtrip() -> None:
     [("compile_for_target", False), ("compile_for_target", True), ("synthesize_for_target", True)],
 )
 def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) -> None:
-    """Reject invalid public mapping controls before rewriting the input."""
+    """Reject invalid public mapping controls."""
     target = CompilerTarget(
         2,
         connectivity=(
@@ -718,13 +718,10 @@ def test_mapping_options_reject_zero_trials(method: str, *, all_to_all: bool) ->
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
     program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
-    before = program.ir
 
     mapping = MappingOptions(trials=0)
     with pytest.raises(RuntimeError, match="mapping trials must be greater than zero"):
         getattr(program, method)(_test_target_environment(target), options=CompilationOptions(seed=7, mapping=mapping))
-
-    assert program.ir == before
 
 
 def test_explicit_mapping_options_reach_target_compilation() -> None:

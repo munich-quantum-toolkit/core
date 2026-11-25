@@ -128,6 +128,28 @@ run_command("llvm-as target text validation" "${LLVM_AS}" "${target_text_file}" 
             "${target_assembled_file}")
 require_profile("${target_text_file}" "base_profile")
 
+# Target compilation runs in the replayable default pipeline.
+set(wide_input "${OUTPUT_DIR}/wide.qasm")
+set(target_reproducer "${OUTPUT_DIR}/target-failure.mlir")
+file(WRITE "${wide_input}" "OPENQASM 3.0;\ninclude \"stdgates.inc\";\nqubit[30] q;\nh q;\n")
+file(REMOVE "${target_reproducer}")
+run_command_expect_failure(
+  "mqt-core oversized target compilation"
+  "target site count is 20"
+  "${MQT_CORE_CLI}"
+  "${wide_input}"
+  "--qdmi-device=mqt.sc.iqm.garnet"
+  "--payload-spec=${text_payload_specification}"
+  --mlir-disable-threading
+  "--mlir-pass-pipeline-crash-reproducer=${target_reproducer}")
+file(READ "${target_reproducer}" target_reproducer_source)
+if(NOT target_reproducer_source MATCHES "mqt-compile-for-target"
+   OR NOT target_reproducer_source MATCHES "mqt[.]target_env")
+  message(FATAL_ERROR "Target reproducer lacks the target pipeline: ${target_reproducer_source}")
+endif()
+run_command_expect_failure("mqt-core target reproducer replay" "target site count is 20"
+                           "${MQT_CORE_CLI}" "${target_reproducer}" --run-reproducer)
+
 foreach(profile IN ITEMS base adaptive)
   set(expected_profile "${profile}_profile")
   set(text_file "${OUTPUT_DIR}/${profile}.ll")

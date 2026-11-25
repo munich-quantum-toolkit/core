@@ -6648,12 +6648,10 @@ TEST_F(CompilerPipelineTest, TargetPipelinesRequireSynthesisBasis) {
       MQT_ASSERT_SUCCESS(input);
       auto program = std::move(*input).intoQCO();
       ASSERT_TRUE(mlir::succeeded(program));
-      const auto before = program->str();
       const TargetEnvironment environment(target, makePayloadSpecification());
       EXPECT_TRUE(mlir::failed(synthesisOnly
                                    ? program->synthesizeForTarget(environment)
                                    : program->compileForTarget(environment)));
-      EXPECT_EQ(program->str(), before);
     }
   }
 }

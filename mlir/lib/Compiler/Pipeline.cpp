@@ -282,10 +282,11 @@ LogicalResult QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
 
 LogicalResult QCOProgram::compileForTarget(const TargetEnvironment& environment,
                                            const CompilationOptions& options) {
+  attachTargetEnvironment(mod(), environment);
   return runQCOTransformPasses(
       mod(),
       [&](OpPassManager& pm) {
-        pm.addPass(createCompileForTargetPass(environment, options.mapping));
+        pm.addPass(createCompileForTargetPass(options.mapping));
       },
       "failed to compile the QCO program for the target", options,
       /*preservesLayout=*/true);
@@ -549,7 +550,10 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
   }
   const bool fromQC = std::holds_alternative<QCProgram>(program);
   const bool fromJeff = std::holds_alternative<JeffProgram>(program);
+  const bool qirOutput =
+      output == ProgramFormat::QIRBase || output == ProgramFormat::QIRAdaptive;
   auto storage = std::visit(
+      // Every program branch forwards the consumed value.
       // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
       []<typename T>(T&& value) -> ProgramAccess::Storage {
         if constexpr (std::is_base_of_v<Program, std::remove_cvref_t<T>>) {
@@ -561,6 +565,11 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
       },
       std::move(program));
   auto moduleOp = *storage.mod;
+  // Every pass reads the target from the module, so pipelines can be printed
+  // and replayed, for example from crash reproducers.
+  if (environment != nullptr) {
+    attachTargetEnvironment(moduleOp, *environment);
+  }
 
   const auto populate = [&](OpPassManager& pm) {
     if (fromQC) {
@@ -574,12 +583,10 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
       return;
     }
     if (environment != nullptr) {
-      pm.addPass(createCompileForTargetPass(*environment, options.mapping));
+      pm.addPass(createCompileForTargetPass(options.mapping));
     } else {
       populateQCOOptimizationPipeline(pm, qcoPipeline,
-                                      /*inlineCalls=*/output ==
-                                              ProgramFormat::QIRBase ||
-                                          output == ProgramFormat::QIRAdaptive);
+                                      /*inlineCalls=*/qirOutput);
     }
     if (output == ProgramFormat::QCOOptimized) {
       return;
@@ -590,7 +597,8 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
       return;
     }
     populateQCOToQCPipeline(pm);
-    populateExportPipeline(pm, output, environment, *moduleOp.getContext());
+    // Export reads the target that target compilation keeps attached.
+    populateExportPipeline(pm, output, nullptr, *moduleOp.getContext());
   };
   // Target compilation composes input layouts. The QIR and `jeff` conversions
   // drop layouts; untargeted optimization invalidates them.
