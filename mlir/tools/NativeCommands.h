@@ -27,4 +27,4 @@ using MQTQPYWriter = llvm::Expected<std::string> (*)(
 int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter = nullptr);
 int mqtCoreRunBench(int argc, char** argv);
 int mqtCoreRunProgram(int argc, char** argv);
-int mqtCoreRunWorker(const char* socketPath);
+int mqtCoreRunWorker(const char* endpoint);

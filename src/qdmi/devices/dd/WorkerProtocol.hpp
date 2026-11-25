@@ -10,24 +10,18 @@
 
 #pragma once
 
+#include "WorkerTransport.hpp"
+
 #include "llvm/ADT/StringRef.h"
-#include "llvm/Support/raw_socket_stream.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <map>
-#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace qdmi::dd {
-struct CloseWorkerStream {
-  void operator()(llvm::raw_socket_stream* stream) const;
-};
-using WorkerStream =
-    std::unique_ptr<llvm::raw_socket_stream, CloseWorkerStream>;
-
 struct WorkerRequest {
   int32_t format = 0;
   /// Borrows the job's payload or the decoded frame until execution returns.
@@ -68,8 +62,8 @@ struct WorkerResponse {
 ///
 /// A failed read invalidates the worker. An empty request frame closes the
 /// worker session.
-bool writeFrame(llvm::raw_socket_stream& stream, llvm::StringRef bytes);
-bool readFrame(llvm::raw_socket_stream& stream, std::string& bytes);
+bool writeFrame(const WorkerStream& stream, llvm::StringRef bytes);
+bool readFrame(const WorkerStream& stream, std::string& bytes);
 std::string encode(const WorkerRequest& request);
 std::string encode(const WorkerResponse& response);
 std::string encode(WorkerSlots slots);

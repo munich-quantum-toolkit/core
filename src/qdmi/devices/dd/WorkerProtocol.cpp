@@ -10,23 +10,19 @@
 
 #include "WorkerProtocol.hpp"
 
+#include "WorkerTransport.hpp"
+
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ExecutionEngine/Orc/Shared/SimplePackedSerialization.h"
-#include "llvm/Support/Errno.h"
-#include "llvm/Support/raw_socket_stream.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <optional>
 #include <span>
 #include <string>
-#ifndef _WIN32
-#include <sys/socket.h>
-#endif
 
 namespace qdmi::dd {
 namespace {
@@ -55,67 +51,29 @@ bool readOptional(SPSInputBuffer& buffer, std::optional<T>& value) {
   return SPSArgList<Tag>::deserialize(buffer, value.emplace());
 }
 
-bool readAll(llvm::raw_socket_stream& stream, char* data, size_t size) {
+bool readAll(const WorkerStream& stream, char* data, size_t size) {
   auto remaining = std::span(data, size);
   while (!remaining.empty()) {
-    const auto count = stream.read(remaining.data(), remaining.size());
-    if (count <= 0) {
+    const auto count = readWorker(stream, remaining.data(), remaining.size());
+    if (count == 0) {
       return false;
     }
-    remaining = remaining.subspan(static_cast<size_t>(count));
+    remaining = remaining.subspan(count);
   }
   return true;
-}
-// NOLINTNEXTLINE(misc-const-correctness): Windows writes through the stream.
-bool writeAll(llvm::raw_socket_stream& stream, llvm::StringRef bytes) {
-#ifdef _WIN32
-  stream.write(bytes.data(), bytes.size());
-  stream.flush();
-  const bool ok = !stream.has_error();
-  stream.clear_error();
-  return ok;
-#else
-  // LLVM exposes the descriptor only to subclasses. Use its inherited member
-  // pointer without downcasting the stream.
-  struct SocketAccess : llvm::raw_socket_stream {
-    static int descriptor(const llvm::raw_socket_stream& socket) {
-      return (socket.*&SocketAccess::get_fd)();
-    }
-  };
-  const auto socket = SocketAccess::descriptor(stream);
-  while (!bytes.empty()) {
-    // Suppress SIGPIPE per send: Darwin delivers it to the process, so masking
-    // only this thread cannot protect other host threads.
-    const auto count = llvm::sys::RetryAfterSignal(
-        -1, ::send, socket, bytes.data(), bytes.size(), MSG_NOSIGNAL);
-    if (count <= 0) {
-      return false;
-    }
-    bytes = bytes.drop_front(static_cast<size_t>(count));
-  }
-  return true;
-#endif
 }
 } // namespace
 
-void CloseWorkerStream::operator()(llvm::raw_socket_stream* stream) const {
-  // Close before LLVM 23's Winsock guard is destroyed. Transport failures
-  // already fail the job; a pending stream error must not abort the host.
-  stream->close();
-  stream->clear_error();
-  std::default_delete<llvm::raw_socket_stream>{}(stream);
-}
-
-bool writeFrame(llvm::raw_socket_stream& stream, llvm::StringRef bytes) {
+bool writeFrame(const WorkerStream& stream, llvm::StringRef bytes) {
   std::array<char, 16> header{};
   SPSOutputBuffer buffer(header.data(), header.size());
   Header::serialize(buffer, MAGIC, VERSION,
                     static_cast<uint64_t>(bytes.size()));
-  return writeAll(stream, llvm::StringRef(header.data(), header.size())) &&
-         writeAll(stream, bytes);
+  return writeWorker(stream, llvm::StringRef(header.data(), header.size())) &&
+         writeWorker(stream, bytes);
 }
 
-bool readFrame(llvm::raw_socket_stream& stream, std::string& bytes) {
+bool readFrame(const WorkerStream& stream, std::string& bytes) {
   std::array<char, 16> header{};
   if (!readAll(stream, header.data(), header.size())) {
     return false;
@@ -134,13 +92,13 @@ bool readFrame(llvm::raw_socket_stream& stream, std::string& bytes) {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
   std::array<char, 65536> chunk;
   while (size != 0) {
-    const auto count =
-        stream.read(chunk.data(), std::min<uint64_t>(size, chunk.size()));
-    if (count <= 0) {
+    const auto count = readWorker(stream, chunk.data(),
+                                  std::min<uint64_t>(size, chunk.size()));
+    if (count == 0) {
       return false;
     }
-    bytes.append(chunk.data(), static_cast<size_t>(count));
-    size -= static_cast<uint64_t>(count);
+    bytes.append(chunk.data(), count);
+    size -= count;
   }
   return true;
 }

@@ -18,6 +18,7 @@ package_add_test(
   SHARDS
   4
   ${PROJECT_SOURCE_DIR}/src/qdmi/devices/dd/WorkerProtocol.cpp
+  ${PROJECT_SOURCE_DIR}/src/qdmi/devices/dd/WorkerTransport.cpp
   worker_protocol_test.cpp
   helpers/test_utils.cpp
   device_properties_test.cpp
@@ -42,6 +43,7 @@ target_include_directories(
 
 llvm_map_components_to_libnames(llvm_native_libs asmparser bitwriter core support)
 target_link_libraries(${TARGET_NAME} PRIVATE ${llvm_native_libs})
+mqt_llvm_target_disable_rtti(${TARGET_NAME})
 
 if(WIN32)
   mqt_copy_qdmi_runtime(${TARGET_NAME} MQT::CoreQDMI_DDSIM_Device)
