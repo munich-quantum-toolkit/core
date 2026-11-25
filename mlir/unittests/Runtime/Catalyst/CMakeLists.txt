@@ -15,7 +15,3 @@ target_include_directories(
   PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver)
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-catalyst REQUIRES_EH)
 mqt_copy_qdmi_runtime(mqt-core-mlir-unittests-catalyst MQT::CoreQDMI_DDSIM_Device)
-gtest_discover_tests(
-  mqt-core-mlir-unittests-catalyst
-  PROPERTIES LABELS mqt-mlir-unittests
-  DISCOVERY_TIMEOUT 60)

@@ -56,15 +56,11 @@ static void expectDistillationCounts(QCProgram program,
   EXPECT_EQ(*counts, (Counts{{expected, shots}}));
 }
 
-static void expectDistillationFaults(size_t levels, uint32_t errors,
-                                     const std::string& expected,
-                                     size_t shots = 4) {
-  auto program = generate(
-      llvm::cantFail(MagicStateDistillation::create({.levels = levels})));
-  ASSERT_TRUE(mlir::succeeded(program));
-  auto entryPoint = mlir::mqt::getEntryPoint(program->module());
+static void expectDistillationFaults(QCProgram program, uint32_t errors,
+                                     const std::string& expected) {
+  auto entryPoint = mlir::mqt::getEntryPoint(program.module());
   SmallVector<qc::TOp> rotations;
-  program->module().walk([&](qc::TOp op) {
+  program.module().walk([&](qc::TOp op) {
     if (op->getParentOfType<func::FuncOp>() != entryPoint) {
       rotations.push_back(op);
     }
@@ -81,13 +77,16 @@ static void expectDistillationFaults(size_t levels, uint32_t errors,
     builder.setInsertionPointAfter(op);
     qc::ZOp::create(builder, op.getLoc(), op.getQubit(0));
   }
-  expectDistillationCounts(std::move(*program), expected, shots);
+  expectDistillationCounts(std::move(program), expected);
 }
 
 TEST(GenerateProgramTest, SamplesMagicStateDistillation) {
   for (const size_t levels : {1U, 2U}) {
     SCOPED_TRACE(levels);
-    expectDistillationFaults(levels, 0, "00", 16);
+    auto program = generate(
+        llvm::cantFail(MagicStateDistillation::create({.levels = levels})));
+    ASSERT_TRUE(mlir::succeeded(program));
+    expectDistillationCounts(std::move(*program), "00", 16);
   }
 }
 
@@ -126,6 +125,9 @@ TEST(GenerateProgramTest,
   constexpr std::array<uint32_t, 15> columns{
       2, 4, 8, 16, 14, 7, 11, 13, 25, 19, 21, 31, 28, 26, 22,
   };
+  auto program =
+      generate(llvm::cantFail(MagicStateDistillation::create({.levels = 1})));
+  ASSERT_TRUE(mlir::succeeded(program));
   size_t undetectedTriples = 0;
   for (uint32_t errors = 0; errors < (1U << 15U); ++errors) {
     const auto weight = std::popcount(errors);
@@ -148,7 +150,7 @@ TEST(GenerateProgramTest,
         syndrome == 0 ? '0' : '1',
         (pauliError & 1U) == 0 ? '0' : '1',
     };
-    expectDistillationFaults(1, errors, expected);
+    expectDistillationFaults(program->copy(), errors, expected);
   }
   EXPECT_EQ(undetectedTriples, 35U);
 }
@@ -159,6 +161,7 @@ TEST(GenerateProgramTest, ConcatenatedDistillationConsumesRetainedStates) {
   auto program =
       generate(llvm::cantFail(MagicStateDistillation::create({.levels = 2})));
   ASSERT_TRUE(mlir::succeeded(program));
+  auto faultyProgram = program->copy();
   auto entryPoint = mlir::mqt::getEntryPoint(program->module());
   const auto injected = program->module().walk([&](func::CallOp op) {
     if (op->getParentOfType<func::FuncOp>() == entryPoint) {
@@ -175,7 +178,7 @@ TEST(GenerateProgramTest, ConcatenatedDistillationConsumesRetainedStates) {
   // The undetected triple at rotations 5, 11, 14 flips every lower output.
   // The resulting 15 faulty higher-level rotations also leave a root Z error.
   constexpr auto errors = (1U << 4U) | (1U << 10U) | (1U << 13U);
-  expectDistillationFaults(2, errors, "01");
+  expectDistillationFaults(std::move(faultyProgram), errors, "01");
 }
 
 } // namespace mqt::bench

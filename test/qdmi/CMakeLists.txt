@@ -21,8 +21,8 @@ if(TARGET MQT::CoreQDMI)
   endforeach()
   target_compile_definitions(mqt-core-qdmi-incompatible-client PRIVATE TEST_INCOMPATIBLE_DRIVER)
 
-  package_add_test_with_working_dir(mqt-core-qdmi-client-runtime-test MQT::CoreQDMI
-                                    "${CMAKE_CURRENT_BINARY_DIR}" test_client_runtime.cpp)
+  package_add_test(mqt-core-qdmi-client-runtime-test MQT::CoreQDMI WORKING_DIRECTORY
+                   "${CMAKE_CURRENT_BINARY_DIR}" test_client_runtime.cpp)
   target_link_libraries(mqt-core-qdmi-client-runtime-test PRIVATE LLVMSupport)
   target_compile_definitions(
     mqt-core-qdmi-client-runtime-test

@@ -135,37 +135,42 @@ def test_ddsim_session_width_scopes_fresh_devices() -> None:
         builtin_driver.open_device("mqt.ddsim.default", custom1="65536")
 
 
-@pytest.mark.parametrize("workers", [0, 4])
-def test_seeded_adaptive_qir_ignores_worker_budget(workers: int) -> None:
+def test_seeded_adaptive_qir_ignores_worker_budget() -> None:
     """The process-wide slot budget does not change logical sampling streams."""
+    source = (
+        'OPENQASM 3; include "stdgates.inc"; qubit q; bit[2] c; h q; c[0] = measure q; reset q; h q; c[1] = measure q;'
+    )
+    program = compile_program(source, output=OutputFormat.QIR_ADAPTIVE).to_llvm_ir()
     script = """
 import json
 import sys
-from mqt.core.mlir import OutputFormat, compile_program
 from mqt.core.qdmi import ProgramFormat, builtin_driver
-source = 'OPENQASM 3; include "stdgates.inc"; qubit q; bit[2] c; h q; c[0] = measure q; reset q; h q; c[1] = measure q;'
-program = compile_program(source, output=OutputFormat.QIR_ADAPTIVE).to_llvm_ir()
+program = sys.stdin.read()
 device = builtin_driver.open_device("mqt.ddsim.default")
-job = device.submit_job(program, ProgramFormat.QIR_ADAPTIVE_STRING, 1024,
-                        custom1=17, custom2=True, custom3=int(sys.argv[1]))
-assert job.wait()
-print(json.dumps([job.get_counts(), job.get_shots()]))
+results = []
+for workers in (0, 4):
+    job = device.submit_job(program, ProgramFormat.QIR_ADAPTIVE_STRING, 1024,
+                            custom1=17, custom2=True, custom3=workers)
+    assert job.wait()
+    results.append([job.get_counts(), job.get_shots()])
+print(json.dumps(results))
 """
     results = []
     for budget in (1, 2, 4):
         # Each process initializes its own worker budget once.
         result = subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
-            [sys.executable, "-c", script, str(workers)],
+            [sys.executable, "-c", script],
             env={**os.environ, "MQT_CORE_DD_WORKER_BUDGET": str(budget)},
             check=True,
             capture_output=True,
+            input=program,
             text=True,
         )
-        counts, shots = json.loads(result.stdout)
-        assert len(counts) == 4
-        assert sum(counts.values()) == len(shots) == 1024
-        results.append((counts, shots))
-    assert results[0] == results[1] == results[2]
+        for counts, shots in json.loads(result.stdout):
+            assert len(counts) == 4
+            assert sum(counts.values()) == len(shots) == 1024
+            results.append((counts, shots))
+    assert all(result == results[0] for result in results[1:])
 
 
 def test_adaptive_qir_histogram_preserves_bit_order() -> None:

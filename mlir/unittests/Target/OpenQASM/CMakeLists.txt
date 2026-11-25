@@ -21,7 +21,6 @@ target_link_libraries(
     MLIRSupportMQT
     GTest::gtest_main)
 mqt_mlir_configure_unittest_target(${target_name})
-gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
 
 set(target_name mqt-core-mlir-unittest-openqasm-translation)
 add_executable(${target_name} test_openqasm2_emission.cpp test_openqasm3_emission.cpp
@@ -44,9 +43,3 @@ target_link_libraries(
     MLIRQASMPrograms)
 
 mqt_mlir_configure_unittest_target(${target_name} REQUIRES_EH)
-
-gtest_discover_tests(
-  ${target_name}
-  NO_PRETTY_VALUES
-  PROPERTIES LABELS mqt-mlir-unittests
-  DISCOVERY_TIMEOUT 60)

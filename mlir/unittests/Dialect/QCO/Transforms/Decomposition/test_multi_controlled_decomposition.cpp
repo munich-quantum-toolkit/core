@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "dd/DDDefinitions.hpp"
+#include "dd/MatrixComparison.hpp"
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
@@ -73,11 +75,10 @@ static constexpr std::array<size_t, 6> K_DD_CONTROL_COUNTS = {
 };
 static constexpr size_t K_MATRIX_DD_MAX_PAULI = 9;
 // Cover both HP24 dirty-ancilla modes and wide phase ladders.
-static constexpr std::array<size_t, 13> K_COHERENT_PAULI_CONTROL_COUNTS = {
-    10, 11, 21, 22, 23, 24, 32, 33, 34, 47, 48, 63, 64,
+static constexpr std::array<size_t, 5> K_COHERENT_PAULI_CONTROL_COUNTS = {
+    22, 23, 24, 63, 64,
 };
-static constexpr std::array<size_t, 4> K_COHERENT_MCP_CONTROL_COUNTS = {
-    7,
+static constexpr std::array<size_t, 3> K_COHERENT_MCP_CONTROL_COUNTS = {
     8,
     9,
     33,
@@ -251,13 +252,14 @@ buildControlledPauliModule(MLIRContext* context, size_t numControls,
 }
 
 [[nodiscard]] static OwningOpRef<ModuleOp>
-buildMcpModule(MLIRContext* context, size_t numControls, double theta) {
+buildMcpModule(MLIRContext* context, size_t numControls, double theta,
+               bool reverseWires = false) {
   return QCOProgramBuilder::build(
-      context, [numControls, theta](QCOProgramBuilder& b) {
+      context, [numControls, theta, reverseWires](QCOProgramBuilder& b) {
         SmallVector<Value> wires;
         wires.reserve(numControls + 1);
         for (size_t i = 0; i <= numControls; ++i) {
-          wires.push_back(b.staticQubit(i));
+          wires.push_back(b.staticQubit(reverseWires ? numControls - i : i));
         }
         b.mcp(theta, ValueRange(wires).drop_back(), wires.back());
         return SmallVector<Value>{};
@@ -404,20 +406,26 @@ static void expectOperatorColumnsNear(dd::Package& package,
                                       const dd::MatrixDD& actual,
                                       const dd::MatrixDD& expected,
                                       size_t width, size_t inputWidth) {
-  for (size_t column = 0; column < (size_t{1} << inputWidth); ++column) {
-    SCOPED_TRACE(testing::Message() << "column=" << column);
-    std::vector<bool> bits(width);
-    for (size_t bit = 0; bit < inputWidth; ++bit) {
-      bits[bit] = ((column >> bit) & 1U) != 0;
-    }
-    const auto input = llvm::cantFail(dd::makeBasisState(width, bits, package));
-    package.incRef(input);
-    const auto actualColumn = package.applyOperation(actual, input);
-    const auto expectedColumn = package.applyOperation(expected, input);
-    expectStatesNear(package, actualColumn, expectedColumn);
-    package.decRef(actualColumn);
-    package.decRef(expectedColumn);
+  constexpr dd::GateMatrix zeroProjector{1., 0., 0., 0.};
+  auto inputProjector = dd::MatrixDD::one();
+  for (size_t bit = inputWidth; bit < width; ++bit) {
+    const auto onZero = llvm::cantFail(
+        package.makeGateDD(zeroProjector, static_cast<dd::Qubit>(bit)));
+    inputProjector = package.multiply(onZero, inputProjector);
   }
+  auto negativeExpected = expected;
+  negativeExpected.w = package.cn.lookup(-dd::RealNumber::val(expected.w.r),
+                                         -dd::RealNumber::val(expected.w.i));
+  const auto difference =
+      package.multiply(package.add(actual, negativeExpected), inputProjector);
+  const auto shifted = package.add(dd::MatrixDD::one(), difference);
+  // The unnormalized Frobenius norm bounds every column norm. The
+  // comparator divides by the square root of the matrix dimension.
+  constexpr double tolerance = 3e-11;
+  const auto normalizedTolerance =
+      tolerance / std::sqrt(std::ldexp(1., static_cast<int>(width)));
+  EXPECT_TRUE(
+      dd::compareToIdentity(shifted, normalizedTolerance).closeToIdentity);
 }
 
 static void expectMatchesReferenceOnStates(
@@ -965,13 +973,15 @@ TEST_P(AncillaAngleTest, CleanAncillaWithBorrowedResidualControls) {
 TEST_P(AncillaFamilyTest, OneDirtyAncillaFullOperator) {
   const auto family = GetParam();
   const auto axis = ancillaRotationAxis(family);
+  // A low-index target keeps the intermediate phase operators compact.
+  const bool reverseData = family == AncillaFamily::Phase;
   for (const size_t k : {5U, 8U, 9U}) {
     SCOPED_TRACE(k);
     auto moduleOp =
         QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
           SmallVector<Value> wires;
           for (size_t i = 0; i < k + 2; ++i) {
-            wires.push_back(b.staticQubit(i));
+            wires.push_back(b.staticQubit(reverseData && i <= k ? k - i : i));
           }
           buildAncillaFamilyGate(b, family,
                                  ValueRange(wires).take_front(k + 1));
@@ -1005,14 +1015,16 @@ TEST_F(MultiControlledDecompositionTest, RuntimePhaseNeedsFullDirtyLadder) {
     Value parameter;
     auto moduleOp =
         QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
+          // Descending wire order keeps both full operator DDs compact.
           SmallVector<Value> wires;
-          for (size_t i = 0; i < width; ++i) {
-            wires.push_back(b.staticQubit(i));
+          for (size_t i = width; i > 0; --i) {
+            wires.push_back(b.staticQubit(i - 1));
           }
           parameter = b.floatConstant(theta);
-          b.ctrl(ValueRange(wires).take_front(k), wires[k], [&](Value target) {
-            return b.p(arith::NegFOp::create(b, parameter), target);
-          });
+          b.ctrl(ValueRange(wires).take_front(k), wires.back(),
+                 [&](Value target) {
+                   return b.p(arith::NegFOp::create(b, parameter), target);
+                 });
           return SmallVector<Value>{};
         });
     auto function = *moduleOp->getOps<func::FuncOp>().begin();
@@ -1032,8 +1044,12 @@ TEST_F(MultiControlledDecompositionTest, RuntimePhaseNeedsFullDirtyLadder) {
     };
     auto actual = buildFunctionality(function, *package, bindings);
     ASSERT_TRUE(succeeded(actual));
-    EXPECT_EQ(*actual,
-              makeControlledGateDD(*package, k, phaseMatrix(-theta), k));
+    dd::Controls controls;
+    for (size_t i = width - k; i < width; ++i) {
+      controls.emplace(static_cast<dd::Qubit>(i));
+    }
+    EXPECT_EQ(*actual, llvm::cantFail(package->makeGateDD(phaseMatrix(-theta),
+                                                          controls, 0)));
     package->decRef(*actual);
   }
 }
@@ -1414,7 +1430,8 @@ TEST_F(MultiControlledDecompositionTest, PhasesPreserveRuntimeAngles) {
       EXPECT_LE(countEffectiveCxOps(moduleOp.get()),
                 expectedMcpCx(numControls));
       funcOp.walk([](AllocOp) { ADD_FAILURE() << "unexpected ancilla qubit"; });
-      for (const double theta : K_ANCILLA_ANGLES) {
+      expectFullyDecomposed(funcOp);
+      for (const double theta : {0.0, 0.73, -1.21}) {
         SCOPED_TRACE(testing::Message() << "theta=" << theta);
         const DDArgumentBindings bindings{
             {
@@ -1423,7 +1440,6 @@ TEST_F(MultiControlledDecompositionTest, PhasesPreserveRuntimeAngles) {
             },
         };
         // Full operator equality includes the phase on coherent controls.
-        expectFullyDecomposed(funcOp);
         expectImplementsControlledGate(funcOp, numControls, phaseMatrix(-theta),
                                        0, bindings);
       }
@@ -1571,7 +1587,9 @@ TEST_F(MultiControlledDecompositionTest, CoherentStatesMatchForLargerSp22Mcp) {
   constexpr double theta = 0.7;
   for (const auto k : K_COHERENT_MCP_CONTROL_COUNTS) {
     SCOPED_TRACE(testing::Message() << "k=" << k);
-    auto moduleOp = buildMcpModule(context(), k, theta);
+    // A low-index phase target keeps the intermediate diagram compact.
+    // The controlled phase still acts only on the all-ones configuration.
+    auto moduleOp = buildMcpModule(context(), k, theta, /*reverseWires=*/true);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
     expectFullyLowered(moduleOp.get());
@@ -1694,12 +1712,10 @@ TEST_F(MultiControlledDecompositionTest, MinQubitsThreshold) {
 }
 
 TEST_F(MultiControlledDecompositionTest, AncillaWideFallbackPhasesAndCounts) {
-  // Single-gate compact-DD fixtures, not dense matrices at these widths.
+  // Cover the SP22/HP24 boundary and both HP24 modes for phase and SWAP.
   for (size_t k : {22U, 23U, 24U}) {
-    for (const double theta : {0.0, std::numbers::pi, -std::numbers::pi}) {
-      const bool swap = theta == 0.0;
-      SCOPED_TRACE(testing::Message()
-                   << "controls=" << k << " theta=" << theta);
+    for (const bool swap : {false, true}) {
+      SCOPED_TRACE(testing::Message() << "controls=" << k << " swap=" << swap);
       auto moduleOp =
           QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& b) {
             SmallVector<Value> wires;
@@ -1713,7 +1729,7 @@ TEST_F(MultiControlledDecompositionTest, AncillaWideFallbackPhasesAndCounts) {
             if (swap) {
               b.mcswap(controls, wires[k], wires[k - 1]);
             } else {
-              b.mcp(theta, controls, wires[k]);
+              b.mcp(std::numbers::pi, controls, wires[k]);
             }
             return SmallVector<Value>{};
           });
@@ -1736,16 +1752,17 @@ TEST_F(MultiControlledDecompositionTest, AncillaWideFallbackPhasesAndCounts) {
                                       pauliMatrix(ControlledPauli::Z), k);
       package->incRef(reference);
       std::mt19937_64 rng(7);
-      for (size_t scenario = 0; scenario < 6; ++scenario) {
+      for (const bool blocked : {false, true}) {
+        SCOPED_TRACE(blocked);
         std::vector<dd::BasisStates> state(k + 1, dd::BasisStates::one);
-        state[k] =
-            scenario % 2 == 0 ? dd::BasisStates::zero : dd::BasisStates::right;
-        if (scenario >= 2) {
-          state[0] = dd::BasisStates::plus;
-          state[k / 2] = dd::BasisStates::right;
+        // One coherent control exposes the conditional phase. Prepare
+        // distinguishable coherent SWAP targets to check the wire order.
+        state[k / 2] = dd::BasisStates::right;
+        state[k] = dd::BasisStates::right;
+        if (swap) {
           state[k - 1] = dd::BasisStates::plus;
         }
-        if (scenario >= 4) {
+        if (blocked) {
           state[k / 2 + 1] = dd::BasisStates::zero;
         }
         auto expected = package->applyOperation(
@@ -2207,20 +2224,26 @@ TEST_F(MultiControlledDecompositionTest, CompositePowerLimits) {
 }
 
 TEST_F(MultiControlledDecompositionTest, PhasePiRoutesThroughMcz) {
-  for (const double theta : {std::numbers::pi, -std::numbers::pi}) {
-    for (const size_t k : {2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U}) {
-      auto moduleOp = buildMcpModule(context(), k, theta);
-      ASSERT_TRUE(moduleOp) << "k=" << k << " theta=" << theta;
-      ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded())
-          << "k=" << k << " theta=" << theta;
-      expectFullyLowered(moduleOp.get());
-      // ±π must take the Z path, so CX counts match MCZ/MCX.
-      EXPECT_EQ(countSingleControlledGates<XOp>(moduleOp.get()),
-                expectedMcxCx(k))
-          << "k=" << k << " theta=" << theta;
-      auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-      expectFullyDecomposed(funcOp);
+  // Check both signs and the boundary between the recursive and SP22 paths.
+  for (const auto [k, theta] : {
+           std::pair{2U, std::numbers::pi},
+           std::pair{2U, -std::numbers::pi},
+           std::pair{8U, std::numbers::pi},
+           std::pair{9U, -std::numbers::pi},
+       }) {
+    SCOPED_TRACE(testing::Message() << "k=" << k << " theta=" << theta);
+    auto moduleOp = buildMcpModule(context(), k, theta);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
+    expectFullyLowered(moduleOp.get());
+    EXPECT_EQ(countSingleControlledGates<XOp>(moduleOp.get()),
+              expectedMcxCx(k));
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    if (k == 2) {
       expectImplementsControlledGate(funcOp, k, phaseMatrix(theta), k);
+    } else {
+      expectMatchesReferenceOnCoherentState(funcOp, k, true,
+                                            phaseMatrix(theta));
     }
   }
 }

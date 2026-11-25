@@ -35,8 +35,3 @@ target_link_libraries(
     MQT::CoreDD)
 
 mqt_mlir_configure_unittest_target(${mqt_transforms_target} REQUIRES_EH)
-
-gtest_discover_tests(
-  ${mqt_transforms_target}
-  PROPERTIES LABELS mqt-mlir-unittests
-  DISCOVERY_TIMEOUT 60)

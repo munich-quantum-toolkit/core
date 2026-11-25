@@ -49,7 +49,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/FormatVariadic.h"
 
-#include <memory>
 #include <string>
 #include <utility>
 
@@ -63,21 +62,11 @@ struct QCOToQCTestCase {
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
 };
 
-class QCOToQCTest : public testing::TestWithParam<QCOToQCTestCase> {
-protected:
-  std::unique_ptr<MLIRContext> context;
-
-  QCOToQCTest() {
-    // Register all necessary dialects
-    DialectRegistry registry;
-    registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                    arith::ArithDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect>();
-    context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
-  }
-};
+using QCOToQCTest =
+    ::mqt::test::TestWithMLIRContext<QCOToQCTestCase, qc::QCDialect,
+                                     qco::QCODialect, qtensor::QTensorDialect,
+                                     arith::ArithDialect, func::FuncDialect,
+                                     memref::MemRefDialect, scf::SCFDialect>;
 
 } // namespace
 

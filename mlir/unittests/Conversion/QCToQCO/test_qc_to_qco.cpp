@@ -70,7 +70,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -87,22 +86,10 @@ struct QCToQCOTestCase {
   bool checkReverse = false;
 };
 
-class QCToQCOTest : public testing::TestWithParam<QCToQCOTestCase> {
-protected:
-  std::unique_ptr<MLIRContext> context;
-
-  void SetUp() override {
-    // Register all necessary dialects
-    DialectRegistry registry;
-    registry
-        .insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
-                qtensor::QTensorDialect, arith::ArithDialect, func::FuncDialect,
-                memref::MemRefDialect, scf::SCFDialect>();
-    context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
-  }
-};
+using QCToQCOTest = ::mqt::test::TestWithMLIRContext<
+    QCToQCOTestCase, mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+    qtensor::QTensorDialect, arith::ArithDialect, func::FuncDialect,
+    memref::MemRefDialect, scf::SCFDialect>;
 
 } // namespace
 

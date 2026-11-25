@@ -15,6 +15,8 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-ddsim-device-test)
 package_add_test(
   ${TARGET_NAME}
   MQT::CoreQDMI_DDSIM_Device
+  SHARDS
+  4
   ${PROJECT_SOURCE_DIR}/src/qdmi/devices/dd/WorkerProtocol.cpp
   worker_protocol_test.cpp
   helpers/test_utils.cpp

@@ -52,7 +52,8 @@ if(TARGET MQT::CoreQDMIDriver)
       RUNTIME_OUTPUT_DIRECTORY
       "${CMAKE_CURRENT_BINARY_DIR}/device")
 
-  package_add_test(${TARGET_NAME} mqt-core-qdmi-driver-testing test_driver.cpp)
+  # These cases inspect and modify the process-wide device registry.
+  package_add_test(${TARGET_NAME} mqt-core-qdmi-driver-testing ISOLATED test_driver.cpp)
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMI)
   target_include_directories(${TARGET_NAME} PRIVATE ${PROJECT_SOURCE_DIR}/src/qdmi/driver)
 

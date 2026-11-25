@@ -38,7 +38,6 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
-#include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Verifier.h"
@@ -54,7 +53,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
 
 using namespace mlir;
@@ -63,24 +61,9 @@ namespace {
 
 using ::mqt::test::QIRConversionCase;
 
-class QCToQIRBaseTest : public testing::TestWithParam<QIRConversionCase> {
-protected:
-  std::unique_ptr<MLIRContext> context;
-
-  void SetUp() override {
-    DialectRegistry registry;
-    registry.insert<qc::QCDialect, LLVM::LLVMDialect, arith::ArithDialect,
-                    func::FuncDialect, memref::MemRefDialect, scf::SCFDialect,
-                    cf::ControlFlowDialect>();
-    context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
-  }
-};
-
 class QCToQIRBaseNativeTest : public testing::Test {
 protected:
-  MLIRContext context;
+  MLIRContext context{MLIRContext::Threading::DISABLED};
 
   void SetUp() override {
     context.loadDialect<qc::QCDialect, cbit::CBitDialect, arith::ArithDialect,
@@ -89,6 +72,8 @@ protected:
                         cf::ControlFlowDialect, math::MathDialect>();
   }
 };
+
+using QCToQIRBaseTest = ::mqt::test::QIRConversionTest;
 
 } // namespace
 

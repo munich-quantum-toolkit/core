@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any, Unpack, cast
 import pytest
 
 from mqt.core.mlir import CompilerTarget, PayloadSpecification, TargetEnvironment, decode_counts, decode_shots
+from mqt.core.plugins.qiskit import QDMIBackend
 from mqt.core.plugins.qiskit import backend as backend_module
 from mqt.core.plugins.qiskit import job as job_module
 from mqt.core.qdmi import Device, Job, ProgramFormat
@@ -26,6 +27,16 @@ if TYPE_CHECKING:
 
     from mqt.core.mlir import CompiledProgram, ResultLayout
     from mqt.core.typing import QDMIJobParameters
+
+
+@pytest.fixture
+def ddsim_backend() -> QDMIBackend:
+    """Open a DDSIM backend for circuits of up to six qubits.
+
+    Returns:
+        A QDMIBackend instance wrapping the DDSIM device.
+    """
+    return QDMIBackend.from_device_id("mqt.ddsim.default", custom1="6")
 
 
 @pytest.fixture

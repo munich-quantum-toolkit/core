@@ -305,14 +305,12 @@ def test_qaoa_application() -> None:
         return qp.sample(wires=range(4))
 
     parameters = qp.numpy.array([0.5, 0.5], requires_grad=True)
-    initial_cost = float(cost(parameters))
-    gradient = np.asarray(qp.grad(cost)(parameters), dtype=float)
-    optimized = qp.GradientDescentOptimizer(stepsize=0.15).step(cost, parameters)
+    optimized, initial_cost = qp.GradientDescentOptimizer(stepsize=0.15).step_and_cost(cost, parameters)
     samples = np.asarray(sample(optimized), dtype=np.int8)
     bitstrings = {"".join(str(int(bit)) for bit in row) for row in samples}
 
     assert np.isfinite(initial_cost)
-    assert np.all(np.isfinite(gradient))
+    assert np.all(np.isfinite(optimized))
     assert not np.allclose(optimized, parameters)
     assert samples.shape == (200, 4)
     assert all(len(bitstring) == 4 and set(bitstring) <= {"0", "1"} for bitstring in bitstrings)

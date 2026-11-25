@@ -669,7 +669,7 @@ def test_generic_compiled_header(recording_backend: RecordingBackend, width: int
 
 def test_compiled_alternative_format_runs_on_ddsim(monkeypatch: pytest.MonkeyPatch) -> None:
     """Foreign artifacts use supported transports without calibrated snapshots."""
-    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default", custom1="1")
     circuit = QuantumCircuit(1, 1)
     circuit.x(0)
     circuit.measure(0, 0)

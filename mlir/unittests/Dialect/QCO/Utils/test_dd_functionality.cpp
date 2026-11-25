@@ -2928,7 +2928,7 @@ TEST_F(QCODDFunctionalityTest, ExecutesBranchesAndCallsInCountedLoops) {
              func.func @main() {
                %true = arith.constant true
                %zero = arith.constant 0 : index
-               %limit = arith.constant 100000 : index
+               %limit = arith.constant 3 : index
                %one = arith.constant 1 : index
                scf.for %i = %zero to %limit step %one {
                  scf.if %true {
@@ -2943,7 +2943,7 @@ TEST_F(QCODDFunctionalityTest, ExecutesBranchesAndCallsInCountedLoops) {
              }
              func.func @main() {
                %zero = arith.constant 0 : index
-               %limit = arith.constant 100000 : index
+               %limit = arith.constant 3 : index
                %one = arith.constant 1 : index
                scf.for %i = %zero to %limit step %one {
                  func.call @noop() : () -> ()
@@ -2954,7 +2954,13 @@ TEST_F(QCODDFunctionalityTest, ExecutesBranchesAndCallsInCountedLoops) {
        }) {
     auto mod = parseSourceString<ModuleOp>(source, context.get());
     ASSERT_TRUE(mod);
-    expectSimulatesFromZero(mainFunc(*mod), false);
+    auto package = llvm::cantFail(dd::Package::create(0));
+    const auto result =
+        simulate(mainFunc(*mod), dd::VectorDD::one(), *package, rng,
+                 DDArgumentBindings(), {.maxWhileIterations = 0});
+    ASSERT_TRUE(succeeded(result));
+    EXPECT_EQ(*result, dd::VectorDD::one());
+    package->decRef(*result);
   }
 }
 

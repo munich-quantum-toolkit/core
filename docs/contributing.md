@@ -297,6 +297,13 @@ the project as described above:
 ctest --preset release
 ```
 
+CTest runs most GoogleTest cases in groups. To rerun a single case, use the
+executable from the failed group with `--gtest_filter`.
+
+```console
+build/release/test/dd/mqt-core-dd-test --gtest_filter=DDPackageTest.GroverRetainsCompactAccurateState
+```
+
 :::{tip}
 If you want to disable configuring and building the C++ tests, you can pass
 {code}`-DBUILD_MQT_CORE_TESTS=OFF` to the CMake configure step.

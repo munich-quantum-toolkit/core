@@ -14,7 +14,6 @@ import json
 import re
 import sys
 from functools import partial
-from gc import collect
 from itertools import starmap
 from pathlib import Path
 from threading import Event, Thread
@@ -323,14 +322,14 @@ def test_jeff_segment_round_trip(buffer_type: str) -> None:
     else:
         buffers = [memoryview(segment) for segment in segments]
     del program, segments
-    collect()
 
     restored = JeffProgram.from_segments(buffers)
     for buffer in buffers:
         if isinstance(buffer, bytearray) or (isinstance(buffer, memoryview) and not buffer.readonly):
             buffer[:] = b"\0" * len(buffer)
-    del buffers
-    collect()
+        if isinstance(buffer, memoryview):
+            buffer.release()
+    del buffer, buffers
     assert set(sample(restored, shots=32, seed=1)) == {"00", "11"}
 
 
@@ -2367,19 +2366,28 @@ def test_program_inspection_static_and_unknown_widths() -> None:
     assert unknown.num_qubits is None
 
 
-@pytest.mark.parametrize("mode", ["targetless", "target_output", "target_payload", "source", "path"])
-def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
-    """Python threads progress during native parsing and each compilation overload."""
+@pytest.fixture(scope="module")
+def gil_probe() -> tuple[str, QCOProgram]:
+    """Prepare a reusable input for the threading checks.
+
+    Returns:
+        Invalid OpenQASM for the parsing checks and a typed program for compilation.
+    """
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q;\n' + (
         "rx(0.1) q[0]; cx q[0],q[1]; rz(0.2) q[1];\n" * 2000
     )
+    return source + "unknown_gate q[0];", compile_program(source, output=OutputFormat.QCO)
+
+
+@pytest.mark.parametrize("mode", ["targetless", "target_output", "target_payload", "source", "path"])
+def test_native_compilation_releases_gil(tmp_path: Path, mode: str, gil_probe: tuple[str, QCOProgram]) -> None:
+    """Python threads progress during native parsing and each compilation overload."""
+    invalid_source, program = gil_probe
     target = CompilerTarget(
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    program = compile_program(source, output=OutputFormat.QCO)
-    invalid_source = source + "unknown_gate q[0];"
     path = tmp_path / "invalid.qasm"
     path.write_text(invalid_source, encoding="utf-8")
     start = Event()

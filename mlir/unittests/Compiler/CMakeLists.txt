@@ -51,12 +51,6 @@ target_compile_definitions(
   PRIVATE MQT_CORE_MLIR_SC_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Inputs")
 target_link_libraries(mqt-core-mlir-unittests-compiler PRIVATE LLVMSupport)
 
-mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler REQUIRES_EH)
-
-gtest_discover_tests(
-  mqt-core-mlir-unittests-compiler
-  NO_PRETTY_VALUES
-  PROPERTIES LABELS mqt-mlir-unittests
-  DISCOVERY_TIMEOUT 60)
+mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler REQUIRES_EH SHARDS 4)
 
 add_subdirectory(compile)

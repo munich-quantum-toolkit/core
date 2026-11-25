@@ -308,7 +308,8 @@ TEST_F(HistogramTest, SeedReproducesQASMSampling) {
 
 TEST_F(HistogramTest, BatchProgramSeedsAreDistinctAndRepeatable) {
   constexpr int seed = 17;
-  constexpr size_t count = 8;
+  constexpr size_t parallelWorkers = 4;
+  constexpr size_t count = parallelWorkers + 1;
   constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
   constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
   const auto runBatch = [&](size_t workers) {
@@ -335,7 +336,7 @@ TEST_F(HistogramTest, BatchProgramSeedsAreDistinctAndRepeatable) {
   };
   const auto first = runBatch(1);
   EXPECT_EQ(first, runBatch(1));
-  EXPECT_EQ(first, runBatch(4));
+  EXPECT_EQ(first, runBatch(parallelWorkers));
   EXPECT_TRUE(std::ranges::any_of(
       first, [&](const auto& samples) { return samples != first.front(); }));
   for (size_t i = 0; i < count; ++i) {
@@ -371,38 +372,32 @@ a[1] = measure q[0];
 if (a[1]) { x q[1]; }
 b[0] = measure q[1];
 )qasm";
-  const auto [keys, values] = runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7);
-  EXPECT_EQ(keys, (std::vector<std::string>{"0000", "0110"}));
-  EXPECT_EQ(std::accumulate(values.begin(), values.end(), size_t{0}),
-            NUM_SHOTS);
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
   std::vector<std::string> first;
   std::vector<std::string> second;
-  for (const size_t workers : {0U, 1U, 4U}) {
-    EXPECT_EQ(
-        runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &first, workers),
-        runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &second, workers));
+  const auto hist = runProgram(format, program, 7, &first);
+  EXPECT_EQ(hist.first, (std::vector<std::string>{"0000", "0110"}));
+  EXPECT_EQ(std::accumulate(hist.second.begin(), hist.second.end(), size_t{0}),
+            NUM_SHOTS);
+  EXPECT_EQ(hist, runProgram(format, program, 7, &second, 0));
+  EXPECT_EQ(first, second);
+  for (const size_t workers : {1U, 4U}) {
+    EXPECT_EQ(runProgram(format, program, 7, &first, workers),
+              runProgram(format, program, 7, &second, workers));
     EXPECT_EQ(first, second);
   }
-  EXPECT_EQ(runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &first),
-            runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7, &second, 0));
-  EXPECT_EQ(first, second);
 }
 
 TEST_F(QIRHistogramTestString, AdaptiveWorkersRepeatSeededShots) {
+  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
   const auto program = qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll");
   std::vector<std::string> first;
   std::vector<std::string> second;
-  for (const size_t workers : {0U, 4U}) {
-    EXPECT_EQ(runProgram(QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program, 7,
-                         &first, workers),
-              runProgram(QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program, 7,
-                         &second, workers));
-    EXPECT_EQ(first, second);
-  }
-  EXPECT_EQ(
-      runProgram(QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program, 7, &first),
-      runProgram(QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program, 7, &second,
-                 0));
+  EXPECT_EQ(runProgram(format, program, 7, &first),
+            runProgram(format, program, 7, &second, 0));
+  EXPECT_EQ(first, second);
+  EXPECT_EQ(runProgram(format, program, 7, &first, 4),
+            runProgram(format, program, 7, &second, 4));
   EXPECT_EQ(first, second);
 }
 

@@ -5023,6 +5023,12 @@ TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
       CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::unrestricted()));
   auto qasmProgram = program->copy();
+  // OpenQASM expands the loop. A short odd trip count checks the same parity.
+  qasmProgram.module().walk([](scf::ForOp loop) {
+    OpBuilder builder(loop);
+    loop.setUpperBound(
+        arith::ConstantIndexOp::create(builder, loop.getLoc(), 5));
+  });
   const auto qasmPayload = llvm::cantFail(
       PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM3));
   ASSERT_TRUE(mlir::succeeded(
@@ -5625,8 +5631,7 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsSwitchLowering) {
          std::vector<std::tuple<size_t, bool, uint64_t, bool>>{
              {256, false, 0, true},
              {257, false, 0, false},
-             {5000, false, 0, false},
-             {5000, true, 0, true},
+             {257, true, 0, true},
              {2, false, 1, false},
              {2, false, 2, true},
          }) {

@@ -93,9 +93,13 @@ static int getResults(QDMI_Device_Job job, size_t, QDMI_Job_Result result,
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
+static qdmi::Device openThreeQubitDdsimDevice() {
+  return llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default",
+                                                         R"({"custom1":"3"})"));
+}
+
 TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
-  auto device =
-      llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
+  auto device = openThreeQubitDdsimDevice();
   auto& api =
       const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   const auto originalGetResults = api.device_job_get_results;
@@ -195,8 +199,7 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
 }
 
 TEST(CatalystQDMI, AggregateReadoutKeepsCountsAndSamplesFromOneJob) {
-  auto device =
-      llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
+  auto device = openThreeQubitDdsimDevice();
   auto& api =
       const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   const auto original = api.device_job_get_results;
@@ -253,9 +256,7 @@ TEST(CatalystQDMI, MatrixGatesShareCorrelatedTerminalReadouts) {
   constexpr size_t shots = 512;
   JobParameters parameters;
   parameters[0] = 42;
-  QDMIDevice runtime(Context::create(
-      llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default")),
-      parameters));
+  QDMIDevice runtime(Context::create(openThreeQubitDdsimDevice(), parameters));
   const auto wires = runtime.AllocateQubits(3);
   runtime.SetDeviceShots(shots);
   // H, S-dagger, and RX(pi/6) give P(q0 = 1) = 3/4.
@@ -304,8 +305,7 @@ TEST(CatalystQDMI, MatrixGatesShareCorrelatedTerminalReadouts) {
 }
 
 TEST(CatalystQDMI, TerminalReadoutPreservesWireOrder) {
-  const auto device =
-      llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
+  const auto device = openThreeQubitDdsimDevice();
   for (const auto format :
        {QDMI_PROGRAM_FORMAT_QASM3, QDMI_PROGRAM_FORMAT_QIRBASESTRING}) {
     QDMIDevice runtime(Context::create(device, {}, format));
@@ -322,8 +322,7 @@ TEST(CatalystQDMI, TerminalReadoutPreservesWireOrder) {
 }
 
 TEST(CatalystQDMI, UntouchedWiresNeedNoSubmission) {
-  const auto device =
-      llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
+  const auto device = openThreeQubitDdsimDevice();
   auto& api =
       const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   const auto originalSubmit = api.device_job_submit;
@@ -345,8 +344,7 @@ TEST(CatalystQDMI, UntouchedWiresNeedNoSubmission) {
 }
 
 TEST(CatalystQDMI, InvalidBasisStateLeavesRecordingUsable) {
-  QDMIDevice runtime(Context::create(
-      llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default"))));
+  QDMIDevice runtime(Context::create(openThreeQubitDdsimDevice()));
   const auto wires = runtime.AllocateQubits(3);
   runtime.SetDeviceShots(4);
   std::vector<int8_t> bits{9, 1, 9, 2};
@@ -366,8 +364,7 @@ TEST(CatalystQDMI, InvalidBasisStateLeavesRecordingUsable) {
 }
 
 TEST(CatalystQDMI, FactoryRetainsContextAndRejectsInvalidLifetimes) {
-  auto context = Context::create(
-      llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default")));
+  auto context = Context::create(openThreeQubitDdsimDevice());
   const auto kwargs = "{'context': " + std::to_string(context->id()) + '}';
   auto runtime = std::unique_ptr<Catalyst::Runtime::QuantumDevice>(
       createDevice(kwargs.c_str()));

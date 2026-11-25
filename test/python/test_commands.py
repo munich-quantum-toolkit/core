@@ -59,17 +59,6 @@ def test_native_command(monkeypatch: pytest.MonkeyPatch, platform: str) -> None:
         execute.assert_called_once_with(executable, arguments)
 
 
-def test_qpy_export(tmp_path: Path) -> None:
-    """Run the native compiler and independently decode QPY written to standard output."""
-    source = tmp_path / "input.qasm"
-    source.write_text("OPENQASM 3; qubit q; x q;")
-    result = run_command(["compile", str(source), "--emit=qpy", "--qdmi-list-devices=false"])
-    assert result.returncode == 0
-    assert qpy.get_qpy_version(BytesIO(result.stdout)) == 17
-    circuit = qpy.load(BytesIO(result.stdout))[0]
-    assert Statevector.from_instruction(circuit).probabilities_dict() == {"1": 1.0}
-
-
 @pytest.mark.parametrize("failure", ["compiler", "serializer"])
 def test_qpy_export_failure(tmp_path: Path, failure: str) -> None:
     """Compilation and serialization failures leave an existing destination intact."""
@@ -119,24 +108,25 @@ def test_decomposition_threshold(tmp_path: Path) -> None:
     assert QCProgram.from_mlir_str(result.stdout.decode()).inspect().gate_counts == {"ccx": 1, "x": 2}
 
 
-def test_qpy_custom_pipeline(tmp_path: Path) -> None:
-    """Run an explicitly requested pipeline through its CLI alias."""
+def test_qpy_export(tmp_path: Path) -> None:
+    """Decode QPY from stdout after a custom pipeline removes the global phase."""
     source = tmp_path / "input.qasm"
     source.write_text(
         'OPENQASM 3; include "stdgates.inc"; input float unused; qubit[8] q; '
         "if (false) { rx(unused) q[7]; } gphase(0.37); x q[2];"
     )
-    output = tmp_path / "output.qpy"
-    error = run_command([
+    result = run_command([
         "compile",
         str(source),
-        "-o",
-        str(output),
+        "--emit=qpy",
+        "--qdmi-list-devices=false",
         "--passes=builtin.module(drop-global-phases)",
         "--mlir-print-ir-after-all",
     ])
-    assert error.returncode == 0
-    assert Statevector(qpy.load(BytesIO(output.read_bytes()))[0]).data == pytest.approx([0, 1], abs=1e-14)
+    assert result.returncode == 0
+    assert qpy.get_qpy_version(BytesIO(result.stdout)) == 17
+    circuit = qpy.load(BytesIO(result.stdout))[0]
+    assert Statevector.from_instruction(circuit).data == pytest.approx([0, 1], abs=1e-14)
 
 
 @pytest.mark.parametrize(

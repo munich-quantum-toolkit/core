@@ -27,5 +27,3 @@ target_link_libraries(
     MLIRQCOMatrix
     MLIRControlFlowDialect)
 mqt_mlir_configure_unittest_target(${qco_utils_target} REQUIRES_EH)
-
-gtest_discover_tests(${qco_utils_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

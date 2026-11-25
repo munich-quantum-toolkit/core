@@ -195,7 +195,7 @@ def tests(session: nox.Session) -> None:
 @nox.session(name="catalyst", python="3.14", reuse_venv=True)
 def catalyst(session: nox.Session) -> None:
     """Run the optional Catalyst integration suite."""
-    _run_tests(session, groups=["catalyst"], pytest_run_args=["test/python/plugins/qdmi_pennylane"])
+    _run_tests(session, groups=["catalyst"], pytest_run_args=["-n0", "test/python/plugins/qdmi_pennylane"])
 
 
 @nox.session(name="catalyst-dev", python="3.14", reuse_venv=True)
@@ -215,7 +215,7 @@ def catalyst_dev(session: nox.Session) -> None:
             # TestPyPI also contains stale releases of dependencies such as xdsl.
             "--index-strategy=unsafe-best-match",
         ],
-        pytest_run_args=["test/python/plugins/qdmi_pennylane"],
+        pytest_run_args=["-n0", "test/python/plugins/qdmi_pennylane"],
     )
 
 

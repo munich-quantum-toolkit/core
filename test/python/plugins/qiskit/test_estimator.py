@@ -22,9 +22,23 @@ from mqt.core.plugins.qiskit import QDMIBackend
 
 
 @pytest.fixture
-def estimator() -> BackendEstimatorV2:
-    """Returns a BackendEstimatorV2 based on the DDSIM backend."""
-    return QDMIBackend.from_device_id("mqt.ddsim.default").estimator()
+def backend() -> QDMIBackend:
+    """Open a device for the estimator tests.
+
+    Returns:
+        A DDSIM backend with enough sites for the two-qubit circuits.
+    """
+    return QDMIBackend.from_device_id("mqt.ddsim.default", custom1="2")
+
+
+@pytest.fixture
+def estimator(backend: QDMIBackend) -> BackendEstimatorV2:
+    """Create a fresh estimator for each test.
+
+    Returns:
+        An estimator with 16 shots by default.
+    """
+    return backend.estimator(default_precision=0.25)
 
 
 def test_estimator_run_simple_observable(estimator: BackendEstimatorV2) -> None:
@@ -62,8 +76,9 @@ def test_estimator_run_parameterized_observable(estimator: BackendEstimatorV2) -
     assert evs.shape == (2,)
 
 
-def test_estimator_precision_handling(estimator: BackendEstimatorV2) -> None:
+def test_estimator_precision_handling(backend: QDMIBackend) -> None:
     """Test that precision argument controls the number of shots."""
+    estimator = backend.estimator()
     qc = QuantumCircuit(1)
     qc.h(0)
     op = SparsePauliOp("Z")
@@ -73,44 +88,15 @@ def test_estimator_precision_handling(estimator: BackendEstimatorV2) -> None:
     result = job.result()
     assert result[0].metadata["shots"] == 4096
 
-    # Case 2: Specific precision -> 1/precision^2 shots
-    precision = 0.1
-    expected_shots = int(np.ceil(1.0 / precision**2))  # 100
-    job = estimator.run([(qc, op)], precision=precision)
-    result = job.result()
-    assert result[0].metadata["shots"] == expected_shots
-
-    # Case 3: Pub-specific precision override
-    other_precision = 0.05
-    other_expected_shots = int(np.ceil(1.0 / other_precision**2))  # 400
-    pub = EstimatorPub.coerce((qc, op), precision=other_precision)
-    job = estimator.run([pub])
-    result = job.result()
-    assert result[0].metadata["shots"] == other_expected_shots
-
-
-def test_estimator_defaults() -> None:
-    """Test explicit estimator shot and precision defaults."""
-    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
-    estimator2 = backend.estimator(default_precision=0.125)
-    qc = QuantumCircuit(1)
-    op = SparsePauliOp("Z")
-
-    job = estimator2.run([(qc, op)])
-    result = job.result()
-    assert result[0].metadata["shots"] == 64
-
-    # Test the default precision.
-    estimator_prec = backend.estimator(default_precision=0.1)
-    job = estimator_prec.run([(qc, op)])
-    result = job.result()
-    # Should use default_precision -> 100 shots
+    # An individual pub can override the run's precision.
+    pub = EstimatorPub.coerce((qc, op), precision=0.05)
+    result = estimator.run([(qc, op), pub], precision=0.1).result()
     assert result[0].metadata["shots"] == 100
+    assert result[1].metadata["shots"] == 400
 
 
-def test_backend_constructs_estimator() -> None:
+def test_backend_constructs_estimator(backend: QDMIBackend) -> None:
     """A backend constructs an estimator that retains its identity and defaults."""
-    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
     estimator = backend.estimator(default_precision=0.125)
     qc = QuantumCircuit(1)
     op = SparsePauliOp("Z")

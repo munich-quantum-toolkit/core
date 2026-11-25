@@ -11,67 +11,36 @@
 from __future__ import annotations
 
 import warnings
+from typing import TYPE_CHECKING
 
 import pytest
 
 from mqt.core.plugins.qiskit import QDMIBackend, QDMIProvider
 from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
-from mqt.core.qdmi import Device, open_device
+
+if TYPE_CHECKING:
+    from mqt.core.qdmi import Device
 
 
-def test_provider_backends_filter_by_name() -> None:
-    """Provider can filter backends by name substring."""
+def test_provider_discovers_and_filters_backends() -> None:
+    """List installed devices, filter by substring, and retrieve the DDSIM backend by name."""
     provider = QDMIProvider()
+    names = {backend.name for backend in provider.backends()}
+    ddsim = "MQT Core DDSIM QDMI Device"
+    assert ddsim in names
+    assert {backend.name for backend in provider.backends(name="DDSIM")} == {
+        name for name in names if name is not None and "DDSIM" in name
+    }
 
-    # Get all backends first
-    all_backends = provider.backends()
-    assert len(all_backends) > 0
-
-    # Filter by full name
-    backend_name = all_backends[0].name
-    filtered = provider.backends(name=backend_name)
-
-    assert len(filtered) >= 1
-    assert any(b.name == backend_name for b in filtered)
-
-
-def test_provider_backends_filter_by_substring() -> None:
-    """Provider can filter backends by name substring."""
-    provider = QDMIProvider()
-
-    # Filter by "QDMI" substring (should match "MQT Core DDSIM QDMI Device")
-    filtered = provider.backends(name="QDMI")
-    assert len(filtered) > 0
-    for backend in filtered:
-        assert backend.name is not None
-        assert "QDMI" in backend.name
-
-    # Filter by "DDSIM" substring
-    filtered_ddsim = provider.backends(name="DDSIM")
-    assert len(filtered_ddsim) > 0
-    for backend in filtered_ddsim:
-        assert backend.name is not None
-        assert "DDSIM" in backend.name
-
-
-def test_provider_backends_filter_nonexistent_name() -> None:
-    """Provider returns empty list for non-existent name substring."""
-    provider = QDMIProvider()
-    backends = provider.backends(name="NonExistentDevice")
-    assert backends == []
-
-
-def test_provider_get_backend_by_name() -> None:
-    """Provider can get backend by name."""
-    provider = QDMIProvider()
-    backend = provider.get_backend("MQT Core DDSIM QDMI Device")
-    assert backend.name == "MQT Core DDSIM QDMI Device"
+    backend = provider.get_backend(ddsim)
+    assert backend.name == ddsim
     assert backend.provider is provider
 
 
-def test_provider_get_backend_stops_after_exact_match(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_provider_get_backend_stops_after_exact_match(
+    monkeypatch: pytest.MonkeyPatch, ddsim_backend: QDMIBackend
+) -> None:
     """Exact-name lookup does not open devices after the matching backend."""
-    expected = QDMIBackend(open_device("mqt.ddsim.default"), device_id="matching.device")
     opened_ids: list[str] = []
     monkeypatch.setattr(
         QDMIProvider,
@@ -86,24 +55,23 @@ def test_provider_get_backend_stops_after_exact_match(monkeypatch: pytest.Monkey
             raise RuntimeError(msg)
         if device_id == "later.device":
             pytest.fail("exact-name lookup continued after finding its backend")
-        return expected.device
+        return ddsim_backend.device
 
     provider = QDMIProvider()
     monkeypatch.setattr("mqt.core.plugins.qiskit.provider.open_device", lookup)
-    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.QDMIBackend", lambda _device, **_kwargs: expected)
 
-    expected_name = expected.name
+    expected_name = ddsim_backend.name
     assert expected_name is not None
     with pytest.warns(RuntimeWarning, match="unavailable.device"):
-        assert provider.get_backend(expected_name) is expected
+        assert provider.get_backend(expected_name).device_id == "matching.device"
     assert opened_ids == ["unavailable.device", "matching.device"]
 
 
-def test_provider_get_backend_nonexistent() -> None:
-    """Provider raises ValueError for non-existent backend."""
+def test_provider_get_backend_requires_exact_name() -> None:
+    """A substring can filter the catalogue but cannot select a backend by name."""
     provider = QDMIProvider()
     with pytest.raises(ValueError, match="No backend found with name"):
-        provider.get_backend("NonExistentDevice")
+        provider.get_backend("DDSIM")
 
 
 def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -121,23 +89,6 @@ def test_provider_repr() -> None:
     repr_str = repr(provider)
     assert "QDMIProvider" in repr_str
     assert "devices=" in repr_str
-
-
-def test_backend_has_provider_reference() -> None:
-    """Backend created by provider has reference back to provider."""
-    provider = QDMIProvider()
-    backend = provider.get_backend("MQT Core DDSIM QDMI Device")
-
-    assert backend.provider is provider
-
-
-def test_provider_default_constructor() -> None:
-    """Provider discovers client-visible devices without session parameters."""
-    provider = QDMIProvider()
-    backends = provider.backends()
-    assert len(backends) > 0
-    backend = provider.get_backend("MQT Core DDSIM QDMI Device")
-    assert backend.name == "MQT Core DDSIM QDMI Device"
 
 
 def test_provider_construction_opens_no_devices(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -163,10 +114,11 @@ def test_provider_reads_catalogue_on_each_discovery_call(monkeypatch: pytest.Mon
     assert provider.device_ids() == ["first.device", "second.device"]
 
 
-def test_provider_exact_id_lookup_forwards_session_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_provider_exact_id_lookup_forwards_session_parameters(
+    monkeypatch: pytest.MonkeyPatch, ddsim_backend: QDMIBackend
+) -> None:
     """Exact-ID lookup opens only that device with typed overrides."""
     observed: tuple[str, QDMIProvider, dict[str, object]] | None = None
-    expected = QDMIBackend(open_device("mqt.ddsim.default"), device_id="test.device")
 
     def fake_from_device_id(
         device_id: str,
@@ -176,7 +128,7 @@ def test_provider_exact_id_lookup_forwards_session_parameters(monkeypatch: pytes
     ) -> QDMIBackend:
         nonlocal observed
         observed = device_id, provider, session_parameters
-        return expected
+        return ddsim_backend
 
     monkeypatch.setattr("mqt.core.plugins.qiskit.provider.QDMIBackend.from_device_id", fake_from_device_id)
     provider = QDMIProvider()
@@ -184,61 +136,39 @@ def test_provider_exact_id_lookup_forwards_session_parameters(monkeypatch: pytes
 
     backend = provider.get_backend_by_device_id("test.device", token=token, custom1="queue")
 
-    assert backend is expected
+    assert backend is ddsim_backend
     assert observed == ("test.device", provider, {"token": token, "custom1": "queue"})
 
 
-def test_provider_warns_with_only_id_and_skips_unavailable_device(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Enumeration reports an unavailable ID without leaking failure details."""
-    available = QDMIBackend(open_device("mqt.ddsim.default"), device_id="available.device")
+def test_provider_skips_unavailable_and_incompatible_devices(
+    monkeypatch: pytest.MonkeyPatch, ddsim_backend: QDMIBackend
+) -> None:
+    """Return available backends and warn only for a device that failed to open."""
     monkeypatch.setattr(
         QDMIProvider,
         "device_ids",
-        staticmethod(lambda: ["available.device", "unavailable.device"]),
+        staticmethod(lambda: ["unavailable.device", "incompatible.device", "available.device"]),
     )
 
     def lookup(device_id: str, **_session_parameters: object) -> Device:
         if device_id == "unavailable.device":
             msg = "credential=do-not-disclose"
             raise RuntimeError(msg)
-        return available.device
-
-    provider = QDMIProvider()
-    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.open_device", lookup)
-    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.QDMIBackend", lambda _device, **_kwargs: available)
-
-    with pytest.warns(RuntimeWarning) as warnings:
-        assert provider.backends() == [available]
-
-    message = str(warnings[0].message)
-    assert warnings[0].filename == __file__
-    assert "unavailable.device" in message
-    assert "credential" not in message
-    assert "do-not-disclose" not in message
-
-
-def test_provider_silently_skips_incompatible_device(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Enumeration silently omits devices that Qiskit cannot represent."""
-    available = QDMIBackend(open_device("mqt.ddsim.default"), device_id="available.device")
-    monkeypatch.setattr(
-        QDMIProvider,
-        "device_ids",
-        staticmethod(lambda: ["incompatible.device", "available.device"]),
-    )
-
-    def lookup(device_id: str, **_session_parameters: object) -> Device:
         if device_id == "incompatible.device":
             msg = "device cannot be represented by a Qiskit target"
             raise UnsupportedDeviceError(msg)
-        return available.device
+        return ddsim_backend.device
 
-    provider = QDMIProvider()
     monkeypatch.setattr("mqt.core.plugins.qiskit.provider.open_device", lookup)
-    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.QDMIBackend", lambda _device, **_kwargs: available)
+    with pytest.warns(RuntimeWarning, match="unavailable.device") as caught:
+        (backend,) = QDMIProvider().backends()
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("error")
-        assert provider.backends() == [available]
+    assert backend.device_id == "available.device"
+    (warning,) = caught
+    assert warning.filename == __file__
+    message = str(warning.message)
+    assert "credential" not in message
+    assert "do-not-disclose" not in message
 
 
 def test_provider_skips_snapshot_for_nonmatching_name(monkeypatch: pytest.MonkeyPatch) -> None:
