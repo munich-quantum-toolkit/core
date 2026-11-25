@@ -17,7 +17,7 @@ $env:CIBW_BUILD = "cp311-$tag cp315t-$tag"
 $env:CMAKE_GENERATOR = 'Ninja'
 $env:TEMP = $env:RUNNER_TEMP
 $env:TMP = $env:RUNNER_TEMP
-$hook = (Join-Path $PSScriptRoot 'build_evidence.py').Replace('\','/')
+$hook = (Join-Path $PSScriptRoot 'measure.py').Replace('\','/')
 $env:CIBW_BEFORE_BUILD_WINDOWS = "python `"$hook`" start `"{project}`""
 $env:CIBW_REPAIR_WHEEL_COMMAND_WINDOWS = "python `"$hook`" repair `"{project}`" `"{wheel}`" `"{dest_dir}`""
 # Keep the first ABI cold on every runner and retain the build tree for the second.
