@@ -12,7 +12,7 @@ function(enable_project_options target_name)
 
   # CMake records the linker ID when first enabling the language.
   set(linker_id "${CMAKE_CXX_COMPILER_LINKER_ID}")
-  if(CMAKE_VERSION VERSION_GREATER_EQUAL 3.29 AND CMAKE_LINKER_TYPE)
+  if(CMAKE_LINKER_TYPE)
     set(linker_id "${CMAKE_LINKER_TYPE}")
   endif()
 
@@ -20,7 +20,7 @@ function(enable_project_options target_name)
     target_link_options(${target_name} INTERFACE "$<$<NOT:$<CONFIG:Debug>>:LINKER:-dead_strip>")
   elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_options(${target_name} INTERFACE "$<$<NOT:$<CONFIG:Debug>>:LINKER:--gc-sections>")
-    if(linker_id STREQUAL "LLD")
+    if(linker_id MATCHES "^(LLD|mqt_sdk_mold)$")
       target_link_options(${target_name} INTERFACE "$<$<NOT:$<CONFIG:Debug>>:LINKER:--icf=safe>")
     endif()
   endif()
@@ -28,7 +28,7 @@ function(enable_project_options target_name)
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
     if(ENABLE_CACHE AND CMAKE_INTERPROCEDURAL_OPTIMIZATION)
       set(lto_cache "${PROJECT_BINARY_DIR}/thinlto-cache-$<CONFIG>")
-      if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND linker_id STREQUAL "LLD")
+      if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND linker_id MATCHES "^(LLD|mqt_sdk_mold)$")
         target_link_options(
           ${target_name}
           INTERFACE

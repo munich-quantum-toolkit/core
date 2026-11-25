@@ -84,9 +84,10 @@ development libraries and headers require a source installation.
 
 The wheels use portable CPU settings and the pinned LLVM/MLIR SDK with
 assertions and ABI-breaking checks disabled. Linux builds target manylinux_2_28
-using Clang 22, LLD, and ThinLTO. macOS builds use Apple Clang and ThinLTO with
-a macOS 13.3 deployment target. Windows builds use MSVC and interprocedural
-optimization (IPO), except for DLLs that require automatic symbol exports.
+using Clang 23.1.6, mold from the SDK, and ThinLTO. macOS builds use Apple Clang
+and ThinLTO with a macOS 13.3 deployment target. Windows builds use MSVC and
+interprocedural optimization (IPO), except for DLLs that require automatic
+symbol exports.
 
 ### Command-line tools
 
@@ -239,18 +240,17 @@ pip install mqt.core --no-binary mqt.core
 
 This requires a C++20-capable
 [C++ compiler](https://en.wikipedia.org/wiki/List_of_compilers#C++_compilers)
-and [CMake](https://cmake.org/) 3.28 or newer. CMake downloads a compatible
+and [CMake](https://cmake.org/) 3.29 or newer. CMake downloads a compatible
 LLVM/MLIR SDK when none is available; see {ref}`setting-up-mlir` for supported
 platforms and offline builds.
 
 Local Release source builds default to `DEPLOY=OFF`, which enables native CPU
-tuning and LTO when the compiler supports them. On Linux, Clang with its
-matching LLD linker is a useful choice; on macOS, use Apple Clang from Xcode.
-For example, with Clang 23 installed on Linux:
+tuning and LTO when the compiler supports them. To use mold from the SDK with
+matching Clang 23.1.6 on Linux, pass the same setting as the release wheels.
 
 ```console
 CC=clang-23 CXX=clang++-23 uv pip install mqt.core --no-binary mqt.core \
-  -Ccmake.define.CMAKE_LINKER_TYPE=LLD
+  -Ccmake.define.MQT_CORE_USE_SDK_MOLD=ON
 ```
 
 Keep native builds on compatible CPUs. For redistribution, set
@@ -269,14 +269,14 @@ link otherwise repeats code generation from the libraries. Use `-DENABLE_IPO=ON`
 to test IPO explicitly. CI builds default IPO off on all platforms; release
 wheels explicitly enable it.
 
-With CMake 3.29 or newer, Clang with LLD on Linux and Apple Clang with Apple's
-linker cache ThinLTO results under `thinlto-cache-<configuration>` in the build
-directory. The linkers prune this cache automatically; Linux uses a 1 GiB size
-policy. Linux LLD builds also fold identical code outside Debug builds.
-`-DENABLE_CACHE=OFF` disables automatic compiler and linker caching. Explicit
-`CMAKE_C_COMPILER_LAUNCHER` and `CMAKE_CXX_COMPILER_LAUNCHER` settings take
-precedence over compiler-cache detection, including an empty value to disable it
-for one language.
+On Linux, Clang caches ThinLTO results when using LLD or mold from the SDK.
+Apple Clang also caches them with Apple's linker. The linkers prune the
+`thinlto-cache-<configuration>` directory automatically. Linux uses a 1 GiB
+cache limit and enables safe identical code folding outside Debug builds with
+these linkers. `-DENABLE_CACHE=OFF` disables automatic compiler and linker
+caching. Explicit `CMAKE_C_COMPILER_LAUNCHER` and `CMAKE_CXX_COMPILER_LAUNCHER`
+settings take precedence over compiler-cache detection, including an empty value
+to disable it for one language.
 
 Native tuning and LTO apply to the MQT Core code being compiled. Prebuilt
 LLVM/MLIR SDK libraries retain their own build settings, and LTO does not
@@ -578,7 +578,7 @@ CMake settings control the fallback:
 | Setting                      | Default         | Effect                                               |
 | ---------------------------- | --------------- | ---------------------------------------------------- |
 | `MQT_CORE_AUTO_INSTALL_MLIR` | `ON`            | Download an SDK when none is available.              |
-| `MQT_CORE_MLIR_VERSION`      | `23.1.4`        | Select a version from the pinned installer manifest. |
+| `MQT_CORE_MLIR_VERSION`      | `23.1.6`        | Select a version from the pinned installer manifest. |
 | `MQT_CORE_MLIR_ASSERTIONS`   | Build-dependent | Select an SDK with LLVM assertions enabled.          |
 
 All automatic downloads use Release SDKs. Assertions default to `ON` for

@@ -68,15 +68,14 @@ if(
 else()
   option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" OFF)
 endif()
-set(ipo_supported FALSE)
-if(ENABLE_IPO)
+# The manylinux recipe selects a matching compiler and SDK, then verifies IPO by linking.
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ${ENABLE_IPO})
+if(ENABLE_IPO AND (NOT MQT_CORE_USE_SDK_MOLD OR DEFINED CMAKE_LINKER_TYPE))
   include(CheckIPOSupported)
-  check_ipo_supported(RESULT ipo_supported OUTPUT ipo_output)
-  if(NOT ipo_supported)
+  check_ipo_supported(RESULT CMAKE_INTERPROCEDURAL_OPTIMIZATION OUTPUT ipo_output)
+  if(NOT CMAKE_INTERPROCEDURAL_OPTIMIZATION)
     message(DEBUG "IPO is not supported: ${ipo_output}")
   endif()
 endif()
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ${ipo_supported}
-    CACHE BOOL "Enable Interprocedural Optimization" FORCE)
 
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)

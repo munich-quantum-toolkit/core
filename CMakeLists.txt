@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 # set required cmake version
-cmake_minimum_required(VERSION 3.28...4.4)
+cmake_minimum_required(VERSION 3.29...4.5)
 
 project(
   mqt-core
@@ -84,6 +84,18 @@ project(
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
 include(SetupMLIR)
+
+if(MQT_CORE_USE_SDK_MOLD AND NOT DEFINED CMAKE_LINKER_TYPE)
+  set(CMAKE_LINKER_TYPE mqt_sdk_mold)
+  set(mold_flags "--ld-path=\"${LLVM_TOOLS_BINARY_DIR}/ld.mold\"")
+  if(CMAKE_INTERPROCEDURAL_OPTIMIZATION)
+    list(APPEND mold_flags -Xlinker -plugin -Xlinker "\"${LLVM_LIBRARY_DIR}/LLVMgold.so\"")
+  endif()
+  foreach(lang IN ITEMS C CXX)
+    set(CMAKE_${lang}_USING_LINKER_mqt_sdk_mold "${mold_flags}")
+    list(APPEND CMAKE_TRY_COMPILE_PLATFORM_VARIABLES CMAKE_${lang}_USING_LINKER_mqt_sdk_mold)
+  endforeach()
+endif()
 
 include(cmake/ExternalDependencies.cmake)
 

@@ -88,7 +88,7 @@ production tools or enable an optional tool solely for a subprocess test.
 
 ## C++ and MLIR
 
-Use C++20 and CMake 3.28 or newer. The development policy owns detailed include,
+Use C++20 and CMake 3.29 or newer. The development policy owns detailed include,
 comment, data-structure, diagnostic, and debugging guidance.
 
 - Use `#pragma once`, direct includes, and standard-library facilities before

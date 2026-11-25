@@ -11,7 +11,7 @@ set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
 set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
 set(MQT_MLIR_MIN_VERSION "23.1" CACHE STRING "Required MLIR release series")
 option(MQT_CORE_AUTO_INSTALL_MLIR "Download LLVM/MLIR when no compatible SDK is found" ON)
-set(MQT_CORE_MLIR_VERSION "23.1.4" CACHE STRING "LLVM/MLIR version to download")
+set(MQT_CORE_MLIR_VERSION "23.1.6" CACHE STRING "LLVM/MLIR version to download")
 get_property(_mqt_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
 string(TOUPPER "${CMAKE_BUILD_TYPE}" _mqt_build_type)
 set(_mqt_mlir_assertions_default OFF)
@@ -88,12 +88,12 @@ if(NOT MLIR_FOUND)
         FATAL_ERROR "No compatible LLVM/MLIR SDK found and downloading is disabled. Set MLIR_DIR.")
     endif()
     include(FetchContent)
-    # Keep the installer and its version manifest at the same revision.
+    # Pin setup-mlir v1.6.0 together with its version manifest.
     fetchcontent_declare(
       setup_mlir
       URL
-        https://github.com/munich-quantum-software/setup-mlir/archive/246aa0c70414109aa55fa19a5370739519833512.tar.gz
-      URL_HASH SHA256=d780828010b060c85397cae120ffd7803066e45d83b212a5be51baa9d7a71fe6)
+        https://github.com/munich-quantum-software/setup-mlir/archive/1f96f72c996c013f34264af39c131d2bf9487d19.tar.gz
+      URL_HASH SHA256=42217de951f6aac9800bb8708cb77035e432227b0d01b8557c7f0190411b2f89)
     fetchcontent_makeavailable(setup_mlir)
     if(WIN32)
       set(_mqt_mlir_command
