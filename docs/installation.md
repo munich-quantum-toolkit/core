@@ -262,9 +262,8 @@ baseline. Cibuildwheel sets deployment mode explicitly for release wheels. The
 
 Clang and Apple Clang use ThinLTO through CMake's `ENABLE_IPO` option. For a
 local C++ build, `cmake --preset release` selects the same release defaults. Use
-`-DENABLE_IPO=OFF` to disable LTO. On Linux, use
-`-DMQT_CORE_REQUIRE_SDK_MOLD=ON` to check that CMake can use the bundled linker.
-Set `-DCMAKE_LINKER_TYPE=SYSTEM` to select the system linker.
+`-DENABLE_IPO=OFF` to disable LTO. With CMake 3.29 or newer, set
+`-DCMAKE_LINKER_TYPE=SYSTEM` to select the system linker.
 
 MSVC IPO applies to static libraries and DLLs with explicit exports because
 CMake's automatic export scanner cannot read MSVC IPO objects. MSVC builds with

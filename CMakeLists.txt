@@ -84,7 +84,33 @@ project(
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
 include(SetupMLIR)
+if(PROJECT_IS_TOP_LEVEL
+   AND CMAKE_SYSTEM_NAME STREQUAL "Linux"
+   AND "$ENV{CIBUILDWHEEL}" STREQUAL "1")
+  set(mqt_linux_wheel ON)
+endif()
+
 include(SetupLinker)
+
+set(ipo_supported FALSE)
+if(ENABLE_IPO)
+  include(CheckIPOSupported)
+  check_ipo_supported(RESULT ipo_supported OUTPUT ipo_output)
+  if(NOT ipo_supported AND CMAKE_LINKER_TYPE STREQUAL "mqt_sdk_mold" AND NOT mqt_require_sdk_mold)
+    unset(CMAKE_LINKER_TYPE)
+    check_ipo_supported(RESULT ipo_supported OUTPUT ipo_output)
+  endif()
+  if(NOT ipo_supported)
+    message(DEBUG "IPO is not supported: ${ipo_output}")
+  endif()
+endif()
+if(mqt_require_sdk_mold AND NOT CMAKE_LINKER_TYPE STREQUAL "mqt_sdk_mold")
+  message(FATAL_ERROR "Linux wheels require mold with the LLVM SDK.")
+elseif(mqt_linux_wheel AND NOT ipo_supported)
+  message(FATAL_ERROR "Link-time optimization is unavailable for this Linux wheel:\n${ipo_output}")
+endif()
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ${ipo_supported}
+    CACHE BOOL "Enable Interprocedural Optimization" FORCE)
 
 include(cmake/ExternalDependencies.cmake)
 

@@ -92,8 +92,8 @@ if(NOT MLIR_FOUND)
     fetchcontent_declare(
       setup_mlir
       URL
-        https://github.com/munich-quantum-software/setup-mlir/archive/37cc2a13a34a8c06d22e52d0f05a37abfbb210c9.tar.gz
-      URL_HASH SHA256=9a2f720511900deb438267d17c821f050ab6b3a8a192ff69f304292dab973bab)
+        https://github.com/munich-quantum-software/setup-mlir/archive/99b656780d0b96000c7df1510dd853879fe530b1.tar.gz
+      URL_HASH SHA256=5753016aac6e074f6e54c2a8e3e1cc75e5fcf1bdf580018cf00f945cf07d09b2)
     fetchcontent_makeavailable(setup_mlir)
     if(WIN32)
       set(_mqt_mlir_command
