@@ -43,6 +43,7 @@ target_include_directories(
 
 llvm_map_components_to_libnames(llvm_native_libs asmparser bitwriter core support)
 target_link_libraries(${TARGET_NAME} PRIVATE ${llvm_native_libs})
+mqt_llvm_target_disable_rtti(${TARGET_NAME})
 
 if(WIN32)
   mqt_copy_qdmi_runtime(${TARGET_NAME} MQT::CoreQDMI_DDSIM_Device)
