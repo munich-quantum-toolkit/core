@@ -523,7 +523,7 @@ class LimitedDevice:
             return None
         self.jobs.append(list(indices))
         job = Mock()
-        job.get_program_status.return_value = None
+        job.get_program_status.return_value = self.status
         job.check.return_value = self.status
         job.wait.return_value = True
         job.get_shots.side_effect = lambda program_index=0: [str(indices[program_index])]

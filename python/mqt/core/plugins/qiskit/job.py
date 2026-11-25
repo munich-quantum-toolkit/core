@@ -290,10 +290,11 @@ class QDMIJob(JobV1):
         }
 
         statuses = []
-        for entry, qdmi_status in zip(self.entries, self._batch.statuses(), strict=True):
+        for program_status, entry in zip(self._batch.statuses(), self.entries, strict=True):
             if not entry.attempts:
                 statuses.append(JobStatus.INITIALIZING)
                 continue
+            qdmi_status = program_status if program_status is not None else entry.attempts[-1].job_status
             if qdmi_status is None:
                 statuses.append(JobStatus.ERROR)
                 continue
