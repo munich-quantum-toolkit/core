@@ -1,0 +1,76 @@
+name: Compare installed Windows wheel compilers
+on:
+  push:
+    branches: [codex/windows-native-wheel-runtime]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  runtime:
+    name: ${{ matrix.runner }} / ${{ matrix.first }} first
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, windows-11-arm]
+        first: [msvc, clang]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: experiment
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: 0dfddebca57c6aa609de3f5c4127f3fb382e1b35
+          path: source
+          persist-credentials: false
+      - name: Wait for the paired wheels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT: windows-wheel-study-${{ matrix.runner }}-${{ matrix.first }}-1
+        run: |
+          for ($i=0; $i -lt 25; $i++) {
+            $names = gh api repos/munich-quantum-toolkit/core/actions/runs/45619670578/artifacts --jq '.artifacts[].name'
+            if (@($names) -contains $env:ARTIFACT) { exit 0 }
+            Start-Sleep -Seconds 15
+          }
+          throw "Wheel artifact unavailable: $env:ARTIFACT"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          github-token: ${{ github.token }}
+          run-id: 45619670578
+          name: windows-wheel-study-${{ matrix.runner }}-${{ matrix.first }}-1
+          path: built
+      - uses: munich-quantum-software/setup-mlir@1f96f72c996c013f34264af39c131d2bf9487d19
+        with:
+          llvm-version: 23.1.6
+          assertions: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+        with:
+          enable-cache: false
+      - name: Install the measured wheels and run paired CLI workloads
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          New-Item -Type Directory results | Out-Null
+          $cli = @{}
+          foreach ($mode in 'msvc','clang') {
+            $wheel = @(Get-ChildItem "built/$mode/wheels/*-cp311-abi3-*.whl")
+            if ($wheel.Count -ne 1) { throw 'Expected one standard stable-ABI wheel' }
+            $manifest = Get-Content "built/$mode/$($wheel[0].BaseName)/wheel.json" -Raw | ConvertFrom-Json
+            if ((Get-FileHash $wheel[0].FullName -Algorithm SHA256).Hash -ne $manifest.sha256) { throw 'Wheel digest mismatch' }
+            uv venv --managed-python --python 3.13 "installed-$mode"
+            uv pip install --python "./installed-$mode/Scripts/python.exe" --no-deps $wheel[0].FullName
+            $cli[$mode] = (Resolve-Path "./installed-$mode/Lib/site-packages/mqt/core/bin/mqt-core.exe").Path
+          }
+          $sdkBin = [IO.Path]::GetFullPath((Join-Path $env:LLVM_DIR '../../../bin'))
+          $cpu = Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors
+          @{cpu=$cpu; architecture=$env:RUNNER_ARCH; image=$env:ImageVersion} | ConvertTo-Json -Depth 4 | Set-Content results/runtime-host.json
+          uv run --no-project --python 3.13 --managed-python python experiment/.github/windows-wheel-study/bench.py --msvc "$($cli['msvc'])" --clang "$($cli['clang'])" --source-root ./source --llvm-bin "$sdkBin" --output results/runtime.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ !cancelled() }}
+        with:
+          name: runtime-${{ matrix.runner }}-${{ matrix.first }}
+          path: results
+          retention-days: 7
