@@ -631,15 +631,6 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
     return failed(writeOutput(*mod, outputFilename)) ? 1 : 0;
   }
 
-  if (enableDecomposeMultiControlled &&
-      !isDecomposeMultiControlledConfigValid(
-          decomposeMultiControlledMinQubits.getValue())) {
-    llvm::errs()
-        << "decompose-multi-controlled-min-qubits must be at least 3 when "
-           "--decompose-multi-controlled is enabled.\n";
-    return 1;
-  }
-
   if (passPipeline.getNumOccurrences() != 0) {
     PassManager validation(context.get());
     if (failed(parseCustomPipeline(validation))) {
@@ -664,15 +655,8 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
       }
       *input = std::move(*qco);
     }
-    if (failed(runWithPassManager(
-            std::get<QCOProgram>(*input).module(),
-            [](OpPassManager& pm) {
-              // Keep potential ancilla qubits until decomposition.
-              populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
-              populateDecomposeMultiControlledPipeline(
-                  pm, decomposeMultiControlledMinQubits.getValue());
-            },
-            "failed to decompose multi-controlled operations", options))) {
+    if (failed(std::get<QCOProgram>(*input).decomposeMultiControlled(
+            decomposeMultiControlledMinQubits))) {
       return 1;
     }
   }

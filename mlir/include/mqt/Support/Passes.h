@@ -85,9 +85,6 @@ void populateQIRPreparationPipeline(mlir::OpPassManager& pm,
 /// Populate the qubit reuse pipeline including its preparation passes.
 void populateQubitReusePipeline(mlir::OpPassManager& pm);
 
-/// Return whether @p minQubits is valid for multi-controlled decomposition.
-[[nodiscard]] bool isDecomposeMultiControlledConfigValid(uint64_t minQubits);
-
 /// Populate the multi-controlled decomposition pass sequence.
 void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
                                               uint64_t minQubits);

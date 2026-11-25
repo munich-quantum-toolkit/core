@@ -2464,11 +2464,12 @@ partial changes; use ``copy()`` to preserve the input.)pb")
            &FallibleMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
            nb::kw_only(), "min_qubits"_a = 3,
-           R"pb(Decompose gates that act on at least min_qubits qubits.
+           R"pb(Clean up and decompose gates on at least min_qubits qubits.
 
-Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
-at least 3. The pass borrows and restores ancilla qubits when this reduces the
-estimated entangling cost. It allocates no additional qubits.)pb")
+The cleanup keeps unused qubits available as ancillas. Supports controlled
+X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be at least 3.
+The pass borrows and restores ancilla qubits when this reduces the estimated
+entangling cost. It allocates no additional qubits.)pb")
       .def(
           "compile_for_target",
           [](mlir::QCOProgram& program,

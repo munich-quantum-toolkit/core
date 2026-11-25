@@ -477,8 +477,10 @@ public:
   /// Prepare the program for qubit reuse and reuse eligible qubits.
   [[nodiscard]] LogicalResult runQubitReusePipeline();
 
-  /// Decompose gates that act on at least @p minQubits qubits.
+  /// Clean up the program and decompose gates that act on at least
+  /// @p minQubits qubits.
   ///
+  /// The cleanup keeps unused qubits available as ancillas.
   /// Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and `qco.rccx`.
   /// Phase and rotation angles may be constants or runtime values.
   /// @p minQubits must be at least 3. The pass borrows and restores ancilla

@@ -259,6 +259,8 @@ LogicalResult QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
   return runQCOTransformPasses(
       mod(),
       [minQubits](OpPassManager& pm) {
+        // Keep unused qubits available as ancillas.
+        populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
         populateDecomposeMultiControlledPipeline(pm, minQubits);
       },
       "failed to decompose multi-controlled gates");
