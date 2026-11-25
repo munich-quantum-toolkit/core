@@ -294,6 +294,13 @@ passes in a custom sequence. The environment replaces any stored environment
 after the pipeline parses successfully and remains available to later calls.
 Omitting it, or passing `None`, keeps the stored environment.
 
+`mqt-compile-for-target` runs the complete target compilation for the stored
+environment as one pass, just as `compile_for_target` does. Its `trials`,
+`iterations`, `lookahead`, and `search-memory-limit` options correspond to
+`MappingOptions`. The default compiler pipeline uses this pass, so a crash
+reproducer saved during target compilation replays with
+`mqt-core compile <reproducer> --run-reproducer`.
+
 To compare pass orders, prepare the source once and compile independent copies.
 `mqt-target-prepare` records the input qubits before inlining and cleanup, so
 the [layout](#layout-metadata) can include idle inputs when the allocation shape

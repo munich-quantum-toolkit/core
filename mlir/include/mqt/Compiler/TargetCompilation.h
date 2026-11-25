@@ -17,9 +17,12 @@
 
 #include "llvm/Support/Error.h"
 
+#include <memory>
+
 namespace mlir {
 
 class OpPassManager;
+class Pass;
 
 /// Select the routing environment used by target compilation.
 ///
@@ -31,6 +34,7 @@ createTargetCompilationEnvironment(ModuleOp moduleOp,
 
 /// Register target compilation passes for textual pipelines.
 ///
+/// `mqt-compile-for-target` compiles for the attached environment in one pass.
 /// Preparation uses the attached target environment, records source wire order,
 /// and performs structural cleanup. Finalization synthesizes and verifies
 /// native operations, then restores the execution environment saved by
@@ -76,5 +80,16 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
                                      const MappingOptions& mapping = {});
+
+/// Create the `mqt-compile-for-target` pass with the given mapping controls.
+///
+/// The pass compiles a QCO module for its attached `mqt.target_env`. Device
+/// targets restrict placement to the routing environment that
+/// createTargetCompilationEnvironment() selects for the module and run
+/// populateTargetCompilationPipeline(). Other targets run
+/// populateTargetSynthesisPipeline(). Afterwards, the attached environment is
+/// restored as the execution target. Run the pass with layout preservation.
+[[nodiscard]] std::unique_ptr<Pass>
+createCompileForTargetPass(const MappingOptions& mapping = {});
 
 } // namespace mlir

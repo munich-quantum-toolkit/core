@@ -776,4 +776,21 @@ def DecomposeMultiControlled
       "means wider than two-qubit).">];
 }
 
+//===----------------------------------------------------------------------===//
+// Verification Passes
+//===----------------------------------------------------------------------===//
+
+def VerifyQCOProgram : Pass<"qco-verify", "mlir::ModuleOp"> {
+  let summary = "Verify the module and the linearity of its QCO values";
+  let description = [{
+    Fail if the module does not verify or if a QCO qubit or qubit tensor does
+    not have exactly one use, as checked by `qco::verifyLinearity`. The pass
+    does not change the IR.
+
+    Operation verification alone does not establish QCO linearity. Insert this
+    pass after passes that may not preserve it, such as user-supplied passes in
+    a compiler pipeline.
+  }];
+}
+
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

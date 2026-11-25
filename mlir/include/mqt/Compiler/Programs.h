@@ -54,6 +54,7 @@ class IQMJSONProgram;
 class QIRProgram;
 class TargetEnvironment;
 class CompilerTarget;
+struct ProgramAccess;
 
 /// Quantum operation families accepted by the typed program constructors.
 enum class ProgramDialect : uint8_t { QC, QCO };
@@ -160,12 +161,16 @@ public:
   ///
   /// The returned operation remains valid while this program owns its
   /// module. Consuming or destroying the program invalidates the operation.
+  /// Changes through it must keep the module valid and, for a QCO program,
+  /// linear; later program operations rely on both.
   [[nodiscard]] ModuleOp module() const;
 
   /// Keep the dialect context alive across consuming compiler operations.
   [[nodiscard]] std::shared_ptr<MLIRContext> context() const noexcept;
 
 protected:
+  friend struct ProgramAccess;
+
   struct Storage {
     std::shared_ptr<MLIRContext> context;
     OwningOpRef<ModuleOp> mod;
@@ -543,6 +548,7 @@ public:
 private:
   friend class QCProgram;
   friend class JeffProgram;
+  friend struct ProgramAccess;
 
   explicit QCOProgram(Storage storage) : Program(std::move(storage)) {}
 };
