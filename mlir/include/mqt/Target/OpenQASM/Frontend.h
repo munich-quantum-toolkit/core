@@ -283,8 +283,13 @@ struct GateModifier {
   std::optional<ExpressionId> operand;
 };
 
+struct GateCatalogEntry;
+using GateId = uint32_t;
+/// A process-lifetime catalog entry or an index into TypedProgram::gates.
+using GateCallee = std::variant<const GateCatalogEntry*, GateId>;
+
 struct GateApplication {
-  std::string callee;
+  GateCallee callee;
   std::vector<ExpressionId> parameters;
   std::vector<QubitReference> qubits;
   std::vector<GateModifier> modifiers;

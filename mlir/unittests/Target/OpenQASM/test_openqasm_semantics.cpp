@@ -1814,7 +1814,7 @@ if (a > b && b < a && a == 7.0 * pi / 8.0) { x q; }
     const auto& data = analyzed.program->statements[statement].data;
     if (const auto* application =
             std::get_if<openqasm::frontend::GateApplication>(&data);
-        application != nullptr && application->callee == "rx") {
+        application != nullptr && !application->parameters.empty()) {
       ASSERT_LT(parameterIndex, expectedParameters.size());
       const auto& parameter =
           analyzed.program->expressions.at(application->parameters.front());
@@ -1942,7 +1942,7 @@ if (operand >= 9.0) { x q; }
     const auto& data = analyzed.program->statements[statement].data;
     if (const auto* application =
             std::get_if<openqasm::frontend::GateApplication>(&data);
-        application != nullptr && application->callee == "rx") {
+        application != nullptr && !application->parameters.empty()) {
       ASSERT_LT(parameterIndex, expectedParameters.size());
       ASSERT_EQ(application->parameters.size(), 1);
       const auto& parameter =

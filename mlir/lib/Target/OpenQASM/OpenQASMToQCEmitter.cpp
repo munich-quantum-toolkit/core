@@ -49,7 +49,6 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringMap.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/SaveAndRestore.h"
 
@@ -135,12 +134,8 @@ public:
                      bufferization::BufferizationDialect>();
     builder.setListener(&emissionBudget);
     builder.initialize();
-    for (const auto& gate : program.gates) {
-      customGateIndex.try_emplace(gate.name, &gate);
-      structuredGateCapabilities.try_emplace(
-          &gate, statementsRequireStructuredControlFlow(gate.body));
-    }
-    if (customGateIndex.contains("main")) {
+    if (llvm::any_of(program.gates,
+                     [](const auto& gate) { return gate.name == "main"; })) {
       // A dot cannot occur in a source gate identifier.
       cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp())
           .setName("mqt.entry");
@@ -236,11 +231,11 @@ private:
   std::vector<Value> arrayValues_;
   llvm::DenseMap<frontend::ArrayId, Value> arraySnapshots_;
   llvm::DenseMap<frontend::ScalarId, Value> provenInductionValues;
-  DenseMap<const openqasm::frontend::GateDefinition*, bool>
-      structuredGateCapabilities;
-  llvm::StringMap<const openqasm::frontend::GateDefinition*> customGateIndex;
-  DenseMap<const openqasm::frontend::GateDefinition*, func::FuncOp>
-      customGateFunctions_;
+  struct EmittedGate {
+    func::FuncOp function;
+    bool hasStructuredControlFlow;
+  };
+  SmallVector<EmittedGate> customGates;
   bool emissionFailed = false;
   QCProgramBuilder::LoopBuilder* activeLoop = nullptr;
   SmallVector<frontend::ScalarId> breakSlots;
@@ -286,11 +281,6 @@ private:
     return isExactlyRepresentableAsDouble(magnitude);
   }
 
-  [[nodiscard]] const openqasm::frontend::GateDefinition*
-  findCustomGate(const StringRef name) const {
-    return customGateIndex.lookup(name);
-  }
-
   [[nodiscard]] bool statementsRequireStructuredControlFlow(
       const ArrayRef<openqasm::frontend::StatementId> statements) const {
     return llvm::any_of(statements, [&](const auto id) {
@@ -301,16 +291,14 @@ private:
       }
       const auto* application =
           std::get_if<openqasm::frontend::GateApplication>(&data);
-      const auto* callee = application == nullptr
-                               ? nullptr
-                               : findCustomGate(application->callee);
-      return callee != nullptr && gateRequiresStructuredControlFlow(*callee);
+      if (application != nullptr) {
+        if (const auto* id =
+                std::get_if<frontend::GateId>(&application->callee)) {
+          return customGates[*id].hasStructuredControlFlow;
+        }
+      }
+      return false;
     });
-  }
-
-  [[nodiscard]] bool gateRequiresStructuredControlFlow(
-      const openqasm::frontend::GateDefinition& gate) const {
-    return structuredGateCapabilities.lookup(&gate);
   }
 
   [[nodiscard]] bool
@@ -325,10 +313,11 @@ private:
       if (application == nullptr) {
         return false;
       }
-      if (const auto* callee = findCustomGate(application->callee)) {
-        return mqt::isUnitaryFunction(customGateFunctions_.lookup(callee));
+      if (const auto* gate =
+              std::get_if<frontend::GateId>(&application->callee)) {
+        return mqt::isUnitaryFunction(customGates[*gate].function);
       }
-      return openqasm::frontend::lookupGate(application->callee) != nullptr;
+      return true;
     });
   }
 
@@ -1078,25 +1067,16 @@ private:
       function =
           builder.createUnitaryFunction(gate.name, argumentTypes, emitBody);
     }
-    customGateFunctions_.try_emplace(&gate, function);
+    customGates.push_back(
+        {function, statementsRequireStructuredControlFlow(gate.body)});
   }
 
   LogicalResult emitResolvedGate(OpBuilder& opBuilder,
                                  const frontend::GateApplication& application,
                                  const Location loc, ValueRange parameters,
                                  ValueRange qubits) {
-    if (const auto* custom = findCustomGate(application.callee)) {
-      if (parameters.size() != custom->parameterCount ||
-          qubits.size() != custom->qubitCount) {
-        emitError(loc)
-            << "OpenQASM QC emission error: custom-gate operands do not match "
-               "its verified declaration";
-        return failure();
-      }
-      auto function = customGateFunctions_.lookup(custom);
-      if (function == nullptr) {
-        return failure();
-      }
+    if (const auto* id = std::get_if<frontend::GateId>(&application.callee)) {
+      auto function = customGates[*id].function;
       SmallVector<Value> operands(parameters);
       llvm::append_range(operands, qubits);
       OpBuilder::InsertionGuard guard(builder);
@@ -1106,17 +1086,11 @@ private:
       return success();
     }
 
-    const GateCatalogEntry* catalog =
-        openqasm::frontend::lookupGate(application.callee);
-    if (catalog == nullptr || qubits.size() < catalog->targetCount) {
+    const auto* catalog = std::get<const GateCatalogEntry*>(application.callee);
+    if (qubits.size() != catalog->qubitCount()) {
       return failure();
     }
-    const size_t controls = catalog->variadicControls
-                                ? qubits.size() - catalog->targetCount
-                                : catalog->controlCount;
-    if (qubits.size() < controls + catalog->targetCount) {
-      return failure();
-    }
+    const size_t controls = catalog->controlCount;
     auto controlValues = qubits.take_front(controls);
     auto targets = qubits.drop_front(controls);
     if (catalog->gate == qc::StandardGate::CU) {
@@ -1153,8 +1127,7 @@ private:
         }
         if (catalog->gate == qc::StandardGate::BuiltinU ||
             catalog->gate == qc::StandardGate::U2 ||
-            (catalog->gate == qc::StandardGate::U3 &&
-             application.callee != "u")) {
+            (catalog->gate == qc::StandardGate::U3 && catalog->name != "u")) {
           Value phase;
           if (catalog->gate == qc::StandardGate::BuiltinU &&
               !program.openQASM2) {
@@ -1248,9 +1221,9 @@ private:
         return;
       }
     }
-    if (const auto* gate = findCustomGate(application.callee);
-        gate != nullptr && !application.modifiers.empty() &&
-        gateRequiresStructuredControlFlow(*gate)) {
+    if (const auto* id = std::get_if<frontend::GateId>(&application.callee);
+        id != nullptr && !application.modifiers.empty() &&
+        customGates[*id].hasStructuredControlFlow) {
       emissionFailed = true;
       emitError(loc)
           << "OpenQASM QC emission error: modifiers on custom gates with "
@@ -1368,8 +1341,12 @@ private:
     }
     if (failed(result)) {
       emissionFailed = true;
-      emitError(loc) << "OpenQASM QC emission error: gate '"
-                     << application.callee
+      const auto* id = std::get_if<frontend::GateId>(&application.callee);
+      const auto name =
+          id != nullptr
+              ? StringRef(program.gates[*id].name)
+              : std::get<const GateCatalogEntry*>(application.callee)->name;
+      emitError(loc) << "OpenQASM QC emission error: gate '" << name
                      << "' cannot be translated to the QC dialect";
     }
   }
