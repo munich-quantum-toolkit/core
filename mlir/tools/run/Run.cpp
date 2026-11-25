@@ -58,16 +58,10 @@ submit(const qdmi::Device& device, const std::string& path, int64_t shots,
     layout = compiled->resultLayout();
     return mlir::submitProgram(device, *compiled, shots, seed);
   };
+  if (const auto format = mlir::inputFormatForPath(path)) {
+    return submitSource(mlir::loadCompilerInput(path, format));
+  }
   const auto extension = llvm::sys::path::extension(path);
-  if (extension == ".qasm") {
-    return submitSource(mlir::QCProgram::fromOpenQASMFile(path));
-  }
-  if (extension == ".jeff") {
-    return submitSource(mlir::JeffProgram::fromFile(path));
-  }
-  if (extension == ".mlir") {
-    return submitSource(mlir::QCProgram::fromMLIRFile(path));
-  }
   auto buffer = llvm::MemoryBuffer::getFileOrSTDIN(path);
   if (!buffer) {
     return llvm::errorCodeToError(buffer.getError());

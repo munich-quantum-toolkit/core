@@ -21,6 +21,7 @@
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
 
@@ -476,8 +477,10 @@ public:
   /// Prepare the program for qubit reuse and reuse eligible qubits.
   [[nodiscard]] LogicalResult runQubitReusePipeline();
 
-  /// Decompose gates that act on at least @p minQubits qubits.
+  /// Clean up the program and decompose gates that act on at least
+  /// @p minQubits qubits.
   ///
+  /// The cleanup keeps unused qubits available as ancillas.
   /// Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and `qco.rccx`.
   /// Phase and rotation angles may be constants or runtime values.
   /// @p minQubits must be at least 3. The pass borrows and restores ancilla
@@ -636,6 +639,38 @@ using CompilerInput =
 using CompilerProgram =
     std::variant<QCProgram, QCOProgram, JeffProgram, OpenQASMProgram,
                  QIRProgram, IQMJSONProgram>;
+
+/// Source formats accepted by the compiler frontends.
+enum class InputFormat : uint8_t {
+  /// MLIR assembly or bytecode in the QC or QCO dialect.
+  MLIR,
+  /// OpenQASM 2 or 3 source.
+  OpenQASM,
+  /// A binary `jeff` module.
+  Jeff,
+};
+
+/// Select the input format from a file extension.
+///
+/// `.mlir` selects MLIR, `.qasm` selects OpenQASM, and `.jeff` selects `jeff`.
+/// Return no format for other extensions.
+[[nodiscard]] std::optional<InputFormat> inputFormatForPath(StringRef path);
+
+/// Parse the main buffer of @p sourceMgr as a compiler input in @p context.
+///
+/// MLIR input becomes a QCO program if it contains QCO or QTensor operations,
+/// and a QC program otherwise. OpenQASM input becomes a QC program. Report
+/// failures as diagnostics in @p context.
+[[nodiscard]] FailureOr<CompilerInput>
+parseCompilerInput(llvm::SourceMgr& sourceMgr,
+                   std::shared_ptr<MLIRContext> context, InputFormat format);
+
+/// Load a compiler input from a file in a new compiler context.
+///
+/// Without @p format, select it with inputFormatForPath().
+[[nodiscard]] llvm::Expected<CompilerInput>
+loadCompilerInput(const std::filesystem::path& path,
+                  std::optional<InputFormat> format = std::nullopt);
 
 /// Run the default compiler pipeline.
 ///

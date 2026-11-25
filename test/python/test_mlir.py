@@ -161,6 +161,16 @@ def test_compile_program_mlir_input(form: str, tmp_path: Path) -> None:
     assert set(sample(result, shots=32, seed=1)) == {"00", "11"}
 
 
+def test_compile_program_qco_mlir_file(tmp_path: Path) -> None:
+    """Compile a QCO ``.mlir`` file as optimized QCO."""
+    source = tmp_path / "program.mlir"
+    source.write_text(compile_program(MLIR_STRING, output=OutputFormat.QCO).ir, encoding="utf-8")
+
+    result = compile_program(source)
+    assert isinstance(result, QCOProgram)
+    assert set(sample(result, shots=32, seed=1)) == {"00", "11"}
+
+
 def test_compile_program_mlir_string_with_leading_whitespace() -> None:
     """Compile a whitespace-prefixed single-line MLIR string."""
     source = (

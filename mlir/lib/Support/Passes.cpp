@@ -159,10 +159,6 @@ void populateQubitReusePipeline(OpPassManager& pm) {
   pm.addPass(qco::createReuseQubits());
 }
 
-bool isDecomposeMultiControlledConfigValid(const uint64_t minQubits) {
-  return minQubits >= 3;
-}
-
 void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
                                               const uint64_t minQubits) {
   qco::DecomposeMultiControlledOptions options;

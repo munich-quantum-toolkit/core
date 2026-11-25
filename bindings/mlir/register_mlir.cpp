@@ -518,31 +518,24 @@ programFromPath(const std::filesystem::path& path) {
             .c_str());
   }
 
-  const auto extension = path.extension().string();
-  if (extension == ".jeff") {
-    return {
-        .program = unwrap(mlir::JeffProgram::fromFile(path)),
-        .format = OutputFormat::Jeff,
-    };
+  const auto format = mlir::inputFormatForPath(path.string());
+  if (!format) {
+    throw nb::builtin_exception(
+        nb::exception_type::runtime_error,
+        llvm::formatv("Input file '{0}' has unsupported extension '{1}'.",
+                      path.string(), path.extension().string())
+            .str()
+            .c_str());
   }
-  if (extension == ".mlir") {
-    return {
-        .program = unwrap(mlir::QCProgram::fromMLIRFile(path)),
-        .format = OutputFormat::QC,
-    };
-  }
-  if (extension == ".qasm") {
-    return {
-        .program = unwrap(mlir::QCProgram::fromOpenQASMFile(path)),
-        .format = OutputFormat::OpenQASM3,
-    };
-  }
-  throw nb::builtin_exception(
-      nb::exception_type::runtime_error,
-      llvm::formatv("Input file '{0}' has unsupported extension '{1}'.",
-                    path.string(), extension)
-          .str()
-          .c_str());
+  auto program = unwrap(mlir::loadCompilerInput(path, format));
+  // Default to the input representation; QCO input continues optimized.
+  const auto defaultFormat =
+      *format == mlir::InputFormat::OpenQASM ? OutputFormat::OpenQASM3
+      : *format == mlir::InputFormat::Jeff   ? OutputFormat::Jeff
+      : std::holds_alternative<mlir::QCOProgram>(program)
+          ? OutputFormat::QCOOptimized
+          : OutputFormat::QC;
+  return {.program = std::move(program), .format = defaultFormat};
 }
 
 /// Construct a frontend program from a string containing source or path.
@@ -2471,11 +2464,12 @@ partial changes; use ``copy()`` to preserve the input.)pb")
            &FallibleMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
            nb::kw_only(), "min_qubits"_a = 3,
-           R"pb(Decompose gates that act on at least min_qubits qubits.
+           R"pb(Clean up and decompose gates on at least min_qubits qubits.
 
-Supports controlled X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be
-at least 3. The pass borrows and restores ancilla qubits when this reduces the
-estimated entangling cost. It allocates no additional qubits.)pb")
+The cleanup keeps unused qubits available as ancillas. Supports controlled
+X/Y/Z/P/SWAP and RX/RY/RZ gates and qco.rccx. min_qubits must be at least 3.
+The pass borrows and restores ancilla qubits when this reduces the estimated
+entangling cost. It allocates no additional qubits.)pb")
       .def(
           "compile_for_target",
           [](mlir::QCOProgram& program,
