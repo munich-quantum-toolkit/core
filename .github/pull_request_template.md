@@ -14,9 +14,10 @@ Fixes #(issue)
 
 <!---
 For a noteworthy change to behavior, compatibility, security, or performance,
-write the proposed entry here, starting with its gitmoji.
-To batch this change with an existing changelog entry, write "Batch with <PR link>" instead.
-Remove this section if no changelog entry is needed.
+write the proposed entry here, starting with an appropriate gitmoji and using
+imperative mood. To associate this change with an existing changelog entry,
+write "Associate with <PR link>" instead.
+Remove this section if the change warrants no changelog entry.
 -->
 
 ## Checklist

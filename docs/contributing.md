@@ -628,9 +628,10 @@ These documents are maintained during
 them manually in feature or fix PRs. Include user-facing effects, limitations,
 and migration instructions in your PR description so maintainers can collect
 that information during release preparation. For noteworthy changes, use the PR
-template's "Proposed changelog entry" section to propose text starting with a
-gitmoji, or write `Batch with <PR link>` to include the change in that PR's
-existing entry. Remove the section when no changelog entry is needed. See the
+template's "Proposed changelog entry" section to propose text starting with an
+appropriate gitmoji and using imperative mood, or write
+`Associate with <PR link>` to include the change in that PR's existing entry.
+Remove the section when no changelog entry is needed. See the
 [release documentation policy](development.md#release-documentation) for
 details, and apply the relevant labels for Release Drafter.
 

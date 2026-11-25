@@ -346,9 +346,10 @@ for Release Drafter.
 
 For changes that warrant a changelog entry, include the proposed text in the PR
 description's "Proposed changelog entry" section, starting with the appropriate
-gitmoji. If the change should be batched with an existing entry, write
-`Batch with <PR link>` instead, linking to the PR associated with that entry.
-Remove the section when no changelog entry is needed.
+gitmoji and using imperative mood. If the change should be associated with an
+existing entry, write `Associate with <PR link>` instead, linking to the PR
+associated with that entry. Remove the section when no changelog entry is
+needed.
 
 During release preparation, record noteworthy changes to behavior,
 compatibility, security, or performance with PR references and all contributing
