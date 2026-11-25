@@ -84,9 +84,10 @@ development libraries and headers require a source installation.
 
 The wheels use portable CPU settings and the pinned LLVM/MLIR SDK with
 assertions and ABI-breaking checks disabled. Linux builds target manylinux_2_28
-using Clang 22, LLD, and ThinLTO. macOS builds use Apple Clang and ThinLTO with
-a macOS 13.3 deployment target. Windows builds use MSVC and interprocedural
-optimization (IPO), except for DLLs that require automatic symbol exports.
+using Clang 23.1.6, ThinLTO, and mold from the SDK. The Linux linker uses safe
+identical code folding. macOS builds use Apple Clang and ThinLTO with a macOS
+13.3 deployment target. Windows builds use MSVC and interprocedural optimization
+(IPO), except for DLLs that require automatic symbol exports.
 
 ### Command-line tools
 
@@ -580,7 +581,7 @@ CMake settings control the fallback:
 | Setting                      | Default         | Effect                                               |
 | ---------------------------- | --------------- | ---------------------------------------------------- |
 | `MQT_CORE_AUTO_INSTALL_MLIR` | `ON`            | Download an SDK when none is available.              |
-| `MQT_CORE_MLIR_VERSION`      | `23.1.4`        | Select a version from the pinned installer manifest. |
+| `MQT_CORE_MLIR_VERSION`      | `23.1.6`        | Select a version from the pinned installer manifest. |
 | `MQT_CORE_MLIR_ASSERTIONS`   | Build-dependent | Select an SDK with LLVM assertions enabled.          |
 
 All automatic downloads use Release SDKs. Assertions default to `ON` for
