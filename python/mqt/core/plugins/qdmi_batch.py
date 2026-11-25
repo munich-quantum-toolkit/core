@@ -38,13 +38,15 @@ class JobFailure:
 
 @dataclass(frozen=True, slots=True)
 class JobAttempt(Generic[_Result]):
-    """An attempt and its result index, or an uncertain submission without a handle."""
+    """One program attempt. Its status can be unknown even after its shared job finishes."""
 
     handle: Job | None = None
     program_index: int = 0
     status: Job.Status | None = None
     result: _Result | None = None
     failures: tuple[JobFailure, ...] = ()
+    program_count: int = 1
+    job_status: Job.Status | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,7 +253,9 @@ class Batch(Generic[_Owner, _Result]):
                     self._entries[index] = entry
                 return False
             for program_index, index in enumerate(indices):
-                self._set_attempt(index, JobAttempt(handle=handle, program_index=program_index))
+                self._set_attempt(
+                    index, JobAttempt(handle=handle, program_index=program_index, program_count=len(indices))
+                )
             stage = "tracking"
             if self._on_submit is not None:
                 self._on_submit(self._owner, indices)
@@ -271,7 +275,7 @@ class Batch(Generic[_Owner, _Result]):
             if entry.attempts and (handle := entry.attempts[-1].handle) is not None:
                 groups.setdefault(id(handle), []).append(index)
         for group in groups.values():
-            pending = [i for i in group if self._entries[i].attempts[-1].status not in _TERMINAL]
+            pending = [i for i in group if self._entries[i].attempts[-1].job_status not in _TERMINAL]
             if not pending:
                 yield group
                 continue
@@ -297,15 +301,15 @@ class Batch(Generic[_Owner, _Result]):
                     attempt = self._entries[index].attempts[-1]
                     try:
                         status = aggregate
-                        if aggregate in {Job.Status.FAILED, Job.Status.CANCELED}:
-                            status = handle.get_program_status(attempt.program_index) or aggregate
+                        if attempt.program_count > 1 and aggregate in {Job.Status.FAILED, Job.Status.CANCELED}:
+                            status = handle.get_program_status(attempt.program_index)
                     except BaseException as exc:
                         self._set_attempt(index, replace(attempt, status=None))
                         self.record_failure(index, "status", exc)
                         if not isinstance(exc, Exception):
                             raise
                     else:
-                        self._set_attempt(index, replace(attempt, status=status))
+                        self._set_attempt(index, replace(attempt, status=status, job_status=aggregate))
             yield group
 
     def statuses(self) -> tuple[Job.Status | None, ...]:
@@ -314,13 +318,13 @@ class Batch(Generic[_Owner, _Result]):
         Provider query failures propagate after being retained on the attempts.
 
         Returns:
-            None for untouched entries or uncertain submissions.
+            None for untouched entries or unknown program outcomes.
 
         """
         for group in self._refresh(range(len(self._entries))):
             for index in group:
                 attempt = self._entries[index].attempts[-1]
-                if attempt.status is None and attempt.failures:
+                if attempt.status is None and attempt.job_status not in _TERMINAL and attempt.failures:
                     raise attempt.failures[-1].cause
         return tuple(entry.attempts[-1].status if entry.attempts else None for entry in self._entries)
 
@@ -429,7 +433,7 @@ class Batch(Generic[_Owner, _Result]):
         groups: dict[int, list[tuple[int, int]]] = {}
         for index, entry in enumerate(self._entries):
             for position, attempt in enumerate(entry.attempts):
-                if attempt.status in _TERMINAL:
+                if attempt.status in _TERMINAL or attempt.job_status in _TERMINAL:
                     continue
                 if attempt.handle is None:
                     success = False

@@ -588,6 +588,37 @@ def test_native_program_group_preserves_circuit_results(
     shared.check.assert_called_once()
 
 
+@pytest.mark.parametrize(("aggregate", "expected"), [(Job.Status.FAILED, "ERROR"), (Job.Status.CANCELED, "CANCELLED")])
+def test_unreported_programs_require_explicit_replacement(
+    recording_backend: RecordingBackend, monkeypatch: pytest.MonkeyPatch, aggregate: Job.Status, expected: str
+) -> None:
+    """A terminal shared job gives no individual outcome when indexed status is unavailable."""
+    backend, singles, _ = recording_backend
+    shared = MagicMock()
+    shared.check.return_value = aggregate
+    shared.get_program_status.return_value = None
+    submit = MagicMock(return_value=shared)
+    monkeypatch.setattr(backend.device, "try_submit_job", submit)
+    job = backend.run([QuantumCircuit(1), QuantumCircuit(1, 1)], shots=2, max_retries=1)
+
+    with pytest.raises(ValueError, match="allow_unknown"):
+        job.resubmit([0])
+    assert job.status().name == expected
+    with pytest.raises(JobExecutionError, match="2 batch entries have no result"):
+        job.result()
+    assert all(e.attempts[-1].status is None and e.result is None for e in job.entries)
+    shared.get_counts.assert_not_called()
+    shared.get_shots.assert_not_called()
+    submit.assert_called_once()
+    assert not singles
+
+    job.resubmit([1], allow_unknown=True)
+    unknown, replaced = job.collect()
+    assert unknown.result is None
+    assert replaced.result is not None
+    assert len(singles) == 1
+
+
 @pytest.mark.parametrize("sequence", [False, True])
 def test_compile_retains_source_header(recording_backend: RecordingBackend, *, sequence: bool) -> None:
     """Compiled artifacts keep source metadata even when source objects change."""

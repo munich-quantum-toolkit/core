@@ -132,9 +132,11 @@ Use `job.num_programs` and the optional `program_index` argument on result
 methods to retrieve results in input order. Use `job.get_program(index)` for
 text or `job.get_program(bytes, index)` for exact bytes; a retrieved historical
 job may not expose it. `job.get_program_status(index)` reports one outcome when
-supported, or `None` otherwise. A successful program's results remain available
-if another program fails or is cancelled. Cancelling uses the shared native job
-handle.
+supported, or `None` otherwise. If a shared job fails or is cancelled, the
+Qiskit and PennyLane adapters collect programs reported as successful. Only a
+confirmed program failure is eligible for automatic retry. Replacing an entry
+with an unknown outcome requires `resubmit([index], allow_unknown=True)` and can
+repeat an execution. Cancellation applies to the shared native job.
 
 ```{code-cell} ipython3
 from mqt.core.qdmi import ProgramFormat

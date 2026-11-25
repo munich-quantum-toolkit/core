@@ -34,7 +34,6 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
     from pennylane.tape import QuantumScript
-    from pennylane.typing import Result, ResultBatch
 
     from mqt.core.mlir import CompiledProgram
     from mqt.core.typing import QDMISessionParameters
@@ -162,13 +161,9 @@ def test_execution_time_accumulates_batch_wall_time(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.parametrize("max_retries", [0, 3])
-@pytest.mark.parametrize("defer_collection", [False, True])
-def test_retry_shot_copies_preserves_order_and_tracking(
-    monkeypatch: pytest.MonkeyPatch, max_retries: int, *, defer_collection: bool
-) -> None:
+def test_retry_shot_copies_preserves_order_and_tracking(monkeypatch: pytest.MonkeyPatch, max_retries: int) -> None:
     """Inject one failed job while retaining real compiled programs and jobs."""
     original_check = QDMIJobHandle.check
-    original_program_status = QDMIJobHandle.get_program_status
     failed: QDMIJobHandle | None = None
 
     def check(job: QDMIJobHandle) -> QDMIJobHandle.Status:
@@ -179,13 +174,7 @@ def test_retry_shot_copies_preserves_order_and_tracking(
             return QDMIJobHandle.Status.FAILED
         return original_check(job)
 
-    def program_status(job: QDMIJobHandle, program_index: int = 0) -> QDMIJobHandle.Status | None:
-        if job is failed:
-            return QDMIJobHandle.Status.FAILED
-        return original_program_status(job, program_index)
-
     monkeypatch.setattr(QDMIJobHandle, "check", check)
-    monkeypatch.setattr(QDMIJobHandle, "get_program_status", program_status)
     wires = ["left", "idle", "right"]
     device = QDMIDevice(
         "mqt.ddsim.default",
@@ -205,15 +194,13 @@ def test_retry_shot_copies_preserves_order_and_tracking(
     monkeypatch.setattr(device, "prepare_program", lambda _tape: program)
     tape = qp.tape.QuantumScript([qp.X("right")], [qp.sample(wires=["right", "left", "idle"])], shots=[2, 3, 4])
 
-    def execute() -> Result | ResultBatch:
-        return device.submit(tape).result() if defer_collection else device.execute(tape)
-
     with qp.Tracker(device) as tracker:
         if max_retries:
-            result = execute()
+            result = device.execute(tape)
         else:
+            job = device.submit(tape)
             with pytest.raises(PennyLaneExecutionError) as caught:
-                execute()
+                job.result()
             assert caught.value.job is device.last_job
             assert device.last_job is not None
             device.last_job.resubmit([0])
