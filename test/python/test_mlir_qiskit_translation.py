@@ -66,7 +66,7 @@ from mqt.core.mlir import (
     simulate,
     submit_program,
 )
-from mqt.core.qdmi import ProgramFormat, open_device
+from mqt.core.qdmi import ProgramFormat, builtin_driver, open_device
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -2030,7 +2030,8 @@ def test_complex_parameter_expression_fails_closed_without_mutation() -> None:
 
 def test_long_parameter_sum_round_trips() -> None:
     """Balance Qiskit addition chains without changing parameter identities or values."""
-    angles = ParameterVector("angles", 100)
+    # The unbalanced sum exceeds the adapter's 64-level depth limit.
+    angles = ParameterVector("angles", 66)
     total = sum((-1 if index % 2 else 1) * angle.sin() for index, angle in enumerate(angles))
     circuit = QuantumCircuit(1)
     circuit.rz(total.cos(), 0)
@@ -2038,7 +2039,7 @@ def test_long_parameter_sum_round_trips() -> None:
     result = QCProgram.from_qiskit(circuit).to_qiskit()
     assert result.parameters == circuit.parameters
     values = dict(zip(angles, np.linspace(-3, 3, len(angles)), strict=True))
-    # Bind the reference in bulk instead of repeatedly substituting 100 symbols.
+    # Bind the reference in bulk instead of repeatedly substituting symbols.
     reference = QuantumCircuit(1, global_phase=(total / 3).bind_all(values))
     reference.rz(total.cos().bind_all(values), 0)
     assert np.allclose(Operator(result.assign_parameters(values)).data, Operator(reference).data)
@@ -2064,18 +2065,15 @@ def test_excessively_nested_parameter_expression_fails_closed_without_mutation()
 def test_wide_parameter_expression_respects_replay_size_without_mutation() -> None:
     """Bound a wide expression if Qiskit preserves its operation replay."""
     theta = Parameter("theta")
-    level: list[ParameterExpression] = [theta]
-    level.extend(theta + float(index) for index in range(1, 16385))
-    while len(level) > 1:
-        level = [
-            level[index] + level[index + 1] if index + 1 < len(level) else level[index]
-            for index in range(0, len(level), 2)
-        ]
+    angle: ParameterExpression = theta
+    # Both branches expand the replay without building a long addition chain.
+    for _ in range(14):
+        angle = angle.sin() + angle.cos()
     circuit = QuantumCircuit(1)
-    circuit.rz(level[0], 0)
+    circuit.rz(angle, 0)
     source_data = list(circuit.data)
 
-    if len(level[0]._qpy_replay) >= 32768:  # ruff: ignore[private-member-access]
+    if len(angle._qpy_replay) >= 32768:  # ruff: ignore[private-member-access]
         with pytest.raises(RuntimeError, match="exceeds the supported 32768-node size"):
             QCProgram.from_qiskit(circuit)
     else:
@@ -3905,44 +3903,45 @@ def test_manual_arith_and_math_parameter_expression_exports_to_qiskit() -> None:
     assert [item.operation.params[0] for item in bound.data] == pytest.approx([np.sin(0.75), 0.75, np.sin(0.75)])
 
 
-def _wide_parameter_expression_program(term_count: int) -> QCProgram:
+def _wide_parameter_expression_program(term_count: int, *, shared: bool) -> QCProgram:
     """Build a balanced ``sin(left) + cos(right)`` tree with ``term_count`` leaves.
 
     Returns:
         A QC program with a wide scalar parameter-expression graph.
     """
-    lines = []
-    # Keep addition chains short: Qiskit binding recurses through each chain.
-    values = ["%theta"] * term_count
-    sum_index = 0
-    while len(values) > 1:
-        next_values = []
-        for index in range(0, len(values), 2):
-            if index + 1 == len(values):
-                next_values.append(values[index])
-                continue
-            value = f"%sum{sum_index}"
-            sum_index += 1
-            lines.extend([
-                f"{value}_left = math.sin {values[index]} : f64",
-                f"{value}_right = math.cos {values[index + 1]} : f64",
-                f"{value} = arith.addf {value}_left, {value}_right : f64",
-            ])
-            next_values.append(value)
-        values = next_values
-    lines.append(f"qc.rz({values[0]}) %q : !qc.qubit")
+    lines: list[str] = []
+    subtrees: dict[int, str] = {}
+
+    def build(leaves: int) -> str:
+        if leaves == 1:
+            return "%theta"
+        if shared and leaves in subtrees:
+            return subtrees[leaves]
+        left = build(leaves // 2)
+        right = build(leaves - leaves // 2)
+        value = f"%sum{len(lines)}"
+        lines.extend([
+            f"{value}_left = math.sin {left} : f64",
+            f"{value}_right = math.cos {right} : f64",
+            f"{value} = arith.addf {value}_left, {value}_right : f64",
+        ])
+        if shared:
+            subtrees[leaves] = value
+        return value
+
+    lines.append(f"qc.rz({build(term_count)}) %q : !qc.qubit")
     return _single_qubit_program(lines, arguments='%theta: f64 {mqt.input_name = "theta"}')
 
 
 @pytest.mark.parametrize(
-    ("term_count", "supported"),
-    [(8192, True), (8193, False), (10924, False)],
+    ("term_count", "supported", "shared"),
+    [(8192, True, True), (8193, False, True), (10924, False, False)],
     ids=["within-budget", "expanded-tree", "unique-ssa-graph"],
 )
-def test_export_parameter_expression_budget_preserves_source(term_count: int, *, supported: bool) -> None:
+def test_export_parameter_expression_budget_preserves_source(term_count: int, *, supported: bool, shared: bool) -> None:
     """Bound normalized trees and compiler SSA traversal before Qiskit construction."""
-    # The tree has 4 * term_count - 3 expanded nodes and 3 * term_count - 3 operations.
-    program = _wide_parameter_expression_program(term_count)
+    # The tree has 4 * term_count - 3 expanded nodes. Without sharing it has 3 * term_count - 3 operations.
+    program = _wide_parameter_expression_program(term_count, shared=shared)
     source_ir = program.ir
 
     if supported:
@@ -4283,9 +4282,22 @@ sys.meta_path.insert(0, blocker)
 importlib.import_module("mqt.core." + sys.argv[1])
 if sys.argv[1] in {"dd", "bench"}:
     assert "mqt.core._qdmi_discovery" not in sys.modules
+if sys.argv[1] == "qdmi":
+    from mqt.core.qdmi import ProgramFormat, open_device
+    assert "mqt.core.mlir" not in sys.modules
+    device = open_device("mqt.ddsim.default")
+    source = "OPENQASM 3.0; qubit q; bit c = measure q;"
+    raw = device.submit_job(source, ProgramFormat.QASM3, num_shots=1)
+    assert raw.wait()
+    assert "mqt.core.mlir" not in sys.modules
 import mqt.core.mlir
 assert "mqt.core._qdmi_discovery" in sys.modules
 assert "qiskit" not in sys.modules
+
+if sys.argv[1] == "qdmi":
+    job = mqt.core.mlir.submit_program(source, target=device, num_shots=2)
+    assert job.wait()
+    assert job.get_counts() == {"0": 2}
 
 if sys.argv[1] == "mlir":
     # Every case reaches the same state here, so check the deferred integration once.
@@ -5137,7 +5149,7 @@ def test_zero_readout_retains_known_classical_outputs(program_format: ProgramFor
     """Measurement-free programs retain their outputs without a result layout."""
     circuit = QuantumCircuit(1, 2)
     circuit.x(0)
-    target = CompilerTarget.from_device(open_device("mqt.ddsim.default"))
+    target = CompilerTarget.from_device(builtin_driver.open_device("mqt.ddsim.default", custom1="1"))
     environment = TargetEnvironment(target, PayloadSpecification.from_program_format(program_format))
     program = serialize_program(circuit, target=environment) if native else compile_program(circuit, target=environment)
     assert isinstance(program, CompiledProgram)

@@ -54,12 +54,12 @@ if TYPE_CHECKING:
 
 @pytest.fixture
 def ddsim_backend() -> QDMIBackend:
-    """Get a QDMIBackend for the DDSIM device.
+    """Open a DDSIM session sized for the largest circuit in this module.
 
     Returns:
         A QDMIBackend instance wrapping the DDSIM device.
     """
-    return QDMIBackend.from_device_id("mqt.ddsim.default")
+    return QDMIBackend.from_device_id("mqt.ddsim.default", custom1="6")
 
 
 @pytest.mark.parametrize("memory", [False, True])

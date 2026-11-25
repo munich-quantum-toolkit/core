@@ -23,5 +23,3 @@ target_link_libraries(
     MLIRQTensorDialect
     MLIRSCFDialect)
 mqt_mlir_configure_unittest_target(${mqt_ir_target})
-
-gtest_discover_tests(${mqt_ir_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

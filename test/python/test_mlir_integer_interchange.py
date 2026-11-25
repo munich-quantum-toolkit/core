@@ -187,23 +187,30 @@ def test_source_zero_filling_shifts(width: int, *, runtime: bool, direction: str
     """Validate the original distance, including values lost when narrowing."""
     initial = 1 if direction == "<<" else 1 << (width - 1)
     distances = [0, width - 1, width, 256]
-    for distance in distances:
-        amount = "uint[16](distance)" if runtime else str(distance)
-        program = QCProgram.from_openqasm_str(f"""
+    cases = []
+    expected = 0
+    for index, distance in enumerate(distances):
+        amount = f"uint[16](distance{index})" if runtime else str(distance)
+        cases.append(f"""
+bit[16] distance{index} = bit[16](uint[16]({distance}));
+distance{index}[0] = measure q[{distance & 1}];
+output bit[{width}] result{index};
+result{index} = source {direction} {amount};
+""")
+        shifted = (initial << distance) & ((1 << width) - 1) if direction == "<<" else initial >> distance
+        expected |= shifted << (index * width)
+    program = QCProgram.from_openqasm_str(f"""
 OPENQASM 3.0;
 include "stdgates.inc";
-qubit q;
-{"x q;" if distance & 1 else ""}
+qubit[2] q;
+x q[1];
 bit[{width}] source = bit[{width}](uint[{width}]({initial}));
-bit[16] distance = bit[16](uint[16]({distance}));
-distance[0] = measure q;
-bit[{width}] result;
-result = source {direction} {amount};
+{"".join(cases)}
 """)
-        expected = (initial << distance) & ((1 << width) - 1) if direction == "<<" else initial >> distance
-        _check_paths(program, width, expected)
-        program.cleanup()
-        assert _observe(program, width) == expected
+    result_width = len(distances) * width
+    _check_paths(program, result_width, expected)
+    program.cleanup()
+    assert _observe(program, result_width) == expected
 
 
 @pytest.mark.parametrize("width", [65, 257])

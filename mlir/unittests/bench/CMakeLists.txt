@@ -36,12 +36,7 @@ target_include_directories(
   mqt-core-mlir-unittests-benchmark
   PRIVATE ${PROJECT_SOURCE_DIR}/mlir/bench/programs)
 
-mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-benchmark REQUIRES_EH)
-
-gtest_discover_tests(
-  mqt-core-mlir-unittests-benchmark
-  PROPERTIES LABELS mqt-mlir-unittests
-  DISCOVERY_TIMEOUT 60)
+mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-benchmark REQUIRES_EH SHARDS 4)
 
 add_test(
   NAME mqt-core-mlir-benchmark-cli

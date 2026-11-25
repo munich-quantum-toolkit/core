@@ -71,7 +71,7 @@ from mqt.core.mlir import (
     serialize_program,
     submit_program,
 )
-from mqt.core.qdmi import ProgramFormat, open_device
+from mqt.core.qdmi import ProgramFormat, builtin_driver, open_device
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -1430,7 +1430,8 @@ def test_sdk_u_preserves_exact_phase(program_format: ProgramFormat, *, controlle
         circuit.append(gate, [0])
     expected = Statevector.from_instruction(circuit).data.tolist()
     circuit.measure_all()
-    job = submit_program(circuit, target="mqt.ddsim.default", program_format=program_format, num_shots=0)
+    device = builtin_driver.open_device("mqt.ddsim.default", custom1=str(circuit.num_qubits))
+    job = submit_program(circuit, target=device, program_format=program_format, num_shots=0)
     assert job.wait()
     assert job.get_dense_statevector() == pytest.approx(expected, rel=0, abs=1e-12)
 

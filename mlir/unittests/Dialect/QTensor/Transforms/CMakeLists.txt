@@ -19,5 +19,3 @@ target_link_libraries(
     MLIRQTensorTransforms
     MLIRSupport)
 mqt_mlir_configure_unittest_target(${target_name})
-
-gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

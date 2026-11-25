@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "qc_programs.h"
@@ -17,6 +19,12 @@
 
 #include "gtest/gtest.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Verifier.h"
 
@@ -32,6 +40,12 @@ struct QIRConversionCase {
   NamedMLIRBuilder<mlir::qc::QCProgramBuilder> programBuilder;
   NamedMLIRBuilder<mlir::qir::QIRProgramBuilder> referenceBuilder;
 };
+
+using QIRConversionTest = ::mqt::test::TestWithMLIRContext<
+    QIRConversionCase, mlir::qc::QCDialect, mlir::LLVM::LLVMDialect,
+    mlir::arith::ArithDialect, mlir::func::FuncDialect,
+    mlir::memref::MemRefDialect, mlir::scf::SCFDialect,
+    mlir::cf::ControlFlowDialect>;
 
 constexpr QIRConversionCase qirCase(const char* name, auto program,
                                     auto reference) {

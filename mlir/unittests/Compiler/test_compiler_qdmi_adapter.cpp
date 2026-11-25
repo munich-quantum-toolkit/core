@@ -57,6 +57,11 @@
 
 using mlir::CompilerTarget;
 
+static qdmi::Device openTwoQubitDdsimDevice() {
+  return llvm::cantFail(qdmi::builtin_driver::openDevice("mqt.ddsim.default",
+                                                         R"({"custom1":"2"})"));
+}
+
 static qdmi::Device openScDevice(const char* filename) {
   auto config = llvm::json::Object{
       {
@@ -449,8 +454,7 @@ TEST(CompilerQDMIAdapterTest,
 
 TEST(CompilerQDMIAdapterTest,
      SelectsPayloadByPreferenceAndIncludesMaximalCapabilities) {
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto* api =
       &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   static thread_local decltype(QDMI_device_session_query_device_property)*
@@ -850,8 +854,7 @@ TEST(CompilerQDMIAdapterTest,
 
 TEST(CompilerQDMIAdapterTest,
      CompilationCreatesNoJobAndSubmissionChecksContract) {
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto* api =
       &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   static thread_local decltype(QDMI_device_session_create_device_job)*
@@ -887,8 +890,7 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_EQ(creations, 1);
   EXPECT_TRUE(llvm::cantFail(job.wait()));
   EXPECT_EQ(llvm::cantFail(job.getShots()).size(), 32);
-  const auto otherSession =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto otherSession = openTwoQubitDdsimDevice();
   auto otherJob =
       llvm::cantFail(mlir::submitProgram(otherSession, compiled, 16));
   EXPECT_TRUE(llvm::cantFail(otherJob.wait()));
@@ -1011,8 +1013,7 @@ TEST(CompilerQDMIAdapterTest, DynamicQIRIndexingDoesNotRequireLoops) {
 }
 
 TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   constexpr auto source =
       "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; x q; "
       "c = measure q; while (c) { x q; c = measure q; }";
@@ -1063,8 +1064,7 @@ TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
   MQT_ASSERT_SUCCESS(compiled);
   auto ir = std::get<mlir::QIRProgram>(std::move(*compiled)).intoLLVMIR();
   ASSERT_TRUE(mlir::succeeded(ir));
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto job = llvm::cantFail(
       device.submitJob(*ir, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, 8));
   ASSERT_TRUE(llvm::cantFail(job.wait()));
@@ -1104,8 +1104,7 @@ TEST(CompilerQDMIAdapterTest,
 }
 
 TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto* api =
       &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   static thread_local decltype(QDMI_device_session_query_device_property)*
@@ -1368,8 +1367,7 @@ TEST(CompilerQDMIAdapterTest, ExecutesIonQNativePayloadsOnDDSIM) {
           llvm::cantFail(Capability::create("zz", 2, 1)),
           llvm::cantFail(Capability::create("measure", 1, 0)),
       })));
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   for (const auto format : {
            QDMI_PROGRAM_FORMAT_QASM3,
            QDMI_PROGRAM_FORMAT_QIRBASESTRING,
@@ -1395,8 +1393,7 @@ TEST(CompilerQDMIAdapterTest, ExecutesIonQNativePayloadsOnDDSIM) {
 }
 
 TEST(CompilerQDMIAdapterTest, RejectsScalarQIROutputs) {
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   for (const auto value : {0, 7}) {
     SCOPED_TRACE(value);
     auto scalar = mlir::QCProgram::fromMLIRString(
@@ -1677,8 +1674,7 @@ TEST(CompilerQDMIAdapterTest, ReconstructsTerminalReceiverReadout) {
 }
 
 TEST(CompilerQDMIAdapterTest, PreservesKnownZeroOutputsWithoutMeasurements) {
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   for (const auto format :
        {QDMI_PROGRAM_FORMAT_QASM3, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING}) {
     SCOPED_TRACE(format);
@@ -1708,8 +1704,7 @@ TEST(CompilerQDMIAdapterTest, DefaultSerializationPreservesDynamicReadout) {
       "OPENQASM 3; include \"stdgates.inc\"; bit[1] c; x $0; "
       "c[0] = measure $0; if (c[0]) { x $1; } "
       "reset $0; c[0] = measure $0; c[0] = measure $1;"));
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto compiled = mlir::CompiledProgram::serialize(std::move(program), device,
                                                    QDMI_PROGRAM_FORMAT_QASM3);
   MQT_ASSERT_SUCCESS(compiled);
@@ -1852,8 +1847,7 @@ TEST(CompilerQDMIAdapterTest, TerminalReadoutAllowsIndependentGates) {
           CompilerTarget::NativeOperations::unrestricted())),
       llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
           QDMI_PROGRAM_FORMAT_QASM3)));
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   for (const std::string_view operation : {"x", "reset", "flip", "barrier"}) {
     for (const auto site : {0, 1}) {
       SCOPED_TRACE(llvm::formatv("{0} on site {1}", operation, site).str());
@@ -1906,8 +1900,7 @@ TEST(CompilerQDMIAdapterTest, RejectsClassicalCallsInTerminalReadout) {
   ASSERT_TRUE(moduleOp);
   auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
   ASSERT_TRUE(mlir::succeeded(program));
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto compiled = mlir::CompiledProgram::serialize(std::move(*program), device,
                                                    QDMI_PROGRAM_FORMAT_QASM3);
   ASSERT_FALSE(static_cast<bool>(compiled));
@@ -1937,8 +1930,7 @@ TEST(CompilerQDMIAdapterTest, PreservesGeneralCallsAfterMeasurement) {
   ASSERT_TRUE(moduleOp);
   auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
   ASSERT_TRUE(mlir::succeeded(program));
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto compiled = mlir::CompiledProgram::serialize(std::move(*program), device,
                                                    QDMI_PROGRAM_FORMAT_QASM3);
   MQT_ASSERT_SUCCESS(compiled);
@@ -1975,8 +1967,7 @@ TEST(CompilerQDMIAdapterTest, RejectsCapturedMeasurementFeedback) {
   ASSERT_TRUE(moduleOp);
   auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
   ASSERT_TRUE(mlir::succeeded(program));
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto compiled = mlir::CompiledProgram::serialize(std::move(*program), device,
                                                    QDMI_PROGRAM_FORMAT_QASM3);
   ASSERT_FALSE(static_cast<bool>(compiled));
@@ -2247,8 +2238,7 @@ TEST(CompilerQDMIAdapterTest, RejectsNativeCallsOnMeasuredQubits) {
       return %c : !cbit.reg<1>
     }
   })mlir"));
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto compiled = mlir::CompiledProgram::serialize(std::move(program), device,
                                                    QDMI_PROGRAM_FORMAT_QASM3);
   ASSERT_FALSE(static_cast<bool>(compiled));
@@ -2272,8 +2262,7 @@ TEST(CompilerQDMIAdapterTest, RejectsUnschedulableNativeCallsAfterReadout) {
       return %c : !cbit.reg<1>
     }
   })mlir"));
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto compiled = mlir::CompiledProgram::serialize(std::move(program), device,
                                                    QDMI_PROGRAM_FORMAT_QASM3);
   ASSERT_FALSE(static_cast<bool>(compiled));
@@ -2283,8 +2272,7 @@ TEST(CompilerQDMIAdapterTest, RejectsUnschedulableNativeCallsAfterReadout) {
 }
 
 TEST(CompilerQDMIAdapterTest, SubmitsCompatibleProgramsTogether) {
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   constexpr auto source = "OPENQASM 3.0; include \"stdgates.inc\"; "
                           "qubit[2] q; bit[2] c; x q[0]; c = measure q;";
   const auto binary = llvm::cantFail(
@@ -2312,8 +2300,7 @@ TEST(CompilerQDMIAdapterTest, SubmitsCompatibleProgramsTogether) {
 }
 
 TEST(CompilerQDMIAdapterTest, RejectsInvalidDevicePayloadMetadata) {
-  const auto device =
-      llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
+  const auto device = openTwoQubitDdsimDevice();
   auto* api =
       &const_cast<qdmi::DeviceAPI&>(static_cast<QDMI_Device>(device)->api());
   static thread_local decltype(QDMI_device_session_query_device_property)*

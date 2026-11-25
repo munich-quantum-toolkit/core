@@ -21,5 +21,3 @@ target_link_libraries(
     MLIRSupport
     MLIRTransforms)
 mqt_mlir_configure_unittest_target(${cbit_ir_target})
-
-gtest_discover_tests(${cbit_ir_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

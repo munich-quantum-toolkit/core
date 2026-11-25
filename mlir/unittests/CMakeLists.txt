@@ -55,7 +55,7 @@ target_sources(
     FILES ExactUnitaryTest.h)
 
 function(mqt_mlir_configure_unittest_target target_name)
-  cmake_parse_arguments(PARSE_ARGV 1 arg "REQUIRES_EH" "" "")
+  cmake_parse_arguments(PARSE_ARGV 1 arg "REQUIRES_EH" "SHARDS" "")
   target_include_directories(
     ${target_name}
     PRIVATE ${MQT_MLIR_UNITTESTS_DIR} ${CMAKE_CURRENT_SOURCE_DIR})
@@ -65,6 +65,7 @@ function(mqt_mlir_configure_unittest_target target_name)
     set(LLVM_REQUIRES_RTTI ON)
   endif()
   mqt_mlir_target_use_project_options(${target_name})
+  mqt_add_gtest(${target_name} "${arg_SHARDS}" LABELS mqt-mlir-unittests)
 endfunction()
 
 add_subdirectory(bench)

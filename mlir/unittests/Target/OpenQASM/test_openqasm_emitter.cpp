@@ -2931,12 +2931,12 @@ TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
       R"qasm(OPENQASM 3.1; bit[6] b = "110101"; bit[3] a = b[5:-2:0]; b[1:3] = a;)qasm",
       R"qasm(OPENQASM 3.1; qubit[4] q; bit[4] b = 0; for int i in [0:3] { x q[i:i]; b[i:i] = measure q[i:i]; })qasm",
   };
+  MLIRContext context;
   for (const auto* source : sources) {
     SCOPED_TRACE(source);
     bool succeededOnce = false;
     for (size_t limit = 0; limit <= 256; ++limit) {
       SCOPED_TRACE(limit);
-      MLIRContext context;
       size_t diagnostics = 0;
       ScopedDiagnosticHandler handler(&context, [&](Diagnostic&) {
         ++diagnostics;

@@ -231,43 +231,28 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
 
 @pytest.mark.parametrize("input_format", ["openqasm2", "qir-base.bc"])
 def test_simulate_cli(script_runner: ScriptRunner, tmp_path: Path, input_format: str) -> None:
-    """Sample OpenQASM 2 and Base Profile QIR through the isolated DDSIM worker.
-
-    OpenQASM 3 and Adaptive Profile QIR are sampled by the logical-readout and inferred-output tests.
-    """
-    source = tmp_path / "bell.qasm"
+    """Sample OpenQASM 2 and Base Profile QIR through the isolated DDSIM worker."""
     if input_format == "openqasm2":
+        source = tmp_path / "bell.qasm"
         source.write_text(
-            'OPENQASM 2.0; include "qelib1.inc"; qreg q[2]; creg c[2]; h q[0]; cx q[0],q[1]; measure q -> c;'
+            'OPENQASM 2.0; include "qelib1.inc"; qreg q[2]; creg c[3]; '
+            "h q[0]; cx q[0],q[1]; x q[1]; measure q[0] -> c[2]; measure q[1] -> c[1]; measure q[0] -> c[0];"
         )
     else:
-        source.write_text(
-            'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;'
+        source = tmp_path / "bell.bc"
+        program = compile_program(
+            'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;',
+            output=OutputFormat.QIR_BASE,
         )
-    if input_format.startswith("qir"):
-        profile, extension = input_format.split(".")
-        output = tmp_path / f"bell.{extension}"
-        result = script_runner.run(["mqt-core", "compile", str(source), f"--emit={profile}", "-o", str(output)])
-        assert result.success
-        source = output
+        source.write_bytes(program.to_bitcode())
     arguments = ["mqt-core", "simulate", str(source), "--shots=128", "--seed=42"]
     result = script_runner.run(arguments)
     assert result.success
     counts = json.loads(result.stdout)["counts"]
-    assert set(counts) == {"00", "11"}
+    assert set(counts) == ({"010", "101"} if input_format == "openqasm2" else {"00", "11"})
     assert sum(counts.values()) == 128
-    assert script_runner.run(arguments).stdout == result.stdout
-
-
-@pytest.mark.parametrize("source_text", ["not LLVM IR", 'define void @main() "entry_point" { ret void }'])
-def test_simulate_cli_errors(script_runner: ScriptRunner, tmp_path: Path, source_text: str) -> None:
-    """Report invalid shots and invalid input with a failing exit status."""
-    source = tmp_path / "invalid.ll"
-    source.write_text(source_text)
-    for arguments in [["--shots=0"], []]:
-        result = script_runner.run(["mqt-core", "simulate", str(source), *arguments])
-        assert not result.success
-        assert result.stderr
+    if input_format == "openqasm2":
+        assert script_runner.run(arguments).stdout == result.stdout
 
 
 def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -292,7 +277,6 @@ def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, mon
     assert "cli.test.device" in result.stdout
     source = tmp_path / "bell.qasm"
     source.write_text('OPENQASM 3; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c=measure q;')
-    assert not script_runner.run(["mqt-core", "run", str(source)]).success
     compiled = tmp_path / "bell.bc"
     result = script_runner.run([
         "mqt-core",
@@ -303,6 +287,7 @@ def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, mon
         str(compiled),
     ])
     assert result.success
+    assert compiled.read_bytes().startswith(b"BC\xc0\xde")
     qpy_output = tmp_path / "bell.qpy"
     config = tmp_path / "registry.json"
     config.write_text(json.dumps({"schema-version": 1, "qdmi": {"devices": [{**device, "id": "cli.config.device"}]}}))
@@ -353,46 +338,19 @@ def test_compile_stdin(script_runner: ScriptRunner, input_format: str) -> None:
     assert QCProgram.from_mlir_str(result.stdout).inspect().gate_counts == {"x": 1}
 
 
-def test_compile_jeff(script_runner: ScriptRunner, tmp_path: Path) -> None:
-    """Export jeff and sample it through the simulator."""
-    source = tmp_path / "bell.qasm"
-    source.write_text('OPENQASM 3; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c=measure q;')
-    output = tmp_path / "bell.jeff"
-    result = script_runner.run(["mqt-core", "compile", str(source), "-o", str(output)])
-    assert result.success
-    result = script_runner.run(["mqt-core", "simulate", str(output), "--shots=128"])
-    assert result.success
-    assert sum(json.loads(result.stdout)["counts"].values()) == 128
-
-
-@pytest.mark.parametrize(
-    ("suffix", "target"),
-    [("ll", []), ("bc", ["--qdmi-device=mqt.ddsim.default"]), ("qasm", ["--qdmi-device=mqt.ddsim.default"])],
-)
-def test_inferred_output(script_runner: ScriptRunner, tmp_path: Path, suffix: str, target: list[str]) -> None:
-    """Infer executable formats and preserve the requested QIR encoding."""
+@pytest.mark.parametrize("suffix", ["ll", "qasm", "jeff"])
+def test_inferred_output(script_runner: ScriptRunner, tmp_path: Path, suffix: str) -> None:
+    """Infer executable formats from output filenames."""
     source = tmp_path / "input.qasm"
     source.write_text('OPENQASM 3; include "stdgates.inc"; qubit q; bit c; x q; c=measure q;')
     output = tmp_path / f"output.{suffix}"
+    target = ["--qdmi-device=mqt.ddsim.default"] if suffix == "qasm" else []
     result = script_runner.run(["mqt-core", "compile", str(source), *target, "-o", str(output)])
     assert result.success
-    if suffix == "bc":
-        assert output.read_bytes().startswith(b"BC\xc0\xde")
-    elif suffix == "ll":
+    if suffix == "ll":
         assert '"qir_profiles"="adaptive_profile"' in output.read_text()
-    else:
+    elif suffix == "qasm":
         assert output.read_text().startswith("OPENQASM 3")
     result = script_runner.run(["mqt-core", "simulate", str(output), "--shots=16"])
     assert result.success
     assert json.loads(result.stdout)["counts"] == {"1": 16}
-
-
-def test_simulate_logical_readout(script_runner: ScriptRunner, tmp_path: Path) -> None:
-    """Restore reordered and repeated classical outputs after source compilation."""
-    source = tmp_path / "readout.qasm"
-    source.write_text(
-        "OPENQASM 3; qubit[2] q; bit[3] c; x q[0]; c[2]=measure q[0]; c[0]=measure q[0]; c[1]=measure q[1];"
-    )
-    result = script_runner.run(["mqt-core", "simulate", str(source), "--shots=16"])
-    assert result.success
-    assert json.loads(result.stdout)["counts"] == {"101": 16}

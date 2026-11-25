@@ -26,12 +26,32 @@
 
 #include <cstddef>
 #include <cstdlib>
+#include <memory>
 #include <string>
 #include <utility>
 #include <variant>
 #include <vector>
 
 namespace mqt::test {
+
+/// Reuse the dialect context for a suite of independent program cases.
+/// Tests that check context setup should own a fresh context.
+template <typename Param, typename... Dialects>
+class TestWithMLIRContext : public testing::TestWithParam<Param> {
+protected:
+  inline static std::unique_ptr<mlir::MLIRContext> context;
+
+  // GoogleTest looks up these fixture hooks by name.
+  // NOLINTBEGIN(readability-identifier-naming)
+  static void SetUpTestSuite() {
+    context = std::make_unique<mlir::MLIRContext>(
+        mlir::MLIRContext::Threading::DISABLED);
+    context->loadDialect<Dialects...>();
+  }
+
+  static void TearDownTestSuite() { context.reset(); }
+  // NOLINTEND(readability-identifier-naming)
+};
 
 template <typename BuilderT, typename RetT = void> struct NamedBuilder {
   const char* name = nullptr;

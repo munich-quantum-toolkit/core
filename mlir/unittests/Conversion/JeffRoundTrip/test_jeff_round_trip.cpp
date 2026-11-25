@@ -64,7 +64,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <utility>
 
@@ -79,22 +78,10 @@ struct JeffRoundTripTestCase {
   bool expectPowAfterCleanup = false;
 };
 
-class JeffRoundTripTest : public testing::TestWithParam<JeffRoundTripTestCase> {
-protected:
-  std::unique_ptr<MLIRContext> context;
-
-  JeffRoundTripTest() {
-    // Register all necessary dialects
-    DialectRegistry registry;
-    registry
-        .insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
-                func::FuncDialect, mlir::jeff::JeffDialect,
-                memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>();
-    context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
-  }
-};
+using JeffRoundTripTest = ::mqt::test::TestWithMLIRContext<
+    JeffRoundTripTestCase, mlir::mqt::MQTDialect, arith::ArithDialect,
+    cbit::CBitDialect, func::FuncDialect, mlir::jeff::JeffDialect,
+    memref::MemRefDialect, qco::QCODialect, scf::SCFDialect>;
 
 } // namespace
 

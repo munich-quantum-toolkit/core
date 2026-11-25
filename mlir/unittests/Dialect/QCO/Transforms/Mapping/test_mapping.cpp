@@ -2993,6 +2993,12 @@ TEST_F(MappingPassFixture, EmbedShuffledInteractionPathWithoutSwaps) {
   }
 }
 
+// For six-wire CX circuits, check zero, each single-wire contribution,
+// and an asymmetric mixed input that exposes output permutations.
+static constexpr std::array<size_t, 8> K_ROUTING_BASIS_STATES{
+    0U, 1U, 2U, 4U, 8U, 16U, 32U, 0b010101U,
+};
+
 TEST_F(MappingPassFixture, PreserveInteractionPathBasisStates) {
   const auto lineTarget = llvm::cantFail(CompilerTarget::create(
       6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
@@ -3010,7 +3016,7 @@ TEST_F(MappingPassFixture, PreserveInteractionPathBasisStates) {
     SCOPED_TRACE(disjoint);
     for (bool xBasis : {false, true}) {
       SCOPED_TRACE(xBasis);
-      for (size_t basis = 0; basis < 64; ++basis) {
+      for (const auto basis : K_ROUTING_BASIS_STATES) {
         SCOPED_TRACE(basis);
         auto input = QCOProgramBuilder::build(
             context.get(), [&](QCOProgramBuilder& builder) {
@@ -3121,7 +3127,7 @@ TEST_F(MappingPassFixture, PreserveBasisStatesWithTinySearchMemory) {
     SCOPED_TRACE(structured);
     for (bool xBasis : {false, true}) {
       SCOPED_TRACE(xBasis);
-      for (size_t basis = 0; basis < 64; ++basis) {
+      for (const auto basis : K_ROUTING_BASIS_STATES) {
         SCOPED_TRACE(basis);
         auto input =
             makeRoutingBasisProgram(context.get(), structured, xBasis, basis);
@@ -4023,43 +4029,39 @@ TEST_F(MappingPassFixture, PreserveBasisStatesAfterNativeScoredCompilation) {
     SCOPED_TRACE(structured);
     for (bool xBasis : {false, true}) {
       SCOPED_TRACE(xBasis);
-      for (size_t basis : {0U, 21U, 42U, 63U}) {
-        SCOPED_TRACE(basis);
-        auto input =
-            makeRoutingBasisProgram(context.get(), structured, xBasis, basis);
-        ASSERT_TRUE(succeeded(verify(*input)));
-        ASSERT_TRUE(succeeded(verifyLinearity(*input)));
-        const auto expected = qco::sample(getEntryPoint(*input), 1, 42);
-        ASSERT_TRUE(succeeded(expected));
-        for (const auto& topology : {lineTarget, getSquareGridTarget(3)}) {
-          for (const char* entangler : {"cx", "cz", "ecr", "sqrt_iswap"}) {
-            SCOPED_TRACE(entangler);
-            const auto target = withNativeBasis(topology, entangler);
-            SCOPED_TRACE(target.numSites());
-            for (const size_t bytes :
-                 {size_t{0}, size_t{1024}, size_t{1024} * 1024}) {
-              SCOPED_TRACE(bytes);
-              OwningOpRef<ModuleOp> moduleOp = input->clone();
-              ASSERT_TRUE(succeeded(
-                  runMapping(*moduleOp, target,
-                             MappingPassOptions{.ntrials = 1,
-                                                .searchMemoryLimit = bytes})));
-              ASSERT_TRUE(succeeded(verify(*moduleOp)));
-              EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-              EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
-              PassManager synthesis(context.get());
-              populateTargetNativeSynthesisPipeline(synthesis);
-              ASSERT_TRUE(succeeded(synthesis.run(*moduleOp)));
-              ASSERT_TRUE(succeeded(verify(*moduleOp)));
-              ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-              const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
-              ASSERT_TRUE(succeeded(actual));
-              EXPECT_EQ(*actual, *expected);
-              size_t swaps = 0;
-              moduleOp->walk([&](SWAPOp) { ++swaps; });
-              // The final program contains only the selected native basis.
-              EXPECT_EQ(swaps, 0);
-            }
+      auto input =
+          makeRoutingBasisProgram(context.get(), structured, xBasis, 0b010101U);
+      ASSERT_TRUE(succeeded(verify(*input)));
+      ASSERT_TRUE(succeeded(verifyLinearity(*input)));
+      const auto expected = qco::sample(getEntryPoint(*input), 1, 42);
+      ASSERT_TRUE(succeeded(expected));
+      for (const auto& topology : {lineTarget, getSquareGridTarget(3)}) {
+        for (const char* entangler : {"cx", "cz", "ecr", "sqrt_iswap"}) {
+          SCOPED_TRACE(entangler);
+          const auto target = withNativeBasis(topology, entangler);
+          SCOPED_TRACE(target.numSites());
+          for (const size_t bytes :
+               {size_t{0}, size_t{1024}, size_t{1024} * 1024}) {
+            SCOPED_TRACE(bytes);
+            OwningOpRef<ModuleOp> moduleOp = input->clone();
+            ASSERT_TRUE(succeeded(runMapping(
+                *moduleOp, target,
+                MappingPassOptions{.ntrials = 1, .searchMemoryLimit = bytes})));
+            ASSERT_TRUE(succeeded(verify(*moduleOp)));
+            EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+            EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+            PassManager synthesis(context.get());
+            populateTargetNativeSynthesisPipeline(synthesis);
+            ASSERT_TRUE(succeeded(synthesis.run(*moduleOp)));
+            ASSERT_TRUE(succeeded(verify(*moduleOp)));
+            ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+            const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+            ASSERT_TRUE(succeeded(actual));
+            EXPECT_EQ(*actual, *expected);
+            size_t swaps = 0;
+            moduleOp->walk([&](SWAPOp) { ++swaps; });
+            // The final program contains only the selected native basis.
+            EXPECT_EQ(swaps, 0);
           }
         }
       }

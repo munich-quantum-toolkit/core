@@ -43,7 +43,6 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
-#include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -63,7 +62,6 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -75,24 +73,9 @@ namespace {
 
 using ::mqt::test::QIRConversionCase;
 
-class QCToQIRAdaptiveTest : public testing::TestWithParam<QIRConversionCase> {
-protected:
-  std::unique_ptr<MLIRContext> context;
-
-  void SetUp() override {
-    DialectRegistry registry;
-    registry.insert<qc::QCDialect, LLVM::LLVMDialect, arith::ArithDialect,
-                    func::FuncDialect, memref::MemRefDialect, scf::SCFDialect,
-                    cf::ControlFlowDialect>();
-    context = std::make_unique<MLIRContext>();
-    context->appendDialectRegistry(registry);
-    context->loadAllAvailableDialects();
-  }
-};
-
 class QCToQIRAdaptiveNativeTest : public testing::Test {
 protected:
-  MLIRContext context;
+  MLIRContext context{MLIRContext::Threading::DISABLED};
 
   void SetUp() override {
     context.loadDialect<qc::QCDialect, cbit::CBitDialect, arith::ArithDialect,
@@ -102,6 +85,8 @@ protected:
                         tensor::TensorDialect>();
   }
 };
+
+using QCToQIRAdaptiveTest = ::mqt::test::QIRConversionTest;
 
 } // namespace
 
