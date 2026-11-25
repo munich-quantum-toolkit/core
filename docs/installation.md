@@ -85,9 +85,10 @@ development libraries and headers require a source installation.
 The wheels use portable CPU settings and the pinned LLVM/MLIR SDK with
 assertions and ABI-breaking checks disabled. Linux builds target manylinux_2_28
 using Clang 23.1.6, mold from the SDK, and ThinLTO. macOS builds use Apple Clang
-and ThinLTO with a macOS 13.3 deployment target. Windows builds use MSVC and
-interprocedural optimization (IPO), except for DLLs that require automatic
-symbol exports.
+and ThinLTO with a macOS 13.3 deployment target. Windows wheels use Visual
+Studio’s clang-cl and lld-link with ThinLTO. Select the same tools with
+`cmake --preset windows-clang` in an x64 or ARM64 Visual Studio 2026 developer
+shell with Clang and the MSVC 14.52 or newer C++ libraries installed.
 
 ### Command-line tools
 
@@ -266,11 +267,10 @@ plugin; LLD includes the required support. MSVC IPO applies to static libraries
 and DLLs with explicit exports; CMake cannot extract automatic exports from MSVC
 IPO objects. MSVC builds with native tests default IPO off because each test
 link otherwise repeats code generation from the libraries. Use `-DENABLE_IPO=ON`
-to test IPO explicitly. CI builds default IPO off on all platforms; release
-wheels explicitly enable it.
+to test IPO explicitly. The Windows Clang preset and release wheels enable IPO.
 
 On Linux, Clang caches ThinLTO results when using LLD or mold from the SDK.
-Apple Clang also caches them with Apple's linker. The linkers prune the
+Windows and macOS also cache ThinLTO with their linkers. The linkers prune the
 `thinlto-cache-<configuration>` directory automatically. Linux uses a 1 GiB
 cache limit and enables safe identical code folding outside Debug builds with
 these linkers. `-DENABLE_CACHE=OFF` disables automatic compiler and linker

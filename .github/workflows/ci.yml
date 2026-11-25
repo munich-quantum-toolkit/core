@@ -104,18 +104,14 @@ jobs:
       matrix:
         include:
           - runs-on: windows-2025
-            compiler: msvc
-            preset: release
             run-on-draft: true
           - runs-on: windows-11-arm
-            compiler: msvc
-            preset: release
             run-on-draft: false
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@4e380c0bb1774aa8b9dd53194f4a7f6575cc3d42 # v2.5.10
     with:
       runs-on: ${{ matrix.runs-on }}
-      compiler: ${{ matrix.compiler }}
-      preset-name: ${{ matrix.preset }}
+      compiler: clang
+      preset-name: windows-clang
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
       contents: read
