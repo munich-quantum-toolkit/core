@@ -272,9 +272,12 @@ def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, mon
     (metadata / "entry_points.txt").write_text("[mqt.core.qdmi.manifests]\ncli = cli_provider\n")
     (metadata / "RECORD").write_text("cli_provider/device.qdmi.json,,\n")
     monkeypatch.setenv("PYTHONPATH", str(tmp_path), prepend=os.pathsep)
-    result = script_runner.run(["mqt-core", "compile", "--qdmi-list-devices"])
+    output = tmp_path / "listing.qpy"
+    output.write_bytes(b"existing")
+    result = script_runner.run(["mqt-core", "compile", "--emit=qpy", "-o", str(output), "--qdmi-list-devices=true"])
     assert result.success
     assert "cli.test.device" in result.stdout
+    assert output.read_bytes() == b"existing"
     source = tmp_path / "bell.qasm"
     source.write_text('OPENQASM 3; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c=measure q;')
     compiled = tmp_path / "bell.bc"
@@ -313,7 +316,7 @@ def test_run_installed_provider(script_runner: ScriptRunner, tmp_path: Path, mon
         assert sum(counts.values()) == 128
 
 
-@pytest.mark.parametrize("option", ["--version", "--help-hidden", "--qdmi-list-devices=true"])
+@pytest.mark.parametrize("option", ["--version", "--help-hidden"])
 def test_qpy_cli_information(script_runner: ScriptRunner, tmp_path: Path, option: str) -> None:
     """Informational commands succeed without exporting or replacing a file."""
     output = tmp_path / "output.qpy"

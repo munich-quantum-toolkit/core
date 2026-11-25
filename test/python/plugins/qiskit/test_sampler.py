@@ -10,19 +10,22 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import ClassicalRegister, Parameter
 from qiskit.primitives import BackendSamplerV2
 
-from mqt.core.plugins.qiskit import QDMIBackend
+if TYPE_CHECKING:
+    from mqt.core.plugins.qiskit import QDMIBackend
 
 
 @pytest.fixture
-def sampler() -> BackendSamplerV2:
+def sampler(ddsim_backend: QDMIBackend) -> BackendSamplerV2:
     """Return a native sampler using genuine DDSIM shots."""
-    return QDMIBackend.from_device_id("mqt.ddsim.default").sampler()
+    return ddsim_backend.sampler()
 
 
 def test_sampler_run_simple_circuit(sampler: BackendSamplerV2) -> None:
@@ -101,34 +104,17 @@ def test_sampler_run_multiple_cregs(sampler: BackendSamplerV2) -> None:
     assert c1_bits.get_counts() == {"1": 100}
 
 
-def test_sampler_shot_defaults() -> None:
-    """Test sampler shot defaults."""
-    # 1. Use default shots from init
-    sampler2 = QDMIBackend.from_device_id("mqt.ddsim.default").sampler(default_shots=500)
-    qc = QuantumCircuit(1)
-    qc.measure_all()
-
-    job = sampler2.run([(qc,)])
-    result = job.result()
-    assert result[0].metadata["shots"] == 500
-
-    # 2. Override via run method
-    job = sampler2.run([(qc,)], shots=200)
-    result = job.result()
-    assert result[0].metadata["shots"] == 200
-
-
-def test_backend_constructs_sampler() -> None:
-    """A backend constructs a sampler that retains its identity and defaults."""
-    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
-    sampler = backend.sampler(default_shots=37, run_options={})
-    qc = QuantumCircuit(1)
-    qc.measure_all()
-
+def test_sampler_shot_defaults(ddsim_backend: QDMIBackend) -> None:
+    """Use the backend and default shots from construction unless a run overrides them."""
+    sampler = ddsim_backend.sampler(default_shots=37, run_options={})
     assert isinstance(sampler, BackendSamplerV2)
-    assert sampler.backend is backend
+    assert sampler.backend is ddsim_backend
     assert sampler.options.run_options == {}
-    assert sampler.run([(qc,)]).result()[0].metadata["shots"] == 37
+
+    circuit = QuantumCircuit(1)
+    circuit.measure_all()
+    assert sampler.run([circuit]).result()[0].metadata["shots"] == 37
+    assert sampler.run([circuit], shots=12).result()[0].metadata["shots"] == 12
 
 
 def test_sampler_no_circuits(sampler: BackendSamplerV2) -> None:

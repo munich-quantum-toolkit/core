@@ -219,24 +219,24 @@ def test_compile_program_target_without_measurement() -> None:
         ("backend", OutputFormat.OPENQASM3, OpenQASMProgram),
         ("qiskit", OutputFormat.QIR_BASE, QIRProgram),
         ("compiler", OutputFormat.QIR_ADAPTIVE, QIRProgram),
-        ("device", OutputFormat.OPENQASM3, OpenQASMProgram),
-        ("device_id", OutputFormat.QISKIT, QuantumCircuit),
+        ("device_id", OutputFormat.OPENQASM3, OpenQASMProgram),
+        ("device", OutputFormat.QISKIT, QuantumCircuit),
     ],
 )
 def test_compile_program_explicit_output(target_kind: str, output: OutputFormat, result_type: type) -> None:
     """Execute selected representations independently of the target's native output."""
-    backend = GenericBackendV2(2, basis_gates=["u", "cx"], seed=1)
     if target_kind == "device":
-        target = open_device("mqt.ddsim.default")
+        target = builtin_driver.open_device("mqt.ddsim.default", custom1="3")
     elif target_kind == "device_id":
         target = "mqt.ddsim.default"
     else:
-        target = {
-            "backend": backend,
-            "qiskit": backend.target,
-            "compiler": CompilerTarget.from_qiskit(backend),
-            "environment": TargetEnvironment.from_qiskit(backend, strict=True),
-        }[target_kind]
+        backend = GenericBackendV2(2, basis_gates=["u", "cx"], seed=1)
+        if target_kind == "compiler":
+            target = CompilerTarget.from_qiskit(backend)
+        elif target_kind == "environment":
+            target = TargetEnvironment.from_qiskit(backend, strict=True)
+        else:
+            target = backend.target if target_kind == "qiskit" else backend
     circuit = QuantumCircuit(2, 2)
     circuit.x(0)
     circuit.cx(0, 1)
@@ -246,12 +246,8 @@ def test_compile_program_explicit_output(target_kind: str, output: OutputFormat,
     compiled = compile_program(circuit, target=target, output=output)
     assert isinstance(compiled, result_type)
     if isinstance(compiled, QuantumCircuit):
-        assert compiled.num_qubits == open_device("mqt.ddsim.default").qubits_num()
+        assert compiled.num_qubits == 3
         assert compiled.layout is not None
-        # The simulator advertises 65,535 sites; execute only occupied wires.
-        compiled = QuantumCircuit.from_instructions(
-            compiled.data, clbits=compiled.clbits, global_phase=compiled.global_phase
-        )
     if isinstance(compiled, QIRProgram):
         program_format = (
             ProgramFormat.QIR_BASE_MODULE if compiled.profile == QIRProfile.BASE else ProgramFormat.QIR_ADAPTIVE_MODULE

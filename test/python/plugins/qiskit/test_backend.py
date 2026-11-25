@@ -52,16 +52,6 @@ if TYPE_CHECKING:
     from mqt.core.qdmi import Device as QDMIDevice
 
 
-@pytest.fixture
-def ddsim_backend() -> QDMIBackend:
-    """Open a DDSIM session sized for the largest circuit in this module.
-
-    Returns:
-        A QDMIBackend instance wrapping the DDSIM device.
-    """
-    return QDMIBackend.from_device_id("mqt.ddsim.default", custom1="6")
-
-
 @pytest.mark.parametrize("memory", [False, True])
 def test_native_readout_preserves_wide_classical_outputs(*, memory: bool) -> None:
     """Native hex conversion retains projected bits above the machine word size."""

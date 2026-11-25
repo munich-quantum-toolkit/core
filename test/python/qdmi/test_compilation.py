@@ -102,7 +102,9 @@ def test_computed_classical_outputs(ddsim_device: Device, program_format: Progra
     ("element_type", "low", "high", "sentinel", "comparison"),
     [("i1", "0", "1", "1", "arith.cmpi eq"), ("f64", "0.25", "0.75", "0.5", "arith.cmpf oeq")],
 )
-def test_classical_array_copy_snapshot(element_type: str, low: str, high: str, sentinel: str, comparison: str) -> None:
+def test_classical_array_copy_snapshot(
+    ddsim_device: Device, element_type: str, low: str, high: str, sentinel: str, comparison: str
+) -> None:
     """Copies preserve subview offsets and values across later source writes."""
     program = QCProgram.from_mlir_str(f"""module {{
       func.func @main() -> i1 attributes {{mqt.entry_point}} {{
@@ -144,12 +146,12 @@ def test_classical_array_copy_snapshot(element_type: str, low: str, high: str, s
     }}""")
     assert sample(program, shots=1, seed=1) == {"1": 1}
     qir = program.to_qir(QIRProfile.ADAPTIVE)
-    job = open_device("mqt.ddsim.default").submit_job(qir.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=1)
+    job = ddsim_device.submit_job(qir.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=1)
     assert job.wait()
     assert job.get_counts() == {"1": 1}
 
 
-def test_boolean_scalar_outputs() -> None:
+def test_boolean_scalar_outputs(ddsim_device: Device) -> None:
     """DD and QIR preserve Boolean snapshots and repeated mixed outputs."""
     program = QCProgram.from_mlir_str("""module {
       func.func @main() -> (i1, !cbit.reg<1>, i1, i1, !cbit.reg<1>) attributes {mqt.entry_point} {
@@ -169,14 +171,14 @@ def test_boolean_scalar_outputs() -> None:
     }""")
     assert sample(program, shots=1, seed=1) == {"11011": 1}
     qir = program.to_qir(QIRProfile.ADAPTIVE)
-    job = open_device("mqt.ddsim.default").submit_job(qir.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=1)
+    job = ddsim_device.submit_job(qir.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=1)
     assert job.wait()
     assert job.get_counts() == {"11011": 1}
 
 
 @pytest.mark.parametrize("overwrite", [False, True])
 @pytest.mark.parametrize("scalar_output", [False, True])
-def test_adaptive_measurement_snapshots(*, overwrite: bool, scalar_output: bool) -> None:
+def test_adaptive_measurement_snapshots(ddsim_device: Device, *, overwrite: bool, scalar_output: bool) -> None:
     """Preserve a measurement value across runtime-indexed stores and repeated outputs."""
     intervening = (
         """
@@ -206,9 +208,7 @@ def test_adaptive_measurement_snapshots(*, overwrite: bool, scalar_output: bool)
       }}
     }}"""
     program = QCProgram.from_mlir_str(source).to_qir(QIRProfile.ADAPTIVE)
-    job = open_device("mqt.ddsim.default").submit_job(
-        program.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=1
-    )
+    job = ddsim_device.submit_job(program.to_bitcode(), ProgramFormat.QIR_ADAPTIVE_MODULE, num_shots=1)
     assert job.wait()
     assert job.get_counts() == {"111" if scalar_output else "11": 1}
 
@@ -308,14 +308,15 @@ def test_shor_device_execution(
     ddsim_device: Device, number: int, factors: tuple[int, int], program_format: ProgramFormat
 ) -> None:
     """Factor small numbers through modular arithmetic and the bundled DDSIM device."""
+    shots = 32
 
     def run(benchmark: shor.Shor) -> dict[str, int]:
         job = submit_program(
-            benchmark.generate(), target=ddsim_device, program_format=program_format, num_shots=64, custom1=17
+            benchmark.generate(), target=ddsim_device, program_format=program_format, num_shots=shots, custom1=17
         )
         job.wait()
         counts = job.get_counts()
-        assert sum(counts.values()) == 64
+        assert sum(counts.values()) == shots
         assert all(len(bits) == benchmark.output.width for bits in counts)
         assert benchmark.evaluate(counts).factors == factors
         return counts
@@ -554,9 +555,9 @@ def test_qir_artifact_rejects_unsupported_entry_result(
 
 
 @pytest.mark.parametrize("num_shots", [0, 8])
-def test_empty_source_has_a_successful_entry_point(num_shots: int) -> None:
+def test_empty_source_has_a_successful_entry_point(ddsim_device: Device, num_shots: int) -> None:
     """An output-free source receives a success status without inventing outputs."""
-    job = submit_program("OPENQASM 3.0;", target="mqt.ddsim.default", num_shots=num_shots)
+    job = submit_program("OPENQASM 3.0;", target=ddsim_device, num_shots=num_shots)
     job.wait()
     assert job.check() == Job.Status.DONE
     assert job.get_dense_statevector() == [1 + 0j]
