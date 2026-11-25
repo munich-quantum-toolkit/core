@@ -68,15 +68,4 @@ if(
 else()
   option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" OFF)
 endif()
-set(ipo_supported FALSE)
-if(ENABLE_IPO)
-  include(CheckIPOSupported)
-  check_ipo_supported(RESULT ipo_supported OUTPUT ipo_output)
-  if(NOT ipo_supported)
-    message(DEBUG "IPO is not supported: ${ipo_output}")
-  endif()
-endif()
-set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ${ipo_supported}
-    CACHE BOOL "Enable Interprocedural Optimization" FORCE)
-
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)

@@ -84,6 +84,7 @@ project(
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
 include(SetupMLIR)
+include(SetupLinker)
 
 include(cmake/ExternalDependencies.cmake)
 
