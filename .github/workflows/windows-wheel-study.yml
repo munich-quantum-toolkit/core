@@ -16,7 +16,7 @@ jobs:
         runner: [windows-2025, windows-11-arm]
         first: [clang, msvc]
     env:
-      SOURCE_SHA: 0dfddebca57c6aa609de3f5c4127f3fb382e1b35
+      SOURCE_SHA: 3adc5838a82765cd508c30403adcfcb5bc3c2cb6
       PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

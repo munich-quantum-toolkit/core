@@ -1,11 +1,15 @@
 """Compare installed compiler CLIs using balanced process-level samples."""
 
 import argparse
+import cmath
 import ctypes
 import hashlib
 import json
+import math
 import os
 import platform
+import re
+import shutil
 import statistics
 import struct
 import subprocess
@@ -13,6 +17,15 @@ import tempfile
 import time
 from pathlib import Path
 from random import Random
+
+
+ROTATION_CALL = re.compile(
+    rb"  call void @__quantum__qis__(u2|u3|rx|gphase)__body\(([^)]*)\)(\r?\n)?"
+)
+ANGLE_ARITY = {b"u2": 2, b"u3": 3, b"rx": 1, b"gphase": 1}
+F64 = re.compile(rb"double (f0x[0-9A-Fa-f]{16}|-?[0-9]+\.[0-9]+e[+-][0-9]+)")
+ANGLE_TOLERANCE_RAD = 1e-14
+MATRIX_TOLERANCE = 3e-14
 
 
 def digest(path):
@@ -90,47 +103,204 @@ def verify_machine(programs):
     return {0x8664: "x64", 0xAA64: "ARM64"}[native.value]
 
 
-def invoke(exe, source, profile, out):
+def invoke(exe, source, profile, out, log=None):
     args = [exe, "compile", source, f"--emit=qir-{profile}", "-o", out]
+    if log is not None:
+        with log.open("wb") as stream:
+            subprocess.run(
+                args, stdout=stream, stderr=subprocess.STDOUT, check=True, timeout=60
+            )
+        return None
+
     start = time.perf_counter_ns()
     subprocess.run(args, stdout=subprocess.DEVNULL, check=True, timeout=60)
     return time.perf_counter_ns() - start
 
 
-def verify_qir(llvm_bin, output, profile, work):
+def verify_qir(llvm_bin, output, profile, work, log=None):
     llvm_as = llvm_bin / ("llvm-as.exe" if os.name == "nt" else "llvm-as")
     opt = llvm_bin / ("opt.exe" if os.name == "nt" else "opt")
-    bc_file = work / "verified.bc"
-    subprocess.run([llvm_as, output, "-o", bc_file], check=True, timeout=60)
-    subprocess.run(
-        [opt, "-passes=verify", "-disable-output", bc_file], check=True, timeout=60
-    )
+    bc_file = work / f"{output.stem}.bc"
+    commands = [
+        [llvm_as, output, "-o", bc_file],
+        [opt, "-passes=verify", "-disable-output", bc_file],
+    ]
+    if log is None:
+        for command in commands:
+            subprocess.run(command, check=True, timeout=60)
+    else:
+        with log.open("ab") as stream:
+            for command in commands:
+                subprocess.run(
+                    command,
+                    stdout=stream,
+                    stderr=subprocess.STDOUT,
+                    check=True,
+                    timeout=60,
+                )
     profile_marker = f'"qir_profiles"="{profile}_profile"'.encode()
     if profile_marker not in output.read_bytes():
         raise ValueError(f"{output} lacks expected QIR profile {profile}")
 
 
-def benchmark(programs, source, profile, llvm_bin, work, pairs):
-    qir = work / "output.ll"
-    fingerprints = {}
-    for name, exe in programs.items():
-        # Two untimed invocations per variant. Verify the installed CLI output.
-        invoke(exe, source, profile, qir)
-        invoke(exe, source, profile, qir)
-        verify_qir(llvm_bin, qir, profile, work)
-        fingerprints[name] = digest(qir)
-    if len(set(fingerprints.values())) != 1:
-        raise ValueError(f"QIR outputs differ for {source}: {fingerprints}")
+def read_angle(operand):
+    match = F64.fullmatch(operand)
+    if not match:
+        raise ValueError(f"Unexpected rotation operand {operand!r}")
+    literal = match[1]
+    if literal.startswith(b"f0x"):
+        return struct.unpack(">d", bytes.fromhex(literal[3:].decode("ascii")))[0]
+    return float(literal)
 
+
+def ordered_float_bits(value):
+    bits = struct.unpack(">Q", struct.pack(">d", value))[0]
+    return -(bits & ((1 << 63) - 1)) if bits >> 63 else bits
+
+
+def gate_matrix(gate, angles):
+    # Match QIR's U2/U3, Rx and global phase ABI. In particular theta in U3
+    # and Rx cannot be reduced modulo 2pi without changing a global phase.
+    if gate == b"gphase":
+        return (cmath.exp(1j * angles[0]),)
+    if gate == b"rx":
+        theta = angles[0]
+        diagonal = math.cos(theta / 2)
+        off_diagonal = -1j * math.sin(theta / 2)
+        return diagonal, off_diagonal, off_diagonal, diagonal
+    if gate == b"u2":
+        theta = math.pi / 2
+        phi, lam = angles
+    else:
+        theta, phi, lam = angles
+    sin = math.sin(theta / 2)
+    cos = math.cos(theta / 2)
+    return (
+        cos,
+        -cmath.exp(1j * lam) * sin,
+        cmath.exp(1j * phi) * sin,
+        cmath.exp(1j * (phi + lam)) * cos,
+    )
+
+
+def compare_rotations(msvc, clang):
+    """Allow only near-equivalent angles in the observed QIR calls."""
+    left, right = (
+        path.read_bytes().splitlines(keepends=True) for path in (msvc, clang)
+    )
+    if len(left) != len(right):
+        raise ValueError(f"QIR line counts differ ({len(left)} vs {len(right)})")
+
+    result = {
+        "kind": "equivalent_rotation_operands",
+        "changed_calls": {},
+        "changed_operands": 0,
+        "phase_wraps": 0,
+        "max_raw_delta_rad": 0.0,
+        "max_periodic_delta_rad": 0.0,
+        "max_raw_ulp_distance": 0,
+        "max_ulp_distance_no_wrap_away_from_zero": 0,
+        "max_gate_matrix_frobenius_delta": 0.0,
+        "sum_gate_matrix_frobenius_deltas": 0.0,
+    }
+    for line, (base, candidate) in enumerate(zip(left, right, strict=True), 1):
+        if base == candidate:
+            continue
+        expected = ROTATION_CALL.fullmatch(base)
+        actual = ROTATION_CALL.fullmatch(candidate)
+        if (
+            not expected
+            or not actual
+            or (expected[1], expected[3]) != (actual[1], actual[3])
+        ):
+            raise ValueError(f"Unaudited QIR structure difference on line {line}")
+
+        gate = expected[1]
+        argc = ANGLE_ARITY[gate]
+        a, b = (match[2].split(b", ") for match in (expected, actual))
+        if len(a) < argc or a[argc:] != b[argc:]:
+            raise ValueError(f"QIR call target operands differ on line {line}")
+        first, second = (
+            [read_angle(operand) for operand in args[:argc]] for args in (a, b)
+        )
+        for i, (x, y) in enumerate(zip(first, second, strict=True)):
+            if not math.isfinite(x) or not math.isfinite(y):
+                raise ValueError(f"Non-finite QIR rotation operand on line {line}")
+            if a[i] == b[i]:
+                continue
+            delta = x - y
+            periodic = gate in (b"u2", b"gphase") or (gate == b"u3" and i > 0)
+            residual = math.remainder(delta, math.tau) if periodic else delta
+            if abs(residual) > ANGLE_TOLERANCE_RAD:
+                raise ValueError(f"QIR angle differs by {residual} rad on line {line}")
+            wraps = delta != residual
+            ulp = abs(ordered_float_bits(x) - ordered_float_bits(y))
+            result["changed_operands"] += 1
+            result["phase_wraps"] += int(wraps)
+            result["max_raw_delta_rad"] = max(result["max_raw_delta_rad"], abs(delta))
+            result["max_periodic_delta_rad"] = max(
+                result["max_periodic_delta_rad"], abs(residual)
+            )
+            result["max_raw_ulp_distance"] = max(result["max_raw_ulp_distance"], ulp)
+            if not wraps and min(abs(x), abs(y)) >= ANGLE_TOLERANCE_RAD:
+                key = "max_ulp_distance_no_wrap_away_from_zero"
+                result[key] = max(result[key], ulp)
+        a_matrix = gate_matrix(gate, first)
+        b_matrix = gate_matrix(gate, second)
+        delta = math.hypot(
+            *(abs(x - y) for x, y in zip(a_matrix, b_matrix, strict=True))
+        )
+        if delta > MATRIX_TOLERANCE:
+            raise ValueError(f"QIR gate matrix differs by {delta} on line {line}")
+        name = gate.decode("ascii")
+        counts = result["changed_calls"]
+        counts[name] = counts.get(name, 0) + 1
+        key = "max_gate_matrix_frobenius_delta"
+        result[key] = max(result[key], delta)
+        result["sum_gate_matrix_frobenius_deltas"] += delta
+    return result
+
+
+def benchmark(programs, source, profile, llvm_bin, work, evidence, pairs, result):
+    evidence.mkdir(parents=True, exist_ok=True)
+    records = {}
+    outputs = {}
+    errors = {}
+    for name, exe in programs.items():
+        qir = evidence / f"{name}.ll"
+        log = evidence / f"{name}.log"
+        outputs[name] = qir
+        try:
+            invoke(exe, source, profile, work / "warmup.ll", log)
+            invoke(exe, source, profile, qir, evidence / f"{name}-verification.log")
+            records[name] = digest(qir)
+            verify_qir(
+                llvm_bin, qir, profile, work, evidence / f"{name}-verification.log"
+            )
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            errors[name] = str(error)
+    result["qir_sha256"] = records
+    result["qir_evidence"] = {name: str(path) for name, path in outputs.items()}
+    if errors:
+        raise ValueError(f"QIR generation or verification failed: {errors}")
+    if len(set(records.values())) == 1:
+        result["qir_comparison"] = {"kind": "byte_identical"}
+    elif source.name == "bench-qasm-rotations.qasm":
+        result["qir_comparison"] = compare_rotations(outputs["msvc"], outputs["clang"])
+    else:
+        raise ValueError(f"QIR differs for {source.name}: {records}")
+
+    qir = work / "output.ll"
     names = tuple(programs)
-    samples = []
+    samples = result["samples"]
     changes = []
     for index in range(pairs):
         order = names if index % 2 == 0 else names[::-1]
         times = {}
         for name in order:
             times[name] = invoke(programs[name], source, profile, qir)
-            if digest(qir) != fingerprints[name]:
+            if digest(qir) != records[name]:
+                shutil.copyfile(qir, evidence / f"{name}-changed.ll")
                 raise ValueError(
                     f"Repeat {index + 1}: {name} changed its QIR for {source}"
                 )
@@ -144,24 +314,16 @@ def benchmark(programs, source, profile, llvm_bin, work, pairs):
         f"with quartiles {quartiles[0]:+.2f}% to {quartiles[2]:+.2f}%",
         flush=True,
     )
-    return {
-        "input": source.name,
-        "input_sha256": digest(source),
-        "profile": profile,
-        "qir_sha256": fingerprints,
-        "median_ms": {
-            name: statistics.median(sample["elapsed_ns"][name] for sample in samples)
-            / 1e6
-            for name in names
-        },
-        "paired_percent_change": {
-            "min": min(changes),
-            "q1": quartiles[0],
-            "median": median,
-            "q3": quartiles[2],
-            "max": max(changes),
-        },
-        "samples": samples,
+    result["median_ms"] = {
+        name: statistics.median(sample["elapsed_ns"][name] for sample in samples) / 1e6
+        for name in names
+    }
+    result["paired_percent_change"] = {
+        "min": min(changes),
+        "q1": quartiles[0],
+        "median": median,
+        "q3": quartiles[2],
+        "max": max(changes),
     }
 
 
@@ -196,16 +358,41 @@ def main():
         "pairs_per_workload": args.pairs,
         "workloads": [],
     }
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    evidence = args.output.with_name(f"{args.output.stem}-qir")
     with tempfile.TemporaryDirectory(prefix="mqt-compiler-") as temp:
         work = Path(temp)
-        for source, profile in workloads(work, args.source_root.resolve()):
-            result["workloads"].append(
+        work_cases = workloads(work, args.source_root.resolve())
+        for source, profile in work_cases:
+            record = {
+                "input": source.name,
+                "input_sha256": digest(source),
+                "profile": profile,
+                "samples": [],
+                "status": "measured",
+            }
+            result["workloads"].append(record)
+            try:
                 benchmark(
-                    programs, source, profile, args.llvm_bin.resolve(), work, args.pairs
+                    programs,
+                    source,
+                    profile,
+                    args.llvm_bin.resolve(),
+                    work,
+                    evidence / source.stem,
+                    args.pairs,
+                    record,
                 )
-            )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
+            except (OSError, ValueError, subprocess.SubprocessError) as error:
+                record["status"] = "incomparable"
+                record["error"] = str(error)
+                print(f"{source.name}: {error}", flush=True)
+            finally:
+                args.output.write_text(
+                    json.dumps(result, indent=2) + "\n", encoding="utf-8"
+                )
+    if any(case["status"] != "measured" for case in result["workloads"]):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

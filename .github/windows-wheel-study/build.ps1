@@ -21,12 +21,15 @@ $hook = (Join-Path $PSScriptRoot 'measure.py').Replace('\','/')
 $env:CIBW_BEFORE_BUILD_WINDOWS = "python `"$hook`" start `"{project}`""
 $env:CIBW_REPAIR_WHEEL_COMMAND_WINDOWS = "python `"$hook`" repair `"{project}`" `"{wheel}`" `"{dest_dir}`""
 # Keep the first ABI cold on every runner and retain the build tree for the second.
-$cmakeArgs = @('-DCMAKE_C_COMPILER_LAUNCHER=', '-DCMAKE_CXX_COMPILER_LAUNCHER=')
-if ($Mode -eq 'clang') {
-  . "$PSScriptRoot/prepare-clang.ps1" -Architecture $env:RUNNER_ARCH -InstallRoot "$env:RUNNER_TEMP/llvm23" -ThinLtoCache "$source/build/lto-cache"
-  $cmakeArgs += $clangCMakeArgs
+$env:CMAKE_ARGS = '-DCMAKE_C_COMPILER_LAUNCHER= -DCMAKE_CXX_COMPILER_LAUNCHER='
+if ($Mode -eq 'msvc') {
+  # Override the wheel preset to select the developer shell's default MSVC compiler.
+  $env:SKBUILD_CMAKE_ARGS = '-DENABLE_IPO=ON'
+} else {
+  $compiler = Join-Path $env:VSINSTALLDIR "VC/Tools/Llvm/$env:VSCMD_ARG_TGT_ARCH/bin/clang-cl.exe"
+  & $compiler --version | Tee-Object "$wheelDir/../clang-version.txt"
+  & (Join-Path (Split-Path $compiler) 'lld-link.exe') --version | Tee-Object "$wheelDir/../lld-version.txt"
 }
-$env:SKBUILD_CMAKE_ARGS = $cmakeArgs -join ';'
 & cibuildwheel . --output-dir $wheelDir
 $wheels = @(Get-ChildItem -Path $wheelDir -Filter '*.whl')
 if ($wheels.Count -ne 2) { throw "Expected two repaired wheels for $Mode" }
