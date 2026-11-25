@@ -71,6 +71,7 @@
 #include "mlir/IR/MLIRContext.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LLVMContext.h"
@@ -1688,23 +1689,35 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
                    "The default fidelity, if available.");
 
   m.def(
-      "_native_r_gate",
+      "_native_gate",
       [](const mlir::CompilerTarget::OperationCapability& capability) {
-        if (capability.canonicalName() != "r") {
+        const auto alias = mlir::nativeGateAlias(capability.name());
+        if (!alias || capability.canonicalName() != alias->canonicalName) {
           return nb::object(nb::none());
         }
+        const auto circuit = nb::module_::import_("qiskit.circuit");
         const auto fixed = capability.fixedParameters();
-        nb::object phase = fixed.size() == 2 && fixed[1]
-                               ? nb::object(nb::float_(*fixed[1]))
-                               : nb::module_::import_("qiskit.circuit")
-                                     .attr("Parameter")("phi");
-        return bindings::qiskit::nativeRGate(capability.name().str(), phase);
+        nb::list parameters;
+        for (const auto [index, value] : llvm::enumerate(alias->parameters)) {
+          if (value) {
+            continue;
+          }
+          parameters.append(
+              index < fixed.size() && fixed[index]
+                  ? nb::object(nb::float_(*fixed[index]))
+                  : circuit.attr("Parameter")("p" + std::to_string(index)));
+        }
+        return bindings::qiskit::nativeGate(
+            capability.name().str(),
+            nb::module_::import_("qiskit.circuit.library")
+                .attr("get_standard_gate_name_mapping")(),
+            parameters);
       },
       "capability"_a,
-      nb::sig("def _native_r_gate(capability: "
+      nb::sig("def _native_gate(capability: "
               "mqt.core.mlir.CompilerTarget.OperationCapability) "
               "-> qiskit.circuit.Gate | None"),
-      "Construct the Qiskit native pulse definition, if applicable.");
+      "Construct the Qiskit definition of a native alias gate, if applicable.");
 
   nb::enum_<mlir::CompilerTarget::GateKind>(
       compilerTarget, "GateKind", "Recognized native gate capability.")

@@ -53,26 +53,42 @@
 #include <vector>
 
 namespace mlir {
-std::optional<NativeRAlias> nativeRAlias(StringRef name) {
-  return llvm::StringSwitch<std::optional<NativeRAlias>>(name)
+std::optional<NativeGateAlias> nativeGateAlias(StringRef name) {
+  static constexpr std::array<std::optional<double>, 2> GPI{
+      std::numbers::pi,
+      std::nullopt,
+  };
+  static constexpr std::array<std::optional<double>, 2> GPI2{
+      std::numbers::pi / 2.,
+      std::nullopt,
+  };
+  static constexpr std::array<std::optional<double>, 2> SQRT_ISWAP{
+      -std::numbers::pi / 2.,
+      0.,
+  };
+  return llvm::StringSwitch<std::optional<NativeGateAlias>>(name)
       .Case("gpi",
-            NativeRAlias{
-                .angle = std::numbers::pi,
+            NativeGateAlias{
+                .canonicalName = "r",
+                .numQubits = 1,
+                .parameters = GPI,
                 .globalPhase = std::numbers::pi / 2.,
             })
       .Case("gpi2",
-            NativeRAlias{
-                .angle = std::numbers::pi / 2.,
+            NativeGateAlias{
+                .canonicalName = "r",
+                .numQubits = 1,
+                .parameters = GPI2,
+                .globalPhase = 0.,
+            })
+      .Case("sqrt_iswap",
+            NativeGateAlias{
+                .canonicalName = "xx_plus_yy",
+                .numQubits = 2,
+                .parameters = SQRT_ISWAP,
                 .globalPhase = 0.,
             })
       .Default(std::nullopt);
-}
-
-bool isSqrtISwap(std::optional<double> theta, std::optional<double> beta) {
-  return theta && beta &&
-         std::abs(*theta + std::numbers::pi / 2.) <=
-             mqt::PARAMETER_COMPARISON_TOLERANCE &&
-         std::abs(*beta) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
 
 namespace {
@@ -532,18 +548,33 @@ CompilerTarget::OperationCapability::create(
     }
   }
 
-  // Native GPI pulses expose only the azimuth of a fixed-angle R rotation.
-  if (const auto alias = nativeRAlias(canonical);
-      alias && arity == Arity::fixed(1) && numParameters == 1) {
-    canonical = "r";
-    numParameters = 2;
-    if (fixedParameters.empty()) {
-      fixedParameters.emplace_back();
+  // Native aliases match their standard gate with the fixed parameters.
+  if (const auto alias = nativeGateAlias(canonical);
+      alias && arity == Arity::fixed(alias->numQubits) &&
+      numParameters == alias->numNativeParameters()) {
+    std::vector<std::optional<double>> parameters;
+    std::vector<std::optional<ParameterBounds>> bounds;
+    size_t next = 0;
+    for (const auto fixed : alias->parameters) {
+      if (fixed) {
+        parameters.push_back(fixed);
+        bounds.emplace_back();
+        continue;
+      }
+      parameters.push_back(fixedParameters.empty() ? std::nullopt
+                                                   : fixedParameters[next]);
+      bounds.push_back(parameterBounds.empty() ? std::nullopt
+                                               : parameterBounds[next]);
+      ++next;
     }
-    fixedParameters.insert(fixedParameters.begin(), alias->angle);
-    if (!parameterBounds.empty()) {
-      parameterBounds.insert(parameterBounds.begin(), std::nullopt);
-    }
+    canonical = alias->canonicalName;
+    numParameters = parameters.size();
+    fixedParameters = std::move(parameters);
+    parameterBounds =
+        llvm::any_of(bounds,
+                     [](const auto& entry) { return entry.has_value(); })
+            ? std::move(bounds)
+            : std::vector<std::optional<ParameterBounds>>{};
   }
 
   return OperationCapability(std::move(name), std::move(canonical), arity,
@@ -1046,10 +1077,7 @@ bool CompilerTarget::Storage::supportsGate(
                          nullptr, filter)) ||
       (gate == GateKind::CZ &&
        supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true,
-                         nullptr, filter)) ||
-      (gate == GateKind::SQRTISWAP &&
-       supportsOperation("sqrt_iswap", 2, 0, orderedSites, false, nullptr,
-                         filter))) {
+                         nullptr, filter))) {
     return true;
   }
   // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
@@ -1771,13 +1799,6 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
       }
       return supports(body.getBaseSymbol(), controlled.getNumQubits(),
                       body.getNumParams(), /*variadicOnly=*/true, parameterAt);
-    }
-    if (auto exchange = dyn_cast<qco::XXPlusYYOp>(operation)) {
-      if (supports("sqrt_iswap", 2, 0) &&
-          isSqrtISwap(mqt::valueToConstantDouble(exchange.getTheta()),
-                      mqt::valueToConstantDouble(exchange.getBeta()))) {
-        return true;
-      }
     }
     return supports(unitary.getBaseSymbol(), unitary.getNumQubits(),
                     unitary.getNumParams(), false, [&](size_t index) {
