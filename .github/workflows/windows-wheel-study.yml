@@ -1,0 +1,73 @@
+name: Windows wheel compiler comparison
+on:
+  push:
+    branches: [codex/windows-native-wheel-study]
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    name: ${{ matrix.runner }} / ${{ matrix.first }} first
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [windows-2025, windows-11-arm]
+        first: [clang, msvc]
+    env:
+      SOURCE_SHA: 0dfddebca57c6aa609de3f5c4127f3fb382e1b35
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: experiment
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: munich-quantum-toolkit/workflows
+          ref: 5111762228d11d2d44dead3362a7bd3fcc174efe
+          path: workflow-tools
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+      - name: Configure native MSVC developer environment
+        run: ./workflow-tools/.github/scripts/setup-msvc.ps1
+      - uses: munich-quantum-software/setup-mlir@1f96f72c996c013f34264af39c131d2bf9487d19
+        with:
+          llvm-version: 23.1.6
+          assertions: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2
+        with:
+          enable-cache: false
+      - name: Prepare wheel builder and record host
+        id: prepare
+        run: |
+          uv python install 3.13
+          uv tool install --python 3.13 cibuildwheel==4.3.5
+          uv tool dir --bin | Add-Content -Path $env:GITHUB_PATH
+          New-Item -Type Directory results | Out-Null
+          $cpu = Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors
+          $hostInfo = @{cpu=$cpu; architecture=$env:RUNNER_ARCH; image=$env:ImageVersion; source=$env:SOURCE_SHA; first='${{ matrix.first }}'; sdk=$env:MLIR_DIR}
+          $hostInfo | ConvertTo-Json -Depth 4 | Set-Content results/host.json
+      - name: Build first recipe
+        run: ./experiment/.github/windows-wheel-study/build.ps1 -Mode ${{ matrix.first }}
+      - name: Build second recipe
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+        run: ./experiment/.github/windows-wheel-study/build.ps1 -Mode ${{ matrix.first == 'clang' && 'msvc' || 'clang' }}
+      - name: Compare installed compilers
+        run: |
+          $sdkBin = [IO.Path]::GetFullPath((Join-Path $env:LLVM_DIR '../../../bin'))
+          uv run --no-project --python 3.13 --managed-python python ./experiment/.github/windows-wheel-study/bench.py --msvc "$env:MSVC_CLI" --clang "$env:CLANG_CLI" --source-root ./source --llvm-bin "$sdkBin" --output ./results/runtime.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: ${{ !cancelled() }}
+        with:
+          name: windows-wheel-study-${{ matrix.runner }}-${{ matrix.first }}-${{ github.run_attempt }}
+          path: results
+          retention-days: 7
+          compression-level: 1
