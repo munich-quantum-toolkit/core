@@ -887,48 +887,24 @@ class NativeControlFlowReader;
 
 class DefinitionRegistry final {
 public:
-  [[nodiscard]] uintptr_t identify(nb::handle definition,
-                                   const std::string_view name,
-                                   nb::handle parameters) {
-    const nb::tuple parameterTuple(parameters);
-    Py_hash_t parameterHash = 0;
-    try {
-      parameterHash = nb::hash(parameterTuple);
-    } catch (const nb::python_error& error) {
-      if (!error.matches(nb::module_::import_("builtins").attr("TypeError"))) {
-        throwPythonError("Qiskit Gate parameter hashing failed", error);
-      }
-      // Array-valued parameters specialize the definition, not its scalar
-      // call signature. Compare those definitions in one fallback bucket.
-    }
-    // Definitions with equal signatures can have different bodies; compare
-    // them within each hash bucket.
-    auto& bucket =
-        definitions_[llvm::StringRef(name.data(), name.size())][parameterHash];
-    for (const auto& entry : bucket) {
-      if (entry.definition.is(definition) ||
-          entry.definition.equal(definition)) {
-        return entry.identity;
-      }
-    }
-    const auto identity = nextIdentity_++;
-    bucket.push_back({
-        .definition = nb::borrow<nb::object>(definition),
-        .identity = identity,
-    });
-    return identity;
-  }
-
-private:
   struct Definition {
-    nb::object definition;
+    nb::object circuit;
     uintptr_t identity;
   };
 
-  using ParameterBuckets =
-      std::unordered_map<Py_hash_t, std::vector<Definition>>;
-  llvm::StringMap<ParameterBuckets> definitions_;
-  uintptr_t nextIdentity_ = 1U;
+  [[nodiscard]] const Definition& get(const nb::object& circuit,
+                                      llvm::StringRef name) {
+    const auto [entry, inserted] =
+        definitions_[name].try_emplace(circuit.ptr(), circuit, nextIdentity_);
+    if (inserted) {
+      ++nextIdentity_;
+    }
+    return entry->second;
+  }
+
+private:
+  llvm::StringMap<std::unordered_map<PyObject*, Definition>> definitions_;
+  uintptr_t nextIdentity_ = 1;
 };
 
 class NativeCircuitReader final : public CircuitReader {
@@ -1369,41 +1345,36 @@ public:
 
   [[nodiscard]] std::unique_ptr<CircuitReader>
   definition(const size_t index) const override {
-    const auto operation = terminalPythonGate(pythonOperation(index));
-    const auto definition = pythonAttribute(
-        operation, "definition",
-        "Qiskit instruction does not expose a circuit definition");
-    if (definition.is_none()) {
-      throw std::runtime_error("Qiskit instruction '" +
-                               instruction(index).name +
-                               "' has no circuit definition");
-    }
-    return std::make_unique<NativeCircuitReader>(definition, definitions_);
+    return std::make_unique<NativeCircuitReader>(definitionEntry(index).circuit,
+                                                 definitions_);
   }
 
-  [[nodiscard]] uintptr_t
-  definitionIdentity(const size_t index) const override {
-    if (const auto found = definitionIdentities_.find(index);
-        found != definitionIdentities_.end()) {
-      return found->second;
-    }
-    const auto operation = terminalPythonGate(pythonOperation(index));
-    const auto definition = pythonAttribute(
-        operation, "definition",
-        "Qiskit instruction does not expose a circuit definition");
-    if (definition.is_none()) {
-      return 0U;
-    }
-    const auto name = pythonStringAttribute(
-        operation, "name", "Qiskit instruction has no valid name");
-    const auto parameters = pythonAttribute(
-        operation, "params", "Qiskit instruction has no parameter list");
-    const auto identity = definitions_->identify(definition, name, parameters);
-    definitionIdentities_.emplace(index, identity);
-    return identity;
+  [[nodiscard]] uintptr_t definitionIdentity(size_t index) const override {
+    return definitionEntry(index).identity;
   }
 
 private:
+  [[nodiscard]] const DefinitionRegistry::Definition&
+  definitionEntry(size_t index) const {
+    if (const auto found = definitionEntries_.find(index);
+        found != definitionEntries_.end()) {
+      return *found->second;
+    }
+    const auto operation = terminalPythonGate(pythonOperation(index));
+    const auto definition = pythonAttribute(
+        operation, "definition",
+        "Qiskit instruction does not expose a circuit definition");
+    const auto name = pythonStringAttribute(
+        operation, "name", "Qiskit instruction has no valid name");
+    if (definition.is_none()) {
+      throw std::runtime_error("Qiskit instruction '" + name +
+                               "' has no circuit definition");
+    }
+    const auto& entry = definitions_->get(definition, name);
+    definitionEntries_.emplace(index, &entry);
+    return entry;
+  }
+
   [[nodiscard]] std::vector<uint32_t>
   pythonInstructionBits(size_t index, const char* operandKind) const {
     std::vector<uint32_t> result;
@@ -1446,7 +1417,8 @@ private:
   const QkCircuit* circuit_ = nullptr;
   const QkControlFlowInstruction* parent_ = nullptr;
   std::shared_ptr<DefinitionRegistry> definitions_;
-  mutable std::unordered_map<size_t, uintptr_t> definitionIdentities_;
+  mutable std::unordered_map<size_t, const DefinitionRegistry::Definition*>
+      definitionEntries_;
 };
 } // namespace
 

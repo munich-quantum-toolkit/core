@@ -41,6 +41,7 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Matchers.h"
+#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
@@ -51,6 +52,7 @@
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/Hashing.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -100,6 +102,9 @@ struct GateImportState {
   bool native = false;
   llvm::StringMap<mlir::func::FuncOp> opaqueGates;
   llvm::DenseMap<uintptr_t, mlir::func::FuncOp> gates;
+  llvm::DenseMap<std::pair<mlir::StringAttr, size_t>,
+                 llvm::SmallVector<mlir::func::FuncOp, 1>>
+      gateBodies;
   llvm::DenseMap<llvm::SmallVector<uint32_t, 0>, mlir::func::FuncOp,
                  llvm::DenseMapInfo<llvm::ArrayRef<uint32_t>>>
       permutations;
@@ -107,14 +112,48 @@ struct GateImportState {
   llvm::StringMap<size_t> nextFunctionSuffix;
 
   std::string uniqueName(llvm::StringRef name) {
-    auto symbol = name.str();
-    if (!functionNames.insert(symbol).second) {
-      auto& suffix = nextFunctionSuffix[name];
-      do {
-        symbol = (name + "_" + llvm::Twine(suffix++)).str();
-      } while (!functionNames.insert(symbol).second);
+    if (functionNames.insert(name).second) {
+      return name.str();
     }
-    return symbol;
+    auto& suffix = nextFunctionSuffix[name];
+    for (;; ++suffix) {
+      auto symbol = (name + "_" + llvm::Twine(suffix)).str();
+      if (functionNames.insert(symbol).second) {
+        return symbol;
+      }
+    }
+  }
+
+  mlir::func::FuncOp internGate(mlir::func::FuncOp function,
+                                mlir::StringAttr name) {
+    // Callees already have canonical symbols. Hash lowered operations, then
+    // compare their regions to check exact attributes and SSA wiring.
+    using Equivalence = mlir::OperationEquivalence;
+    constexpr auto flags =
+        Equivalence::IgnoreLocations | Equivalence::IgnoreCommutativity;
+    const auto hashOperand = [](mlir::Value value) -> llvm::hash_code {
+      if (auto argument = llvm::dyn_cast<mlir::BlockArgument>(value)) {
+        return argument.getArgNumber();
+      }
+      return Equivalence::ignoreHashValue(value);
+    };
+    llvm::hash_code hash = hash_value(function.getFunctionType());
+    function.getBody().walk([&](mlir::Operation* op) {
+      hash = llvm::hash_combine(
+          hash, Equivalence::computeHash(op, hashOperand,
+                                         Equivalence::ignoreHashValue, flags));
+    });
+    auto& candidates = gateBodies[{name, hash}];
+    for (auto candidate : candidates) {
+      if (Equivalence::isRegionEquivalentTo(&function.getBody(),
+                                            &candidate.getBody(), flags)) {
+        functionNames.erase(function.getName());
+        function.erase();
+        return candidate;
+      }
+    }
+    candidates.push_back(function);
+    return function;
   }
 
   llvm::Expected<mlir::func::FuncOp>
@@ -1965,11 +2004,12 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
                              definitionDepth + 1U, controlFlowDepth,
                              gateVariables);
           });
+      const auto name = builder.getStringAttr(instruction.name);
       if (symbol != instruction.name) {
         function->setAttr(
-            mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr(),
-            builder.getStringAttr(instruction.name));
+            mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr(), name);
       }
+      function = gateState.internGate(function, name);
       gateState.gates.insert({identity, function});
     }
 
@@ -2222,10 +2262,6 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
             "instructions");
       }
       const auto identity = circuit.definitionIdentity(index);
-      if (identity == 0U) {
-        throw std::runtime_error("Qiskit instruction '" + instruction.name +
-                                 "' has no circuit definition");
-      }
       if (!state.activeDefinitions.insert(identity).second) {
         throw std::runtime_error(
             "Qiskit instruction definitions contain a cycle");
