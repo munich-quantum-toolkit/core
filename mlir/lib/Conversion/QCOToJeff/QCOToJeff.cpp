@@ -2180,6 +2180,8 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto moduleOp = getOperation();
+    // `jeff` has no qubit layout metadata.
+    moduleOp->removeAttr("mqt.layout");
     const auto modifiers = moduleOp.walk([](Operation* op) {
       if (!isa<CtrlOp, InvOp, PowOp>(op)) {
         return WalkResult::advance();

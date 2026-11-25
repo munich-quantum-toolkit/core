@@ -3332,6 +3332,24 @@ protected:
 };
 } // namespace
 
+TEST_F(CompilerPipelineTest, QCOVerificationPassChecksLinearity) {
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  for (const bool linear : {false, true}) {
+    SCOPED_TRACE(linear);
+    const std::string sink = linear ? "qco.sink %q : !qco.qubit" : "";
+    auto moduleOp = parseSourceString<ModuleOp>(
+        "module { func.func @main() attributes {mqt.entry_point} {\n"
+        "  %q = qco.alloc : !qco.qubit\n" +
+            sink + "\n  return\n} }",
+        context.get());
+    ASSERT_TRUE(moduleOp);
+    PassManager pm(context.get());
+    pm.addPass(qco::createVerifyQCOProgram());
+    EXPECT_EQ(succeeded(pm.run(*moduleOp)), linear);
+  }
+}
+
 TEST_F(CompilerPipelineTest, PipelineVerificationFollowsAssertionMode) {
   ScopedDiagnosticHandler handler(context.get(),
                                   [](Diagnostic&) { return success(); });

@@ -89,6 +89,12 @@ void populateQubitReusePipeline(mlir::OpPassManager& pm);
 void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
                                               uint64_t minQubits);
 
+/// Parse a module-level MLIR textual pass pipeline into @p pm.
+///
+/// Accept the pipeline with or without its `builtin.module(...)` anchor.
+[[nodiscard]] llvm::Error parseModulePassPipeline(mlir::StringRef pipeline,
+                                                  mlir::OpPassManager& pm);
+
 /// Parse and run a module-level MLIR textual pass pipeline.
 ///
 /// Attach a supplied environment after parsing succeeds. Retain it after

@@ -1176,6 +1176,8 @@ private:
     MLIRContext* ctx = &getContext();
     auto moduleOp = getOperation();
     const bool adaptive = profile == QIRProfile::Adaptive;
+    // QIR has no qubit layout metadata.
+    moduleOp->removeAttr("mqt.layout");
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
       return failure();
     }

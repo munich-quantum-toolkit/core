@@ -35,6 +35,7 @@ def QCToQIR : Pass<"qc-to-qir", "mlir::ModuleOp"> {
       environment, and an epilogue block, which records outputs and returns from
       the entry function. Blocks are connected by unconditional branches.
     - Non-quantum dialects are lowered via MLIR's built-in conversions.
+    - QIR has no qubit layout metadata, so `mqt.layout` is dropped.
 
     Base Profile (`profile=base`):
 

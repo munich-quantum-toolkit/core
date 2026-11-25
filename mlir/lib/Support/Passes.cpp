@@ -88,6 +88,7 @@ void registerMQTCompilerPasses() {
     qco::registerPlacementPass();
     qco::registerQuantumLoopUnroll();
     qco::registerRemoveDeadGates();
+    qco::registerVerifyQCOProgram();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
     qco::registerTargetNativeSynthesis();
@@ -166,25 +167,34 @@ void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
   pm.addPass(qco::createDecomposeMultiControlled(options));
 }
 
-LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
-                              const CompilationOptions& options,
-                              const TargetEnvironment* environment,
-                              bool preservesLayout) {
+llvm::Error parseModulePassPipeline(StringRef pipeline, OpPassManager& pm) {
   registerMQTCompilerPasses();
-  PassManager pm(mod.getContext());
-  std::string diagnostics;
-  llvm::raw_string_ostream errorStream(diagnostics);
   auto passes = pipeline.trim();
   auto [anchor, body] = passes.split('(');
   if (anchor.rtrim() == ModuleOp::getOperationName()) {
     if (!body.consume_back(")")) {
-      return mod.emitError("unclosed builtin.module pass pipeline");
+      return llvm::createStringError(std::errc::invalid_argument,
+                                     "unclosed builtin.module pass pipeline");
     }
     passes = body;
   }
+  std::string diagnostics;
+  llvm::raw_string_ostream errorStream(diagnostics);
   if (failed(parsePassPipeline(passes, pm, errorStream))) {
-    return mod.emitError() << "failed to parse pass pipeline '" << pipeline
-                           << "': " << diagnostics;
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "failed to parse pass pipeline '" + pipeline + "': " + diagnostics);
+  }
+  return llvm::Error::success();
+}
+
+LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
+                              const CompilationOptions& options,
+                              const TargetEnvironment* environment,
+                              bool preservesLayout) {
+  PassManager pm(mod.getContext());
+  if (auto error = parseModulePassPipeline(pipeline, pm)) {
+    return mod.emitError(llvm::toString(std::move(error)));
   }
   if (environment != nullptr) {
     attachTargetEnvironment(mod, *environment);

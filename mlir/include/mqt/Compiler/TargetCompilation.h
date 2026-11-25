@@ -17,9 +17,12 @@
 
 #include "llvm/Support/Error.h"
 
+#include <memory>
+
 namespace mlir {
 
 class OpPassManager;
+class Pass;
 
 /// Select the routing environment used by target compilation.
 ///
@@ -76,5 +79,16 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment,
                                      const MappingOptions& mapping = {});
+
+/// Create a pass that compiles a QCO module for @p environment.
+///
+/// Device targets restrict placement to the routing environment that
+/// createTargetCompilationEnvironment() selects for the module and run
+/// populateTargetCompilationPipeline(). Other targets run
+/// populateTargetSynthesisPipeline(). After compilation, @p environment is
+/// attached as the execution target. Run the pass with layout preservation.
+[[nodiscard]] std::unique_ptr<Pass>
+createCompileForTargetPass(const TargetEnvironment& environment,
+                           const MappingOptions& mapping = {});
 
 } // namespace mlir

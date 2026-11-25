@@ -650,4 +650,67 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   qco::populateTargetNativeSynthesisPipeline(pm);
 }
 
+namespace {
+
+/// Compile for a target environment and attach it as the execution target.
+///
+/// Device targets select their routing environment from the program and run
+/// the target compilation pipeline; other targets run target synthesis. The
+/// selected pipeline runs as a dynamic pipeline of this pass.
+class CompileForTargetPass final
+    : public PassWrapper<CompileForTargetPass, OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(CompileForTargetPass)
+
+  CompileForTargetPass(TargetEnvironment environment, MappingOptions mapping)
+      : environment_(std::move(environment)), mapping_(mapping) {}
+
+  void getDependentDialects(DialectRegistry& registry) const override {
+    OpPassManager pm(ModuleOp::getOperationName());
+    populatePipeline(pm, environment_);
+    pm.getDependentDialects(registry);
+  }
+
+protected:
+  void runOnOperation() override {
+    auto moduleOp = getOperation();
+    auto compilationEnvironment =
+        createTargetCompilationEnvironment(moduleOp, environment_);
+    if (!compilationEnvironment) {
+      moduleOp.emitError() << llvm::toString(
+          compilationEnvironment.takeError());
+      signalPassFailure();
+      return;
+    }
+    OpPassManager pm(ModuleOp::getOperationName());
+    populatePipeline(pm, *compilationEnvironment);
+    if (failed(runPipeline(pm, moduleOp))) {
+      signalPassFailure();
+      return;
+    }
+    attachTargetEnvironment(moduleOp, environment_);
+  }
+
+private:
+  void populatePipeline(OpPassManager& pm,
+                        const TargetEnvironment& environment) const {
+    if (environment_.target().hasDeviceConstraints()) {
+      populateTargetCompilationPipeline(pm, environment, mapping_);
+    } else {
+      populateTargetSynthesisPipeline(pm, environment, mapping_);
+    }
+  }
+
+  TargetEnvironment environment_;
+  MappingOptions mapping_;
+};
+
+} // namespace
+
+std::unique_ptr<Pass>
+createCompileForTargetPass(const TargetEnvironment& environment,
+                           const MappingOptions& mapping) {
+  return std::make_unique<CompileForTargetPass>(environment, mapping);
+}
+
 } // namespace mlir
