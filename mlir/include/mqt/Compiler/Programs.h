@@ -38,6 +38,7 @@
 #include <vector>
 
 namespace llvm {
+class SourceMgr;
 class raw_ostream;
 } // namespace llvm
 
@@ -259,6 +260,11 @@ public:
   /// Accepts versionless input and versions 2.0, 3.0, and 3.1.
   [[nodiscard]] static llvm::Expected<QCProgram>
   fromOpenQASMFile(const std::filesystem::path& path);
+
+  /// Translate OpenQASM source buffers in a caller-owned compiler context.
+  [[nodiscard]] static FailureOr<QCProgram>
+  fromOpenQASM(llvm::SourceMgr& sourceMgr,
+               std::shared_ptr<MLIRContext> context);
 
   /// Take ownership of an MLIR module that contains a QC program.
   ///
