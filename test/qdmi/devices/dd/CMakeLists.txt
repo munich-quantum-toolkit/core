@@ -18,6 +18,7 @@ package_add_test(
   SHARDS
   4
   ${PROJECT_SOURCE_DIR}/src/qdmi/devices/dd/WorkerProtocol.cpp
+  ${PROJECT_SOURCE_DIR}/src/qdmi/devices/dd/WorkerTransport.cpp
   worker_protocol_test.cpp
   helpers/test_utils.cpp
   device_properties_test.cpp

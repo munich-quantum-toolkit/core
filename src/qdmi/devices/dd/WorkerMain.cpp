@@ -22,6 +22,7 @@
 
 #include "NativeCommands.h"
 #include "WorkerProtocol.hpp"
+#include "WorkerTransport.hpp"
 
 #include "qdmi/constants.h"
 
@@ -33,7 +34,6 @@
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/raw_ostream.h"
-#include "llvm/Support/raw_socket_stream.h"
 #include "llvm/Support/thread.h"
 
 #include <algorithm>
@@ -46,8 +46,8 @@
 #include <string_view>
 #include <utility>
 
-using llvm::raw_socket_stream;
 using llvm::raw_string_ostream;
+using qdmi::dd::WorkerStream;
 
 namespace {
 void appendShot(std::string& packed, std::string_view shot) {
@@ -60,7 +60,7 @@ void appendShot(std::string& packed, std::string_view shot) {
 }
 
 struct Execution {
-  raw_socket_stream* stream_;
+  const WorkerStream* stream_;
   std::string_view program_;
   size_t numShots_;
   std::optional<uint64_t> seed_;
@@ -355,7 +355,7 @@ struct Execution {
 };
 
 qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
-                                 raw_socket_stream& stream) {
+                                 const WorkerStream& stream) {
   qdmi::dd::WorkerResponse response;
   Execution execution{
       .stream_ = &stream,
@@ -391,16 +391,14 @@ qdmi::dd::WorkerResponse execute(const qdmi::dd::WorkerRequest& request,
 }
 } // namespace
 
-int mqtCoreRunWorker(const char* socketPath) {
+int mqtCoreRunWorker(const char* endpoint) {
   llvm::sys::DisableSystemDialogsOnCrash();
-  auto connection = raw_socket_stream::createConnectedUnix(socketPath);
+  auto connection = qdmi::dd::connectWorker(endpoint);
   if (!connection) {
     llvm::consumeError(connection.takeError());
     return 1;
   }
-  const qdmi::dd::WorkerStream ownedStream(connection->release());
-  auto& stream = *ownedStream;
-  stream.SetUnbuffered();
+  const auto& stream = *connection;
   while (true) {
     std::string bytes;
     if (!qdmi::dd::readFrame(stream, bytes) || bytes.empty()) {

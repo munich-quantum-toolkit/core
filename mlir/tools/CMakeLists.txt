@@ -27,8 +27,13 @@ target_link_libraries(
     MQTCompilerPrograms)
 
 add_executable(
-  mqt-core NativeMain.cpp run/Run.cpp ../bench/MQTCoreBench.cpp
-  ../../src/qdmi/devices/dd/WorkerMain.cpp ../../src/qdmi/devices/dd/WorkerProtocol.cpp)
+  mqt-core
+  NativeMain.cpp
+  run/Run.cpp
+  ../bench/MQTCoreBench.cpp
+  ../../src/qdmi/devices/dd/WorkerMain.cpp
+  ../../src/qdmi/devices/dd/WorkerProtocol.cpp
+  ../../src/qdmi/devices/dd/WorkerTransport.cpp)
 add_executable(MQT::mqt-core ALIAS mqt-core)
 target_include_directories(mqt-core PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 mqt_mlir_target_use_project_options(mqt-core)

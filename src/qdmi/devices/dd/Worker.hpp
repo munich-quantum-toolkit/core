@@ -11,6 +11,7 @@
 #pragma once
 
 #include "WorkerProtocol.hpp"
+#include "WorkerTransport.hpp"
 
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/Support/Program.h"

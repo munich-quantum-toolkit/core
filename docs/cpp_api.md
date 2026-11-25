@@ -95,8 +95,8 @@ Runtime component requires no LLVM SDK.
 
 CMake provides the `MQT::mqt-core` imported executable target. Use
 `mqt-core compile` and `mqt-core bench` in custom commands or from the command
-line. DDSIM launches `mqt-core simulate --worker-socket <socket>` as a separate
-process using its internal worker protocol.
+line. DDSIM launches `mqt-core simulate --worker-socket <endpoint>` as a
+separate process using its internal worker protocol.
 
 ```{code-cell} ipython3
 :tags: [remove-cell]

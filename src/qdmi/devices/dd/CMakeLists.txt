@@ -20,7 +20,9 @@ if(NOT TARGET ${TARGET_NAME})
   if(NOT LLVM_ENABLE_THREADS)
     message(FATAL_ERROR "The DDSIM QDMI device requires a threaded LLVM build")
   endif()
-  target_sources(${TARGET_NAME} PRIVATE Device.cpp Worker.cpp WorkerProtocol.cpp)
+  target_sources(
+    ${TARGET_NAME}
+    PRIVATE Device.cpp Worker.cpp WorkerProtocol.cpp WorkerTransport.cpp)
 
   target_sources(
     ${TARGET_NAME}

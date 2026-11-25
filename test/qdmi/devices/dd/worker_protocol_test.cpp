@@ -9,67 +9,61 @@
  */
 
 #include "WorkerProtocol.hpp"
+#include "WorkerTransport.hpp"
 #include "support/TestSupport.hpp"
 
 #include "gtest/gtest.h"
 
-#include "llvm/ADT/ScopeExit.h"
-#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Path.h"
-#include "llvm/Support/raw_socket_stream.h"
+#include "llvm/Support/Process.h"
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <tuple>
+#include <utility>
 
 namespace qdmi::dd {
-TEST(WorkerProtocol, SocketRoundTripAndDisconnect) {
-  llvm::SmallString<128> directory;
-  ASSERT_FALSE(
-      llvm::sys::fs::createUniqueDirectory("mqt-transport", directory));
-  auto socketPath = directory;
-  llvm::sys::path::append(socketPath, "socket");
-  const llvm::scope_exit cleanup([&] {
-    std::ignore = llvm::sys::fs::remove(socketPath);
-    std::ignore = llvm::sys::fs::remove(directory);
-  });
-  WorkerStream client;
-  WorkerStream server;
-  {
-    auto listener = llvm::ListeningSocket::createUnix(socketPath);
-    MQT_ASSERT_SUCCESS(listener);
-    auto connection = llvm::raw_socket_stream::createConnectedUnix(socketPath);
-    MQT_ASSERT_SUCCESS(connection);
-    client.reset(connection->release());
-    auto accepted = listener->accept(std::chrono::seconds(5));
-    MQT_ASSERT_SUCCESS(accepted);
-    server.reset(accepted->release());
-  }
+TEST(WorkerProtocol, TransportRoundTripAndDisconnect) {
+  WorkerListener listener;
+  MQT_ASSERT_SUCCESS(listener.open());
+  const auto workerPid =
+      static_cast<uint32_t>(llvm::sys::Process::getProcessId());
+  auto pending = listener.accept(std::chrono::milliseconds(1), workerPid);
+  MQT_ASSERT_SUCCESS(pending);
+  EXPECT_FALSE(*pending);
+
+  auto connection = connectWorker(listener.endpoint());
+  MQT_ASSERT_SUCCESS(connection);
+  auto client = std::move(*connection);
+  auto accepted = listener.accept(std::chrono::seconds(5), workerPid);
+  MQT_ASSERT_SUCCESS(accepted);
+  auto server = std::move(*accepted);
+  ASSERT_TRUE(server);
 
   std::string payload;
   for (int byte = 0; byte < 256; ++byte) {
     payload += static_cast<char>(byte);
   }
-  ASSERT_TRUE(writeFrame(*client, payload));
+  ASSERT_TRUE(writeFrame(client, payload));
   std::string received;
-  ASSERT_TRUE(readFrame(*server, received));
+  ASSERT_TRUE(readFrame(server, received));
   EXPECT_EQ(received, payload);
-  ASSERT_TRUE(writeFrame(*client, {}));
-  ASSERT_TRUE(readFrame(*server, received));
+  ASSERT_TRUE(writeFrame(client, {}));
+  ASSERT_TRUE(readFrame(server, received));
   EXPECT_TRUE(received.empty());
+#ifndef _WIN32
   char byte = 0;
   EXPECT_EQ(client->read(&byte, 1, std::chrono::milliseconds(1)), -1);
   EXPECT_TRUE(client->has_error());
+#endif
   client.reset();
-  EXPECT_FALSE(readFrame(*server, received));
+  EXPECT_FALSE(readFrame(server, received));
   // Writes may succeed locally after a peer disconnects, notably on Windows.
   // They must not signal or terminate the host.
-  std::ignore = writeFrame(*server, "closed");
+  std::ignore = writeFrame(server, "closed");
   server.reset();
 }
 

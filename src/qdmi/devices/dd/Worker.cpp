@@ -14,20 +14,17 @@
 #include "qdmi/common/Diagnostics.hpp"
 
 #include "WorkerProtocol.hpp"
+#include "WorkerTransport.hpp"
 
 #include "llvm/ADT/STLFunctionalExtras.h"
-#include "llvm/ADT/ScopeExit.h"
-#include "llvm/ADT/SmallString.h"
 #include "llvm/Support/Error.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/Path.h"
 #include "llvm/Support/Program.h"
-#include "llvm/Support/raw_socket_stream.h"
 
 #include <algorithm>
 #include <cerrno>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <mutex>
@@ -71,7 +68,7 @@ void Worker::requestShutdown() {
   const std::scoped_lock lock(mutex_);
   terminated_ = true;
   if (process_.Pid != 0 && stream_) {
-    std::ignore = writeFrame(*stream_, {});
+    std::ignore = writeFrame(stream_, {});
     stream_.reset();
   }
 }
@@ -110,22 +107,9 @@ void Worker::terminate() {
   process_ = {};
 }
 bool Worker::start() {
-  llvm::SmallString<128> directory;
-  if (const auto error =
-          llvm::sys::fs::createUniqueDirectory("mqt-dd", directory)) {
-    qdmi::diagnostics::error("Cannot create DDSIM worker socket: {0}",
-                             error.message());
-    return false;
-  }
-  auto socketPath = directory;
-  llvm::sys::path::append(socketPath, "socket");
-  const llvm::scope_exit cleanup([&] {
-    std::ignore = llvm::sys::fs::remove(socketPath);
-    std::ignore = llvm::sys::fs::remove(directory);
-  });
-  auto listener = llvm::ListeningSocket::createUnix(socketPath);
-  if (!listener) {
-    qdmi::diagnostics::error("{0}", llvm::toString(listener.takeError()));
+  WorkerListener listener;
+  if (auto error = listener.open()) {
+    qdmi::diagnostics::error("{0}", llvm::toString(std::move(error)));
     return false;
   }
   auto modulePath = qdmi::detail::moduleDirectory(&MODULE_ANCHOR);
@@ -140,6 +124,7 @@ bool Worker::start() {
   }
   const auto executablePath = executableFile.u8string();
   const std::string executable(executablePath.begin(), executablePath.end());
+  uint32_t workerPid = 0;
   {
     const std::scoped_lock lock(mutex_);
     if (terminated_) {
@@ -147,27 +132,36 @@ bool Worker::start() {
     }
     std::string error;
     process_ = llvm::sys::ExecuteNoWait(
-        executable, {executable, "simulate", "--worker-socket", socketPath},
+        executable,
+        {executable, "simulate", "--worker-socket", listener.endpoint()},
         std::nullopt, {}, 0, &error);
     if (process_.Pid == 0) {
       qdmi::diagnostics::error("Cannot start DDSIM worker: {0}", error);
       return false;
     }
+    workerPid = static_cast<uint32_t>(process_.Pid);
   }
   // Bound startup, while making cancellation responsive before connection.
+#ifdef _WIN32
+  constexpr auto pollInterval = std::chrono::milliseconds(5);
+#else
+  constexpr auto pollInterval = std::chrono::milliseconds(50);
+#endif
   const auto deadline =
       std::chrono::steady_clock::now() + std::chrono::seconds(30);
   while (std::chrono::steady_clock::now() < deadline) {
-    auto connection = listener->accept(std::chrono::milliseconds(50));
-    if (connection) {
-      stream_.reset(connection->release());
-      stream_->SetUnbuffered();
-      return true;
+    auto connection = listener.accept(pollInterval, workerPid);
+    if (!connection) {
+      qdmi::diagnostics::error("{0}", llvm::toString(connection.takeError()));
+      return false;
     }
-    llvm::consumeError(connection.takeError());
     const std::scoped_lock lock(mutex_);
     if (terminated_) {
       return false;
+    }
+    if (*connection) {
+      stream_ = std::move(*connection);
+      return true;
     }
     if (hasExited(process_)) {
       process_ = {};
@@ -184,7 +178,7 @@ bool Worker::execute(const WorkerRequest& request, WorkerResponse& response,
     return false;
   }
   std::string bytes;
-  if (writeFrame(*stream_, encode(request)) && readFrame(*stream_, bytes)) {
+  if (writeFrame(stream_, encode(request)) && readFrame(stream_, bytes)) {
     WorkerSlots slots;
     if (decode(bytes, slots)) {
       if (slots.count > request.maxWorkers) {
@@ -192,8 +186,8 @@ bool Worker::execute(const WorkerRequest& request, WorkerResponse& response,
       }
       const auto grant = reserveWorkers(slots.count);
       if (grant == 0 || grant > slots.count ||
-          !writeFrame(*stream_, encode(WorkerSlots{grant})) ||
-          !readFrame(*stream_, bytes)) {
+          !writeFrame(stream_, encode(WorkerSlots{grant})) ||
+          !readFrame(stream_, bytes)) {
         return false;
       }
     }
