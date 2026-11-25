@@ -433,9 +433,7 @@ QIRProgram QIRProgram::copy() const { return {cloneStorage(), profile_}; }
 LogicalResult QIRProgram::cleanup() {
   return runWithPassManager(
       mod(),
-      [this](OpPassManager& pm) {
-        populateQIRCleanupPipeline(pm, profile_ == QIRProfile::Adaptive);
-      },
+      [this](OpPassManager& pm) { populateQIRCleanupPipeline(pm, profile_); },
       "failed to run the QIR cleanup pipeline");
 }
 

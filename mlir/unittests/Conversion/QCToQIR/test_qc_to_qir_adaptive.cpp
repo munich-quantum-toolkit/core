@@ -1298,7 +1298,8 @@ TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   }
   ASSERT_TRUE(::mqt::test::verifyQIRTestStage(*reference, "Reference QIR IR"));
 
-  ASSERT_TRUE(runQIRCleanupPipeline(reference.get(), true).succeeded());
+  ASSERT_TRUE(
+      runQIRCleanupPipeline(reference.get(), QIRProfile::Adaptive).succeeded());
   ASSERT_TRUE(::mqt::test::verifyQIRTestStage(
       *reference, "Canonicalized Reference QIR IR"));
 

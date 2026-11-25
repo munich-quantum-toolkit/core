@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Compiler/CompilationOptions.h"
+#include "mqt/Dialect/QIR/Utils/QIRProfile.h"
 
 #include "mlir/Support/LLVM.h"
 
@@ -134,8 +135,10 @@ void populateQCOCleanupPipeline(mlir::OpPassManager& pm,
 
 /// Populate a QIR-oriented cleanup pipeline on the given pass manager.
 ///
-/// Promotes local memory to SSA values, simplifies QIR, and refreshes metadata.
-void populateQIRCleanupPipeline(mlir::OpPassManager& pm, bool useAdaptive);
+/// Promotes local memory to SSA values, simplifies QIR, checks Base Profile
+/// instructions, and refreshes metadata.
+void populateQIRCleanupPipeline(mlir::OpPassManager& pm,
+                                mlir::QIRProfile profile);
 
 /// Populate a `jeff`-oriented cleanup pipeline on the given pass manager.
 ///
@@ -150,8 +153,8 @@ void populateJeffCleanupPipeline(mlir::OpPassManager& pm);
 runQCOCleanupPipeline(mlir::ModuleOp moduleOp);
 
 /// Run the QIR-oriented cleanup pipeline on a module.
-[[nodiscard]] mlir::LogicalResult runQIRCleanupPipeline(mlir::ModuleOp moduleOp,
-                                                        bool useAdaptive);
+[[nodiscard]] mlir::LogicalResult
+runQIRCleanupPipeline(mlir::ModuleOp moduleOp, mlir::QIRProfile profile);
 
 /// Run the `jeff`-oriented cleanup pipeline on a module.
 [[nodiscard]] mlir::LogicalResult

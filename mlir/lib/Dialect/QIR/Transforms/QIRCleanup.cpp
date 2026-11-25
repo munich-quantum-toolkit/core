@@ -31,11 +31,12 @@ protected:
 } // namespace
 } // namespace mlir::qir
 
-void populateQIRCleanupPipeline(mlir::OpPassManager& pm, bool useAdaptive) {
+void populateQIRCleanupPipeline(mlir::OpPassManager& pm,
+                                mlir::QIRProfile profile) {
   pm.addPass(mlir::createCanonicalizerPass());
   pm.addPass(mlir::createCSEPass());
   pm.addPass(mlir::createMem2Reg());
   pm.addPass(mlir::qir::createQIRCleanupPass());
   pm.addPass(mlir::createRemoveDeadValuesPass());
-  pm.addPass(mlir::qir::createQIRSetAttributesAndMetadata({useAdaptive}));
+  pm.addPass(mlir::qir::createQIRSetAttributesAndMetadata({profile}));
 }

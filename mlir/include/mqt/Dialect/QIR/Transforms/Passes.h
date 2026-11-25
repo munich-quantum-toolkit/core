@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Dialect/QIR/Utils/QIRProfile.h"
+
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
 

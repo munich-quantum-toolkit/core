@@ -205,7 +205,7 @@ finalizeQIRMetadata(ModuleOp moduleOp, QIRProfile profile,
                     const std::optional<PayloadSpecification>& payload,
                     function_ref<LogicalResult(OpPassManager&)> runPipeline) {
   OpPassManager metadata(ModuleOp::getOperationName());
-  populateQIRCleanupPipeline(metadata, profile == QIRProfile::Adaptive);
+  populateQIRCleanupPipeline(metadata, profile);
   if (failed(runPipeline(metadata))) {
     return failure();
   }
