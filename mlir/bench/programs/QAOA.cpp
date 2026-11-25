@@ -23,13 +23,12 @@
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
-#include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Support/Casting.h"
 
-#include <cassert>
 #include <cstdint>
+#include <utility>
 
 namespace mqt::bench {
 
@@ -44,13 +43,12 @@ SmallVector<Value> qaoa(qc::QCProgramBuilder& builder, const QAOA& benchmark) {
   const auto inputName =
       mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr();
   for (const auto* name : {"gammas", "betas"}) {
-    [[maybe_unused]] const auto inserted = entry.insertArgument(
+    std::ignore = entry.insertArgument(
         entry.getNumArguments(), anglesType,
         builder.getDictionaryAttr({
             builder.getNamedAttr(inputName, builder.getStringAttr(name)),
         }),
         builder.getLoc());
-    assert(succeeded(inserted) && "QAOA inputs must fit a func.func signature");
   }
   auto gammas = entry.getArgument(0);
   auto betas = entry.getArgument(1);

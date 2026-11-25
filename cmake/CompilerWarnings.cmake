@@ -80,18 +80,7 @@ function(set_project_warnings target_name)
     message(AUTHOR_WARNING "No compiler warnings set for '${CMAKE_CXX_COMPILER_ID}' compiler.")
   endif()
 
-  if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-    include(CheckCXXCompilerFlag)
-    check_cxx_compiler_flag(-Wno-missing-designated-field-initializers
-                            HAS_WNO_MISSING_DESIGNATED_FIELD_INITIALIZERS)
-    if(HAS_WNO_MISSING_DESIGNATED_FIELD_INITIALIZERS)
-      list(APPEND project_warnings -Wno-missing-designated-field-initializers)
-    endif()
-  endif()
-
-  # Keep warning groups and their exceptions together during option de-duplication.
-  list(JOIN project_warnings " " project_warnings)
-  target_compile_options(${target_name} INTERFACE "SHELL:${project_warnings}")
+  target_compile_options(${target_name} INTERFACE ${project_warnings})
 
   if(MSVC)
     add_compile_options(/bigobj)
