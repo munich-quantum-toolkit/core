@@ -42,7 +42,7 @@ struct Results {
 
 } // namespace
 
-// Qiskit memory supports arbitrary widths, including an empty classical output.
+// Qiskit accepts hexadecimal outcomes wider than a machine word.
 static std::string hexadecimal(llvm::StringRef bits) {
   std::string result = "0x";
   const auto first = bits.find('1');
@@ -75,6 +75,9 @@ static Results readout(const qdmi::Job& job, size_t width, size_t shots,
                        const std::optional<mlir::ResultLayout>& layout,
                        bool memory) {
   Results result;
+  if (width == 0) {
+    return result;
+  }
   if (memory) {
     const auto packed = unwrap(qdmi::detail::getPackedShots(job, programIndex));
     auto logical = decoded(runtime::decodeOrderedShots(
@@ -83,7 +86,7 @@ static Results readout(const qdmi::Job& job, size_t width, size_t shots,
     for (auto& [bits, count] : result.counts) {
       bits = hexadecimal(bits);
     }
-  } else if (width != 0) {
+  } else {
     const auto counts = decoded(mlir::decodeCounts(
         unwrap(job.getCounts(programIndex)), width, shots, layout));
     result.counts.reserve(counts.size());
@@ -133,7 +136,7 @@ void registerResultBindings(nb::module_& m) {
 
 Args:
     job: Completed provider job whose results are read.
-    width: Number of logical classical output bits.
+    width: Number of classical output bits. Zero yields empty counts and memory.
     shots: Expected number of shots.
     program_index: Program within a multi-program job.
     layout: Projection from provider output to logical classical bits.
@@ -146,8 +149,7 @@ Returns:
 
 Raises:
     ResultDecodingError: Results violate the declared shot count or layout.
-    RuntimeError: Provider result retrieval fails. Ordered memory requires
-        SHOTS support and never falls back to a histogram.
+    RuntimeError: The device cannot return the requested counts or shots.
 )doc");
 }
 

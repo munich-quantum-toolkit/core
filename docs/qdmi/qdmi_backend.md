@@ -121,8 +121,9 @@ and primitives.
 `job.status()` returns Qiskit's job status. `job.result()` waits and returns
 counts, optional shot memory, and the original circuit/register metadata. The
 adapter checks widths, binary digits, and shot totals. When shot memory is
-requested, the device must return individual samples; the adapter derives counts
-from those same samples.
+requested for a circuit with classical bits, the adapter derives counts from the
+individual samples. A circuit with no classical bits returns empty counts and,
+when requested, an empty memory list.
 
 Results use Qiskit's classical-bit order (`clbits[0]` on the right), preserving
 leading zeros and correlations across registers. Classical registers must

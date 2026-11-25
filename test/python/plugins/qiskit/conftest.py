@@ -151,8 +151,8 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
     ) -> dict[str, Any]:
         if isinstance(job, Job):
             return native_readout(job, width, shots, program_index, layout, memory=memory)
-        if not memory and not width:
-            return {"counts": {}}
+        if not width:
+            return {"counts": {}, "memory": []} if memory else {"counts": {}}
         values = job.get_shots(program_index) if memory else job.get_counts(program_index)
         if not memory and any(not isinstance(count, Integral) or count < 0 for count in values.values()):
             msg = "Invalid QDMI histogram: counts must be nonnegative integers."
@@ -162,7 +162,7 @@ def mock_device_snapshot(monkeypatch: pytest.MonkeyPatch) -> None:
         except (ValueError, RuntimeError) as exc:
             raise job_module.ResultDecodingError(str(exc)) from exc
         if memory:
-            encoded = [hex(int(bits, 2)) if bits else "0x0" for bits in decoded]
+            encoded = [hex(int(bits, 2)) for bits in decoded]
             return {"memory": encoded, "counts": dict(Counter(encoded))}
         return {"counts": {hex(int(bits, 2)): count for bits, count in decoded.items()}}
 
