@@ -518,31 +518,24 @@ programFromPath(const std::filesystem::path& path) {
             .c_str());
   }
 
-  const auto extension = path.extension().string();
-  if (extension == ".jeff") {
-    return {
-        .program = unwrap(mlir::JeffProgram::fromFile(path)),
-        .format = OutputFormat::Jeff,
-    };
+  const auto format = mlir::inputFormatForPath(path.string());
+  if (!format) {
+    throw nb::builtin_exception(
+        nb::exception_type::runtime_error,
+        llvm::formatv("Input file '{0}' has unsupported extension '{1}'.",
+                      path.string(), path.extension().string())
+            .str()
+            .c_str());
   }
-  if (extension == ".mlir") {
-    return {
-        .program = unwrap(mlir::QCProgram::fromMLIRFile(path)),
-        .format = OutputFormat::QC,
-    };
-  }
-  if (extension == ".qasm") {
-    return {
-        .program = unwrap(mlir::QCProgram::fromOpenQASMFile(path)),
-        .format = OutputFormat::OpenQASM3,
-    };
-  }
-  throw nb::builtin_exception(
-      nb::exception_type::runtime_error,
-      llvm::formatv("Input file '{0}' has unsupported extension '{1}'.",
-                    path.string(), extension)
-          .str()
-          .c_str());
+  auto program = unwrap(mlir::loadCompilerInput(path, format));
+  // Default to the input representation; QCO input continues optimized.
+  const auto defaultFormat =
+      *format == mlir::InputFormat::OpenQASM ? OutputFormat::OpenQASM3
+      : *format == mlir::InputFormat::Jeff   ? OutputFormat::Jeff
+      : std::holds_alternative<mlir::QCOProgram>(program)
+          ? OutputFormat::QCOOptimized
+          : OutputFormat::QC;
+  return {.program = std::move(program), .format = defaultFormat};
 }
 
 /// Construct a frontend program from a string containing source or path.

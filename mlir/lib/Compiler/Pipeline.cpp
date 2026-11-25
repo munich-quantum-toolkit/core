@@ -32,8 +32,6 @@
 #include "ResonatorRouting.h"
 #include "TerminalReadout.h"
 
-#include "capnp/common.h"
-#include "jeff/Translation/Deserialize.hpp"
 #include "jeff/Translation/Serialize.hpp"
 #include "kj/array.h"
 
@@ -60,7 +58,6 @@
 #include <cstring>
 #include <filesystem>
 #include <memory>
-#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -337,49 +334,6 @@ FailureOr<JeffProgram> QCOProgram::intoJeff() && {
 // JeffProgram
 //===----------------------------------------------------------------------===//
 
-Expected<JeffProgram> JeffProgram::fromMessage(::jeff::Module::Reader module) {
-  auto context = createCompilerContext();
-  CompilerDiagnostics diagnostics(context.get());
-  auto mod = deserialize(context.get(), module);
-  if (!mod) {
-    return diagnostics.takeError();
-  }
-  return JeffProgram({.context = context, .mod = std::move(mod)});
-}
-
-Expected<JeffProgram> JeffProgram::fromBytes(std::span<const std::byte> bytes) {
-  if (bytes.size() % sizeof(capnp::word) != 0U) {
-    return createStringError(
-        llvm::inconvertibleErrorCode(),
-        "jeff data size must be a multiple of the Cap'n Proto word size");
-  }
-
-  auto words = kj::heapArray<capnp::word>(bytes.size() / sizeof(capnp::word));
-  std::memcpy(words.begin(), bytes.data(), bytes.size());
-
-  auto context = createCompilerContext();
-  CompilerDiagnostics diagnostics(context.get());
-  auto mod = deserialize(context.get(), words.asPtr());
-  if (!mod) {
-    emitError(UnknownLoc::get(context.get()),
-              "failed to deserialize jeff bytes");
-    return diagnostics.takeError();
-  }
-  return JeffProgram({.context = context, .mod = std::move(mod)});
-}
-
-Expected<JeffProgram> JeffProgram::fromFile(const std::filesystem::path& path) {
-  auto context = createCompilerContext();
-  CompilerDiagnostics diagnostics(context.get());
-  auto mod = deserializeFromFile(context.get(), path.string());
-  if (!mod) {
-    emitError(UnknownLoc::get(context.get()))
-        << "failed to deserialize jeff file '" << path.string() << "'";
-    return diagnostics.takeError();
-  }
-  return JeffProgram({.context = context, .mod = std::move(mod)});
-}
-
 JeffProgram JeffProgram::copy() const { return JeffProgram(cloneStorage()); }
 
 LogicalResult JeffProgram::cleanup() {
@@ -553,19 +507,7 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
                        std::string_view qcoPipeline,
                        const CompilationOptions& options) {
   if (output == ProgramFormat::QCImport) {
-    if (std::holds_alternative<QCProgram>(program)) {
-      return CompilerProgram(std::move(std::get<QCProgram>(program)));
-    }
-    std::visit(
-        [](const auto& value) {
-          if constexpr (std::is_base_of_v<
-                            Program, std::remove_cvref_t<decltype(value)>>) {
-            value.module().emitError(
-                "QCImport output is only available for QC or OpenQASM input");
-          }
-        },
-        program);
-    return failure();
+    return CompilerProgram(std::move(std::get<QCProgram>(program)));
   }
 
   auto qco = std::visit(
@@ -699,6 +641,13 @@ runNativePipeline(CompilerInput program, ProgramFormat output,
     return createStringError(std::errc::invalid_argument,
                              "IQM JSON requires a physical target with "
                              "explicit native IQM operations");
+  }
+  if (output == ProgramFormat::QCImport &&
+      !std::holds_alternative<QCProgram>(program) &&
+      !std::holds_alternative<OpenQASMProgram>(program)) {
+    return createStringError(
+        std::errc::invalid_argument,
+        "QCImport output is only available for QC or OpenQASM input");
   }
   if ((output == ProgramFormat::QCImport || output == ProgramFormat::QCO) &&
       qcoPipeline != "mqt-qco-default") {

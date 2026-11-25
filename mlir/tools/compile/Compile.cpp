@@ -25,7 +25,6 @@
 
 #include "NativeCommands.h"
 
-#include "jeff/Translation/Deserialize.hpp"
 #include "jeff/Translation/Serialize.hpp"
 
 #include "mlir/AsmParser/AsmParser.h"
@@ -65,32 +64,19 @@
 
 using namespace mlir;
 
-namespace {
-enum class InputFormat : std::uint8_t { MLIR, OpenQASM, Jeff };
-
-struct ParsedProgram {
-  OwningOpRef<ModuleOp> mod;
-  ProgramDialect dialect = ProgramDialect::QC;
-};
-} // namespace
-
 /// Parse an input format or infer it from a filename.
+///
+/// Standard input defaults to MLIR.
 [[nodiscard]] static std::optional<InputFormat>
 parseInputFormat(const StringRef format, const StringRef filename) {
-  if (format == "mlir" || (format == "auto" && filename.ends_with(".mlir"))) {
-    return InputFormat::MLIR;
+  if (format == "auto") {
+    return filename == "-" ? InputFormat::MLIR : inputFormatForPath(filename);
   }
-  if (format == "openqasm" ||
-      (format == "auto" && filename.ends_with(".qasm"))) {
-    return InputFormat::OpenQASM;
-  }
-  if (format == "jeff" || (format == "auto" && filename.ends_with(".jeff"))) {
-    return InputFormat::Jeff;
-  }
-  if (format == "auto" && filename == "-") {
-    return InputFormat::MLIR;
-  }
-  return std::nullopt;
+  return llvm::StringSwitch<std::optional<InputFormat>>(format)
+      .Case("mlir", InputFormat::MLIR)
+      .Case("openqasm", InputFormat::OpenQASM)
+      .Case("jeff", InputFormat::Jeff)
+      .Default(std::nullopt);
 }
 
 /// Parse an output format.
@@ -163,38 +149,6 @@ static LogicalResult loadSourceFile(const StringRef filename,
   }
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
   return success();
-}
-
-/// Load a `.jeff` file and convert the program to QCO.
-static ParsedProgram loadJeffFile(const StringRef filename,
-                                  MLIRContext* const context) {
-  if (filename == "-") {
-    llvm::errs() << "Reading jeff from standard input is not supported.\n";
-    return {};
-  }
-
-  std::string errorMessage;
-  if (!openInputFile(filename, &errorMessage)) {
-    llvm::errs() << "Failed to load file '" << filename << "': '"
-                 << errorMessage << "'\n";
-    return {};
-  }
-
-  auto mod = deserializeFromFile(context, filename);
-  if (!mod) {
-    llvm::errs() << "Failed to deserialize jeff file '" << filename << "'.\n";
-    return {};
-  }
-
-  PassManager pm(context);
-  pm.addPass(createJeffToQCO());
-  // Apply the command-line instrumentation that later pipelines also receive.
-  if (failed(runWithCompilationOptions(pm, *mod, {},
-                                       /*preservesLayout=*/true))) {
-    llvm::errs() << "Failed to convert jeff input to QCO.\n";
-    return {};
-  }
-  return {.mod = std::move(mod), .dialect = ProgramDialect::QCO};
 }
 
 /// Write serialized `jeff` bytes to an output file.
@@ -636,16 +590,7 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
                               std::move(*selectedPayload));
   }
 
-  if (*parsedOutputFormat == ProgramFormat::IQMJSON &&
-      (!targetEnvironment ||
-       targetEnvironment->target().nativeOperationsKind() ==
-           CompilerTarget::NativeOperations::Kind::Unrestricted)) {
-    llvm::errs() << "IQM JSON requires explicit native IQM operations.\n";
-    return 1;
-  }
-
-  if (*parsedInputFormat != InputFormat::Jeff &&
-      failed(loadSourceFile(inputFilename, sourceMgr))) {
+  if (failed(loadSourceFile(inputFilename, sourceMgr))) {
     return 1;
   }
   const auto parseCustomPipeline = [&](OpPassManager& pm) {
@@ -686,13 +631,6 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
     return failed(writeOutput(*mod, outputFilename)) ? 1 : 0;
   }
 
-  if (passPipeline.getNumOccurrences() != 0 &&
-      (*parsedOutputFormat == ProgramFormat::QCImport ||
-       *parsedOutputFormat == ProgramFormat::QCO)) {
-    llvm::errs() << "--pass-pipeline requires an output that passes through "
-                    "QCO optimization.\n";
-    return 1;
-  }
   if (enableDecomposeMultiControlled &&
       !isDecomposeMultiControlledConfigValid(
           decomposeMultiControlledMinQubits.getValue())) {
@@ -709,48 +647,7 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
     }
   }
 
-  auto input = [&]() -> FailureOr<CompilerInput> {
-    ParsedProgram program;
-    switch (*parsedInputFormat) {
-    case InputFormat::MLIR:
-      program.mod = parseSourceFile<ModuleOp>(sourceMgr, parserConfig);
-      if (program.mod &&
-          containsProgramOperations(*program.mod, ProgramDialect::QCO)) {
-        program.dialect = ProgramDialect::QCO;
-      }
-      break;
-    case InputFormat::OpenQASM: {
-      auto qc = QCProgram::fromOpenQASM(sourceMgr, context);
-      if (failed(qc)) {
-        return failure();
-      }
-      return CompilerInput(std::move(*qc));
-    }
-    case InputFormat::Jeff:
-      program = loadJeffFile(inputFilename, context.get());
-      break;
-    }
-    if (!program.mod) {
-      return failure();
-    }
-    if (*parsedOutputFormat == ProgramFormat::QCImport &&
-        program.dialect != ProgramDialect::QC) {
-      llvm::errs() << "--emit=qc-import requires QC frontend input.\n";
-      return failure();
-    }
-    if (program.dialect == ProgramDialect::QC) {
-      auto qc = QCProgram::fromModule(context, std::move(program.mod));
-      if (failed(qc)) {
-        return failure();
-      }
-      return CompilerInput(std::move(*qc));
-    }
-    auto qco = QCOProgram::fromModule(context, std::move(program.mod));
-    if (failed(qco)) {
-      return failure();
-    }
-    return CompilerInput(std::move(*qco));
-  }();
+  auto input = parseCompilerInput(sourceMgr, context, *parsedInputFormat);
   if (failed(input)) {
     return 1;
   }
@@ -758,8 +655,10 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
       *parsedOutputFormat != ProgramFormat::QCImport &&
       *parsedOutputFormat != ProgramFormat::QCO &&
       passPipeline.getNumOccurrences() == 0) {
-    if (auto* qc = std::get_if<QCProgram>(&*input)) {
-      auto qco = std::move(*qc).intoQCO();
+    if (!std::holds_alternative<QCOProgram>(*input)) {
+      auto qco = std::holds_alternative<QCProgram>(*input)
+                     ? std::move(std::get<QCProgram>(*input)).intoQCO()
+                     : std::move(std::get<JeffProgram>(*input)).intoQCO();
       if (failed(qco)) {
         return 1;
       }

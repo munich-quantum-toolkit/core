@@ -24,7 +24,10 @@
 
 #include "Diagnostics.h"
 
+#include "capnp/common.h"
 #include "jeff/IR/JeffDialect.h"
+#include "jeff/Translation/Deserialize.hpp"
+#include "kj/array.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -37,6 +40,7 @@
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/IR/AsmState.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Location.h"
@@ -51,16 +55,21 @@
 #include "mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/ThreadPool.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cassert>
 #include <cstddef>
+#include <cstring>
 #include <filesystem>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -99,9 +108,14 @@ std::shared_ptr<MLIRContext> createCompilerContext() {
   return context;
 }
 
+// Typed program factories verify the parsed module.
+[[nodiscard]] static ParserConfig parserConfig(MLIRContext* context) {
+  return {context, /*verifyAfterParse=*/false};
+}
+
 [[nodiscard]] static FailureOr<OwningOpRef<ModuleOp>>
 parseMLIRString(MLIRContext* context, const StringRef source) {
-  auto mod = parseSourceString<ModuleOp>(source, context);
+  auto mod = parseSourceString<ModuleOp>(source, parserConfig(context));
   if (!mod) {
     return emitError(UnknownLoc::get(context),
                      "failed to parse MLIR source string");
@@ -129,7 +143,7 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
   if (failed(openSourceMgr(path, context, sourceMgr))) {
     return failure();
   }
-  auto mod = parseSourceFile<ModuleOp>(sourceMgr, context);
+  auto mod = parseSourceFile<ModuleOp>(sourceMgr, parserConfig(context));
   if (!mod) {
     return emitError(UnknownLoc::get(context))
            << "failed to parse MLIR file '" << path.string() << "'";
@@ -150,6 +164,48 @@ bool containsProgramOperations(ModuleOp moduleOp,
         return matches ? WalkResult::interrupt() : WalkResult::advance();
       })
       .wasInterrupted();
+}
+
+/// Check that @p moduleOp can become a program of @p dialect in @p context.
+///
+/// Verify the module and reject operations of the other dialect. QCO programs
+/// must also be linear.
+[[nodiscard]] static LogicalResult
+verifyProgramModule(const std::shared_ptr<MLIRContext>& context,
+                    ModuleOp moduleOp, const ProgramDialect dialect) {
+  const StringRef name = dialect == ProgramDialect::QC ? "QC" : "QCO";
+  if (!moduleOp) {
+    if (context) {
+      emitError(UnknownLoc::get(context.get()))
+          << "cannot construct a " << name << " program from a null module";
+    }
+    return failure();
+  }
+  if (!context) {
+    return moduleOp->emitError() << "cannot construct a " << name
+                                 << " program without its owning context";
+  }
+  if (moduleOp->getContext() != context.get()) {
+    return moduleOp->emitError() << "cannot construct a " << name
+                                 << " program with a different MLIR context";
+  }
+  context->getOrLoadDialect<mqt::MQTDialect>();
+  if (failed(verify(moduleOp)) ||
+      (!mqt::getEntryPoint(moduleOp) &&
+       failed(mqt::verifyQuantumAllocations(moduleOp)))) {
+    return failure();
+  }
+  if (dialect == ProgramDialect::QC) {
+    if (containsProgramOperations(moduleOp, ProgramDialect::QCO)) {
+      return moduleOp->emitError(
+          "QC programs must not contain QCO or QTensor operations");
+    }
+    return success();
+  }
+  if (containsProgramOperations(moduleOp, ProgramDialect::QC)) {
+    return moduleOp->emitError("QCO programs must not contain QC operations");
+  }
+  return qco::verifyLinearity(moduleOp);
 }
 
 template <class ProgramType, class Parse>
@@ -325,36 +381,11 @@ QCProgram::fromOpenQASM(llvm::SourceMgr& sourceMgr,
 
 FailureOr<QCProgram> QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
                                            OwningOpRef<ModuleOp> moduleOp) {
-  Storage storage{.context = std::move(context), .mod = std::move(moduleOp)};
-  if (!storage.mod) {
-    if (storage.context) {
-      emitError(UnknownLoc::get(storage.context.get()),
-                "cannot construct a QC program from a null module");
-    }
+  if (failed(
+          verifyProgramModule(context, moduleOp.get(), ProgramDialect::QC))) {
     return failure();
   }
-  if (!storage.context) {
-    storage.mod->emitError(
-        "cannot construct a QC program without its owning context");
-    return failure();
-  }
-  if (storage.mod->getContext() != storage.context.get()) {
-    storage.mod->emitError(
-        "cannot construct a QC program with a different MLIR context");
-    return failure();
-  }
-  storage.context->getOrLoadDialect<mqt::MQTDialect>();
-  if (failed(verify(*storage.mod)) ||
-      (!mqt::getEntryPoint(*storage.mod) &&
-       failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
-    return failure();
-  }
-  if (containsProgramOperations(*storage.mod, ProgramDialect::QCO)) {
-    storage.mod->emitError(
-        "QC programs must not contain QCO or QTensor operations");
-    return failure();
-  }
-  return QCProgram(std::move(storage));
+  return QCProgram({.context = std::move(context), .mod = std::move(moduleOp)});
 }
 
 QCProgram QCProgram::copy() const { return QCProgram(cloneStorage()); }
@@ -392,40 +423,153 @@ QCOProgram::fromMLIRFile(const std::filesystem::path& path) {
 FailureOr<QCOProgram>
 QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
                        OwningOpRef<ModuleOp> moduleOp) {
-  Storage storage{.context = std::move(context), .mod = std::move(moduleOp)};
-  if (!storage.mod) {
-    if (storage.context) {
-      emitError(UnknownLoc::get(storage.context.get()),
-                "cannot construct a QCO program from a null module");
-    }
+  if (failed(
+          verifyProgramModule(context, moduleOp.get(), ProgramDialect::QCO))) {
     return failure();
   }
-  if (!storage.context) {
-    storage.mod->emitError(
-        "cannot construct a QCO program without its owning context");
-    return failure();
-  }
-  if (storage.mod->getContext() != storage.context.get()) {
-    storage.mod->emitError(
-        "cannot construct a QCO program with a different MLIR context");
-    return failure();
-  }
-  storage.context->getOrLoadDialect<mqt::MQTDialect>();
-  if (failed(verify(*storage.mod)) ||
-      (!mqt::getEntryPoint(*storage.mod) &&
-       failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
-    return failure();
-  }
-  if (containsProgramOperations(*storage.mod, ProgramDialect::QC)) {
-    storage.mod->emitError("QCO programs must not contain QC operations");
-    return failure();
-  }
-  if (failed(qco::verifyLinearity(*storage.mod))) {
-    return failure();
-  }
-  return QCOProgram(std::move(storage));
+  return QCOProgram(
+      {.context = std::move(context), .mod = std::move(moduleOp)});
 }
 
 QCOProgram QCOProgram::copy() const { return QCOProgram(cloneStorage()); }
+
+//===----------------------------------------------------------------------===//
+// JeffProgram
+//===----------------------------------------------------------------------===//
+
+/// Deserialize a binary `jeff` module, reporting failures as diagnostics.
+[[nodiscard]] static OwningOpRef<ModuleOp>
+deserializeJeff(MLIRContext* context, std::span<const std::byte> bytes) {
+  if (bytes.size() % sizeof(capnp::word) != 0U) {
+    emitError(UnknownLoc::get(context),
+              "jeff data size must be a multiple of the Cap'n Proto word size");
+    return {};
+  }
+  // Cap'n Proto reads word-aligned data.
+  auto words = kj::heapArray<capnp::word>(bytes.size() / sizeof(capnp::word));
+  std::memcpy(words.begin(), bytes.data(), bytes.size());
+  auto mod = deserialize(context, words.asPtr());
+  if (!mod) {
+    emitError(UnknownLoc::get(context), "failed to deserialize jeff bytes");
+  }
+  return mod;
+}
+
+Expected<JeffProgram> JeffProgram::fromMessage(::jeff::Module::Reader module) {
+  auto context = createCompilerContext();
+  CompilerDiagnostics diagnostics(context.get());
+  auto mod = deserialize(context.get(), module);
+  if (!mod) {
+    return diagnostics.takeError();
+  }
+  return JeffProgram({.context = context, .mod = std::move(mod)});
+}
+
+Expected<JeffProgram> JeffProgram::fromBytes(std::span<const std::byte> bytes) {
+  auto context = createCompilerContext();
+  CompilerDiagnostics diagnostics(context.get());
+  auto mod = deserializeJeff(context.get(), bytes);
+  if (!mod) {
+    return diagnostics.takeError();
+  }
+  return JeffProgram({.context = context, .mod = std::move(mod)});
+}
+
+Expected<JeffProgram> JeffProgram::fromFile(const std::filesystem::path& path) {
+  auto context = createCompilerContext();
+  CompilerDiagnostics diagnostics(context.get());
+  auto mod = deserializeFromFile(context.get(), path.string());
+  if (!mod) {
+    emitError(UnknownLoc::get(context.get()))
+        << "failed to deserialize jeff file '" << path.string() << "'";
+    return diagnostics.takeError();
+  }
+  return JeffProgram({.context = context, .mod = std::move(mod)});
+}
+
+//===----------------------------------------------------------------------===//
+// Compiler input
+//===----------------------------------------------------------------------===//
+
+std::optional<InputFormat> inputFormatForPath(const StringRef path) {
+  return llvm::StringSwitch<std::optional<InputFormat>>(
+             llvm::sys::path::extension(path))
+      .Case(".mlir", InputFormat::MLIR)
+      .Case(".qasm", InputFormat::OpenQASM)
+      .Case(".jeff", InputFormat::Jeff)
+      .Default(std::nullopt);
+}
+
+FailureOr<CompilerInput>
+parseCompilerInput(llvm::SourceMgr& sourceMgr,
+                   std::shared_ptr<MLIRContext> context,
+                   const InputFormat format) {
+  if (!context) {
+    return failure();
+  }
+  switch (format) {
+  case InputFormat::OpenQASM: {
+    auto program = QCProgram::fromOpenQASM(sourceMgr, std::move(context));
+    if (failed(program)) {
+      return failure();
+    }
+    return CompilerInput(std::move(*program));
+  }
+  case InputFormat::Jeff: {
+    const auto bytes =
+        sourceMgr.getMemoryBuffer(sourceMgr.getMainFileID())->getBuffer();
+    auto mod = deserializeJeff(
+        context.get(), std::as_bytes(std::span(bytes.data(), bytes.size())));
+    if (!mod) {
+      return failure();
+    }
+    return CompilerInput(
+        JeffProgram({.context = std::move(context), .mod = std::move(mod)}));
+  }
+  case InputFormat::MLIR:
+    break;
+  }
+  auto mod = parseSourceFile<ModuleOp>(sourceMgr, parserConfig(context.get()));
+  if (!mod) {
+    return failure();
+  }
+  if (containsProgramOperations(*mod, ProgramDialect::QCO)) {
+    auto program = QCOProgram::fromModule(std::move(context), std::move(mod));
+    if (failed(program)) {
+      return failure();
+    }
+    return CompilerInput(std::move(*program));
+  }
+  auto program = QCProgram::fromModule(std::move(context), std::move(mod));
+  if (failed(program)) {
+    return failure();
+  }
+  return CompilerInput(std::move(*program));
+}
+
+Expected<CompilerInput> loadCompilerInput(const std::filesystem::path& path,
+                                          std::optional<InputFormat> format) {
+  auto context = createCompilerContext();
+  CompilerDiagnostics diagnostics(context.get());
+  if (!format) {
+    format = inputFormatForPath(path.string());
+  }
+  if (!format) {
+    emitError(UnknownLoc::get(context.get()))
+        << "input file '" << path.string()
+        << "' has an unsupported extension; use .mlir, .qasm, or .jeff";
+    return diagnostics.takeError();
+  }
+  llvm::SourceMgr sourceMgr;
+  if (failed(openSourceMgr(path, context.get(), sourceMgr))) {
+    return diagnostics.takeError();
+  }
+  // Keep the context alive until the diagnostic handler is removed.
+  auto input = parseCompilerInput(sourceMgr, context, *format);
+  if (failed(input)) {
+    return diagnostics.takeError();
+  }
+  return std::move(*input);
+}
 
 } // namespace mlir

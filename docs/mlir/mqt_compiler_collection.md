@@ -189,8 +189,8 @@ input's program family:
 | Input                                             | Default result         |
 | ------------------------------------------------- | ---------------------- |
 | Qiskit `QuantumCircuit`                           | `QuantumCircuit`       |
-| `QCProgram`, QC MLIR text, or `.mlir` file        | `QCProgram`            |
-| `QCOProgram`                                      | Optimized `QCOProgram` |
+| `QCProgram`, QC MLIR text, or QC `.mlir` file     | `QCProgram`            |
+| `QCOProgram` or QCO `.mlir` file                  | Optimized `QCOProgram` |
 | `JeffProgram` or `.jeff` file                     | `JeffProgram`          |
 | `OpenQASMProgram`, OpenQASM text, or `.qasm` file | `OpenQASMProgram`      |
 
