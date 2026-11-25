@@ -23,6 +23,10 @@ namespace mlir::mqt {
 [[nodiscard]] std::optional<double> attributeToDouble(Attribute attr);
 
 /// Convert a direct constant-like value to a double.
+///
+/// Rewrite patterns use this check because the rewrite driver folds constant
+/// expressions into literals. Queries that read IR without rewriting it use
+/// valueToConstantDouble() instead.
 [[nodiscard]] std::optional<double> valueToDouble(Value value);
 
 /// Evaluate a constant SSA expression without changing the IR.
@@ -37,12 +41,6 @@ namespace mlir::mqt {
 /// @param cache Evaluation results indexed by SSA value.
 [[nodiscard]] Attribute valueToConstantAttr(Value value,
                                             DenseMap<Value, Attribute>& cache);
-
-/// Evaluate a constant expression with exclusive access to its IR. Dialect
-/// folds may rewrite defining operations in place. Discard the cache after
-/// other changes to the IR.
-[[nodiscard]] Attribute foldToConstantAttr(Value value,
-                                           DenseMap<Value, Attribute>& cache);
 
 /// Evaluate a constant SSA expression without changing the IR, returning null
 /// on failure.

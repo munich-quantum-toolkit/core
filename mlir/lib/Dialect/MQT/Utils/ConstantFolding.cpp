@@ -28,6 +28,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include <cassert>
 #include <optional>
 #include <utility>
 
@@ -98,43 +99,30 @@ static Attribute foldWithAttributes(Operation* op,
   return {};
 }
 
-static Attribute foldConstantOperation(Operation* op,
-                                       DenseMap<Value, Attribute>& cache,
-                                       bool allowInPlace) {
-  if (allowInPlace) {
-    const auto attributes =
-        llvm::map_to_vector(op->getOperands(), [&](Value operand) {
-          return cache.lookup(operand);
-        });
-    if (auto attr = foldWithAttributes(op, attributes)) {
-      return attr;
-    }
-  }
-
+/// Fold a private copy of @p op whose operands are cached constants.
+///
+/// A dialect may fold in place or inspect the operations that define its
+/// operands, so the copy receives literal operands and the source IR stays
+/// unchanged.
+static Attribute
+foldConstantOperation(Operation* op, const DenseMap<Value, Attribute>& cache) {
   Block scratch;
   OpBuilder builder(op->getContext());
   builder.setInsertionPointToEnd(&scratch);
   IRMapping mapping;
   SmallVector<Attribute> attributes;
   for (Value operand : op->getOperands()) {
-    // An in-place fold can introduce operands outside the cached expression.
-    auto attr = valueToConstantAttr(operand, cache);
-    if (!attr) {
-      return {};
-    }
+    auto attr = cache.lookup(operand);
+    assert(attr && "operands are evaluated before their user");
     attributes.push_back(attr);
     if (!mapping.contains(operand)) {
       mapping.map(operand, constantOperand(builder, op, operand, attr));
     }
   }
-
-  // A dialect may fold in place. The clone has no uses of source values.
-  Operation* copy = builder.clone(*op, mapping);
-  return foldWithAttributes(copy, attributes);
+  return foldWithAttributes(builder.clone(*op, mapping), attributes);
 }
 
-static Attribute evaluate(Value value, DenseMap<Value, Attribute>& cache,
-                          bool allowInPlace) {
+static Attribute evaluate(Value value, DenseMap<Value, Attribute>& cache) {
   if (const auto found = cache.find(value); found != cache.end()) {
     return found->second;
   }
@@ -169,7 +157,7 @@ static Attribute evaluate(Value value, DenseMap<Value, Attribute>& cache,
       continue;
     }
 
-    Attribute folded = foldConstantOperation(operation, cache, allowInPlace);
+    Attribute folded = foldConstantOperation(operation, cache);
     if (!folded) {
       return {};
     }
@@ -180,11 +168,7 @@ static Attribute evaluate(Value value, DenseMap<Value, Attribute>& cache,
 }
 
 Attribute valueToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
-  return evaluate(value, cache, /*allowInPlace=*/false);
-}
-
-Attribute foldToConstantAttr(Value value, DenseMap<Value, Attribute>& cache) {
-  return evaluate(value, cache, /*allowInPlace=*/true);
+  return evaluate(value, cache);
 }
 
 Attribute valueToConstantAttr(Value value) {

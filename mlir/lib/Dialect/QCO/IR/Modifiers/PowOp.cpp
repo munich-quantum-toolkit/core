@@ -673,7 +673,7 @@ void PowOp::getLoweringPatterns(RewritePatternSet& results,
 // computation are known; getUnitaryMatrix() can still fail for unsupported
 // bodies or numerical reasons.
 bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
-  return getExponentValue().has_value() &&
+  return mqt::valueToConstantDouble(getExponent()).has_value() &&
          all_of(getBody()->getOps<UnitaryOpInterface>(),
                 [](UnitaryOpInterface op) {
                   return op.hasCompileTimeKnownUnitaryMatrix();
@@ -681,7 +681,8 @@ bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
 }
 
 std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
-  const auto exponent = getExponentValue();
+  // Matrix queries evaluate computed exponents like gate parameters.
+  const auto exponent = mqt::valueToConstantDouble(getExponent());
   return exponent ? getUnitaryMatrix(*exponent) : std::nullopt;
 }
 
