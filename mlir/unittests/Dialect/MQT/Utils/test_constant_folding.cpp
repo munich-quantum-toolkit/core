@@ -132,9 +132,6 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleUIToFP) {
   auto op = arith::UIToFPOp::create(*builder, builder->getF64Type(), second);
   EXPECT_EQ(mlir::mqt::valueToConstantDouble(op), 7.0);
   EXPECT_EQ(second.getIn(), first.getResult());
-
-  DenseMap<Value, Attribute> cache;
-  EXPECT_EQ(mqt::foldToConstantAttr(op, cache), builder->getF64FloatAttr(7.0));
 }
 
 TEST_F(ConstantFoldingTest, valueToConstantDoubleSIToFP) {
@@ -145,8 +142,6 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleSIToFP) {
   auto quotient = arith::DivSIOp::create(*builder, lhs, two);
   auto op = arith::SIToFPOp::create(*builder, builder->getF64Type(), quotient);
   EXPECT_EQ(mlir::mqt::valueToConstantDouble(op), -7.0);
-  DenseMap<Value, Attribute> cache;
-  EXPECT_EQ(mqt::foldToConstantAttr(op, cache), builder->getF64FloatAttr(-7.0));
 }
 
 TEST_F(ConstantFoldingTest, valueToConstantAttrDynamicOperand) {

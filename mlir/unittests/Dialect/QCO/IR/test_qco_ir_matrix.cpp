@@ -28,6 +28,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -729,6 +730,19 @@ TEST_F(QCOMatrixTest, PowMatrixAvailabilityContract) {
     const double expected = (exponent < 0.5 ? -0.5 : 0.5) * std::sin(phase);
     EXPECT_NEAR((*matrix)(0, 1).imag() * 2048., expected * 2048., 3.e-13);
   }
+
+  // A computed exponent yields the matrix of its value.
+  const auto literal = staticPow.getUnitaryMatrix();
+  ASSERT_TRUE(literal);
+  OpBuilder builder(staticPow);
+  auto quarter = arith::ConstantOp::create(builder, staticPow.getLoc(),
+                                           builder.getF64FloatAttr(0.25));
+  staticPow->setOperand(
+      0, arith::AddFOp::create(builder, staticPow.getLoc(), quarter, quarter));
+  EXPECT_TRUE(staticPow.hasCompileTimeKnownUnitaryMatrix());
+  const auto computed = staticPow.getUnitaryMatrix();
+  ASSERT_TRUE(computed);
+  EXPECT_TRUE(computed->isApprox(*literal));
 
   makePowExponentDynamic(*staticModule);
   EXPECT_FALSE(staticPow.hasCompileTimeKnownUnitaryMatrix());
