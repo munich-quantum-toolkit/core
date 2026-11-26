@@ -23,6 +23,7 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <limits>
 #include <optional>
@@ -96,7 +97,9 @@ public:
 /// `data` is set, let `fill` write them into the caller's buffer of `size`
 /// bytes.
 ///
-/// This is the provider side of the QDMI size-then-fill protocol.
+/// This is the provider side of the QDMI size-then-fill protocol. `fill`
+/// writes typed elements, so `data` must be aligned for `T`; `writeValue` and
+/// `writeList` copy bytes and accept any buffer.
 template <typename T, std::invocable<std::span<T>> Fill>
   requires std::is_trivially_copy_constructible_v<T>
 [[nodiscard]] QDMI_STATUS writeResult(const size_t count, const size_t size,
@@ -118,22 +121,32 @@ template <typename T, std::invocable<std::span<T>> Fill>
   return QDMI_SUCCESS;
 }
 
-/// Write one value with the size-then-fill protocol.
-template <typename T>
-[[nodiscard]] QDMI_STATUS writeValue(const T& value, const size_t size,
-                                     void* data, size_t* sizeRet) {
-  return writeResult<T>(1, size, data, sizeRet,
-                        [&](std::span<T> output) { output.front() = value; });
-}
-
 /// Write a list with the size-then-fill protocol.
 template <std::ranges::contiguous_range Range>
+  requires std::is_trivially_copy_constructible_v<
+      std::ranges::range_value_t<Range>>
 [[nodiscard]] QDMI_STATUS writeList(const Range& values, const size_t size,
                                     void* data, size_t* sizeRet) {
   using T = std::ranges::range_value_t<Range>;
-  return writeResult<T>(
-      std::ranges::size(values), size, data, sizeRet,
-      [&](std::span<T> output) { std::ranges::copy(values, output.begin()); });
+  const auto count = std::ranges::size(values);
+  if (count > std::numeric_limits<size_t>::max() / sizeof(T)) {
+    return QDMI_ERROR_OUTOFMEM;
+  }
+  // Byte copies keep the caller's buffer free of alignment requirements.
+  return writeResult<std::byte>(
+      count * sizeof(T), size, data, sizeRet, [&](std::span<std::byte> output) {
+        if (!output.empty()) {
+          std::memcpy(output.data(), std::ranges::data(values), output.size());
+        }
+      });
+}
+
+/// Write one value with the size-then-fill protocol.
+template <typename T>
+  requires std::is_trivially_copy_constructible_v<T>
+[[nodiscard]] QDMI_STATUS writeValue(const T& value, const size_t size,
+                                     void* data, size_t* sizeRet) {
+  return writeList(std::span(&value, 1), size, data, sizeRet);
 }
 
 /// Write a null-terminated string with the size-then-fill protocol.

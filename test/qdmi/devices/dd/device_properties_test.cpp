@@ -19,7 +19,9 @@
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
 
+#include <array>
 #include <cstddef>
+#include <cstring>
 #include <set>
 #include <string>
 #include <string_view>
@@ -156,6 +158,33 @@ TEST(DeviceProperties, QubitsNumAvailable) {
                 nullptr),
             QDMI_SUCCESS);
   EXPECT_GT(nq, 0U);
+}
+
+TEST(DeviceProperties, ValuesAndListsAcceptUnalignedBuffers) {
+  const qdmi_test::SessionGuard s{};
+  // Clients may pass any byte buffer; plain values and lists are byte copies.
+  alignas(size_t) std::array<std::byte, sizeof(size_t) + 1> buffer{};
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                s.session, QDMI_DEVICE_PROPERTY_QUBITSNUM, sizeof(size_t),
+                &buffer[1], nullptr),
+            QDMI_SUCCESS);
+  size_t nq = 0;
+  std::memcpy(&nq, &buffer[1], sizeof(nq));
+  EXPECT_GT(nq, 0U);
+
+  size_t size = 0;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                s.session, QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS, 0,
+                nullptr, &size),
+            QDMI_SUCCESS);
+  std::vector<std::byte> bytes(size + 1);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
+                s.session, QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS, size,
+                &bytes[1], nullptr),
+            QDMI_SUCCESS);
+  std::vector<QDMI_Program_Format> formats(size / sizeof(QDMI_Program_Format));
+  std::memcpy(formats.data(), &bytes[1], size);
+  EXPECT_FALSE(formats.empty());
 }
 
 TEST(SiteProperties, IndexAvailable) {
