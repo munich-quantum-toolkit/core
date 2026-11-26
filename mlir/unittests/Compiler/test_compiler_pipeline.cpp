@@ -497,6 +497,20 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
   EXPECT_TRUE(mlir::failed(
       QCProgram::fromModule(otherContext, std::move(mismatchedModule))));
 }
+
+TEST(CompilerProgramOwnershipTest, AdoptsBuiltQCModules) {
+  auto context = createCompilerContext();
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  builder.h(builder.allocQubit());
+  auto moduleOp = builder.finalize();
+  auto borrowed = *moduleOp;
+
+  auto program = QCProgram::fromBuiltModule(context, std::move(moduleOp));
+
+  EXPECT_EQ(program.module(), borrowed);
+  EXPECT_TRUE(program.isValid());
+}
 TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, QCODialect, func::FuncDialect,
