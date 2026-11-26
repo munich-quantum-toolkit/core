@@ -274,15 +274,10 @@ mqt-core = { workspace = true }
 build = "cp3*"
 skip = [ "*-musllinux_*", "cp314t-*" ]
 archs = "auto64"
-build-frontend = { name = "uv", args = [ "--no-build-isolation-package", "mqt-core" ] }
+build-frontend = "uv"
 config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
-environment = { DEPLOY = "ON", PYTHONUSERBASE = "$(python -c \"import sys; from pathlib import Path; print(Path('build/wheel-deps', sys.implementation.cache_tag).resolve())\")" }
+environment = { DEPLOY = "ON" }
 before-all = 'cmake -E rm -rf "{package}/build/cibuildwheel-stamps"'
-# uv builds with the base Python. A private user site gives each ABI stable header paths.
-before-build = """\
-  python -c \"import site, subprocess; subprocess.check_call(['uv', 'pip', 'install', '--target', \
-  site.getusersitepackages(), '--group', 'build'])\"\
-  """
 test-command = "pytest test/python --maxprocesses=2 --dist=worksteal"
 test-groups = [ "test" ]
 test-sources = [
@@ -301,6 +296,7 @@ repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg 
 
 [[tool.cibuildwheel.overrides]]
 select = "*-manylinux_*"
+build-frontend = { name = "uv", args = [ "--no-build-isolation-package", "mqt-core" ] }
 config-settings = { "cmake.define.MQT_CORE_USE_SDK_MOLD" = "ON" }
 environment = { CC = "clang", CXX = "clang++", PATH = "/opt/clang/bin:$PATH:/root/.local/bin" }
 before-all = [
@@ -308,6 +304,7 @@ before-all = [
   "uv tool install ninja",
   "uv tool install 'sccache>=0.10.0'",
 ]
+before-build = 'uv pip install --project "{package}" --group build'
 before-test = "uvx sccache --show-stats"
 # QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
 # containers used to build and test MQT Core's broadly compatible wheels.
