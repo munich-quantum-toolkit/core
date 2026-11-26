@@ -15,6 +15,9 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringRef.h"
+
 #include <optional>
 #include <tuple>
 #include <utility>
@@ -75,10 +78,18 @@ SyntaxStatementId SyntaxBuilder::addStatement(SMLoc location,
   return id;
 }
 
-SyntaxExpressionId
-SyntaxBuilder::addExpression(const SyntaxExpression& expression) {
+void SyntaxBuilder::reserveFor(const StringRef source) {
+  // Simple statements end in a semicolon. Gate-heavy sources hold about one
+  // expression per eight bytes; untouched reserved pages are not committed.
+  const auto statements = static_cast<size_t>(llvm::count(source, ';'));
+  program.statements.reserve(statements);
+  program.body.reserve(statements);
+  program.expressions.reserve(source.size() / 8);
+}
+
+SyntaxExpressionId SyntaxBuilder::addExpression(SyntaxExpression expression) {
   const auto id = static_cast<SyntaxExpressionId>(program.expressions.size());
-  program.expressions.push_back(expression);
+  program.expressions.push_back(std::move(expression));
   return id;
 }
 

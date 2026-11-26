@@ -418,6 +418,9 @@ public:
         constantExpressionStatus(syntax.expressions.size(), 0),
         constantValues(syntax.expressions.size()),
         constantTypes(syntax.expressions.size()) {
+    // Typed programs mirror the syntax closely; avoid regrowing them.
+    program.expressions.reserve(syntax.expressions.size());
+    program.statements.reserve(syntax.statements.size());
     enterScope();
   }
 
