@@ -24,6 +24,9 @@
 
 namespace mlir::mqt {
 
+/// Module attribute that holds the QubitLayout.
+inline constexpr llvm::StringLiteral kLayoutAttr = "mqt.layout";
+
 /// Number of input slots being tracked until placement publishes the layout.
 inline constexpr llvm::StringLiteral kSourceQubitCountAttr =
     "mqt.source_qubit_count";

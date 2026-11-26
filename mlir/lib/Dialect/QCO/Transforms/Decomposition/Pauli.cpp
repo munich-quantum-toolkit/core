@@ -10,6 +10,7 @@
 
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
 
+#include "mqt/Dialect/MQT/Utils/Angles.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
@@ -75,11 +76,9 @@ Matrix2x2 pauliFrame(PauliAxis axis, PauliAxis from) {
 }
 
 FoldedPauliAngle foldPauliAngle(double angle) {
-  // Reduce with trigonometry before subtracting pi, including large angles.
-  const double principal = std::abs(angle) <= 2. * std::numbers::pi
-                               ? angle
-                               : 4. * std::atan(std::tan(angle / 4.));
-  const double folded = std::remainder(principal, std::numbers::pi);
+  // Reduce accurately before subtracting pi, including large angles.
+  const double principal = mqt::reduceAngle(angle, 4. * std::numbers::pi);
+  const double folded = mqt::reduceAngle(principal, std::numbers::pi);
   const auto turns =
       static_cast<int>(std::round((principal - folded) / std::numbers::pi));
   return {
@@ -849,7 +848,7 @@ countPauliRotations(const PauliRotationSequence& sequence) {
       const double value = *angle * term.angleScale;
       // Let the Weyl planner shorten near-Clifford rotations using its
       // fidelity policy, including negligible entangling angles.
-      const double delta = std::remainder(value, std::numbers::pi / 2.);
+      const double delta = mqt::reduceAngle(value, std::numbers::pi / 2.);
       if (traceToFidelity(4. * std::cos(delta / 2.)) >= WEYL_DEFAULT_FIDELITY) {
         return std::nullopt;
       }

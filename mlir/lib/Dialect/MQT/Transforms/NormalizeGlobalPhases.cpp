@@ -66,10 +66,7 @@ struct ConstantPhase {
     if (other.angle == -other.error) {
       return;
     }
-    const double sum = angle + other.angle;
-    // TwoSum recovers the low bits lost when adding the two leading terms.
-    const double rhs = sum - angle;
-    const double residual = (angle - (sum - rhs)) + (other.angle - rhs);
+    const auto [sum, residual] = twoSum(angle, other.angle);
     error += other.error + residual;
     angle = sum;
   }
@@ -81,19 +78,11 @@ struct ConstantPhase {
     // Elide encoded whole turns only while their phase factor is still unity
     // within tolerance. A large multiple of binary64 2π can lose phase.
     return error == 0.0 && std::abs(angle) >= 2.0 * std::numbers::pi &&
-           normalizeAngle(angle) == 0.0 &&
            classifyPhaseGate(angle) == PhaseGate::Identity;
   }
 
   [[nodiscard]] double reduced() const {
-    const auto wrap = [](double radians) {
-      if (std::abs(radians) > std::numbers::pi) {
-        // Let libm reduce the argument using its extended-precision π.
-        radians = 2.0 * std::atan(std::tan(radians / 2.0));
-      }
-      return radians == -std::numbers::pi ? std::numbers::pi : radians;
-    };
-    return wrap(wrap(angle) + error);
+    return normalizeAngle(normalizeAngle(angle) + error);
   }
 };
 

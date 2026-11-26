@@ -314,7 +314,7 @@ Value powHalfZ(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(1.5) wrapping a Z gate.
 ///
-/// Exercises normalizeAngle `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
+/// Exercises normalizeAngle past π (1.5π normalises to -π/2 → sdg).
 Value powThreeHalvesZ(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(1/3) wrapping a Z gate (falls through to P gate).

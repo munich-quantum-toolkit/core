@@ -3000,7 +3000,7 @@ exportCircuitImpl(mlir::QCProgram program,
         "QC to Qiskit export requires an mqt.entry_point function");
   }
   std::optional<mlir::mqt::QubitLayout> layout;
-  if (const auto attr = moduleOp->getAttr("mqt.layout")) {
+  if (const auto attr = moduleOp->getAttr(mlir::mqt::kLayoutAttr)) {
     auto parsed = mlir::mqt::QubitLayout::fromAttr(
         attr, [&] { return moduleOp.emitError(); });
     if (failed(parsed)) {

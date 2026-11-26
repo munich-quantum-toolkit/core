@@ -792,7 +792,7 @@ static LogicalResult recordOutputPermutation(ModuleOp moduleOp,
         permutation[layout->routing ? (*layout->routing)[wire] : wire];
   }
   layout->routing = std::move(routing);
-  moduleOp->setAttr("mqt.layout", layout->toAttr(moduleOp.getContext()));
+  moduleOp->setAttr(mqt::kLayoutAttr, layout->toAttr(moduleOp.getContext()));
   return success();
 }
 
