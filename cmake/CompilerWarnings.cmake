@@ -6,6 +6,16 @@
 #
 # Licensed under the MIT License
 
+if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
+  include(CheckCXXCompilerFlag)
+  # Forward to the frontend so later warning groups cannot re-enable this diagnostic.
+  check_cxx_compiler_flag(-Wno-missing-designated-field-initializers
+                          HAS_WNO_MISSING_DESIGNATED_FIELD_INITIALIZERS)
+  if(HAS_WNO_MISSING_DESIGNATED_FIELD_INITIALIZERS)
+    add_compile_options(-Xclang=-Wno-missing-designated-field-initializers)
+  endif()
+endif()
+
 # enable extensive compiler warnings from here:
 # https://github.com/lefticus/cppbestpractices/blob/master/02-Use_the_Tools_Available.md
 function(set_project_warnings target_name)

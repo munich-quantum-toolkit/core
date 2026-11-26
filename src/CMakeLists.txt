@@ -13,7 +13,6 @@ if(NOT TARGET MQT::ProjectWarnings)
   add_library(project_warnings INTERFACE)
 
   # standard compiler warnings
-  include(${PROJECT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
   set_project_warnings(project_warnings)
 
   add_library(MQT::ProjectWarnings ALIAS project_warnings)

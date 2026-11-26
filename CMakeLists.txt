@@ -98,6 +98,7 @@ if(MQT_CORE_USE_SDK_MOLD AND NOT DEFINED CMAKE_LINKER_TYPE)
 endif()
 
 include(cmake/ExternalDependencies.cmake)
+include(CompilerWarnings)
 
 # set the include directory for the build tree
 set(MQT_CORE_INCLUDE_BUILD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/include/mqt-core")
