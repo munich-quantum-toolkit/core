@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -60,6 +61,12 @@ Array<T> readResultArray(const Job& job, const Result result,
     const nb::gil_scoped_release release;
     return unwrap(job.getResultSize(result, programIndex));
   }();
+  if (size % sizeof(T) != 0) {
+    // Same diagnosis as qdmi::queryBuffer; FATAL maps to RuntimeError.
+    throw std::runtime_error(
+        "Querying result size: byte count is not a multiple of the element "
+        "size");
+  }
   const auto count = size / sizeof(T);
   auto storage = std::make_unique_for_overwrite<double[]>(count * components);
   auto* const data = storage.get();
