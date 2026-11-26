@@ -3432,6 +3432,18 @@ def test_classical_expression_rejects_mismatched_instruction_captures() -> None:
         QCProgram.from_qiskit(circuit)
 
 
+def test_control_flow_rejects_mismatched_qubit_captures() -> None:
+    """Reject a qubit capture list that does not match its block."""
+    circuit = QuantumCircuit(2, 1)
+    with circuit.if_test((circuit.clbits[0], True)):
+        circuit.cx(0, 1)
+    instruction = circuit.data[0]
+    circuit._data[0] = instruction.replace(qubits=(circuit.qubits[0],))  # ruff: ignore[private-member-access]
+
+    with pytest.raises(RuntimeError, match="incompatible qubit captures"):
+        QCProgram.from_qiskit(circuit)
+
+
 def test_excessively_nested_classical_expression_is_rejected() -> None:
     """Bound native normalization before recursive expression traversal."""
     condition: expr.Expr = expr.equal(1, 1)
