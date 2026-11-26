@@ -373,7 +373,7 @@ Error QDMI_Device_impl_d::initialize(const qdmi::DeviceSessionConfig& config,
   if (childDevice != nullptr) {
     return Error::success();
   }
-  auto queried = qdmi::queryBuffer<std::vector<QDMI_Child_Device>>(
+  auto queried = qdmi::queryBuffer<llvm::SmallVector<QDMI_Child_Device, 0>>(
       [this](const size_t size, void* value, size_t* sizeRet) {
         return api_->device_session_query_device_property(
             deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size, value,

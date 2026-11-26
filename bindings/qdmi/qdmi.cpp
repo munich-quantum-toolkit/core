@@ -34,6 +34,7 @@
 #include "llvm/Support/JSON.h"
 
 #include <array>
+#include <complex>
 #include <cstddef>
 #include <filesystem>
 #include <optional>
@@ -202,6 +203,31 @@ template <typename Query>
       "value_type must be exactly str, bool, int, float, or bytes");
 }
 
+/// Read a job result or program into a new, uninitialized bytes object.
+///
+/// Both device calls run without the GIL.
+template <class Size, class Read>
+[[nodiscard]] nb::bytes readBytes(const Size& size, const Read& read) {
+  const auto count = [&] {
+    const nb::gil_scoped_release release;
+    return bindings::unwrap(size());
+  }();
+  // NOLINTBEGIN(misc-include-cleaner): CPython API through nanobind.
+  // CPython leaves a bytes object created from null uninitialized.
+  auto bytes = nb::steal<nb::bytes>(
+      PyBytes_FromStringAndSize(nullptr, static_cast<Py_ssize_t>(count)));
+  if (!bytes.is_valid()) {
+    throw nb::python_error();
+  }
+  auto* const data = PyBytes_AsString(bytes.ptr());
+  // NOLINTEND(misc-include-cleaner)
+  {
+    const nb::gil_scoped_release release;
+    bindings::unwrap(read(std::as_writable_bytes(std::span(data, count))));
+  }
+  return bytes;
+}
+
 } // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
@@ -333,12 +359,9 @@ Returns:
   job.def(
       "get_dense_statevector",
       [](const qdmi::Job& self, size_t programIndex) {
-        auto values = [&] {
-          const nb::gil_scoped_release release;
-          return bindings::invoke(&qdmi::Job::getDenseStateVector, self,
-                                  programIndex);
-        }();
-        return bindings::ownedArray(std::move(values));
+        return bindings::readResultArray<std::complex<double>>(
+            self, QDMI_JOB_RESULT_STATEVECTOR_DENSE, programIndex,
+            "complex128");
       },
       "program_index"_a = 0,
       "Return a one-dimensional complex128 NumPy array owning the retrieved "
@@ -347,12 +370,8 @@ Returns:
   job.def(
       "get_dense_probabilities",
       [](const qdmi::Job& self, size_t programIndex) {
-        auto values = [&] {
-          const nb::gil_scoped_release release;
-          return bindings::invoke(&qdmi::Job::getDenseProbabilities, self,
-                                  programIndex);
-        }();
-        return bindings::ownedArray(std::move(values));
+        return bindings::readResultArray<double>(
+            self, QDMI_JOB_RESULT_PROBABILITIES_DENSE, programIndex, "float64");
       },
       "program_index"_a = 0,
       "Return a one-dimensional float64 NumPy array owning the retrieved "
@@ -436,12 +455,10 @@ when the custom slot is unsupported.)pb");
         if (!valueType.is(nb::builtins()["bytes"])) {
           throw nb::type_error("value_type must be bytes");
         }
-        const auto program = [&] {
-          const nb::gil_scoped_release release;
-          return invoke([&] { return self.getProgramBytes(programIndex); });
-        }();
-        return nb::bytes(reinterpret_cast<const char*>(program.data()),
-                         program.size());
+        return readBytes([&] { return self.getProgramSize(programIndex); },
+                         [&](const std::span<std::byte> buffer) {
+                           return self.readProgram(buffer, programIndex);
+                         });
       },
       "value_type"_a, "program_index"_a = 0,
       nb::sig("def get_program(self, value_type: type[bytes], "
@@ -457,14 +474,11 @@ when the custom slot is unsupported.)pb");
   job.def(
       "get_results",
       [](const qdmi::Job& self, const int result, const size_t programIndex) {
-        const auto value = [&] {
-          const nb::gil_scoped_release release;
-          return invoke([&] {
-            return self.getResults(static_cast<QDMI_Job_Result>(result),
-                                   programIndex);
-          });
-        }();
-        return nb::bytes(value.data(), value.size());
+        const auto kind = static_cast<QDMI_Job_Result>(result);
+        return readBytes([&] { return self.getResultSize(kind, programIndex); },
+                         [&](const std::span<std::byte> buffer) {
+                           return self.readResult(kind, buffer, programIndex);
+                         });
       },
       "result"_a, "program_index"_a = 0,
       "Returns an indexed result as exact bytes.");

@@ -16,6 +16,7 @@
 
 #include "qdmi/client.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Error.h"
@@ -60,7 +61,7 @@ using llvm::Expected;
 
 namespace qdmi {
 namespace detail {
-Expected<PackedShots> PackedShots::parse(std::vector<std::byte> bytes,
+Expected<PackedShots> PackedShots::parse(llvm::SmallVector<std::byte, 0> bytes,
                                          size_t count) {
   if (bytes.empty() || bytes.back() != std::byte{0}) {
     return qdmi::makeError(QDMI_ERROR_FATAL, "Unterminated QDMI SHOTS result");
@@ -78,34 +79,53 @@ Expected<PackedShots> PackedShots::parse(std::vector<std::byte> bytes,
 }
 
 Expected<PackedShots> getPackedShots(const Job& job, size_t programIndex) {
-  auto bytes = job.getResults(QDMI_JOB_RESULT_SHOTS, programIndex);
-  if (!bytes) {
-    return bytes.takeError();
+  auto size = job.getResultSize(QDMI_JOB_RESULT_SHOTS, programIndex);
+  if (!size) {
+    return size.takeError();
   }
-  if (bytes->empty()) {
+  if (*size == 0) {
     return PackedShots{};
+  }
+  llvm::SmallVector<std::byte, 0> bytes;
+  bytes.resize_for_overwrite(*size);
+  if (auto error = job.readResult(QDMI_JOB_RESULT_SHOTS, bytes, programIndex)) {
+    return error;
   }
   auto count = job.getNumShots();
   if (!count) {
     return count.takeError();
   }
-  return PackedShots::parse(std::move(*bytes), *count);
+  return PackedShots::parse(std::move(bytes), *count);
 }
 
 } // namespace detail
 
 namespace {
-/// Fetch one program result as elements of type `T`.
+[[nodiscard]] auto resultQuery(const detail::DriverAPI& api, QDMI_Job job,
+                               const size_t programIndex,
+                               const QDMI_Job_Result result) {
+  return [&api, job, programIndex, result](const size_t size, void* data,
+                                           size_t* sizeRet) {
+    return api.job_get_results(job, programIndex, result, size, data, sizeRet);
+  };
+}
+
+[[nodiscard]] auto programQuery(const detail::DriverAPI& api, QDMI_Job job,
+                                const size_t programIndex) {
+  return [&api, job, programIndex](const size_t size, void* data,
+                                   size_t* sizeRet) {
+    return api.job_get_program(job, programIndex, size, data, sizeRet);
+  };
+}
+
+/// Fetch one program result into a new contiguous container.
 template <typename Buffer>
 Expected<Buffer> fetchResult(const detail::DriverAPI& api, QDMI_Job job,
                              const size_t programIndex,
                              const QDMI_Job_Result result,
                              const llvm::Twine& description) {
   return qdmi::queryRequiredBuffer<Buffer>(
-      [&](const size_t size, void* data, size_t* sizeRet) {
-        return api.job_get_results(job, programIndex, result, size, data,
-                                   sizeRet);
-      },
+      resultQuery(api, job, programIndex, result),
       "Querying " + description + " size", "Querying " + description);
 }
 
@@ -114,8 +134,8 @@ Expected<std::map<std::string, T>> getSparseResult(
     const detail::DriverAPI& api, QDMI_Job job, const size_t programIndex,
     const QDMI_Job_Result keysResult, const QDMI_Job_Result valuesResult,
     const llvm::Twine& description, const std::string_view mismatch) {
-  auto keys = fetchResult<std::string>(api, job, programIndex, keysResult,
-                                       description + " keys");
+  auto keys = fetchResult<llvm::SmallVector<char, 0>>(
+      api, job, programIndex, keysResult, description + " keys");
   if (!keys) {
     return keys.takeError();
   }
@@ -126,20 +146,20 @@ Expected<std::map<std::string, T>> getSparseResult(
     return qdmi::makeError(QDMI_ERROR_FATAL,
                            "Unterminated " + description + " keys");
   }
-  auto values = fetchResult<std::vector<T>>(
+  auto values = fetchResult<llvm::SmallVector<T, 0>>(
       api, job, programIndex, valuesResult, description + " values");
   if (!values) {
     return values.takeError();
   }
-  const auto list =
-      detail::trimList(llvm::StringRef(*keys).drop_back(), values->size());
+  const auto list = detail::trimList(
+      llvm::StringRef(keys->data(), keys->size() - 1), values->size());
   if (!list) {
     return qdmi::makeError(QDMI_ERROR_FATAL, std::string(mismatch));
   }
   std::map<std::string, T> result;
-  auto value = values->begin();
+  size_t index = 0;
   for (const auto key : llvm::split(*list, ',')) {
-    result.insert_or_assign(result.end(), key.str(), *value++);
+    result.insert_or_assign(result.end(), key.str(), (*values)[index++]);
   }
   return result;
 }
@@ -432,8 +452,11 @@ Expected<std::vector<std::string>> builtin_driver::registeredDeviceIds() {
         QDMI_ERROR_FATAL,
         "The MQT Core QDMI driver does not support offline enumeration");
   }
-  auto buffer = qdmi::queryRequiredBuffer<std::string>(
-      query, "Querying registered QDMI device IDs",
+  auto buffer = qdmi::queryRequiredBuffer<llvm::SmallVector<char, 0>>(
+      [query](const size_t size, void* ids, size_t* sizeRet) {
+        return query(size, static_cast<char*>(ids), sizeRet);
+      },
+      "Querying registered QDMI device IDs",
       "Querying registered QDMI device IDs");
   if (!buffer) {
     return buffer.takeError();
@@ -447,7 +470,7 @@ Expected<std::vector<std::string>> builtin_driver::registeredDeviceIds() {
                            "The QDMI driver returned an unterminated ID");
   }
   for (const auto id :
-       llvm::split(llvm::StringRef(*buffer).drop_back(), '\0')) {
+       llvm::split(llvm::StringRef(buffer->data(), buffer->size() - 1), '\0')) {
     ids.emplace_back(id);
   }
   return ids;
@@ -490,7 +513,7 @@ Expected<Device> builtin_driver::openDevice(
                                     "Initializing QDMI device session")) {
     return error;
   }
-  auto devices = qdmi::queryRequiredBuffer<std::vector<QDMI_Device>>(
+  auto devices = qdmi::queryRequiredBuffer<llvm::SmallVector<QDMI_Device, 0>>(
       [&](const size_t size, void* value, size_t* sizeRet) {
         return driver->session_query_session_property(
             session, QDMI_SESSION_PROPERTY_DEVICES, size, value, sizeRet);
@@ -768,7 +791,7 @@ Device::queryCustomOperations(const CustomProperty property) const {
   const auto description =
       ("custom operation list " + llvm::Twine(static_cast<unsigned>(property)))
           .str();
-  auto handlesResult = qdmi::queryBuffer<std::vector<QDMI_Operation>>(
+  auto handlesResult = qdmi::queryBuffer<llvm::SmallVector<QDMI_Operation, 0>>(
       [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
         return api().device_query_device_property(device_, qdmiProperty, size,
                                                   value, sizeRet);
@@ -859,7 +882,7 @@ Device::getSupportedProgramFormats() const {
 }
 
 Expected<std::vector<Device>> Device::getChildDevices() const {
-  auto queried = qdmi::queryBuffer<std::vector<QDMI_Device>>(
+  auto queried = qdmi::queryBuffer<llvm::SmallVector<QDMI_Device, 0>>(
       [this](const size_t size, void* value, size_t* sizeRet) {
         return api().device_query_device_property(
             device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size, value, sizeRet);
@@ -1213,11 +1236,21 @@ Expected<QDMI_Program_Format> Job::getProgramFormat() const {
 Expected<std::vector<std::byte>>
 Job::getProgramBytes(const size_t programIndex) const {
   return qdmi::queryRequiredBuffer<std::vector<std::byte>>(
-      [&](const size_t size, void* data, size_t* sizeRet) {
-        return api().job_get_program(job_.get(), programIndex, size, data,
-                                     sizeRet);
-      },
-      "Querying program size", "Querying program");
+      programQuery(api(), job_.get(), programIndex), "Querying program size",
+      "Querying program");
+}
+
+Expected<size_t> Job::getProgramSize(const size_t programIndex) const {
+  return qdmi::requireSupported(
+      qdmi::querySize(programQuery(api(), job_.get(), programIndex),
+                      "Querying program size"),
+      "Querying program size");
+}
+
+Error Job::readProgram(const std::span<std::byte> buffer,
+                       const size_t programIndex) const {
+  return qdmi::queryInto(programQuery(api(), job_.get(), programIndex), buffer,
+                         "Querying program");
 }
 
 Expected<std::string> Job::getProgram(const size_t programIndex) const {
@@ -1232,19 +1265,16 @@ Expected<std::string> Job::getProgram(const size_t programIndex) const {
                            "getProgramBytes()");
   }
 
-  auto programResult = getProgramBytes(programIndex);
-  if (!programResult) {
-    return programResult.takeError();
+  auto program = qdmi::queryRequiredBuffer<std::string>(
+      programQuery(api(), job_.get(), programIndex), "Querying program size",
+      "Querying program");
+  if (!program) {
+    return program.takeError();
   }
-  auto& program = (*programResult);
-  if (program.empty() || program.back() != std::byte{0}) {
-    return qdmi::makeError(
-        QDMI_ERROR_INVALIDARGUMENT,
-        "Cannot decode program as a null-terminated string; use "
-        "getProgramBytes() for binary payloads");
+  if (auto error = detail::stripTerminator(*program, "Querying program")) {
+    return error;
   }
-  return std::string(reinterpret_cast<const char*>(program.data()),
-                     program.size() - 1);
+  return program;
 }
 
 Expected<size_t> Job::getNumShots() const {
@@ -1287,6 +1317,21 @@ Expected<std::vector<std::byte>>
 Job::getResults(const QDMI_Job_Result result, const size_t programIndex) const {
   return fetchResult<std::vector<std::byte>>(api(), job_.get(), programIndex,
                                              result, "result");
+}
+
+Expected<size_t> Job::getResultSize(const QDMI_Job_Result result,
+                                    const size_t programIndex) const {
+  return qdmi::requireSupported(
+      qdmi::querySize(resultQuery(api(), job_.get(), programIndex, result),
+                      "Querying result size"),
+      "Querying result size");
+}
+
+Error Job::readResult(const QDMI_Job_Result result,
+                      const std::span<std::byte> buffer,
+                      const size_t programIndex) const {
+  return qdmi::queryInto(resultQuery(api(), job_.get(), programIndex, result),
+                         buffer, "Querying result");
 }
 
 Expected<std::optional<size_t>> Job::getQueuePosition() const {

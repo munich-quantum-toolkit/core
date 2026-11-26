@@ -160,36 +160,93 @@ template <typename T>
                            });
 }
 
-/// Fetch a variable-size value with the QDMI size-then-fill protocol.
+/// Return a value that the provider must support.
+template <typename T>
+[[nodiscard]] llvm::Expected<T>
+requireSupported(llvm::Expected<std::optional<T>> value,
+                 const llvm::Twine& message) {
+  if (!value) {
+    return value.takeError();
+  }
+  if (!*value) {
+    return checkError(QDMI_ERROR_NOTSUPPORTED, message);
+  }
+  return std::move(**value);
+}
+
+/// Query the size in bytes of a variable-size value, or `std::nullopt` if the
+/// provider does not support it.
 ///
-/// This is the client side of the protocol that `writeResult` implements.
-///
-/// The provider writes the bytes of `Buffer`'s elements, so they must be
-/// trivially copy constructible. Return `std::nullopt` if the provider does not
-/// support the value.
-template <typename Buffer, typename Query>
-  requires std::is_trivially_copy_constructible_v<typename Buffer::value_type>
-[[nodiscard]] llvm::Expected<std::optional<Buffer>>
-queryBuffer(Query query, const llvm::Twine& sizeMessage,
-            const llvm::Twine& message) {
+/// This and `queryInto` are the client side of the protocol that
+/// `writeResult` implements.
+template <typename Query>
+[[nodiscard]] llvm::Expected<std::optional<size_t>>
+querySize(Query&& query, const llvm::Twine& message) {
   size_t size = 0;
   const auto status = query(0, nullptr, &size);
   if (status == QDMI_ERROR_NOTSUPPORTED) {
     return std::nullopt;
   }
-  if (auto error = checkError(status, sizeMessage)) {
+  if (auto error = checkError(status, message)) {
     return error;
   }
-  if (size % sizeof(typename Buffer::value_type) != 0) {
+  return size;
+}
+
+/// Read a variable-size value of exactly `buffer.size()` bytes.
+template <typename Query>
+[[nodiscard]] llvm::Error queryInto(Query&& query,
+                                    const std::span<std::byte> buffer,
+                                    const llvm::Twine& message) {
+  // Providers that do not report the size on a read keep the expected one.
+  size_t size = buffer.size();
+  if (auto error = checkError(
+          query(buffer.size(), buffer.empty() ? nullptr : buffer.data(), &size),
+          message)) {
+    return error;
+  }
+  if (size != buffer.size()) {
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           message + ": the value has " + llvm::Twine(size) +
+                               " bytes, but the buffer holds " +
+                               llvm::Twine(buffer.size()));
+  }
+  return llvm::Error::success();
+}
+
+/// Fetch a variable-size value into a new contiguous container, or return
+/// `std::nullopt` if the provider does not support it.
+///
+/// The provider writes the bytes of `Buffer`'s elements, so they must be
+/// trivially copy constructible. Containers with `resize_for_overwrite`, such
+/// as `llvm::SmallVector`, skip initializing the elements.
+template <typename Buffer, typename Query>
+  requires std::is_trivially_copy_constructible_v<typename Buffer::value_type>
+[[nodiscard]] llvm::Expected<std::optional<Buffer>>
+queryBuffer(Query&& query, const llvm::Twine& sizeMessage,
+            const llvm::Twine& message) {
+  using Element = typename Buffer::value_type;
+  auto size = querySize(query, sizeMessage);
+  if (!size) {
+    return size.takeError();
+  }
+  if (!*size) {
+    return std::nullopt;
+  }
+  if (**size % sizeof(Element) != 0) {
     return qdmi::makeError(
         QDMI_ERROR_FATAL,
         sizeMessage + ": byte count is not a multiple of the element size");
   }
   std::optional<Buffer> buffer(std::in_place);
-  buffer->resize(size / sizeof(typename Buffer::value_type));
-  if (size != 0) {
-    if (auto error =
-            checkError(query(size, buffer->data(), nullptr), message)) {
+  if constexpr (requires { buffer->resize_for_overwrite(size_t{}); }) {
+    buffer->resize_for_overwrite(**size / sizeof(Element));
+  } else {
+    buffer->resize(**size / sizeof(Element));
+  }
+  if (**size != 0) {
+    if (auto error = queryInto(
+            query, std::as_writable_bytes(std::span(*buffer)), message)) {
       return error;
     }
   }
@@ -199,16 +256,11 @@ queryBuffer(Query query, const llvm::Twine& sizeMessage,
 /// Fetch a variable-size value that the provider must support.
 template <typename Buffer, typename Query>
 [[nodiscard]] llvm::Expected<Buffer>
-queryRequiredBuffer(Query query, const llvm::Twine& sizeMessage,
+queryRequiredBuffer(Query&& query, const llvm::Twine& sizeMessage,
                     const llvm::Twine& message) {
-  auto buffer = queryBuffer<Buffer>(std::move(query), sizeMessage, message);
-  if (!buffer) {
-    return buffer.takeError();
-  }
-  if (!*buffer) {
-    return checkError(QDMI_ERROR_NOTSUPPORTED, sizeMessage);
-  }
-  return std::move(**buffer);
+  return requireSupported(
+      queryBuffer<Buffer>(std::forward<Query>(query), sizeMessage, message),
+      sizeMessage);
 }
 
 /// Returns the string representation of the given status code @p result.

@@ -10,10 +10,14 @@
 
 #pragma once
 
+#include "Result.hpp"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
 
+#include <cstddef>
 #include <memory>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -32,6 +36,30 @@ ownedArray(std::vector<T>&& values) {
   });
   [[maybe_unused]] const auto* const released = storage.release();
   return {data, {size}, owner};
+}
+
+/// Read a job result into a new one-dimensional NumPy array of `dtype`.
+///
+/// The device writes directly into the uninitialized array; both device calls
+/// run without the GIL.
+template <class T, class Job, class Result>
+nb::ndarray<nb::numpy, T, nb::ndim<1>, nb::c_contig, nb::device::cpu>
+readResultArray(const Job& job, const Result result, const size_t programIndex,
+                const char* const dtype) {
+  const auto size = [&] {
+    const nb::gil_scoped_release release;
+    return unwrap(job.getResultSize(result, programIndex));
+  }();
+  auto array = nb::cast<
+      nb::ndarray<nb::numpy, T, nb::ndim<1>, nb::c_contig, nb::device::cpu>>(
+      nb::module_::import_("numpy").attr("empty")(size / sizeof(T), dtype));
+  {
+    const nb::gil_scoped_release release;
+    unwrap(job.readResult(
+        result, std::as_writable_bytes(std::span(array.data(), array.size())),
+        programIndex));
+  }
+  return array;
 }
 
 } // namespace mqt::bindings
