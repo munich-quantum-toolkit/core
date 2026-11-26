@@ -1236,7 +1236,7 @@ executeQIRInput(nb::handle program, size_t shots, uint64_t seed) {
 
 [[nodiscard]] static DenseVector qirState(const qdmi::Job& job) {
   return bindings::readResultArray<std::complex<dd::fp>>(
-      job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0, "complex128");
+      job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0);
 }
 
 [[nodiscard]] static DenseVector simulateDense(PythonInputTypes& types,

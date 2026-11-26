@@ -212,18 +212,14 @@ template <class Size, class Read>
     const nb::gil_scoped_release release;
     return bindings::unwrap(size());
   }();
-  // NOLINTBEGIN(misc-include-cleaner): CPython API through nanobind.
-  // CPython leaves a bytes object created from null uninitialized.
-  auto bytes = nb::steal<nb::bytes>(
-      PyBytes_FromStringAndSize(nullptr, static_cast<Py_ssize_t>(count)));
-  if (!bytes.is_valid()) {
-    throw nb::python_error();
-  }
-  auto* const data = PyBytes_AsString(bytes.ptr());
-  // NOLINTEND(misc-include-cleaner)
+  // A bytes object created from null is uninitialized.
+  nb::bytes bytes(nullptr, count);
+  // The object is not shared yet, so its buffer may still be written.
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-const-cast)
+  auto* const data = static_cast<std::byte*>(const_cast<void*>(bytes.data()));
   {
     const nb::gil_scoped_release release;
-    bindings::unwrap(read(std::as_writable_bytes(std::span(data, count))));
+    bindings::unwrap(read(std::span(data, count)));
   }
   return bytes;
 }
@@ -360,8 +356,7 @@ Returns:
       "get_dense_statevector",
       [](const qdmi::Job& self, size_t programIndex) {
         return bindings::readResultArray<std::complex<double>>(
-            self, QDMI_JOB_RESULT_STATEVECTOR_DENSE, programIndex,
-            "complex128");
+            self, QDMI_JOB_RESULT_STATEVECTOR_DENSE, programIndex);
       },
       "program_index"_a = 0,
       "Return a one-dimensional complex128 NumPy array owning the retrieved "
@@ -371,7 +366,7 @@ Returns:
       "get_dense_probabilities",
       [](const qdmi::Job& self, size_t programIndex) {
         return bindings::readResultArray<double>(
-            self, QDMI_JOB_RESULT_PROBABILITIES_DENSE, programIndex, "float64");
+            self, QDMI_JOB_RESULT_PROBABILITIES_DENSE, programIndex);
       },
       "program_index"_a = 0,
       "Return a one-dimensional float64 NumPy array owning the retrieved "
