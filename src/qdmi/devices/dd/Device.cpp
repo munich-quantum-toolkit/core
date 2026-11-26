@@ -18,6 +18,7 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+#include "dd/WorkerBudget.hpp"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/Diagnostics.hpp"
@@ -47,7 +48,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <exception>
-#include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
@@ -56,7 +56,6 @@
 #include <numeric>
 #include <optional>
 #include <ranges>
-#include <semaphore>
 #include <span>
 #include <string>
 #include <string_view>
@@ -363,24 +362,10 @@ struct Execution {
 
 namespace {
 struct Executor {
-  const size_t limit = [] {
-    const size_t hardware = std::max(
-        1U, llvm::heavyweight_hardware_concurrency().compute_thread_count());
-    if (const char* raw = std::getenv("MQT_CORE_DD_WORKER_BUDGET")) {
-      size_t parsed = 0;
-      const auto* last =
-          std::next(raw, static_cast<ptrdiff_t>(std::strlen(raw)));
-      const auto [end, error] = std::from_chars(raw, last, parsed);
-      if (error == std::errc{} && end == last && parsed > 0) {
-        return std::min(parsed, hardware);
-      }
-    }
-    return hardware;
-  }();
-  std::counting_semaphore<> slots{static_cast<ptrdiff_t>(limit)};
+  ::dd::WorkerBudget budget;
   WorkerPool workers;
-  llvm::DefaultThreadPool threads{
-      llvm::heavyweight_hardware_concurrency(static_cast<unsigned>(limit))};
+  llvm::DefaultThreadPool threads{llvm::heavyweight_hardware_concurrency(
+      static_cast<unsigned>(budget.limit()))};
 
   ~Executor() { workers.shutdown(); }
 };
@@ -853,9 +838,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
     }
     execution->programTrace = std::move(trace);
   }
-  execution->workerLimit = executor.limit;
+  execution->workerLimit = executor.budget.limit();
   const size_t perProgramLimit =
-      std::max(size_t{1}, executor.limit / execution->programs.size());
+      std::max(size_t{1}, executor.budget.limit() / execution->programs.size());
   const size_t shotLimit = std::max(size_t{1}, numShots_);
   const size_t requested =
       maxWorkers_ == 0 ? shotLimit : std::min(maxWorkers_, shotLimit);
@@ -881,10 +866,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
       };
       executor.threads.async([pending = std::weak_ptr(execution), index,
                               request, perProgramLimit, &executor]() mutable {
-        executor.slots.acquire();
-        size_t grant = 1;
+        size_t grant = executor.budget.reserve(1);
         const llvm::scope_exit releaseSlots(
-            [&] { executor.slots.release(static_cast<ptrdiff_t>(grant)); });
+            [&] { executor.budget.release(grant); });
         const auto execution = pending.lock();
         if (!execution) {
           return;
@@ -946,13 +930,11 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
           qdmi::dd::WorkerResponse response;
           reusable =
               worker && worker->execute(request, response, [&](size_t desired) {
-                while (grant < std::min(desired, perProgramLimit) &&
-                       executor.slots.try_acquire()) {
-                  ++grant;
-                }
+                grant = executor.budget.reserve(
+                    std::min(desired, perProgramLimit), grant);
                 return grant;
               });
-          executor.slots.release(static_cast<ptrdiff_t>(grant - 1));
+          executor.budget.release(grant - 1);
           grant = 1;
           uint64_t remaining = request.shots;
           bool validCounts = response.shotCount == 0;
