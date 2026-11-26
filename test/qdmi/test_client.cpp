@@ -418,6 +418,26 @@ TEST(JobShotsTest, PreservesZeroWidthShots) {
               testing::ElementsAre("", "", "", ""));
 }
 
+TEST(JobShotsTest, AcceptsFinalComma) {
+  const auto shots = value(detail::PackedShots::parse(bytesOf("0,1,"), 2));
+  EXPECT_THAT(llvm::to_vector(shots.rows()), testing::ElementsAre("0", "1"));
+  const auto empty = value(detail::PackedShots::parse(bytesOf(",,"), 2));
+  EXPECT_THAT(llvm::to_vector(empty.rows()), testing::ElementsAre("", ""));
+}
+
+TEST(ResultListTest, CountSeparatesEmptyEntriesFromFinalComma) {
+  EXPECT_EQ(detail::trimList("", 0), llvm::StringRef(""));
+  EXPECT_EQ(detail::trimList("", 1), llvm::StringRef(""));
+  EXPECT_EQ(detail::trimList(",", 1), llvm::StringRef(""));
+  EXPECT_EQ(detail::trimList(",", 2), llvm::StringRef(","));
+  EXPECT_EQ(detail::trimList("a,b,", 2), llvm::StringRef("a,b"));
+  EXPECT_EQ(detail::trimList("a,b,", 3), llvm::StringRef("a,b,"));
+  EXPECT_EQ(detail::trimList(",", 0), std::nullopt);
+  EXPECT_EQ(detail::trimList("a,b", 1), std::nullopt);
+  EXPECT_EQ(detail::trimList("a,b,", 1), std::nullopt);
+  EXPECT_EQ(detail::trimList("a", 2), std::nullopt);
+}
+
 TEST(JobShotsTest, ValidatesShotCount) {
   EXPECT_EQ(
       errorStatus([] { return detail::PackedShots::parse(bytesOf("0,1"), 1); }),

@@ -249,6 +249,30 @@ constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
   return QDMI_SUCCESS;
 }
 
+/// Report the size of `entries` entries of `width` elements of `T` and, when
+/// `data` is set, let `fill` write them into the caller's buffer.
+template <typename T, typename Fill>
+[[nodiscard]] auto writeResult(const size_t entries, const size_t width,
+                               const size_t size, void* data, size_t* sizeRet,
+                               Fill fill) -> QDMI_STATUS {
+  if (width != 0 &&
+      entries > std::numeric_limits<size_t>::max() / sizeof(T) / width) {
+    return QDMI_ERROR_OUTOFMEM;
+  }
+  const size_t count = entries * width;
+  if (sizeRet != nullptr) {
+    *sizeRet = count * sizeof(T);
+  }
+  if (data == nullptr) {
+    return QDMI_SUCCESS;
+  }
+  if (size < count * sizeof(T)) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  fill(std::span(static_cast<T*>(data), count));
+  return QDMI_SUCCESS;
+}
+
 } // namespace
 
 namespace qdmi::dd {
@@ -549,24 +573,12 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryDeviceProperty(
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum_,
                             prop, size, value, sizeRet)
   if (prop == QDMI_DEVICE_PROPERTY_SITES) {
-    const auto required = qubitsNum_ * sizeof(MQT_DDSIM_QDMI_Site);
-    if (value != nullptr) {
-      if (size < required) {
-        return QDMI_ERROR_INVALIDARGUMENT;
-      }
-      const std::span output(static_cast<std::byte*>(value), required);
-      for (size_t i = 0; i < qubitsNum_; ++i) {
-        const auto* const site =
-            reinterpret_cast<MQT_DDSIM_QDMI_Site>(OFFSET + i);
-        std::memcpy(&output[i * sizeof(MQT_DDSIM_QDMI_Site)],
-                    static_cast<const void*>(&site),
-                    sizeof(MQT_DDSIM_QDMI_Site));
-      }
-    }
-    if (sizeRet != nullptr) {
-      *sizeRet = required;
-    }
-    return QDMI_SUCCESS;
+    return writeResult<MQT_DDSIM_QDMI_Site>(
+        qubitsNum_, 1, size, value, sizeRet, [](auto output) {
+          for (auto [index, site] : llvm::enumerate(output)) {
+            site = reinterpret_cast<MQT_DDSIM_QDMI_Site>(OFFSET + index);
+          }
+        });
   }
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
                     operations_, prop, size, value, sizeRet)
@@ -765,20 +777,13 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProgram(const size_t programIndex,
   const auto& program = execution_->programs[programIndex].code;
   const bool text = format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
                     format_ != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
-  const size_t requiredSize = program.size() + (text ? 1U : 0U);
-  if (data != nullptr) {
-    if (size < requiredSize) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    std::memcpy(data, program.data(), program.size());
-    if (text) {
-      std::span(static_cast<char*>(data), requiredSize).back() = '\0';
-    }
-  }
-  if (sizeRet != nullptr) {
-    *sizeRet = requiredSize;
-  }
-  return QDMI_SUCCESS;
+  return writeResult<char>(program.size() + (text ? 1U : 0U), 1, size, data,
+                           sizeRet, [&](std::span<char> output) {
+                             std::ranges::copy(program, output.begin());
+                             if (text) {
+                               output.back() = '\0';
+                             }
+                           });
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProgramStatus(
     const size_t programIndex, QDMI_Job_Status* status) const -> QDMI_STATUS {
@@ -1102,33 +1107,23 @@ auto qdmi::dd::ProgramResult::getShots(const size_t size, void* data,
       required += count * width;
     }
   }
-  if (sizeRet != nullptr) {
-    *sizeRet = required;
-  }
-  if (data != nullptr) {
-    if (size < required) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    auto output = std::span(static_cast<char*>(data), required);
-    const auto writeShot = [&](std::string_view shot) {
-      std::ranges::copy(shot, output.begin());
-      output[shot.size()] = ',';
-      output = output.subspan(shot.size() + 1);
-    };
-    if (compactCounts_.empty()) {
-      std::ranges::copy(shots_, output.begin());
-    } else {
-      for (const auto& [shot, count] : compactCounts_) {
-        for (size_t i = 0; i < count; ++i) {
-          writeShot(shot);
+  return writeResult<char>(
+      required, 1, size, data, sizeRet, [&](std::span<char> output) {
+        if (compactCounts_.empty()) {
+          std::ranges::copy(shots_, output.begin());
+        } else {
+          auto next = output.begin();
+          for (const auto& [shot, count] : compactCounts_) {
+            for (size_t i = 0; i < count; ++i) {
+              next = std::ranges::copy(shot, next).out;
+              *next++ = ',';
+            }
+          }
         }
-      }
-    }
-    if (required > 0) {
-      std::span(static_cast<char*>(data), required).back() = '\0';
-    }
-  }
-  return QDMI_SUCCESS;
+        if (!output.empty()) {
+          output.back() = '\0';
+        }
+      });
 }
 auto qdmi::dd::ProgramResult::getHistogram(const QDMI_Job_Result result,
                                            const size_t size, void* data,
@@ -1149,49 +1144,26 @@ auto qdmi::dd::ProgramResult::getHistogram(const QDMI_Job_Result result,
     if (counts.size() == 1 && counts.begin()->first.empty()) {
       return reportEmptyResult(sizeRet);
     }
-    if (result == QDMI_JOB_RESULT_HIST_KEYS) {
-      const size_t reqSize =
-          std::accumulate(counts.begin(), counts.end(), size_t{0},
-                          [](const size_t total, const auto& entry) {
-                            return total + entry.first.size() + 1;
-                          });
-      if (sizeRet != nullptr) {
-        *sizeRet = reqSize;
-      }
-      if (data != nullptr) {
-        if (size < reqSize) {
-          return QDMI_ERROR_INVALIDARGUMENT;
-        }
-        auto* dataPtr = static_cast<char*>(data);
-        for (const auto& bitstring : counts | std::views::keys) {
-          std::ranges::copy(bitstring, dataPtr);
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-          dataPtr += bitstring.length();
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-          *dataPtr++ = ',';
-        }
-        // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-        *(dataPtr - 1) = '\0'; // Replace last comma with null terminator
-      }
-    } else {
-      // case QDMI_JOB_RESULT_HIST_VALUES:
-      const size_t reqSize = counts.size() * sizeof(size_t);
-      if (sizeRet != nullptr) {
-        *sizeRet = reqSize;
-      }
-      if (data != nullptr) {
-        if (size < reqSize) {
-          return QDMI_ERROR_INVALIDARGUMENT;
-        }
-        // NOLINTNEXTLINE(misc-const-correctness): writes into caller buffer.
-        auto* dataPtr = static_cast<size_t*>(data);
-        for (const auto& count : counts | std::views::values) {
-          // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-          *dataPtr++ = count;
-        }
-      }
+    if (result == QDMI_JOB_RESULT_HIST_VALUES) {
+      return writeResult<size_t>(
+          counts.size(), 1, size, data, sizeRet, [&](std::span<size_t> output) {
+            std::ranges::copy(counts | std::views::values, output.begin());
+          });
     }
-    return QDMI_SUCCESS;
+    const size_t keysSize =
+        std::accumulate(counts.begin(), counts.end(), size_t{0},
+                        [](const size_t total, const auto& entry) {
+                          return total + entry.first.size() + 1;
+                        });
+    return writeResult<char>(
+        keysSize, 1, size, data, sizeRet, [&](std::span<char> output) {
+          auto next = output.begin();
+          for (const auto& key : counts | std::views::keys) {
+            next = std::ranges::copy(key, next).out;
+            *next++ = ',';
+          }
+          output.back() = '\0';
+        });
   };
   return compactCounts_.empty() ? writeHistogram(counts_)
                                 : writeHistogram(compactCounts_);
@@ -1204,36 +1176,25 @@ auto qdmi::dd::ProgramResult::getDenseResults(const QDMI_Job_Result result,
                              ? 0U
                              : static_cast<size_t>(stateVecDD_.p->v) + 1U;
   const bool probabilities = result == QDMI_JOB_RESULT_PROBABILITIES_DENSE;
-  const size_t components = probabilities ? 1 : 2;
-  const size_t elementSize = components * sizeof(double);
-  if (numQubits >= std::numeric_limits<size_t>::digits ||
-      (std::numeric_limits<size_t>::max() >> numQubits) < elementSize) {
+  if (numQubits >= std::numeric_limits<size_t>::digits) {
     return QDMI_ERROR_OUTOFMEM;
   }
-  const size_t dimension = size_t{1} << numQubits;
-  const size_t reqSize = dimension * elementSize;
-  if (data != nullptr) {
-    if (size < reqSize) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    const std::span output(static_cast<double*>(data), dimension * components);
-    std::ranges::fill(output, 0.);
-    llvm::cantFail(::dd::traverseVector(
-        stateVecDD_,
-        [&output, probabilities](const size_t index,
-                                 const std::complex<::dd::fp>& amplitude) {
-          if (probabilities) {
-            output[index] = std::norm(amplitude);
-          } else {
-            output[2 * index] = amplitude.real();
-            output[(2 * index) + 1] = amplitude.imag();
-          }
-        }));
-  }
-  if (sizeRet != nullptr) {
-    *sizeRet = reqSize;
-  }
-  return QDMI_SUCCESS;
+  return writeResult<double>(
+      size_t{1} << numQubits, probabilities ? 1 : 2, size, data, sizeRet,
+      [&](std::span<double> output) {
+        std::ranges::fill(output, 0.);
+        llvm::cantFail(::dd::traverseVector(
+            stateVecDD_,
+            [&output, probabilities](const size_t index,
+                                     const std::complex<::dd::fp>& amplitude) {
+              if (probabilities) {
+                output[index] = std::norm(amplitude);
+              } else {
+                output[2 * index] = amplitude.real();
+                output[(2 * index) + 1] = amplitude.imag();
+              }
+            }));
+      });
 }
 auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
                                                const size_t size, void* data,
@@ -1268,60 +1229,39 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
   if (sparseAmplitudeCount_ == 0) {
     return reportEmptyResult(sizeRet);
   }
-  const bool keys = result == QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS ||
-                    result == QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS;
+  if (result == QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS ||
+      result == QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS) {
+    return writeResult<char>(
+        sparseAmplitudeCount_, numQubits + 1, size, data, sizeRet,
+        [&](std::span<char> output) {
+          auto next = output.begin();
+          llvm::cantFail(::dd::traverseVector(
+              stateVecDD_, [&next, numQubits](const size_t index,
+                                              const std::complex<::dd::fp>&) {
+                for (size_t j = numQubits; j > 0; --j) {
+                  *next++ = ((index >> (j - 1)) & 1U) != 0U ? '1' : '0';
+                }
+                *next++ = ',';
+              }));
+          output.back() = '\0';
+        });
+  }
   const bool complex = result == QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES;
-  const size_t elementSize =
-      keys ? numQubits + 1 : (complex ? 2U : 1U) * sizeof(double);
-  if (sparseAmplitudeCount_ >
-      std::numeric_limits<size_t>::max() / elementSize) {
-    return QDMI_ERROR_OUTOFMEM;
-  }
-  const size_t reqSize = sparseAmplitudeCount_ * elementSize;
-  if (data != nullptr) {
-    if (size < reqSize) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    if (keys) {
-      auto* dataPtr = static_cast<char*>(data);
-      llvm::cantFail(::dd::traverseVector(
-          stateVecDD_, [&dataPtr, numQubits](const size_t index,
-                                             const std::complex<::dd::fp>&) {
-            for (size_t j = numQubits; j > 0; --j) {
-              // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-              *dataPtr++ = ((index >> (j - 1)) & 1U) != 0U ? '1' : '0';
-            }
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            *dataPtr++ = ',';
-          }));
-      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-      *(dataPtr - 1) = '\0'; // Replace last comma with null terminator
-    } else if (complex) {
-      // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
-      auto* dataPtr = static_cast<double*>(data);
-      llvm::cantFail(::dd::traverseVector(
-          stateVecDD_,
-          [&dataPtr](const size_t, const std::complex<::dd::fp>& amplitude) {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            *dataPtr++ = amplitude.real();
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            *dataPtr++ = amplitude.imag();
-          }));
-    } else {
-      // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
-      auto* dataPtr = static_cast<double*>(data);
-      llvm::cantFail(::dd::traverseVector(
-          stateVecDD_,
-          [&dataPtr](const size_t, const std::complex<::dd::fp>& amplitude) {
-            // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-            *dataPtr++ = std::norm(amplitude);
-          }));
-    }
-  }
-  if (sizeRet != nullptr) {
-    *sizeRet = reqSize;
-  }
-  return QDMI_SUCCESS;
+  return writeResult<double>(
+      sparseAmplitudeCount_, complex ? 2 : 1, size, data, sizeRet,
+      [&](std::span<double> output) {
+        auto next = output.begin();
+        llvm::cantFail(::dd::traverseVector(
+            stateVecDD_, [&next, complex](const size_t,
+                                          const std::complex<::dd::fp>& value) {
+              if (complex) {
+                *next++ = value.real();
+                *next++ = value.imag();
+              } else {
+                *next++ = std::norm(value);
+              }
+            }));
+      });
 }
 auto qdmi::dd::ProgramResult::getQIROutput(const size_t size, void* data,
                                            size_t* sizeRet) const
@@ -1340,34 +1280,26 @@ auto qdmi::dd::ProgramResult::getQIROutput(const size_t size, void* data,
     }
     required += shots * recordSize;
   }
-  if (sizeRet != nullptr) {
-    *sizeRet = required;
-  }
-  if (data == nullptr) {
-    return QDMI_SUCCESS;
-  }
-  if (size < required) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  }
-  auto output = std::span(static_cast<char*>(data), required);
-  std::ranges::copy(*qirOutput_, output.begin());
-  output = output.subspan(qirOutput_->size());
-  if (outputTemplate_) {
-    const auto& record = *outputTemplate_;
-    std::string_view remaining(shots_);
-    const auto width = record.resultOffsets.size();
-    while (!remaining.empty()) {
-      std::ranges::copy(record.text, output.begin());
-      for (size_t i = 0; i < record.resultOffsets.size(); ++i) {
-        // QDMI bitstrings have the reverse of QIR recording order.
-        output[record.resultOffsets[i]] = remaining[width - 1 - i];
-      }
-      output = output.subspan(record.text.size());
-      remaining.remove_prefix(width + 1);
-    }
-  }
-  output.front() = '\0';
-  return QDMI_SUCCESS;
+  return writeResult<char>(
+      required, 1, size, data, sizeRet, [&](std::span<char> output) {
+        std::ranges::copy(*qirOutput_, output.begin());
+        output = output.subspan(qirOutput_->size());
+        if (outputTemplate_) {
+          const auto& record = *outputTemplate_;
+          std::string_view remaining(shots_);
+          const auto width = record.resultOffsets.size();
+          while (!remaining.empty()) {
+            std::ranges::copy(record.text, output.begin());
+            for (size_t i = 0; i < record.resultOffsets.size(); ++i) {
+              // QDMI bitstrings have the reverse of QIR recording order.
+              output[record.resultOffsets[i]] = remaining[width - 1 - i];
+            }
+            output = output.subspan(record.text.size());
+            remaining.remove_prefix(width + 1);
+          }
+        }
+        output.front() = '\0';
+      });
 }
 
 auto qdmi::dd::ProgramResult::getResults(const QDMI_Job_Result result,

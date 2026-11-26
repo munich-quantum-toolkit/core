@@ -151,6 +151,22 @@ queuePositionFromResult(const int result, const size_t queuePosition) {
   return std::optional<size_t>{std::move(queuePosition)};
 }
 
+/// Return a comma-separated list of `count` entries without its optional final
+/// comma, or nothing if the list has a different number of entries.
+///
+/// The count tells empty entries apart from a final comma.
+[[nodiscard]] inline std::optional<llvm::StringRef>
+trimList(const llvm::StringRef list, const size_t count) {
+  if (count == 0) {
+    return list.empty() ? std::optional{list} : std::nullopt;
+  }
+  const auto commas = list.count(',');
+  if (commas == count && list.ends_with(",")) {
+    return list.drop_back();
+  }
+  return commas == count - 1 ? std::optional{list} : std::nullopt;
+}
+
 /// Owns the provider's SHOTS payload and its validated number of rows.
 struct PackedShots {
   std::vector<std::byte> bytes;

@@ -67,8 +67,12 @@ Expected<PackedShots> PackedShots::parse(std::vector<std::byte> bytes,
   }
   const auto rows = llvm::StringRef(reinterpret_cast<const char*>(bytes.data()),
                                     bytes.size() - 1);
-  if (count == 0 ? !rows.empty() : rows.count(',') != count - 1) {
+  const auto list = trimList(rows, count);
+  if (!list) {
     return qdmi::makeError(QDMI_ERROR_FATAL, "Number of shots mismatch");
+  }
+  if (list->size() != rows.size()) {
+    bytes.erase(std::prev(bytes.end(), 2)); // Drop the final comma.
   }
   return PackedShots{std::move(bytes), count};
 }
@@ -91,74 +95,67 @@ Expected<PackedShots> getPackedShots(const Job& job, size_t programIndex) {
 } // namespace detail
 
 namespace {
+/// Query the size of a result, then fetch its elements of type `T`.
+template <typename T>
+Expected<std::vector<T>> fetchResult(const detail::DriverAPI& api, QDMI_Job job,
+                                     const size_t programIndex,
+                                     const QDMI_Job_Result result,
+                                     const llvm::Twine& description) {
+  size_t size = 0;
+  if (auto error = qdmi::checkError(
+          api.job_get_results(job, programIndex, result, 0, nullptr, &size),
+          "Querying " + description + " size")) {
+    return error;
+  }
+  if (size % sizeof(T) != 0) {
+    return qdmi::makeError(QDMI_ERROR_FATAL, "Invalid " + description +
+                                                 " size: not a multiple of " +
+                                                 llvm::Twine(sizeof(T)) +
+                                                 " bytes");
+  }
+  std::vector<T> values(size / sizeof(T));
+  if (size != 0) {
+    if (auto error =
+            qdmi::checkError(api.job_get_results(job, programIndex, result,
+                                                 size, values.data(), nullptr),
+                             "Querying " + description)) {
+      return error;
+    }
+  }
+  return values;
+}
+
 template <typename T>
 Expected<std::map<std::string, T>> getSparseResult(
-    const detail::DriverAPI& api, QDMI_Job job, size_t programIndex,
+    const detail::DriverAPI& api, QDMI_Job job, const size_t programIndex,
     const QDMI_Job_Result keysResult, const QDMI_Job_Result valuesResult,
-    const std::string_view description, const std::string_view valueType,
-    const std::string_view mismatch) {
-  size_t keysSize = 0;
-  if (auto error = qdmi::checkError(
-          api.job_get_results(job, programIndex, keysResult, 0, nullptr,
-                              &keysSize),
-          "Querying " + llvm::Twine(description) + " keys size")) {
-    return error;
+    const llvm::Twine& description, const std::string_view mismatch) {
+  auto keys = fetchResult<char>(api, job, programIndex, keysResult,
+                                description + " keys");
+  if (!keys) {
+    return keys.takeError();
   }
-
-  if (keysSize == 0) {
+  if (keys->empty()) {
     return std::map<std::string, T>{};
   }
-
-  std::string keys(keysSize, '\0');
-  if (auto error =
-          qdmi::checkError(api.job_get_results(job, programIndex, keysResult,
-                                               keysSize, keys.data(), nullptr),
-                           "Querying " + llvm::Twine(description) + " keys")) {
-    return error;
-  }
-  if (keys.back() != '\0') {
-    return qdmi::makeError(
-        QDMI_ERROR_FATAL, "Unterminated " + llvm::Twine(description) + " keys");
-  }
-  keys.pop_back();
-
-  size_t valuesSize = 0;
-  if (auto error = qdmi::checkError(
-          api.job_get_results(job, programIndex, valuesResult, 0, nullptr,
-                              &valuesSize),
-          "Querying " + llvm::Twine(description) + " values size")) {
-    return error;
-  }
-
-  if (valuesSize % sizeof(T) != 0) {
+  if (keys->back() != '\0') {
     return qdmi::makeError(QDMI_ERROR_FATAL,
-                           ("Invalid " + llvm::Twine(description) +
-                            " values size: not a multiple of " + valueType)
-                               .str());
+                           "Unterminated " + description + " keys");
   }
-
-  std::vector<T> values(valuesSize / sizeof(T));
-  if (auto error = qdmi::checkError(
-          api.job_get_results(job, programIndex, valuesResult, valuesSize,
-                              values.data(), nullptr),
-          "Querying " + llvm::Twine(description) + " values")) {
-    return error;
+  auto values = fetchResult<T>(api, job, programIndex, valuesResult,
+                               description + " values");
+  if (!values) {
+    return values.takeError();
   }
-
-  // A final comma can separate an empty outcome or terminate the list.
-  std::map<std::string, T> result;
-  size_t start = 0;
-  for (const auto& value : values) {
-    if (start == std::string::npos) {
-      return qdmi::makeError(QDMI_ERROR_FATAL, std::string(mismatch));
-    }
-    const auto end = keys.find(',', start);
-    result.insert_or_assign(result.end(), keys.substr(start, end - start),
-                            value);
-    start = end == std::string::npos ? end : end + 1;
-  }
-  if (start < keys.size()) {
+  const auto list = detail::trimList(
+      llvm::StringRef(keys->data(), keys->size() - 1), values->size());
+  if (!list) {
     return qdmi::makeError(QDMI_ERROR_FATAL, std::string(mismatch));
+  }
+  std::map<std::string, T> result;
+  auto value = values->begin();
+  for (const auto key : llvm::split(*list, ',')) {
+    result.insert_or_assign(result.end(), key.str(), *value++);
   }
   return result;
 }
@@ -1332,23 +1329,8 @@ Job::getProgramStatus(const size_t programIndex) const {
 
 Expected<std::vector<std::byte>>
 Job::getResults(const QDMI_Job_Result result, const size_t programIndex) const {
-  size_t size = 0;
-  if (auto error =
-          qdmi::checkError(api().job_get_results(job_.get(), programIndex,
-                                                 result, 0, nullptr, &size),
-                           "Querying result size")) {
-    return error;
-  }
-  std::vector<std::byte> value(size);
-  if (size != 0) {
-    if (auto error = qdmi::checkError(
-            api().job_get_results(job_.get(), programIndex, result, size,
-                                  value.data(), nullptr),
-            "Querying result")) {
-      return error;
-    }
-  }
-  return value;
+  return fetchResult<std::byte>(api(), job_.get(), programIndex, result,
+                                "result");
 }
 
 Expected<std::optional<size_t>> Job::getQueuePosition() const {
@@ -1375,67 +1357,24 @@ Job::getShots(const size_t programIndex) const {
 
 Expected<std::map<std::string, size_t>>
 Job::getCounts(const size_t programIndex) const {
-  return getSparseResult<size_t>(
-      api(), job_.get(), programIndex, QDMI_JOB_RESULT_HIST_KEYS,
-      QDMI_JOB_RESULT_HIST_VALUES, "histogram", "size_t",
-      "Histogram key/value count mismatch");
+  return getSparseResult<size_t>(api(), job_.get(), programIndex,
+                                 QDMI_JOB_RESULT_HIST_KEYS,
+                                 QDMI_JOB_RESULT_HIST_VALUES, "histogram",
+                                 "Histogram key/value count mismatch");
 }
 
 Expected<std::vector<std::complex<double>>>
 Job::getDenseStateVector(const size_t programIndex) const {
-  size_t size = 0;
-  if (auto error = qdmi::checkError(
-          api().job_get_results(job_.get(), programIndex,
-                                QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0, nullptr,
-                                &size),
-          "Querying dense state vector size")) {
-    return error;
-  }
-
-  if (size % sizeof(std::complex<double>) != 0) {
-    return qdmi::makeError(
-        QDMI_ERROR_FATAL,
-        "Invalid state vector size: not a multiple of complex<double>");
-  }
-
-  std::vector<std::complex<double>> stateVector(size /
-                                                sizeof(std::complex<double>));
-  if (auto error = qdmi::checkError(
-          api().job_get_results(job_.get(), programIndex,
-                                QDMI_JOB_RESULT_STATEVECTOR_DENSE, size,
-                                stateVector.data(), nullptr),
-          "Querying dense state vector")) {
-    return error;
-  }
-  return stateVector;
+  return fetchResult<std::complex<double>>(api(), job_.get(), programIndex,
+                                           QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+                                           "dense state vector");
 }
 
 Expected<std::vector<double>>
 Job::getDenseProbabilities(const size_t programIndex) const {
-  size_t size = 0;
-  if (auto error = qdmi::checkError(
-          api().job_get_results(job_.get(), programIndex,
-                                QDMI_JOB_RESULT_PROBABILITIES_DENSE, 0, nullptr,
-                                &size),
-          "Querying dense probabilities size")) {
-    return error;
-  }
-
-  if (size % sizeof(double) != 0) {
-    return qdmi::makeError(
-        QDMI_ERROR_FATAL,
-        "Invalid probabilities size: not a multiple of double");
-  }
-
-  std::vector<double> probabilities(size / sizeof(double));
-  if (auto error = qdmi::checkError(
-          api().job_get_results(job_.get(), programIndex,
-                                QDMI_JOB_RESULT_PROBABILITIES_DENSE, size,
-                                probabilities.data(), nullptr),
-          "Querying dense probabilities")) {
-    return error;
-  }
-  return probabilities;
+  return fetchResult<double>(api(), job_.get(), programIndex,
+                             QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                             "dense probabilities");
 }
 
 Expected<std::map<std::string, std::complex<double>>>
@@ -1443,7 +1382,7 @@ Job::getSparseStateVector(const size_t programIndex) const {
   return getSparseResult<std::complex<double>>(
       api(), job_.get(), programIndex, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
       QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, "sparse state vector",
-      "complex<double>", "Sparse state vector key/value count mismatch");
+      "Sparse state vector key/value count mismatch");
 }
 
 Expected<std::map<std::string, double>>
@@ -1452,7 +1391,7 @@ Job::getSparseProbabilities(const size_t programIndex) const {
       api(), job_.get(), programIndex,
       QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
       QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, "sparse probabilities",
-      "double", "Sparse probabilities key/value count mismatch");
+      "Sparse probabilities key/value count mismatch");
 }
 
 Expected<Device> Session::openDevice(const std::string_view id,
