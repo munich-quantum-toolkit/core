@@ -278,6 +278,13 @@ public:
   // Reject implicit adoption of a borrowed module.
   static FailureOr<QCProgram> fromModule(std::shared_ptr<MLIRContext>,
                                          ModuleOp) = delete;
+  /// Adopt a module that an MQT frontend built with `qc::QCProgramBuilder`.
+  ///
+  /// Frontends construct valid programs, so only builds with assertions verify
+  /// the module. Use `fromModule` for modules from any other source.
+  [[nodiscard]] static QCProgram
+  fromBuiltModule(std::shared_ptr<MLIRContext> context,
+                  OwningOpRef<ModuleOp> moduleOp);
   /// Create an independent QC program copy.
   [[nodiscard]] QCProgram copy() const;
 
