@@ -6,10 +6,6 @@
 #
 # Licensed under the MIT License
 
-if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
-  add_compile_options(-Xclang=-Wno-missing-designated-field-initializers)
-endif()
-
 # Keep compiler implementations and their LLVM errors in the consuming binary.
 set(BUILD_SHARED_LIBS OFF)
 
