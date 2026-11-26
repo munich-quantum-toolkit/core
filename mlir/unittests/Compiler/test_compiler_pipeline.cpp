@@ -1122,6 +1122,16 @@ output bit result;
 result = measure q;
 )qasm",
                       QIRProfile::Base, "0"},
+           // rx(5π) = rx(π), whose principal square root is rx(π/2).
+           std::tuple{R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+pow(0.5) @ rx(5 * pi) q;
+pow(0.5) @ rx(5 * pi) q;
+output bit result;
+result = measure q;
+)qasm",
+                      QIRProfile::Base, "1"},
            // The loop keeps the exponent symbolic: X^(1/2 + 1 + 3/2) = X.
            std::tuple{R"qasm(OPENQASM 3.1;
 include "stdgates.inc";

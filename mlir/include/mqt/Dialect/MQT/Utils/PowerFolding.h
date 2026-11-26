@@ -148,13 +148,20 @@ struct FoldPowIntoGate final : OpRewritePattern<typename Ops::PowOp> {
              XXPlusYYOp, XXMinusYYOp>(inner)) {
       return failure();
     }
-    const auto parameter = valueToDouble(gate.getParameter(0));
-    // Phase gates have eigenphase θ. Rotations have eigenphases ±θ/2.
-    const double limit =
-        isa<GPhaseOp, POp>(inner) ? std::numbers::pi : 2. * std::numbers::pi;
-    if (!parameter ||
-        (std::abs(*parameter) >= limit && !isIntegerExponent(r))) {
+    auto parameter = valueToDouble(gate.getParameter(0));
+    if (!parameter) {
       return failure();
+    }
+    // A fractional power takes the principal branch of each eigenphase: θ for
+    // phase gates (period 2π) and ±θ/2 for rotations (period 4π). Scaling the
+    // reduced angle matches it, except for the eigenvalue −1 at period/2.
+    if (!isIntegerExponent(r)) {
+      const double period = isa<GPhaseOp, POp>(inner) ? 2. * std::numbers::pi
+                                                      : 4. * std::numbers::pi;
+      parameter = reduceAngle(*parameter, period);
+      if (*parameter == period / 2.) {
+        return failure();
+      }
     }
     const auto scaled = scaleConstantAngle(*parameter, r);
     if (!scaled ||
