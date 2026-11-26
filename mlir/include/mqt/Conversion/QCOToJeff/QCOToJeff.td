@@ -27,9 +27,8 @@ def QCOToJeff : Pass<"qco-to-jeff", "mlir::ModuleOp"> {
     residual runtime safety assertions are rejected. Array lengths must fit
     signed i32. Mutable array arguments in helpers remain unsupported.
 
-    Static qubits share one fixed-size register marked by `mqt.static_qubits`
-    metadata. Its size is one greater than the largest static site ID, and
-    constant register indices retain the site IDs through binary interchange.
+    Static sites use one `mqt.static_qubits` register with matching indices
+    and size `max(site ID) + 1`. Its size must fit signed i32.
     `mqt.layout` metadata is not preserved.
   }];
 

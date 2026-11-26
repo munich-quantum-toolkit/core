@@ -175,10 +175,8 @@ possible extension. The conversion currently supports:
 - Source-level function input names. Restored programs can list and bind named
   `f64` parameters. Binary interchange preserves names, but not Qiskit parameter
   identities or parameter-vector grouping.
-- Static qubit site IDs. Export uses one fixed-size qubit register with
-  `mqt.static_qubits` metadata and constant indices equal to the site IDs. Its
-  size is one greater than the largest site ID; import restores the referenced
-  sites.
+- Static qubit site IDs survive binary interchange. Their register spans zero
+  through the largest site ID; qubit layout metadata is not preserved.
 
 The following limits affect interchange:
 
