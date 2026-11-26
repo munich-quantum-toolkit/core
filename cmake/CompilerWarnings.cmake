@@ -33,7 +33,7 @@ function(set_project_warnings target_name)
       /w14906 # string literal cast to 'LPWSTR'
       /w14928 # Copy-initialization with multiple implicit user-defined conversions
       /permissive- # standards conformance mode for MSVC compiler.
-  )
+      $<$<CXX_COMPILER_ID:Clang>:-Wno-missing-designated-field-initializers>)
 
   set(clang_warnings
       -Wall
@@ -53,7 +53,8 @@ function(set_project_warnings target_name)
       -Wno-unknown-pragmas # do not warn if encountering unknown pragmas
       -Wno-pragmas # do not warn if encountering unknown pragma options
       # AppleClang and Clang support different warning options.
-      $<$<CXX_COMPILER_ID:AppleClang,Clang>:-Wno-unknown-warning-option>)
+      $<$<CXX_COMPILER_ID:AppleClang,Clang>:-Wno-unknown-warning-option>
+      $<$<CXX_COMPILER_ID:AppleClang,Clang>:-Wno-missing-designated-field-initializers>)
 
   if(WARNINGS_AS_ERRORS)
     set(clang_warnings ${clang_warnings} -Werror)

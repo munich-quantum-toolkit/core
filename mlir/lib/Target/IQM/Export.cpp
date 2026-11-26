@@ -132,11 +132,10 @@ public:
         for (const auto& instruction : *block) {
           if (const auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction)) {
             if (auto error = emitCall(*call, stream)) {
-              return std::move(error);
+              return error;
             }
           } else if (const auto* branch =
-                         llvm::dyn_cast<llvm::BranchInst>(&instruction);
-                     branch != nullptr && branch->isUnconditional()) {
+                         llvm::dyn_cast<llvm::UncondBrInst>(&instruction)) {
             next = branch->getSuccessor(0);
           } else if (const auto* result =
                          llvm::dyn_cast<llvm::ReturnInst>(&instruction)) {

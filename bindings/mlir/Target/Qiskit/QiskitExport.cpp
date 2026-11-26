@@ -495,10 +495,9 @@ static void validateExportParameters(const ExportedCircuit& circuit,
   }
 }
 
-static void collectParameters(mlir::func::FuncOp function, ExportState& state,
-                              size_t count) {
-  for (size_t index = 0U; index < count; ++index) {
-    auto argument = function.getArgument(index);
+static void collectParameters(mlir::func::FuncOp function, ExportState& state) {
+  for (auto argument : function.getArguments()) {
+    const auto index = argument.getArgNumber();
     const auto name = function.getArgAttrOfType<mlir::StringAttr>(
         index, mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr());
     if (!argument.getType().isF64() || !name) {
@@ -846,9 +845,8 @@ collectUnitaryInstruction(mlir::Operation& operation,
   if (auto unitary = llvm::dyn_cast<mlir::qc::UnitaryOp>(operation)) {
     const auto matrix =
         llvm::cast<mlir::DenseElementsAttr>(unitary.getMatrix());
-    std::vector<std::complex<double>> values;
-    values.reserve(matrix.size());
-    llvm::append_range(values, matrix.getValues<std::complex<double>>());
+    const auto entries = matrix.getValues<std::complex<double>>();
+    std::vector<std::complex<double>> values(entries.begin(), entries.end());
     auto targetQubits = mapQubits(unitary.getQubits(), qubits);
     std::ranges::reverse(targetQubits);
     return {
@@ -2958,9 +2956,10 @@ collectGateFunctions(mlir::ModuleOp moduleOp, mlir::func::FuncOp entryPoint) {
 collectGateDefinition(mlir::func::FuncOp function) {
   const auto numParameters = gateParameterCount(function);
   ExportState state;
-  for (size_t index = 0; index < numParameters; ++index) {
-    auto parameter = Parameter::symbol("p" + std::to_string(index));
-    state.parameters[function.getArgument(index)] = parameter;
+  for (auto argument : function.getArguments().take_front(numParameters)) {
+    auto parameter =
+        Parameter::symbol("p" + std::to_string(argument.getArgNumber()));
+    state.parameters[argument] = parameter;
     state.inputParameters.push_back(std::move(parameter));
   }
   const auto numQubits = function.getNumArguments() - numParameters;
@@ -3030,7 +3029,7 @@ exportCircuitImpl(mlir::QCProgram program,
     gateDefinitions.push_back(collectGateDefinition(gateFunction));
   }
   ExportState state;
-  collectParameters(function, state, function.getNumArguments());
+  collectParameters(function, state);
   if (deviceTarget) {
     state.numQubits = checkedIndex(
         static_cast<uint64_t>(*llvm::max_element(target->siteIds())) + 1,

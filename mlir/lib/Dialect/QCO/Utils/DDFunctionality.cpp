@@ -2468,7 +2468,7 @@ expectationValues(func::FuncOp func,
   if (failed(state)) {
     return failure();
   }
-  const auto guard = llvm::make_scope_exit([&] { package.decRef(*state); });
+  const auto guard = llvm::scope_exit([&] { package.decRef(*state); });
   auto values = package.expectationValues(*state, observables);
   if (!values) {
     return func.emitError(llvm::toString(values.takeError()));
@@ -2666,7 +2666,7 @@ sampleBranches(func::FuncOp func, dd::Package& dd, size_t shots,
   GateCache gateCache(dd);
   std::function<LogicalResult(Block::iterator, Group)> visit =
       [&](Block::iterator current, Group group) -> LogicalResult {
-    const auto guard = llvm::make_scope_exit([&] { dd.decRef(group.state); });
+    const auto guard = llvm::scope_exit([&] { dd.decRef(group.state); });
     WalkState walk{
         .qubits = &group.qubits,
         .tensors = &group.tensors,
@@ -3086,7 +3086,7 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
   }
   size_t workers = shots == 0 ? 0 : workerBudget().reserve(1);
   const auto release =
-      llvm::make_scope_exit([&] { workerBudget().release(workers); });
+      llvm::scope_exit([&] { workerBudget().release(workers); });
   auto packageResult = dd::Package::create(0);
   if (!packageResult) {
     return func.emitError(llvm::toString(packageResult.takeError()));

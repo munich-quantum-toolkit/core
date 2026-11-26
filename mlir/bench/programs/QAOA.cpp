@@ -20,6 +20,7 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Region.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
@@ -41,16 +42,14 @@ SmallVector<Value> qaoa(qc::QCProgramBuilder& builder, const QAOA& benchmark) {
   const auto anglesType = RankedTensorType::get({layers}, builder.getF64Type());
   const auto inputName =
       mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr();
-  for (const auto* name : {"gammas", "betas"}) {
-    entry.insertArgument(
-        entry.getNumArguments(), anglesType,
-        builder.getDictionaryAttr({
-            builder.getNamedAttr(inputName, builder.getStringAttr(name)),
-        }),
-        builder.getLoc());
-  }
-  auto gammas = entry.getArgument(0);
-  auto betas = entry.getArgument(1);
+  entry.setType(builder.getFunctionType({anglesType, anglesType},
+                                        entry.getResultTypes()));
+  auto gammas = entry.getBody().addArgument(anglesType, builder.getLoc());
+  auto betas = entry.getBody().addArgument(anglesType, builder.getLoc());
+  entry.setArgAttr(gammas.getArgNumber(), inputName,
+                   builder.getStringAttr("gammas"));
+  entry.setArgAttr(betas.getArgNumber(), inputName,
+                   builder.getStringAttr("betas"));
   auto qubits = builder.allocQubitRegisterStorage(size, "vertices");
   auto result =
       builder.allocClassicalBitRegister(size, benchmark.output().name);

@@ -127,7 +127,7 @@ Shor::Shor(ShorOptions options)
     : options_(options),
       output_{
           .name = "result",
-          .width = size_t{2} * std::bit_width(options_.number),
+          .width = 2 * static_cast<size_t>(std::bit_width(options_.number)),
       } {}
 
 llvm::Expected<Shor> Shor::create(ShorOptions options) {

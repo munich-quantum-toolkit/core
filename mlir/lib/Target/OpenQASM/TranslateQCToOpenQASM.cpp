@@ -1217,7 +1217,8 @@ private:
 
     DominanceInfo dominance(function);
     if (function
-            .walk([&](bufferization::MaterializeInDestinationOp init) {
+            .walk([&](bufferization::MaterializeInDestinationOp init)
+                      -> WalkResult {
               auto constant =
                   init.getSource().getDefiningOp<arith::ConstantOp>();
               auto data = constant
@@ -1230,10 +1231,9 @@ private:
                     return user != init &&
                            !dominance.properlyDominates(init, user);
                   })) {
-                fail(init,
-                     "constant array initialization must precede every use "
-                     "of an entry-block allocation");
-                return WalkResult::interrupt();
+                return fail(init,
+                            "constant array initialization must precede every "
+                            "use of an entry-block allocation");
               }
               arrayInitializers_.try_emplace(init.getDest(), data);
               return WalkResult::advance();
