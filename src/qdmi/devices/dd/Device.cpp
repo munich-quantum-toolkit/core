@@ -41,6 +41,7 @@
 #include <charconv>
 #include <chrono>
 #include <complex>
+#include <concepts>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -61,6 +62,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -251,10 +253,11 @@ constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
 
 /// Report the size of `entries` entries of `width` elements of `T` and, when
 /// `data` is set, let `fill` write them into the caller's buffer.
-template <typename T, typename Fill>
+template <typename T, std::invocable<std::span<T>> Fill>
+  requires std::is_trivially_copyable_v<T>
 [[nodiscard]] auto writeResult(const size_t entries, const size_t width,
                                const size_t size, void* data, size_t* sizeRet,
-                               Fill fill) -> QDMI_STATUS {
+                               Fill&& fill) -> QDMI_STATUS {
   if (width != 0 &&
       entries > std::numeric_limits<size_t>::max() / sizeof(T) / width) {
     return QDMI_ERROR_OUTOFMEM;
@@ -269,7 +272,7 @@ template <typename T, typename Fill>
   if (size < count * sizeof(T)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  fill(std::span(static_cast<T*>(data), count));
+  std::forward<Fill>(fill)(std::span(static_cast<T*>(data), count));
   return QDMI_SUCCESS;
 }
 

@@ -27,7 +27,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <filesystem>
 #include <iterator>
 #include <map>
@@ -188,93 +187,97 @@ struct PackedShots {
 [[nodiscard]] llvm::Expected<PackedShots> getPackedShots(const Job& job,
                                                          size_t programIndex);
 
+/// Fetch a variable-size value with the QDMI size-then-fill protocol.
+///
+/// The provider writes the bytes of `Buffer`'s elements, so they must be
+/// trivially copy constructible. Return `std::nullopt` if the provider does not
+/// support the value.
+template <typename Buffer, typename Query>
+  requires std::is_trivially_copy_constructible_v<typename Buffer::value_type>
+[[nodiscard]] llvm::Expected<std::optional<Buffer>>
+queryBuffer(Query query, const llvm::Twine& sizeMessage,
+            const llvm::Twine& message) {
+  size_t size = 0;
+  const auto status = query(0, nullptr, &size);
+  if (status == QDMI_ERROR_NOTSUPPORTED) {
+    return std::nullopt;
+  }
+  if (auto error = checkError(status, sizeMessage)) {
+    return error;
+  }
+  if (size % sizeof(typename Buffer::value_type) != 0) {
+    return qdmi::makeError(
+        QDMI_ERROR_FATAL,
+        sizeMessage + ": byte count is not a multiple of the element size");
+  }
+  std::optional<Buffer> buffer(std::in_place);
+  buffer->resize(size / sizeof(typename Buffer::value_type));
+  if (size != 0) {
+    if (auto error =
+            checkError(query(size, buffer->data(), nullptr), message)) {
+      return error;
+    }
+  }
+  return buffer;
+}
+
+/// Fetch a variable-size value that the provider must support.
+template <typename Buffer, typename Query>
+[[nodiscard]] llvm::Expected<Buffer>
+queryRequiredBuffer(Query query, const llvm::Twine& sizeMessage,
+                    const llvm::Twine& message) {
+  auto buffer = queryBuffer<Buffer>(std::move(query), sizeMessage, message);
+  if (!buffer) {
+    return buffer.takeError();
+  }
+  if (!*buffer) {
+    return checkError(QDMI_ERROR_NOTSUPPORTED, sizeMessage);
+  }
+  return std::move(**buffer);
+}
+
 template <custom_property_value T, typename Query>
 [[nodiscard]] llvm::Expected<std::optional<T>>
 queryCustomValue(Query query, const llvm::Twine& description) {
-  size_t size = 0;
-  const auto sizeResult = query(0, nullptr, &size);
-  if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
-    return std::optional<T>{};
-  }
-  if (auto error =
-          checkError(sizeResult, "Querying " + description + " size")) {
-    return error;
-  }
-
-  std::vector<std::byte> bytes(size);
-  if (size != 0) {
-    if (auto error = checkError(query(size, bytes.data(), nullptr),
+  if constexpr (std::same_as<T, std::vector<std::byte>> ||
+                std::same_as<T, std::string>) {
+    auto value =
+        queryBuffer<T>(std::move(query), "Querying " + description + " size",
+                       "Querying " + description);
+    if constexpr (std::same_as<T, std::string>) {
+      if (value && *value) {
+        if ((*value)->empty() || (*value)->back() != '\0') {
+          return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                                 "Cannot decode " + description +
+                                     " as a null-terminated string");
+        }
+        (*value)->pop_back();
+      }
+    }
+    return value;
+  } else {
+    size_t size = 0;
+    const auto status = query(0, nullptr, &size);
+    if (status == QDMI_ERROR_NOTSUPPORTED) {
+      return std::optional<T>{};
+    }
+    if (auto error = checkError(status, "Querying " + description + " size")) {
+      return error;
+    }
+    if (size != sizeof(T)) {
+      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                             "Cannot decode " + description + ": expected " +
+                                 llvm::Twine(sizeof(T)) +
+                                 " bytes, but the device reported " +
+                                 llvm::Twine(size));
+    }
+    T value{};
+    if (auto error = checkError(query(sizeof(T), &value, nullptr),
                                 "Querying " + description)) {
       return error;
     }
+    return std::optional<T>{value};
   }
-
-  if constexpr (std::same_as<T, std::vector<std::byte>>) {
-    return std::optional<std::vector<std::byte>>{std::move(bytes)};
-  } else if constexpr (std::same_as<T, std::string>) {
-    if (bytes.empty() || bytes.back() != std::byte{0}) {
-      return qdmi::makeError(
-          QDMI_ERROR_INVALIDARGUMENT,
-          ("Cannot decode " + description + " as a null-terminated string")
-              .str());
-    }
-    return std::optional<std::string>{
-        std::in_place, reinterpret_cast<const char*>(bytes.data()),
-        bytes.size() - 1};
-  } else {
-    if (bytes.size() != sizeof(T)) {
-      return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
-                             ("Cannot decode " + description + ": expected " +
-                              llvm::Twine(sizeof(T)) +
-                              " bytes, but the device reported " +
-                              llvm::Twine(bytes.size()))
-                                 .str());
-    }
-    T value{};
-    std::memcpy(&value, bytes.data(), sizeof(T));
-    return std::optional<T>{std::move(value)};
-  }
-}
-
-template <typename Element>
-llvm::Error validateArraySize(const size_t size,
-                              const llvm::Twine& description) {
-  if (size % sizeof(Element) != 0U) {
-    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
-                           ("Cannot decode " + description +
-                            ": the device reported " + llvm::Twine(size) +
-                            " bytes, which is not a multiple of " +
-                            llvm::Twine(sizeof(Element)))
-                               .str());
-  }
-  return llvm::Error::success();
-}
-
-template <typename Handle, typename Query>
-[[nodiscard]] llvm::Expected<std::optional<std::vector<Handle>>>
-queryHandleArray(Query query, const llvm::Twine& description) {
-  size_t size = 0;
-  const auto sizeResult = query(0, nullptr, &size);
-  if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
-    return std::optional<std::vector<Handle>>{};
-  }
-  if (auto error =
-          checkError(sizeResult, "Querying " + description + " size")) {
-    return error;
-  }
-  if (auto error = validateArraySize<Handle>(size, description)) {
-    return error;
-  }
-
-  std::vector<Handle> handles(size / sizeof(Handle));
-  if (size != 0) {
-    if (auto error =
-            checkError(query(size, static_cast<void*>(handles.data()), nullptr),
-                       "Querying " + description)) {
-      return error;
-    }
-  }
-  return std::optional<std::vector<Handle>>{std::move(handles)};
 }
 
 [[nodiscard]] inline llvm::Expected<QDMI_Device_Property>
@@ -513,62 +516,31 @@ namespace detail {
 template <maybe_optional_value_or_string_or_vector T, typename Query>
 [[nodiscard]] llvm::Expected<T>
 queryProperty(Query query, const llvm::Twine& msg, const llvm::Twine& sizeMsg) {
-  if constexpr (string_or_optional_string<T>) {
-    size_t size = 0;
-    auto result = query(0, nullptr, &size);
-
-    if constexpr (is_optional<T>) {
-      if (result == QDMI_ERROR_NOTSUPPORTED) {
+  if constexpr (string_or_optional_string<T> ||
+                maybe_optional_size_constructible_contiguous_range<T>) {
+    auto value = queryBuffer<remove_optional_t<T>>(query, sizeMsg, msg);
+    if (!value) {
+      return value.takeError();
+    }
+    if (!*value) {
+      if constexpr (is_optional<T>) {
         return T{};
+      } else {
+        return checkError(QDMI_ERROR_NOTSUPPORTED, sizeMsg);
       }
     }
-
-    if (auto error = checkError(result, sizeMsg)) {
-      return error;
-    }
-    if (size == 0) {
-      return qdmi::makeError(QDMI_ERROR_FATAL,
-                             (sizeMsg + ": missing string terminator").str());
-    }
-    std::string value(size, '\0');
-    result = query(size, value.data(), nullptr);
-    if (auto error = checkError(result, msg)) {
-      return error;
-    }
-    if (value.back() != '\0') {
-      return qdmi::makeError(QDMI_ERROR_FATAL,
-                             (msg + ": missing string terminator").str());
-    }
-    value.pop_back();
-    return T{std::move(value)};
-  } else if constexpr (maybe_optional_size_constructible_contiguous_range<T>) {
-    size_t size = 0;
-    auto result = query(0, nullptr, &size);
-
-    if constexpr (is_optional<T>) {
-      if (result == QDMI_ERROR_NOTSUPPORTED) {
-        return T{};
+    if constexpr (string_or_optional_string<T>) {
+      if ((*value)->empty()) {
+        return qdmi::makeError(QDMI_ERROR_FATAL,
+                               sizeMsg + ": missing string terminator");
       }
-    }
-
-    if (auto error = checkError(result, sizeMsg)) {
-      return error;
-    }
-    if (size % sizeof(typename remove_optional_t<T>::value_type) != 0) {
-      return qdmi::makeError(
-          QDMI_ERROR_FATAL,
-          (sizeMsg + ": byte count is not a multiple of the element size")
-              .str());
-    }
-    remove_optional_t<T> value(
-        size / sizeof(typename remove_optional_t<T>::value_type));
-    if (size != 0) {
-      result = query(size, value.data(), nullptr);
-      if (auto error = checkError(result, msg)) {
-        return error;
+      if ((*value)->back() != '\0') {
+        return qdmi::makeError(QDMI_ERROR_FATAL,
+                               msg + ": missing string terminator");
       }
+      (*value)->pop_back();
     }
-    return T{std::move(value)};
+    return T{std::move(**value)};
   } else {
     remove_optional_t<T> value{};
     const auto result = query(sizeof(remove_optional_t<T>), &value, nullptr);

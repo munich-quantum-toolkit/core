@@ -95,34 +95,18 @@ Expected<PackedShots> getPackedShots(const Job& job, size_t programIndex) {
 } // namespace detail
 
 namespace {
-/// Query the size of a result, then fetch its elements of type `T`.
-template <typename T>
-Expected<std::vector<T>> fetchResult(const detail::DriverAPI& api, QDMI_Job job,
-                                     const size_t programIndex,
-                                     const QDMI_Job_Result result,
-                                     const llvm::Twine& description) {
-  size_t size = 0;
-  if (auto error = qdmi::checkError(
-          api.job_get_results(job, programIndex, result, 0, nullptr, &size),
-          "Querying " + description + " size")) {
-    return error;
-  }
-  if (size % sizeof(T) != 0) {
-    return qdmi::makeError(QDMI_ERROR_FATAL, "Invalid " + description +
-                                                 " size: not a multiple of " +
-                                                 llvm::Twine(sizeof(T)) +
-                                                 " bytes");
-  }
-  std::vector<T> values(size / sizeof(T));
-  if (size != 0) {
-    if (auto error =
-            qdmi::checkError(api.job_get_results(job, programIndex, result,
-                                                 size, values.data(), nullptr),
-                             "Querying " + description)) {
-      return error;
-    }
-  }
-  return values;
+/// Fetch one program result as elements of type `T`.
+template <typename Buffer>
+Expected<Buffer> fetchResult(const detail::DriverAPI& api, QDMI_Job job,
+                             const size_t programIndex,
+                             const QDMI_Job_Result result,
+                             const llvm::Twine& description) {
+  return detail::queryRequiredBuffer<Buffer>(
+      [&](const size_t size, void* data, size_t* sizeRet) {
+        return api.job_get_results(job, programIndex, result, size, data,
+                                   sizeRet);
+      },
+      "Querying " + description + " size", "Querying " + description);
 }
 
 template <typename T>
@@ -130,8 +114,8 @@ Expected<std::map<std::string, T>> getSparseResult(
     const detail::DriverAPI& api, QDMI_Job job, const size_t programIndex,
     const QDMI_Job_Result keysResult, const QDMI_Job_Result valuesResult,
     const llvm::Twine& description, const std::string_view mismatch) {
-  auto keys = fetchResult<char>(api, job, programIndex, keysResult,
-                                description + " keys");
+  auto keys = fetchResult<std::string>(api, job, programIndex, keysResult,
+                                       description + " keys");
   if (!keys) {
     return keys.takeError();
   }
@@ -142,13 +126,13 @@ Expected<std::map<std::string, T>> getSparseResult(
     return qdmi::makeError(QDMI_ERROR_FATAL,
                            "Unterminated " + description + " keys");
   }
-  auto values = fetchResult<T>(api, job, programIndex, valuesResult,
-                               description + " values");
+  auto values = fetchResult<std::vector<T>>(
+      api, job, programIndex, valuesResult, description + " values");
   if (!values) {
     return values.takeError();
   }
-  const auto list = detail::trimList(
-      llvm::StringRef(keys->data(), keys->size() - 1), values->size());
+  const auto list =
+      detail::trimList(llvm::StringRef(*keys).drop_back(), values->size());
   if (!list) {
     return qdmi::makeError(QDMI_ERROR_FATAL, std::string(mismatch));
   }
@@ -448,27 +432,23 @@ Expected<std::vector<std::string>> builtin_driver::registeredDeviceIds() {
         QDMI_ERROR_FATAL,
         "The MQT Core QDMI driver does not support offline enumeration");
   }
-  size_t size = 0;
-  if (auto error = qdmi::checkError(query(0, nullptr, &size),
-                                    "Querying registered QDMI device IDs")) {
-    return error;
-  }
-  std::string buffer(size, '\0');
-  if (size != 0) {
-    if (auto error = qdmi::checkError(query(size, buffer.data(), nullptr),
-                                      "Querying registered QDMI device IDs")) {
-      return error;
-    }
+  auto buffer = detail::queryRequiredBuffer<std::string>(
+      query, "Querying registered QDMI device IDs",
+      "Querying registered QDMI device IDs");
+  if (!buffer) {
+    return buffer.takeError();
   }
   std::vector<std::string> ids;
-  for (size_t start = 0; start < buffer.size();) {
-    const auto end = buffer.find('\0', start);
-    if (end == std::string::npos) {
-      return qdmi::makeError(QDMI_ERROR_FATAL,
-                             "The QDMI driver returned an unterminated ID");
-    }
-    ids.emplace_back(buffer.substr(start, end - start));
-    start = end + 1;
+  if (buffer->empty()) {
+    return ids;
+  }
+  if (buffer->back() != '\0') {
+    return qdmi::makeError(QDMI_ERROR_FATAL,
+                           "The QDMI driver returned an unterminated ID");
+  }
+  for (const auto id :
+       llvm::split(llvm::StringRef(*buffer).drop_back(), '\0')) {
+    ids.emplace_back(id);
   }
   return ids;
 }
@@ -790,12 +770,15 @@ Device::queryCustomOperations(const CustomProperty property) const {
     return propertyResult.takeError();
   }
   const auto qdmiProperty = (*propertyResult);
-  auto handlesResult = detail::queryHandleArray<QDMI_Operation>(
+  const auto description =
+      ("custom operation list " + llvm::Twine(static_cast<unsigned>(property)))
+          .str();
+  auto handlesResult = detail::queryBuffer<std::vector<QDMI_Operation>>(
       [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
         return api().device_query_device_property(device_, qdmiProperty, size,
                                                   value, sizeRet);
       },
-      "custom operation list " + llvm::Twine(static_cast<unsigned>(property)));
+      "Querying " + description + " size", "Querying " + description);
   if (!handlesResult) {
     return handlesResult.takeError();
   }
@@ -881,29 +864,19 @@ Device::getSupportedProgramFormats() const {
 }
 
 Expected<std::vector<Device>> Device::getChildDevices() const {
-  size_t size = 0;
-  auto result = api().device_query_device_property(
-      device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr, &size);
-  if (result == QDMI_ERROR_NOTSUPPORTED) {
+  auto queried = detail::queryBuffer<std::vector<QDMI_Device>>(
+      [this](const size_t size, void* value, size_t* sizeRet) {
+        return api().device_query_device_property(
+            device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size, value, sizeRet);
+      },
+      "Querying child devices size", "Querying child devices");
+  if (!queried) {
+    return queried.takeError();
+  }
+  if (!*queried) {
     return std::vector<Device>{};
   }
-  if (auto error = checkError(result, "Querying child devices size")) {
-    return error;
-  }
-  if (size % sizeof(QDMI_Device) != 0) {
-    return qdmi::makeError(QDMI_ERROR_FATAL, "Invalid child device list size");
-  }
-
-  std::vector<QDMI_Device> handles(size / sizeof(QDMI_Device));
-  if (size != 0) {
-    result = api().device_query_device_property(
-        device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size,
-        static_cast<void*>(handles.data()), nullptr);
-    if (auto error = checkError(result, "Querying child devices")) {
-      return error;
-    }
-  }
-
+  const auto& handles = **queried;
   std::vector<Device> devices;
   devices.reserve(handles.size());
   std::ranges::transform(handles, std::back_inserter(devices),
@@ -1244,24 +1217,12 @@ Expected<QDMI_Program_Format> Job::getProgramFormat() const {
 
 Expected<std::vector<std::byte>>
 Job::getProgramBytes(const size_t programIndex) const {
-  size_t size = 0;
-  if (auto error = qdmi::checkError(
-          api().job_get_program(job_.get(), programIndex, 0, nullptr, &size),
-          "Querying program size")) {
-    return error;
-  }
-
-  std::vector<std::byte> program(size);
-  if (size != 0) {
-    if (auto error = qdmi::checkError(
-            api().job_get_program(job_.get(), programIndex, size,
-                                  program.data(), nullptr),
-            "Querying program")) {
-      return error;
-    }
-  }
-
-  return program;
+  return detail::queryRequiredBuffer<std::vector<std::byte>>(
+      [&](const size_t size, void* data, size_t* sizeRet) {
+        return api().job_get_program(job_.get(), programIndex, size, data,
+                                     sizeRet);
+      },
+      "Querying program size", "Querying program");
 }
 
 Expected<std::string> Job::getProgram(const size_t programIndex) const {
@@ -1329,8 +1290,8 @@ Job::getProgramStatus(const size_t programIndex) const {
 
 Expected<std::vector<std::byte>>
 Job::getResults(const QDMI_Job_Result result, const size_t programIndex) const {
-  return fetchResult<std::byte>(api(), job_.get(), programIndex, result,
-                                "result");
+  return fetchResult<std::vector<std::byte>>(api(), job_.get(), programIndex,
+                                             result, "result");
 }
 
 Expected<std::optional<size_t>> Job::getQueuePosition() const {
@@ -1365,16 +1326,16 @@ Job::getCounts(const size_t programIndex) const {
 
 Expected<std::vector<std::complex<double>>>
 Job::getDenseStateVector(const size_t programIndex) const {
-  return fetchResult<std::complex<double>>(api(), job_.get(), programIndex,
-                                           QDMI_JOB_RESULT_STATEVECTOR_DENSE,
-                                           "dense state vector");
+  return fetchResult<std::vector<std::complex<double>>>(
+      api(), job_.get(), programIndex, QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+      "dense state vector");
 }
 
 Expected<std::vector<double>>
 Job::getDenseProbabilities(const size_t programIndex) const {
-  return fetchResult<double>(api(), job_.get(), programIndex,
-                             QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-                             "dense probabilities");
+  return fetchResult<std::vector<double>>(api(), job_.get(), programIndex,
+                                          QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                                          "dense probabilities");
 }
 
 Expected<std::map<std::string, std::complex<double>>>
