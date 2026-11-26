@@ -78,7 +78,7 @@ Matrix2x2 pauliFrame(PauliAxis axis, PauliAxis from) {
 FoldedPauliAngle foldPauliAngle(double angle) {
   // Reduce accurately before subtracting pi, including large angles.
   const double principal = mqt::reduceAngle(angle, 4. * std::numbers::pi);
-  const double folded = std::remainder(principal, std::numbers::pi);
+  const double folded = mqt::reduceAngle(principal, std::numbers::pi);
   const auto turns =
       static_cast<int>(std::round((principal - folded) / std::numbers::pi));
   return {

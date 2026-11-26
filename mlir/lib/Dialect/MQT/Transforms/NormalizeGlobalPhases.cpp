@@ -78,7 +78,6 @@ struct ConstantPhase {
     // Elide encoded whole turns only while their phase factor is still unity
     // within tolerance. A large multiple of binary64 2π can lose phase.
     return error == 0.0 && std::abs(angle) >= 2.0 * std::numbers::pi &&
-           std::fmod(angle, 2.0 * std::numbers::pi) == 0.0 &&
            classifyPhaseGate(angle) == PhaseGate::Identity;
   }
 

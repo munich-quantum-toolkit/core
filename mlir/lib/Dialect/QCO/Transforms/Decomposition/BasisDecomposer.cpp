@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/MQT/Utils/Angles.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Pauli.h"
@@ -237,7 +238,7 @@ TwoQubitBasisDecomposer::twoQubitDecompose(
   if (bestNbasis == 2) {
     globalPhase += BASIS_PI;
   }
-  globalPhase = remEuclid(globalPhase, 2.0 * BASIS_PI);
+  globalPhase = mqt::normalizeAngle(globalPhase);
 
   return TwoQubitNativeDecomposition{
       .numBasisUses = bestNbasis,

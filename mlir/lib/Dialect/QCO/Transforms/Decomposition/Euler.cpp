@@ -75,21 +75,6 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
       .Default([](auto) { return false; });
 }
 
-/// Wraps `angle` into `[-π, π)`, mapping `+π` (within tolerance) to `-π`.
-///
-/// @param angle The angle to wrap, in radians.
-/// @return The wrapped angle in `[-π, π)`.
-[[nodiscard]] static double mod2pi(const double angle) {
-  if (!std::isfinite(angle)) {
-    return angle;
-  }
-
-  constexpr double pi = std::numbers::pi;
-  // Mirroring normalizeAngle's (-π, π] yields [-π, π).
-  const double wrapped = -mqt::normalizeAngle(-angle);
-  return wrapped >= pi - mqt::PARAMETER_COMPARISON_TOLERANCE ? -pi : wrapped;
-}
-
 /// Conjugates a single-qubit matrix by Hadamard (`H * m * H`).
 ///
 /// Maps XYX / XZX parameterizations to ZYZ / ZXZ.
@@ -116,7 +101,7 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
 }
 
 void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
-  if (isNearZeroRotationAngle(mod2pi(phase))) {
+  if (isNearZeroRotationAngle(mqt::normalizeAngle(phase))) {
     return;
   }
   GPhaseOp::create(builder, loc, phase);
@@ -427,7 +412,7 @@ planEulerAngles(OpBuilder& builder, Location loc,
                             const RotationParameter& axis = 0.) {
     RotationParameter normalized = angle;
     if (const auto value = mqt::parameterToConstantDouble(angle)) {
-      const double wrapped = mod2pi(*value);
+      const double wrapped = mqt::normalizeAngle(*value);
       // Removing a full Pauli turn contributes a minus sign.
       plan.phase = add(plan.phase, 0.5 * (*value - wrapped));
       normalized = wrapped;
@@ -445,7 +430,7 @@ planEulerAngles(OpBuilder& builder, Location loc,
     constexpr double pi = std::numbers::pi;
     const auto sum = mqt::parameterToConstantDouble(add(phi, lambda));
     if (isConstantParameter(theta) && sum &&
-        isNearZeroRotationAngle(mod2pi(*sum))) {
+        isNearZeroRotationAngle(mqt::normalizeAngle(*sum))) {
       plan.phase = add(plan.phase, *sum / 2.);
       return plan;
     }
@@ -499,7 +484,7 @@ planEulerAngles(OpBuilder& builder, Location loc,
     case SingleQubitBasis::U:
       if (const auto p = mqt::parameterToConstantDouble(phi),
           l = mqt::parameterToConstantDouble(lambda);
-          !p || !l || !isNearZeroRotationAngle(mod2pi(*p + *l))) {
+          !p || !l || !isNearZeroRotationAngle(mqt::normalizeAngle(*p + *l))) {
         plan.steps.push_back(
             {.kind = Kind::U, .theta = 0., .phi = phi, .lambda = lambda});
       }
@@ -682,8 +667,8 @@ synthesizeUnitary1QEuler(OpBuilder& builder, Location loc, Value qubit,
     // Keep the alternate Euler representative only when it removes gates.
     constexpr double pi = std::numbers::pi;
     if (basis.singleQubit != SingleQubitBasis::U && plan.steps.size() > 1 &&
-        (isNearZeroRotationAngle(mod2pi(angles.phi + pi)) ||
-         isNearZeroRotationAngle(mod2pi(angles.lambda + pi)))) {
+        (isNearZeroRotationAngle(mqt::normalizeAngle(angles.phi + pi)) ||
+         isNearZeroRotationAngle(mqt::normalizeAngle(angles.lambda + pi)))) {
       auto alternate = planEulerAngles(
           builder, loc,
           {-angles.theta, angles.phi + pi, angles.lambda - pi, angles.phase},
