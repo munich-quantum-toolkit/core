@@ -10,6 +10,8 @@
 
 #include "QiskitVersion.h"
 
+#include "mqt/Compiler/Target.h"
+
 #include "Qiskit.h"
 #include "Result.hpp"
 
@@ -30,19 +32,26 @@
 namespace mqt::bindings::qiskit {
 namespace nb = nanobind;
 
-nb::object nativeRGate(const std::string_view name, nb::handle phase) {
-  const auto alias = mlir::nativeRAlias(name);
-  if (!alias) {
+nb::object nativeGate(const std::string_view name, nb::handle standardGates,
+                      const nb::list& parameters) {
+  const auto alias = mlir::nativeGateAlias(name);
+  if (!alias || alias->numNativeParameters() != nb::len(parameters)) {
     return nb::none();
   }
   const auto circuit = nb::module_::import_("qiskit.circuit");
-  nb::list parameters;
-  parameters.append(phase);
-  auto gate =
-      circuit.attr("Gate")(nb::str(name.data(), name.size()), 1, parameters);
-  auto definition = circuit.attr("QuantumCircuit")(1);
-  definition.attr("r")(alias->angle, phase, 0);
+  nb::list arguments;
+  size_t next = 0;
+  for (const auto fixed : alias->parameters) {
+    arguments.append(fixed ? nb::object(nb::float_(*fixed))
+                           : nb::object(parameters[next++]));
+  }
+  const nb::object standard = standardGates[alias->canonicalName.data()];
+  auto definition = circuit.attr("QuantumCircuit")(alias->numQubits);
+  definition.attr("append")(standard.attr("base_class")(*arguments),
+                            definition.attr("qubits"));
   definition.attr("global_phase") = alias->globalPhase;
+  auto gate = circuit.attr("Gate")(nb::str(name.data(), name.size()),
+                                   alias->numQubits, parameters);
   gate.attr("definition") = definition;
   return gate;
 }

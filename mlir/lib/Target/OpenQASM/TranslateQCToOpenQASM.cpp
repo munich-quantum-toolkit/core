@@ -3189,24 +3189,31 @@ private:
         }
       }
       StringRef canonical = call.symbol;
-      const auto alias = nativeRAlias(call.symbol);
-      const bool nativePulse = alias && parameters.size() == 1;
-      if (nativePulse) {
-        parameters.insert(parameters.begin(), Value{});
-        canonical = "r";
+      // A native alias matches its standard gate with the fixed parameters.
+      const auto alias = nativeGateAlias(call.symbol);
+      const bool nativeAlias =
+          alias && arity == alias->numQubits &&
+          parameters.size() == alias->numNativeParameters();
+      SmallVector<std::optional<double>> values;
+      if (nativeAlias) {
+        auto* open = parameters.begin();
+        for (const auto fixed : alias->parameters) {
+          values.push_back(fixed ? fixed : constantGateParameter(*open++));
+        }
+        canonical = alias->canonicalName;
+      } else {
+        for (auto parameter : parameters) {
+          values.push_back(constantGateParameter(parameter));
+        }
       }
       const auto selected = nativeTarget_->findOperation(
-          canonical, arity, parameters.size(),
-          [&](size_t i) {
-            return parameters[i] ? constantGateParameter(parameters[i])
-                                 : alias->angle;
-          },
+          canonical, arity, values.size(), [&](size_t i) { return values[i]; },
           sites.size() == arity
               ? std::optional<ArrayRef<CompilerTarget::SiteId>>(sites)
               : std::nullopt,
           0,
-          [this, &call, nativePulse](const auto& capability) {
-            return (!nativePulse || capability.name() == call.symbol) &&
+          [this, &call, nativeAlias](const auto& capability) {
+            return (!nativeAlias || capability.name() == call.symbol) &&
                    hasCompatibleNativeMeaning(capability);
           });
       if (selected.capability == nullptr) {
@@ -3304,13 +3311,6 @@ private:
     auto selected = nativeTarget_->findOperation(
         symbol, qubits.size(), parameters.size(), parameterAt, knownSites,
         controlCount, compatibleSpelling);
-    if (selected.capability == nullptr && controlCount == 0 &&
-        isa<XXPlusYYOp>(body.getOperation()) &&
-        isSqrtISwap(parameterAt(0), parameterAt(1))) {
-      selected = nativeTarget_->findOperation(
-          "sqrt_iswap", qubits.size(), {}, knownSites, 0, compatibleSpelling);
-      parameters = parameters.take_front(0);
-    }
     const bool promoteU2 = selected.capability == nullptr && symbol == "u2";
     if (promoteU2) {
       selected = nativeTarget_->findOperation(
@@ -3340,18 +3340,25 @@ private:
       }
       call.parameters.push_back(std::move(*expression));
     }
-    if (const auto alias = nativeRAlias(call.symbol);
-        capability->canonicalName() == "r" && alias) {
-      if (version2_) {
+    if (const auto alias = nativeGateAlias(call.symbol);
+        alias && capability->canonicalName() == alias->canonicalName) {
+      if (version2_ && alias->canonicalName == "r") {
         return fail(unitary, "native GPI pulses require OpenQASM 3");
       }
-      const auto angle = parameterAt(0);
-      if (!angle || std::abs(*angle - alias->angle) >
-                        mqt::PARAMETER_COMPARISON_TOLERANCE) {
-        return fail(unitary,
-                    "native GPI pulse requires its fixed rotation angle");
+      // The native gate takes only the parameters its alias leaves open.
+      for (size_t index = alias->parameters.size(); index-- > 0;) {
+        const auto fixed = alias->parameters[index];
+        if (!fixed) {
+          continue;
+        }
+        const auto value = parameterAt(index);
+        if (!value ||
+            std::abs(*value - *fixed) > mqt::PARAMETER_COMPARISON_TOLERANCE) {
+          return fail(unitary, "native gate '" + call.symbol +
+                                   "' requires its fixed parameters");
+        }
+        call.parameters.erase(call.parameters.begin() + index);
       }
-      call.parameters.erase(call.parameters.begin());
       if (alias->globalPhase != 0.) {
         auto phase =
             emitConstant(FloatAttr::get(Float64Type::get(unitary.getContext()),
