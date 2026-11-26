@@ -14,6 +14,7 @@ __lazy_modules__ = {"weakref"}
 
 import weakref
 from dataclasses import dataclass, replace
+from enum import StrEnum
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 from mqt.core.qdmi import Job
@@ -21,18 +22,31 @@ from mqt.core.qdmi import Job
 if TYPE_CHECKING:
     from collections.abc import Callable, Hashable, Iterator, Sequence
 
-__all__ = ["Batch", "BatchEntry", "JobAttempt", "JobFailure"]
+__all__ = ["Batch", "BatchEntry", "FailureStage", "JobAttempt", "JobFailure"]
 
 _Owner = TypeVar("_Owner")
 _Result = TypeVar("_Result")
 _TERMINAL = {Job.Status.DONE, Job.Status.FAILED, Job.Status.CANCELED}
 
 
+class FailureStage(StrEnum):
+    """The operation that raised a retained failure."""
+
+    SUBMISSION = "submission"
+    TRACKING = "tracking"
+    WAIT = "wait"
+    STATUS = "status"
+    EXECUTION = "execution"
+    RESULT = "result"
+    ASSEMBLY = "assembly"
+    CANCELLATION = "cancellation"
+
+
 @dataclass(frozen=True, slots=True)
 class JobFailure:
     """An original exception and the operation that raised it."""
 
-    stage: str
+    stage: FailureStage
     cause: BaseException
 
 
@@ -93,17 +107,20 @@ class Batch(Generic[_Owner, _Result]):
         owner: _Owner,
         entries: Sequence[BatchEntry[_Result]],
         *,
-        submit: Callable[[_Owner, int], Job] | None,
+        submit: Callable[[_Owner, Sequence[int]], Job | None],
         decode: Callable[[_Owner, int, Job, int], _Result],
         submission_error: Callable[[_Owner, str], Exception],
         execution_error: Callable[[_Owner, str], Exception],
         max_retries: int,
         on_submit: Callable[[_Owner, Sequence[int]], None] | None = None,
-        submit_programs: Callable[[_Owner, Sequence[int]], Job | None] | None = None,
         group_by: Sequence[Hashable] | None = None,
         supports_programs: Callable[[_Owner, Sequence[int]], bool] | None = None,
     ) -> None:
-        """Capture prepared entries, adapter callbacks, and a lifetime retry limit."""
+        """Capture prepared entries, adapter callbacks, and a lifetime retry limit.
+
+        ``submit`` admits the given entries as one job and returns ``None`` when
+        the device declines them before submission.
+        """
         self._owner_ref = weakref.ref(owner)
         self._entries = list(entries)
         self._submit = submit
@@ -113,7 +130,6 @@ class Batch(Generic[_Owner, _Result]):
         self._max_retries = max_retries
         self._cancelled = False
         self._on_submit = on_submit
-        self._submit_programs = submit_programs
         self._group_by = tuple(group_by) if group_by is not None else None
         self._supports_programs = supports_programs
         self._group_limits: dict[Hashable, int] = {}
@@ -136,7 +152,7 @@ class Batch(Generic[_Owner, _Result]):
         attempts[position] = attempt
         self._entries[index] = replace(entry, attempts=tuple(attempts))
 
-    def record_failure(self, index: int, stage: str, cause: BaseException, position: int = -1) -> None:
+    def record_failure(self, index: int, stage: FailureStage, cause: BaseException, position: int = -1) -> None:
         """Retain a failure without discarding the handle or a decoded result."""
         attempt = self._entries[index].attempts[position]
         self._set_attempt(index, replace(attempt, failures=(*attempt.failures, JobFailure(stage, cause))), position)
@@ -168,23 +184,14 @@ class Batch(Generic[_Owner, _Result]):
         """Submit selected entries, retaining earlier work if admission fails.
 
         The adapter's submission error preserves the original cause.
-
-        Raises:
-            RuntimeError: If the batch was constructed without submission data.
         """
         if not indices:
             return
-        if self._submit is None:
-            msg = "Submission requires prepared programs."
-            raise RuntimeError(msg)
         groups: dict[Hashable, list[int]] = {}
         for index in indices:
             key = self._group_by[index] if self._group_by is not None else index
             groups.setdefault(key, []).append(index)
         for key, group in groups.items():
-            if self._submit_programs is None:
-                self._admit_parts(group, len(group), automatic=automatic)
-                continue
             limit = self._group_limits.get(key)
             if limit is None or len(group) <= limit:
                 if self._admit(group, automatic=automatic):
@@ -239,16 +246,14 @@ class Batch(Generic[_Owner, _Result]):
                 attempts=(*entry.attempts, JobAttempt()),
                 automatic_retries=entry.automatic_retries + int(automatic),
             )
-        stage = "submission"
+        stage = FailureStage.SUBMISSION
         try:  # ruff:ignore[too-many-statements-in-try-clause] Retain every accepted handle before tracking.
-            if len(indices) > 1:
-                assert self._submit_programs is not None
-                handle = self._submit_programs(self._owner, indices)
-            else:
-                assert self._submit is not None
-                handle = self._submit(self._owner, indices[0])
+            handle = self._submit(self._owner, indices)
             if handle is None:
-                # NOTSUPPORTED before submission consumes neither an attempt nor a retry.
+                if len(indices) == 1:
+                    msg = "The device declined the program before submission."
+                    raise RuntimeError(msg)  # ruff:ignore[raise-within-try] Record it like other admission failures.
+                # A declined group consumes neither an attempt nor a retry; it is split instead.
                 for index, entry in zip(indices, previous, strict=True):
                     self._entries[index] = entry
                 return False
@@ -256,7 +261,7 @@ class Batch(Generic[_Owner, _Result]):
                 self._set_attempt(
                     index, JobAttempt(handle=handle, program_index=program_index, program_count=len(indices))
                 )
-            stage = "tracking"
+            stage = FailureStage.TRACKING
             if self._on_submit is not None:
                 self._on_submit(self._owner, indices)
         except BaseException as exc:
@@ -281,12 +286,12 @@ class Batch(Generic[_Owner, _Result]):
                 continue
             handle = self._entries[pending[0]].attempts[-1].handle
             assert handle is not None
-            stage = "wait" if wait else "status"
+            stage = FailureStage.WAIT if wait else FailureStage.STATUS
             try:
                 if wait and not handle.wait():
                     msg = "Timed out waiting for the QDMI job."
                     raise TimeoutError(msg)  # ruff:ignore[raise-within-try] Record timeouts with other wait failures.
-                stage = "status"
+                stage = FailureStage.STATUS
                 aggregate = handle.check()
             except BaseException as exc:
                 for index in pending:
@@ -305,7 +310,7 @@ class Batch(Generic[_Owner, _Result]):
                             status = handle.get_program_status(attempt.program_index)
                     except BaseException as exc:
                         self._set_attempt(index, replace(attempt, status=None))
-                        self.record_failure(index, "status", exc)
+                        self.record_failure(index, FailureStage.STATUS, exc)
                         if not isinstance(exc, Exception):
                             raise
                     else:
@@ -343,14 +348,14 @@ class Batch(Generic[_Owner, _Result]):
                     continue
                 if attempt.status != Job.Status.DONE:
                     msg = f"QDMI program did not complete successfully: {attempt.status.name}."
-                    self.record_failure(index, "execution", RuntimeError(msg))
+                    self.record_failure(index, FailureStage.EXECUTION, RuntimeError(msg))
                     continue
                 assert attempt.handle is not None
                 try:
                     result = self._decode(self._owner, index, attempt.handle, attempt.program_index)
                     self._set_attempt(index, replace(attempt, result=result))
                 except BaseException as exc:
-                    self.record_failure(index, "result", exc)
+                    self.record_failure(index, FailureStage.RESULT, exc)
                     if not isinstance(exc, Exception):
                         raise
         return self.entries
@@ -360,7 +365,7 @@ class Batch(Generic[_Owner, _Result]):
         return (
             attempt.status in {Job.Status.FAILED, Job.Status.CANCELED}
             and bool(attempt.failures)
-            and attempt.failures[-1].stage == "execution"
+            and attempt.failures[-1].stage is FailureStage.EXECUTION
         )
 
     def complete(self) -> None:
@@ -369,7 +374,7 @@ class Batch(Generic[_Owner, _Result]):
         The adapter's error factory supplies aggregate and submission errors.
         """
         self.collect()
-        while not self._cancelled and self._submit is not None:
+        while not self._cancelled:
             retry = [
                 index
                 for index, entry in enumerate(self._entries)
@@ -447,6 +452,6 @@ class Batch(Generic[_Owner, _Result]):
                 handle.cancel()
             except Exception as exc:  # ruff:ignore[blind-except] Attempt the remaining explicit cancellations.
                 for index, position in group:
-                    self.record_failure(index, "cancellation", exc, position)
+                    self.record_failure(index, FailureStage.CANCELLATION, exc, position)
                 success = False
         return success

@@ -31,7 +31,7 @@ from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
 from mqt.core.mlir._qiskit import ResultDecodingError, readout
-from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
+from mqt.core.plugins.qdmi_batch import Batch, BatchEntry, FailureStage
 from mqt.core.plugins.qiskit.exceptions import JobExecutionError, JobSubmissionError
 from mqt.core.qdmi import Job as QDMIJobHandle
 
@@ -123,9 +123,8 @@ class QDMIJob(JobV1):
         self._batch: Batch[QDMIJob, ExperimentResult] = Batch(
             self,
             [BatchEntry(i) for i in range(len(programs))],
-            submit=QDMIJob._submit_entry,
+            submit=QDMIJob._submit_programs,
             decode=QDMIJob._collect_result,
-            submit_programs=QDMIJob._submit_programs,
             supports_programs=QDMIJob._supports_programs,
             group_by=[program.program_format for program in self._programs],
             submission_error=lambda job, msg: JobSubmissionError(msg, job=job),
@@ -137,13 +136,6 @@ class QDMIJob(JobV1):
     def entries(self) -> tuple[BatchEntry[ExperimentResult], ...]:
         """Ordered snapshots of inputs, submission attempts, results, and failures."""
         return self._batch.entries
-
-    def _submit_entry(self, index: int) -> QDMIJobHandle:
-        job = self._submit_programs([index])
-        if job is None:
-            msg = "Provider declined a single-program job."
-            raise RuntimeError(msg)
-        return job
 
     def _submit_programs(self, indices: Sequence[int]) -> QDMIJobHandle | None:
         programs = [self._programs[index] for index in indices]
@@ -224,7 +216,7 @@ class QDMIJob(JobV1):
                 results=[entry.result for entry in self.entries],
             )
         except BaseException as exc:
-            self._batch.record_failure(0, "assembly", exc)
+            self._batch.record_failure(0, FailureStage.ASSEMBLY, exc)
             if not isinstance(exc, Exception):
                 raise
             msg = f"Failed to assemble Qiskit results: {exc}"
