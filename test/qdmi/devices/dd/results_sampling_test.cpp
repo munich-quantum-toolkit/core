@@ -499,10 +499,13 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
   const size_t shotsSize = qdmi_test::querySize(j.job, QDMI_JOB_RESULT_SHOTS);
   ASSERT_EQ(shotsSize, 512U * 3U);
   std::vector<char> shotsTooSmall(shotsSize - 1);
+  size_t required = 0;
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, 0, QDMI_JOB_RESULT_SHOTS, shotsTooSmall.size(),
-                shotsTooSmall.data(), nullptr),
+                shotsTooSmall.data(), &required),
             QDMI_ERROR_INVALIDARGUMENT);
+  // The required size is reported even when the buffer is too small.
+  EXPECT_EQ(required, shotsSize);
 
   if (const size_t ks = qdmi_test::querySize(j.job, QDMI_JOB_RESULT_HIST_KEYS);
       ks > 0) {

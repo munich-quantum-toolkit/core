@@ -101,7 +101,7 @@ Expected<Buffer> fetchResult(const detail::DriverAPI& api, QDMI_Job job,
                              const size_t programIndex,
                              const QDMI_Job_Result result,
                              const llvm::Twine& description) {
-  return detail::queryRequiredBuffer<Buffer>(
+  return qdmi::queryRequiredBuffer<Buffer>(
       [&](const size_t size, void* data, size_t* sizeRet) {
         return api.job_get_results(job, programIndex, result, size, data,
                                    sizeRet);
@@ -432,7 +432,7 @@ Expected<std::vector<std::string>> builtin_driver::registeredDeviceIds() {
         QDMI_ERROR_FATAL,
         "The MQT Core QDMI driver does not support offline enumeration");
   }
-  auto buffer = detail::queryRequiredBuffer<std::string>(
+  auto buffer = qdmi::queryRequiredBuffer<std::string>(
       query, "Querying registered QDMI device IDs",
       "Querying registered QDMI device IDs");
   if (!buffer) {
@@ -490,26 +490,21 @@ Expected<Device> builtin_driver::openDevice(
                                     "Initializing QDMI device session")) {
     return error;
   }
-  size_t size = 0;
-  if (auto error = qdmi::checkError(
-          driver->session_query_session_property(
-              session, QDMI_SESSION_PROPERTY_DEVICES, 0, nullptr, &size),
-          "Querying QDMI device")) {
-    return error;
+  auto devices = qdmi::queryRequiredBuffer<std::vector<QDMI_Device>>(
+      [&](const size_t size, void* value, size_t* sizeRet) {
+        return driver->session_query_session_property(
+            session, QDMI_SESSION_PROPERTY_DEVICES, size, value, sizeRet);
+      },
+      "Querying QDMI device", "Querying QDMI device");
+  if (!devices) {
+    return devices.takeError();
   }
-  if (size != sizeof(QDMI_Device)) {
+  if (devices->size() != 1) {
     return qdmi::makeError(
         QDMI_ERROR_FATAL,
         "A targeted QDMI session must expose exactly one device");
   }
-  QDMI_Device device = nullptr;
-  if (auto error =
-          qdmi::checkError(driver->session_query_session_property(
-                               session, QDMI_SESSION_PROPERTY_DEVICES, size,
-                               static_cast<void*>(&device), nullptr),
-                           "Querying QDMI device")) {
-    return error;
-  }
+  auto* const device = devices->front();
   if (device == nullptr) {
     return qdmi::makeError(QDMI_ERROR_FATAL,
                            "A targeted QDMI session returned a null device");
@@ -773,7 +768,7 @@ Device::queryCustomOperations(const CustomProperty property) const {
   const auto description =
       ("custom operation list " + llvm::Twine(static_cast<unsigned>(property)))
           .str();
-  auto handlesResult = detail::queryBuffer<std::vector<QDMI_Operation>>(
+  auto handlesResult = qdmi::queryBuffer<std::vector<QDMI_Operation>>(
       [this, qdmiProperty](const size_t size, void* value, size_t* sizeRet) {
         return api().device_query_device_property(device_, qdmiProperty, size,
                                                   value, sizeRet);
@@ -864,7 +859,7 @@ Device::getSupportedProgramFormats() const {
 }
 
 Expected<std::vector<Device>> Device::getChildDevices() const {
-  auto queried = detail::queryBuffer<std::vector<QDMI_Device>>(
+  auto queried = qdmi::queryBuffer<std::vector<QDMI_Device>>(
       [this](const size_t size, void* value, size_t* sizeRet) {
         return api().device_query_device_property(
             device_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size, value, sizeRet);
@@ -1217,7 +1212,7 @@ Expected<QDMI_Program_Format> Job::getProgramFormat() const {
 
 Expected<std::vector<std::byte>>
 Job::getProgramBytes(const size_t programIndex) const {
-  return detail::queryRequiredBuffer<std::vector<std::byte>>(
+  return qdmi::queryRequiredBuffer<std::vector<std::byte>>(
       [&](const size_t size, void* data, size_t* sizeRet) {
         return api().job_get_program(job_.get(), programIndex, size, data,
                                      sizeRet);

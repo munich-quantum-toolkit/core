@@ -41,7 +41,6 @@
 #include <charconv>
 #include <chrono>
 #include <complex>
-#include <concepts>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -62,7 +61,6 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -251,31 +249,6 @@ constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
   return QDMI_SUCCESS;
 }
 
-/// Report the size of `entries` entries of `width` elements of `T` and, when
-/// `data` is set, let `fill` write them into the caller's buffer.
-template <typename T, std::invocable<std::span<T>> Fill>
-  requires std::is_trivially_copyable_v<T>
-[[nodiscard]] auto writeResult(const size_t entries, const size_t width,
-                               const size_t size, void* data, size_t* sizeRet,
-                               Fill&& fill) -> QDMI_STATUS {
-  if (width != 0 &&
-      entries > std::numeric_limits<size_t>::max() / sizeof(T) / width) {
-    return QDMI_ERROR_OUTOFMEM;
-  }
-  const size_t count = entries * width;
-  if (sizeRet != nullptr) {
-    *sizeRet = count * sizeof(T);
-  }
-  if (data == nullptr) {
-    return QDMI_SUCCESS;
-  }
-  if (size < count * sizeof(T)) {
-    return QDMI_ERROR_INVALIDARGUMENT;
-  }
-  std::forward<Fill>(fill)(std::span(static_cast<T*>(data), count));
-  return QDMI_SUCCESS;
-}
-
 } // namespace
 
 namespace qdmi::dd {
@@ -446,41 +419,41 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
       QDMI_IS_INVALID_ENUM_VALUE(prop, QDMI_DEVICE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name_.c_str(), prop, size,
-                      value, sizeRet)
-  // NOLINTNEXTLINE(misc-include-cleaner)
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_VERSION, MQT_CORE_VERSION, prop,
-                      size, value, sizeRet)
-  // NOLINTNEXTLINE(misc-include-cleaner)
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_LIBRARYVERSION, QDMI_VERSION, prop,
-                      size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_STATUS, QDMI_Device_Status,
-                            runningJobs_.load() == 0 ? QDMI_DEVICE_STATUS_IDLE
-                                                     : QDMI_DEVICE_STATUS_BUSY,
-                            prop, size, value, sizeRet)
-  // Expose default length and time units
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_LENGTHUNIT, "um", prop, size, value,
-                      sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR, double, 1.0,
-                            prop, size, value, sizeRet)
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_DURATIONUNIT, "ns", prop, size,
-                      value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR, double,
-                            1.0, prop, size, value, sizeRet)
+  switch (prop) {
+  case QDMI_DEVICE_PROPERTY_NAME:
+    return writeString(name_, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_VERSION:
+    // NOLINTNEXTLINE(misc-include-cleaner)
+    return writeString(MQT_CORE_VERSION, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_LIBRARYVERSION:
+    // NOLINTNEXTLINE(misc-include-cleaner)
+    return writeString(QDMI_VERSION, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_STATUS:
+    return writeValue(runningJobs_.load() == 0 ? QDMI_DEVICE_STATUS_IDLE
+                                               : QDMI_DEVICE_STATUS_BUSY,
+                      size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_LENGTHUNIT:
+    return writeString("um", size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_DURATIONUNIT:
+    return writeString("ns", size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR:
+  case QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR:
+    return writeValue(1.0, size, value, sizeRet);
   // Target facts that QDMI v1.3 cannot encode compactly.
   // TODO(#2093): Remove this compatibility marker when QDMI standardizes
   // explicit unrestricted connectivity and operation applicability.
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_CUSTOM2,
-                      "mqt.compiler-target.v1:all-to-all-homogeneous", prop,
-                      size, value, sizeRet)
-  ADD_STRING_PROPERTY(
-      QDMI_DEVICE_PROPERTY_CUSTOM3,
-      R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching"},{"id":"counted-iteration"},{"id":"conditional-loop"},{"id":"multiway-branching"},{"id":"classical-assignment"},{"id":"qir.dynamic-qubit-management"},{"id":"qir.dynamic-result-management"},{"id":"qir.arrays"},{"id":"qir.ir-functions"},{"id":"qir.multiple-return-points"},{"id":"qir.int-computations"},{"id":"qir.float-computations"}]})",
-      prop, size, value, sizeRet)
-  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS,
-                    QDMI_Program_Format, SUPPORTED_PROGRAM_FORMATS, prop, size,
-                    value, sizeRet)
-  return QDMI_ERROR_NOTSUPPORTED;
+  case QDMI_DEVICE_PROPERTY_CUSTOM2:
+    return writeString("mqt.compiler-target.v1:all-to-all-homogeneous", size,
+                       value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_CUSTOM3:
+    return writeString(
+        R"({"schema":"mqt.payload-capabilities.v1","capabilities":[{"id":"forward-branching"},{"id":"counted-iteration"},{"id":"conditional-loop"},{"id":"multiway-branching"},{"id":"classical-assignment"},{"id":"qir.dynamic-qubit-management"},{"id":"qir.dynamic-result-management"},{"id":"qir.arrays"},{"id":"qir.ir-functions"},{"id":"qir.multiple-return-points"},{"id":"qir.int-computations"},{"id":"qir.float-computations"}]})",
+        size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS:
+    return writeList(SUPPORTED_PROGRAM_FORMATS, size, value, sizeRet);
+  default:
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
 }
 
 auto Device::generateUniqueID() -> int {
@@ -573,19 +546,21 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryDeviceProperty(
       QDMI_IS_INVALID_ENUM_VALUE(prop, QDMI_DEVICE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum_,
-                            prop, size, value, sizeRet)
-  if (prop == QDMI_DEVICE_PROPERTY_SITES) {
-    return writeResult<MQT_DDSIM_QDMI_Site>(
-        qubitsNum_, 1, size, value, sizeRet, [](auto output) {
+  switch (prop) {
+  case QDMI_DEVICE_PROPERTY_QUBITSNUM:
+    return qdmi::writeValue(size_t{qubitsNum_}, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_SITES:
+    return qdmi::writeResult<MQT_DDSIM_QDMI_Site>(
+        qubitsNum_, size, value, sizeRet, [](auto output) {
           for (auto [index, site] : llvm::enumerate(output)) {
             site = reinterpret_cast<MQT_DDSIM_QDMI_Site>(OFFSET + index);
           }
         });
+  case QDMI_DEVICE_PROPERTY_OPERATIONS:
+    return qdmi::writeList(operations_, size, value, sizeRet);
+  default:
+    return qdmi::dd::Device::get().queryProperty(prop, size, value, sizeRet);
   }
-  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
-                    operations_, prop, size, value, sizeRet)
-  return qdmi::dd::Device::get().queryProperty(prop, size, value, sizeRet);
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
     MQT_DDSIM_QDMI_Site site, const QDMI_Site_Property prop, const size_t size,
@@ -602,9 +577,9 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::querySiteProperty(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   static_assert(sizeof(uintptr_t) == sizeof(size_t));
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, size_t, id, prop, size,
-                            value, sizeRet)
-  return QDMI_ERROR_NOTSUPPORTED;
+  return prop == QDMI_SITE_PROPERTY_INDEX
+             ? qdmi::writeValue(size_t{id}, size, value, sizeRet)
+             : QDMI_ERROR_NOTSUPPORTED;
 }
 auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
     MQT_DDSIM_QDMI_Operation operation, const size_t numSites,
@@ -629,25 +604,29 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
   const auto& [operationName, operationNumSites, operationNumParams, isVariadic,
                supportsArbitraryPositiveControls] =
       *reinterpret_cast<const OperationInfo*>(operation);
-  ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, operationName, prop, size,
-                      value, sizeRet)
-  if (!isVariadic) {
-    if (sites != nullptr && operationNumSites != numSites) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
-                              operationNumSites, prop, size, value, sizeRet)
+  if (prop == QDMI_OPERATION_PROPERTY_NAME) {
+    return qdmi::writeString(operationName, size, value, sizeRet);
   }
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size_t,
-                            operationNumParams, prop, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double, 1.0, prop,
-                            size, value, sizeRet)
-  if (supportsArbitraryPositiveControls) {
-    ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_CUSTOM1,
-                        ARBITRARY_POSITIVE_CONTROLS_METADATA, prop, size, value,
-                        sizeRet)
+  if (!isVariadic && sites != nullptr && operationNumSites != numSites) {
+    return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return QDMI_ERROR_NOTSUPPORTED;
+  switch (prop) {
+  case QDMI_OPERATION_PROPERTY_QUBITSNUM:
+    return isVariadic
+               ? QDMI_ERROR_NOTSUPPORTED
+               : qdmi::writeValue(operationNumSites, size, value, sizeRet);
+  case QDMI_OPERATION_PROPERTY_PARAMETERSNUM:
+    return qdmi::writeValue(operationNumParams, size, value, sizeRet);
+  case QDMI_OPERATION_PROPERTY_FIDELITY:
+    return qdmi::writeValue(1.0, size, value, sizeRet);
+  case QDMI_OPERATION_PROPERTY_CUSTOM1:
+    return supportsArbitraryPositiveControls
+               ? qdmi::writeString(ARBITRARY_POSITIVE_CONTROLS_METADATA, size,
+                                   value, sizeRet)
+               : QDMI_ERROR_NOTSUPPORTED;
+  default:
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
 }
 MQT_DDSIM_QDMI_Device_Job_impl_d::MQT_DDSIM_QDMI_Device_Job_impl_d(
     MQT_DDSIM_QDMI_Device_Session_impl_d* session)
@@ -780,13 +759,13 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProgram(const size_t programIndex,
   const auto& program = execution_->programs[programIndex].code;
   const bool text = format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
                     format_ != QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
-  return writeResult<char>(program.size() + (text ? 1U : 0U), 1, size, data,
-                           sizeRet, [&](std::span<char> output) {
-                             std::ranges::copy(program, output.begin());
-                             if (text) {
-                               output.back() = '\0';
-                             }
-                           });
+  return qdmi::writeResult<char>(program.size() + (text ? 1U : 0U), size, data,
+                                 sizeRet, [&](std::span<char> output) {
+                                   std::ranges::copy(program, output.begin());
+                                   if (text) {
+                                     output.back() = '\0';
+                                   }
+                                 });
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProgramStatus(
     const size_t programIndex, QDMI_Job_Status* status) const -> QDMI_STATUS {
@@ -820,18 +799,18 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
       format_ == QDMI_PROGRAM_FORMAT_MAX) {
     return QDMI_ERROR_BADSTATE;
   }
-  const auto id = std::to_string(id_);
-  ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_ID, id.c_str(), prop, size,
-                      value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT,
-                            QDMI_Program_Format, format_, prop, size, value,
-                            sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM, size_t,
-                            numShots_, prop, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM, size_t,
-                            execution_->programs.size(), prop, size, value,
-                            sizeRet)
-  return QDMI_ERROR_NOTSUPPORTED;
+  switch (prop) {
+  case QDMI_DEVICE_JOB_PROPERTY_ID:
+    return qdmi::writeString(std::to_string(id_), size, value, sizeRet);
+  case QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT:
+    return qdmi::writeValue(format_, size, value, sizeRet);
+  case QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM:
+    return qdmi::writeValue(numShots_, size, value, sizeRet);
+  case QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM:
+    return qdmi::writeValue(execution_->programs.size(), size, value, sizeRet);
+  default:
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   const auto execution = execution_;
@@ -1111,7 +1090,7 @@ auto qdmi::dd::ProgramResult::getShots(const size_t size, void* data,
     }
   }
   return writeResult<char>(
-      required, 1, size, data, sizeRet, [&](std::span<char> output) {
+      required, size, data, sizeRet, [&](std::span<char> output) {
         if (compactCounts_.empty()) {
           std::ranges::copy(shots_, output.begin());
         } else {
@@ -1149,7 +1128,7 @@ auto qdmi::dd::ProgramResult::getHistogram(const QDMI_Job_Result result,
     }
     if (result == QDMI_JOB_RESULT_HIST_VALUES) {
       return writeResult<size_t>(
-          counts.size(), 1, size, data, sizeRet, [&](std::span<size_t> output) {
+          counts.size(), size, data, sizeRet, [&](std::span<size_t> output) {
             std::ranges::copy(counts | std::views::values, output.begin());
           });
     }
@@ -1159,7 +1138,7 @@ auto qdmi::dd::ProgramResult::getHistogram(const QDMI_Job_Result result,
                           return total + entry.first.size() + 1;
                         });
     return writeResult<char>(
-        keysSize, 1, size, data, sizeRet, [&](std::span<char> output) {
+        keysSize, size, data, sizeRet, [&](std::span<char> output) {
           auto next = output.begin();
           for (const auto& key : counts | std::views::keys) {
             next = std::ranges::copy(key, next).out;
@@ -1179,11 +1158,12 @@ auto qdmi::dd::ProgramResult::getDenseResults(const QDMI_Job_Result result,
                              ? 0U
                              : static_cast<size_t>(stateVecDD_.p->v) + 1U;
   const bool probabilities = result == QDMI_JOB_RESULT_PROBABILITIES_DENSE;
-  if (numQubits >= std::numeric_limits<size_t>::digits) {
+  const size_t components = probabilities ? 1 : 2;
+  if (numQubits + components > std::numeric_limits<size_t>::digits) {
     return QDMI_ERROR_OUTOFMEM;
   }
   return writeResult<double>(
-      size_t{1} << numQubits, probabilities ? 1 : 2, size, data, sizeRet,
+      components << numQubits, size, data, sizeRet,
       [&](std::span<double> output) {
         std::ranges::fill(output, 0.);
         llvm::cantFail(::dd::traverseVector(
@@ -1234,8 +1214,12 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
   }
   if (result == QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS ||
       result == QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS) {
+    if (sparseAmplitudeCount_ >
+        std::numeric_limits<size_t>::max() / (numQubits + 1)) {
+      return QDMI_ERROR_OUTOFMEM;
+    }
     return writeResult<char>(
-        sparseAmplitudeCount_, numQubits + 1, size, data, sizeRet,
+        sparseAmplitudeCount_ * (numQubits + 1), size, data, sizeRet,
         [&](std::span<char> output) {
           auto next = output.begin();
           llvm::cantFail(::dd::traverseVector(
@@ -1250,8 +1234,12 @@ auto qdmi::dd::ProgramResult::getSparseResults(const QDMI_Job_Result result,
         });
   }
   const bool complex = result == QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES;
+  const size_t components = complex ? 2 : 1;
+  if (sparseAmplitudeCount_ > std::numeric_limits<size_t>::max() / components) {
+    return QDMI_ERROR_OUTOFMEM;
+  }
   return writeResult<double>(
-      sparseAmplitudeCount_, complex ? 2 : 1, size, data, sizeRet,
+      sparseAmplitudeCount_ * components, size, data, sizeRet,
       [&](std::span<double> output) {
         auto next = output.begin();
         llvm::cantFail(::dd::traverseVector(
@@ -1284,7 +1272,7 @@ auto qdmi::dd::ProgramResult::getQIROutput(const size_t size, void* data,
     required += shots * recordSize;
   }
   return writeResult<char>(
-      required, 1, size, data, sizeRet, [&](std::span<char> output) {
+      required, size, data, sizeRet, [&](std::span<char> output) {
         std::ranges::copy(*qirOutput_, output.begin());
         output = output.subspan(qirOutput_->size());
         if (outputTemplate_) {

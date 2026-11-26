@@ -187,55 +187,6 @@ struct PackedShots {
 [[nodiscard]] llvm::Expected<PackedShots> getPackedShots(const Job& job,
                                                          size_t programIndex);
 
-/// Fetch a variable-size value with the QDMI size-then-fill protocol.
-///
-/// The provider writes the bytes of `Buffer`'s elements, so they must be
-/// trivially copy constructible. Return `std::nullopt` if the provider does not
-/// support the value.
-template <typename Buffer, typename Query>
-  requires std::is_trivially_copy_constructible_v<typename Buffer::value_type>
-[[nodiscard]] llvm::Expected<std::optional<Buffer>>
-queryBuffer(Query query, const llvm::Twine& sizeMessage,
-            const llvm::Twine& message) {
-  size_t size = 0;
-  const auto status = query(0, nullptr, &size);
-  if (status == QDMI_ERROR_NOTSUPPORTED) {
-    return std::nullopt;
-  }
-  if (auto error = checkError(status, sizeMessage)) {
-    return error;
-  }
-  if (size % sizeof(typename Buffer::value_type) != 0) {
-    return qdmi::makeError(
-        QDMI_ERROR_FATAL,
-        sizeMessage + ": byte count is not a multiple of the element size");
-  }
-  std::optional<Buffer> buffer(std::in_place);
-  buffer->resize(size / sizeof(typename Buffer::value_type));
-  if (size != 0) {
-    if (auto error =
-            checkError(query(size, buffer->data(), nullptr), message)) {
-      return error;
-    }
-  }
-  return buffer;
-}
-
-/// Fetch a variable-size value that the provider must support.
-template <typename Buffer, typename Query>
-[[nodiscard]] llvm::Expected<Buffer>
-queryRequiredBuffer(Query query, const llvm::Twine& sizeMessage,
-                    const llvm::Twine& message) {
-  auto buffer = queryBuffer<Buffer>(std::move(query), sizeMessage, message);
-  if (!buffer) {
-    return buffer.takeError();
-  }
-  if (!*buffer) {
-    return checkError(QDMI_ERROR_NOTSUPPORTED, sizeMessage);
-  }
-  return std::move(**buffer);
-}
-
 template <custom_property_value T, typename Query>
 [[nodiscard]] llvm::Expected<std::optional<T>>
 queryCustomValue(Query query, const llvm::Twine& description) {

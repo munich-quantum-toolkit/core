@@ -27,7 +27,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -220,39 +219,33 @@ int MQT_SC_QDMI_Device_Session_impl_d::queryDeviceProperty(
       QDMI_IS_INVALID_ENUM_VALUE(property, QDMI_DEVICE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_NAME, name.c_str(), property, size,
-                      value, sizeRet)
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_VERSION, MQT_CORE_VERSION, property,
-                      size, value, sizeRet)
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_LIBRARYVERSION, QDMI_VERSION,
-                      property, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_STATUS, QDMI_Device_Status,
-                            QDMI_DEVICE_STATUS_IDLE, property, size, value,
-                            sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum,
-                            property, size, value, sizeRet)
-  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_DURATIONUNIT, durationUnit.c_str(),
-                      property, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR, double,
-                            durationScaleFactor, property, size, value, sizeRet)
-  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SITES, MQT_SC_QDMI_Site, sites,
-                    property, size, value, sizeRet)
-#define SITE_PAIR std::pair<MQT_SC_QDMI_Site, MQT_SC_QDMI_Site>
-  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_COUPLINGMAP, SITE_PAIR, couplingMap,
-                    property, size, value, sizeRet)
-#undef SITE_PAIR
-  ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_SC_QDMI_Operation,
-                    operations, property, size, value, sizeRet)
-  if (property == QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS) {
-    if (value != nullptr && size > 0) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    if (sizeRet != nullptr) {
-      *sizeRet = 0;
-    }
-    return QDMI_SUCCESS;
+  switch (property) {
+  case QDMI_DEVICE_PROPERTY_NAME:
+    return qdmi::writeString(name, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_VERSION:
+    return qdmi::writeString(MQT_CORE_VERSION, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_LIBRARYVERSION:
+    return qdmi::writeString(QDMI_VERSION, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_STATUS:
+    return qdmi::writeValue(QDMI_DEVICE_STATUS_IDLE, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_QUBITSNUM:
+    return qdmi::writeValue(qubitsNum, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_DURATIONUNIT:
+    return qdmi::writeString(durationUnit, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_DURATIONSCALEFACTOR:
+    return qdmi::writeValue(durationScaleFactor, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_SITES:
+    return qdmi::writeList(sites, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_COUPLINGMAP:
+    return qdmi::writeList(couplingMap, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_OPERATIONS:
+    return qdmi::writeList(operations, size, value, sizeRet);
+  case QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS:
+    return qdmi::writeList(std::span<const QDMI_Program_Format>{}, size, value,
+                           sizeRet);
+  default:
+    return QDMI_ERROR_NOTSUPPORTED;
   }
-  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_SC_QDMI_Device_Session_impl_d::querySiteProperty(
@@ -296,30 +289,21 @@ int MQT_SC_QDMI_Site_impl_d::queryProperty(const QDMI_Site_Property property,
       QDMI_IS_INVALID_ENUM_VALUE(property, QDMI_SITE_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_INDEX, uint64_t, id, property,
-                            size, value, sizeRet)
-  if (property == QDMI_SITE_PROPERTY_NAME) {
-    if (!name) {
-      return QDMI_ERROR_NOTSUPPORTED;
-    }
-    ADD_STRING_PROPERTY(QDMI_SITE_PROPERTY_NAME, name->c_str(), property, size,
-                        value, sizeRet)
+  switch (property) {
+  case QDMI_SITE_PROPERTY_INDEX:
+    return qdmi::writeValue(id, size, value, sizeRet);
+  case QDMI_SITE_PROPERTY_NAME:
+    return name ? qdmi::writeString(*name, size, value, sizeRet)
+                : QDMI_ERROR_NOTSUPPORTED;
+  case QDMI_SITE_PROPERTY_T1:
+    return t1 ? qdmi::writeValue(*t1, size, value, sizeRet)
+              : QDMI_ERROR_NOTSUPPORTED;
+  case QDMI_SITE_PROPERTY_T2:
+    return t2 ? qdmi::writeValue(*t2, size, value, sizeRet)
+              : QDMI_ERROR_NOTSUPPORTED;
+  default:
+    return QDMI_ERROR_NOTSUPPORTED;
   }
-  if (property == QDMI_SITE_PROPERTY_T1) {
-    if (!t1) {
-      return QDMI_ERROR_NOTSUPPORTED;
-    }
-    ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T1, uint64_t, *t1, property,
-                              size, value, sizeRet)
-  }
-  if (property == QDMI_SITE_PROPERTY_T2) {
-    if (!t2) {
-      return QDMI_ERROR_NOTSUPPORTED;
-    }
-    ADD_SINGLE_VALUE_PROPERTY(QDMI_SITE_PROPERTY_T2, uint64_t, *t2, property,
-                              size, value, sizeRet)
-  }
-  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 int MQT_SC_QDMI_Operation_impl_d::queryProperty(
@@ -345,14 +329,21 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
   if (params != nullptr && numParams != numParameters) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, name.c_str(), property,
-                      size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size_t,
-                            numParameters, property, size, value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
-                            numQubits, property, size, value, sizeRet)
-  ADD_LIST_PROPERTY(QDMI_OPERATION_PROPERTY_SITES, MQT_SC_QDMI_Site,
-                    flattenedSites, property, size, value, sizeRet)
+  switch (property) {
+  case QDMI_OPERATION_PROPERTY_NAME:
+    return qdmi::writeString(name, size, value, sizeRet);
+  case QDMI_OPERATION_PROPERTY_PARAMETERSNUM:
+    return qdmi::writeValue(numParameters, size, value, sizeRet);
+  case QDMI_OPERATION_PROPERTY_QUBITSNUM:
+    return qdmi::writeValue(numQubits, size, value, sizeRet);
+  case QDMI_OPERATION_PROPERTY_SITES:
+    return qdmi::writeList(flattenedSites, size, value, sizeRet);
+  case QDMI_OPERATION_PROPERTY_DURATION:
+  case QDMI_OPERATION_PROPERTY_FIDELITY:
+    break;
+  default:
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
   const auto calibration = [&]() -> Calibration {
     if (!tuple.empty()) {
       if (const auto found = std::ranges::lower_bound(
@@ -371,22 +362,13 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
     return defaults;
   }();
   if (property == QDMI_OPERATION_PROPERTY_DURATION) {
-    if (!calibration.duration) {
-      return QDMI_ERROR_NOTSUPPORTED;
-    }
-    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_DURATION, uint64_t,
-                              *calibration.duration, property, size, value,
-                              sizeRet)
+    return calibration.duration
+               ? qdmi::writeValue(*calibration.duration, size, value, sizeRet)
+               : QDMI_ERROR_NOTSUPPORTED;
   }
-  if (property == QDMI_OPERATION_PROPERTY_FIDELITY) {
-    if (!calibration.fidelity) {
-      return QDMI_ERROR_NOTSUPPORTED;
-    }
-    ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double,
-                              *calibration.fidelity, property, size, value,
-                              sizeRet)
-  }
-  return QDMI_ERROR_NOTSUPPORTED;
+  return calibration.fidelity
+             ? qdmi::writeValue(*calibration.fidelity, size, value, sizeRet)
+             : QDMI_ERROR_NOTSUPPORTED;
 }
 
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
