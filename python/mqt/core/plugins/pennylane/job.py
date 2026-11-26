@@ -91,9 +91,8 @@ class PennyLaneJob:
                 for index, (program, copies) in enumerate(prepared)
                 for copy, shots in enumerate(copies)
             ],
-            submit=PennyLaneJob._submit,
+            submit=PennyLaneJob._submit_programs,
             decode=PennyLaneJob._readout,
-            submit_programs=PennyLaneJob._submit_programs,
             supports_programs=PennyLaneJob._supports_programs,
             group_by=[(program.program_format if program else None, shots) for program, shots, _, _ in self._prepared],
             submission_error=lambda job, msg: PennyLaneExecutionError(msg, job=job),
@@ -111,13 +110,6 @@ class PennyLaneJob:
         program = self._prepared[index][0]
         assert program is not None
         return program
-
-    def _submit(self, index: int) -> Job:
-        job = self._submit_programs([index])
-        if job is None:
-            msg = "Device declined the compiled program before submission."
-            raise RuntimeError(msg)
-        return job
 
     def _submit_programs(self, indices: Sequence[int]) -> Job | None:
         _, shots, _, _ = self._prepared[indices[0]]

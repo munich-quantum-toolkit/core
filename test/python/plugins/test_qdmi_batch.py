@@ -16,7 +16,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from mqt.core.plugins.qdmi_batch import Batch, BatchEntry
+from mqt.core.plugins.qdmi_batch import Batch, BatchEntry, FailureStage
 from mqt.core.qdmi import Job
 
 if TYPE_CHECKING:
@@ -39,7 +39,6 @@ class BatchFixture:
             self,
             [BatchEntry(i) for i in range(3)],
             submit=BatchFixture.submit,
-            submit_programs=BatchFixture.submit_programs,
             group_by=[0, 0, 0] if native else None,
             decode=lambda _owner, _i, job, program_index: job.get_shots(program_index)[0],
             submission_error=lambda _owner, msg: RuntimeError(msg),
@@ -47,15 +46,16 @@ class BatchFixture:
             max_retries=max_retries,
         )
 
-    def submit(self, index: int) -> Job:
-        """Return a handle with configurable status and result behavior."""
-        self.submitted.append(index)
-        if len(self.submitted) == self.error_at:
-            raise self.submission_error
-        return self._job([index])
+    def submit(self, indices: Sequence[int]) -> Job | None:
+        """Return a handle with configurable status and result behavior.
 
-    def submit_programs(self, indices: Sequence[int]) -> Job | None:
-        """Return a recorded native attempt, or reject it before submission."""
+        Multi-program jobs are recorded natively, or declined before submission.
+        """
+        if len(indices) == 1:
+            self.submitted.append(indices[0])
+            if len(self.submitted) == self.error_at:
+                raise self.submission_error
+            return self._job(indices)
         self.native_calls.append(list(indices))
         if not self.native:
             return None
@@ -477,7 +477,6 @@ class LimitedDevice:
             self,
             [BatchEntry(i) for i in range(count)],
             submit=LimitedDevice.submit,
-            submit_programs=LimitedDevice.submit_programs,
             supports_programs=LimitedDevice.supports if probe else None,
             group_by=[0] * count,
             decode=lambda _owner, _i, job, program_index: job.get_shots(program_index)[0],
@@ -497,22 +496,7 @@ class LimitedDevice:
             raise self.probe_error
         return self.low <= len(indices) <= self.high
 
-    def submit(self, index: int) -> Job:
-        """Submit one program, which the adapter requires to succeed.
-
-        Returns:
-            The accepted job.
-
-        Raises:
-            RuntimeError: If the device declines the program.
-        """
-        job = self.submit_programs([index])
-        if job is None:
-            msg = "declined"
-            raise RuntimeError(msg)
-        return job
-
-    def submit_programs(self, indices: Sequence[int]) -> Job | None:
+    def submit(self, indices: Sequence[int]) -> Job | None:
         """Accept a job within the window, or decline it before submission.
 
         Returns:
@@ -587,3 +571,13 @@ def test_failed_support_check_admits_nothing() -> None:
     device.probe_error = None
     device.batch.submit()
     assert device.jobs == [[0, 1], [2]]
+
+
+def test_declined_single_program_is_a_submission_failure() -> None:
+    """A device that declines one program records a typed submission failure."""
+    device = LimitedDevice(1, 2, 2, probe=False)
+    with pytest.raises(RuntimeError, match="declined the program before submission"):
+        device.batch.submit()
+    failure = device.batch.entries[0].attempts[-1].failures[-1]
+    assert failure.stage is FailureStage.SUBMISSION
+    assert failure.stage == "submission"
