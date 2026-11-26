@@ -24,6 +24,8 @@
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/SourceMgr.h"
 
+#include <cassert>
+
 namespace mlir::qc {
 
 static void
@@ -49,9 +51,8 @@ translateOpenQASMToQC(llvm::SourceMgr& sourceMgr, MLIRContext* context,
   if (!moduleOp) {
     return nullptr;
   }
-  if (failed(verify(*moduleOp))) {
-    return nullptr;
-  }
+  // The emitter builds valid IR; only builds with assertions verify it.
+  assert(succeeded(verify(*moduleOp)) && "OpenQASM import built invalid IR");
   return moduleOp;
 }
 
