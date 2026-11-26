@@ -11,30 +11,10 @@ concurrency:
 permissions: {}
 
 jobs:
-  build-sdist:
+  package:
     name: 🐍 Packaging
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@4e380c0bb1774aa8b9dd53194f4a7f6575cc3d42 # v2.5.10
-    permissions:
-      contents: read
-
-  # Builds wheels on all supported platforms using cibuildwheel.
-  # The wheels are uploaded as GitHub artifacts `dev-cibw-*` or `cibw-*`, depending on whether the workflow is triggered from a PR or a release.
-  build-wheel:
-    name: 🐍 Packaging
-    strategy:
-      fail-fast: false
-      matrix:
-        runs-on:
-          [
-            ubuntu-26.04,
-            ubuntu-26.04-arm,
-            macos-26,
-            windows-2025,
-            windows-11-arm,
-          ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@5111762228d11d2d44dead3362a7bd3fcc174efe # zizmor: ignore[stale-action-refs]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-cibuildwheel.yml@85eef7c1358086e8669ceda13b27d1a9caf095c1 # zizmor: ignore[stale-action-refs]
     with:
-      runs-on: ${{ matrix.runs-on }}
       use-sccache-gha: true
     permissions:
       contents: read
@@ -47,7 +27,7 @@ jobs:
     environment:
       name: pypi
       url: https://pypi.org/p/mqt.core
-    needs: [build-sdist, build-wheel]
+    needs: package
     permissions:
       attestations: write # Needed to attest the built artifacts
       contents: read
