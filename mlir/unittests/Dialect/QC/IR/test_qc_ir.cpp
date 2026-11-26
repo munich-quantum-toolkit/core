@@ -1633,9 +1633,9 @@ TEST_F(QCTest, NestedPowerOfSquaredPauliIsIdentity) {
   EXPECT_EQ(unitaryCount, 0U);
 }
 
-// pow(-0.5) { h } cannot fold a negative fractional exponent
-// into H (no angle to scale). Verify that PowOp survives.
-TEST_F(QCTest, NegPowHNoFold) {
+// Fractional H powers use the same rotation and phase lowering as runtime
+// exponents. Full-matrix equivalence is covered by the DD functionality tests.
+TEST_F(QCTest, NegPowHExpands) {
   auto program =
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
   ASSERT_TRUE(program);
@@ -1646,7 +1646,7 @@ TEST_F(QCTest, NegPowHNoFold) {
 
   int powCount = 0;
   program->walk([&](PowOp) { ++powCount; });
-  EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
+  EXPECT_EQ(powCount, 0);
 }
 
 // A multi-unitary pow body (pow(2){x; rxx}) is left untouched by the cleanup
