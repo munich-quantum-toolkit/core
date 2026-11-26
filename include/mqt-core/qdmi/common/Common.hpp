@@ -19,14 +19,20 @@
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 
+#include <algorithm>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <limits>
+#include <optional>
+#include <ranges>
 #include <span>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <variant>
 
@@ -87,73 +93,175 @@ public:
   }
 };
 
-// NOLINTBEGIN(bugprone-macro-parentheses)
-#define ADD_SINGLE_VALUE_PROPERTY(prop_name, prop_type, prop_value, prop,      \
-                                  size, value, size_ret)                       \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < sizeof(prop_type)) {                                      \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        *static_cast<prop_type*>(value) = prop_value;                          \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = sizeof(prop_type);                                         \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
+/// Report the size of `count` elements of type `T` in `sizeRet` and, when
+/// `data` is set, let `fill` write them into the caller's buffer of `size`
+/// bytes.
+///
+/// This is the provider side of the QDMI size-then-fill protocol. `fill`
+/// writes typed elements, so `data` must be aligned for `T`; `writeValue` and
+/// `writeList` copy bytes and accept any buffer.
+template <typename T, std::invocable<std::span<T>> Fill>
+  requires std::is_trivially_copy_constructible_v<T>
+[[nodiscard]] QDMI_STATUS writeResult(const size_t count, const size_t size,
+                                      void* data, size_t* sizeRet,
+                                      Fill&& fill) {
+  if (count > std::numeric_limits<size_t>::max() / sizeof(T)) {
+    return QDMI_ERROR_OUTOFMEM;
   }
-
-// STRNCPY wrapper: strncpy_s on Windows (auto null-terminates),
-// strncpy on other platforms (requires manual null-termination - see usage).
-#ifdef _WIN32
-#define STRNCPY(dest, src, size)                                               \
-  strncpy_s(static_cast<char*>(dest), size, src, size);
-#else
-#define STRNCPY(dest, src, size) strncpy(static_cast<char*>(dest), src, size);
-#endif
-
-#define ADD_STRING_PROPERTY(prop_name, prop_value, prop, size, value,          \
-                            size_ret)                                          \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < strlen(prop_value) + 1) {                                 \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        STRNCPY(value, prop_value, size);                                      \
-        /* Ensure null-termination: strncpy doesn't guarantee it on non-Win */ \
-        /* NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic) */  \
-        static_cast<char*>(value)[size - 1] = '\0';                            \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = strlen(prop_value) + 1;                                    \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
+  if (sizeRet != nullptr) {
+    *sizeRet = count * sizeof(T);
   }
-
-#define ADD_LIST_PROPERTY(prop_name, prop_type, prop_values, prop, size,       \
-                          value, size_ret)                                     \
-  {                                                                            \
-    if ((prop) == (prop_name)) {                                               \
-      if ((value) != nullptr) {                                                \
-        if ((size) < (prop_values).size() * sizeof(prop_type)) {               \
-          return QDMI_ERROR_INVALIDARGUMENT;                                   \
-        }                                                                      \
-        memcpy(static_cast<void*>(value),                                      \
-               static_cast<const void*>((prop_values).data()),                 \
-               (prop_values).size() * sizeof(prop_type));                      \
-      }                                                                        \
-      if ((size_ret) != nullptr) {                                             \
-        *size_ret = (prop_values).size() * sizeof(prop_type);                  \
-      }                                                                        \
-      return QDMI_SUCCESS;                                                     \
-    }                                                                          \
+  if (data == nullptr) {
+    return QDMI_SUCCESS;
   }
+  if (size < count * sizeof(T)) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  std::forward<Fill>(fill)(std::span(static_cast<T*>(data), count));
+  return QDMI_SUCCESS;
+}
 
-// NOLINTEND(bugprone-macro-parentheses)
+/// Write a list with the size-then-fill protocol.
+template <std::ranges::contiguous_range Range>
+  requires std::is_trivially_copy_constructible_v<
+      std::ranges::range_value_t<Range>>
+[[nodiscard]] QDMI_STATUS writeList(const Range& values, const size_t size,
+                                    void* data, size_t* sizeRet) {
+  using T = std::ranges::range_value_t<Range>;
+  const auto count = std::ranges::size(values);
+  if (count > std::numeric_limits<size_t>::max() / sizeof(T)) {
+    return QDMI_ERROR_OUTOFMEM;
+  }
+  // Byte copies keep the caller's buffer free of alignment requirements.
+  return writeResult<std::byte>(
+      count * sizeof(T), size, data, sizeRet, [&](std::span<std::byte> output) {
+        if (!output.empty()) {
+          std::memcpy(output.data(), std::ranges::data(values), output.size());
+        }
+      });
+}
+
+/// Write one value with the size-then-fill protocol.
+template <typename T>
+  requires std::is_trivially_copy_constructible_v<T>
+[[nodiscard]] QDMI_STATUS writeValue(const T& value, const size_t size,
+                                     void* data, size_t* sizeRet) {
+  return writeList(std::span(&value, 1), size, data, sizeRet);
+}
+
+/// Write a null-terminated string with the size-then-fill protocol.
+[[nodiscard]] inline QDMI_STATUS writeString(const std::string_view value,
+                                             const size_t size, void* data,
+                                             size_t* sizeRet) {
+  return writeResult<char>(value.size() + 1, size, data, sizeRet,
+                           [&](std::span<char> output) {
+                             std::ranges::copy(value, output.begin());
+                             output.back() = '\0';
+                           });
+}
+
+/// Return a value that the provider must support.
+template <typename T>
+[[nodiscard]] llvm::Expected<T>
+requireSupported(llvm::Expected<std::optional<T>> value,
+                 const llvm::Twine& message) {
+  if (!value) {
+    return value.takeError();
+  }
+  if (!*value) {
+    return checkError(QDMI_ERROR_NOTSUPPORTED, message);
+  }
+  return std::move(**value);
+}
+
+/// Query the size in bytes of a variable-size value, or `std::nullopt` if the
+/// provider does not support it.
+///
+/// This and `queryInto` are the client side of the protocol that
+/// `writeResult` implements.
+template <typename Query>
+[[nodiscard]] llvm::Expected<std::optional<size_t>>
+querySize(Query&& query, const llvm::Twine& message) {
+  size_t size = 0;
+  const auto status = query(0, nullptr, &size);
+  if (status == QDMI_ERROR_NOTSUPPORTED) {
+    return std::nullopt;
+  }
+  if (auto error = checkError(status, message)) {
+    return error;
+  }
+  return size;
+}
+
+/// Read a variable-size value of exactly `buffer.size()` bytes.
+template <typename Query>
+[[nodiscard]] llvm::Error queryInto(Query&& query,
+                                    const std::span<std::byte> buffer,
+                                    const llvm::Twine& message) {
+  // Providers that do not report the size on a read keep the expected one.
+  size_t size = buffer.size();
+  if (auto error = checkError(
+          query(buffer.size(), buffer.empty() ? nullptr : buffer.data(), &size),
+          message)) {
+    return error;
+  }
+  if (size != buffer.size()) {
+    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
+                           message + ": the value has " + llvm::Twine(size) +
+                               " bytes, but the buffer holds " +
+                               llvm::Twine(buffer.size()));
+  }
+  return llvm::Error::success();
+}
+
+/// Fetch a variable-size value into a new contiguous container, or return
+/// `std::nullopt` if the provider does not support it.
+///
+/// The provider writes the bytes of `Buffer`'s elements, so they must be
+/// trivially copy constructible. Containers with `resize_for_overwrite`, such
+/// as `llvm::SmallVector`, skip initializing the elements.
+template <typename Buffer, typename Query>
+  requires std::is_trivially_copy_constructible_v<typename Buffer::value_type>
+[[nodiscard]] llvm::Expected<std::optional<Buffer>>
+queryBuffer(Query&& query, const llvm::Twine& sizeMessage,
+            const llvm::Twine& message) {
+  using Element = typename Buffer::value_type;
+  auto size = querySize(query, sizeMessage);
+  if (!size) {
+    return size.takeError();
+  }
+  if (!*size) {
+    return std::nullopt;
+  }
+  if (**size % sizeof(Element) != 0) {
+    return qdmi::makeError(
+        QDMI_ERROR_FATAL,
+        sizeMessage + ": byte count is not a multiple of the element size");
+  }
+  std::optional<Buffer> buffer(std::in_place);
+  if constexpr (requires { buffer->resize_for_overwrite(size_t{}); }) {
+    buffer->resize_for_overwrite(**size / sizeof(Element));
+  } else {
+    buffer->resize(**size / sizeof(Element));
+  }
+  if (**size != 0) {
+    if (auto error = queryInto(
+            query, std::as_writable_bytes(std::span(*buffer)), message)) {
+      return error;
+    }
+  }
+  return buffer;
+}
+
+/// Fetch a variable-size value that the provider must support.
+template <typename Buffer, typename Query>
+[[nodiscard]] llvm::Expected<Buffer>
+queryRequiredBuffer(Query&& query, const llvm::Twine& sizeMessage,
+                    const llvm::Twine& message) {
+  return requireSupported(
+      queryBuffer<Buffer>(std::forward<Query>(query), sizeMessage, message),
+      sizeMessage);
+}
 
 /// Returns the string representation of the given status code @p result.
 constexpr auto toString(const QDMI_STATUS result) -> const char* {

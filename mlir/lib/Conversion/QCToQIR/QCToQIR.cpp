@@ -16,6 +16,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
@@ -1177,7 +1178,7 @@ private:
     auto moduleOp = getOperation();
     const bool adaptive = profile == QIRProfile::Adaptive;
     // QIR has no qubit layout metadata.
-    moduleOp->removeAttr("mqt.layout");
+    moduleOp->removeAttr(mqt::kLayoutAttr);
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
       return failure();
     }

@@ -89,6 +89,7 @@ const std::array CATALOG{
     GateCatalogEntry{"xx_minus_yy", qc::StandardGate::XXMinusYY, 0, COMPAT},
     GateCatalogEntry{"gpi", qc::StandardGate::GPI, 0, COMPAT},
     GateCatalogEntry{"gpi2", qc::StandardGate::GPI2, 0, COMPAT},
+    GateCatalogEntry{"sqrt_iswap", qc::StandardGate::SqrtISwap, 0, COMPAT},
     GateCatalogEntry{"zz", qc::StandardGate::RZZ, 0, COMPAT},
     GateCatalogEntry{"mcx", qc::StandardGate::X, 1, COMPAT, true},
     GateCatalogEntry{"mcx_gray", qc::StandardGate::X, 1, COMPAT, true},

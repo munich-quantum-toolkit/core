@@ -388,6 +388,14 @@ FailureOr<QCProgram> QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
   return QCProgram({.context = std::move(context), .mod = std::move(moduleOp)});
 }
 
+QCProgram QCProgram::fromBuiltModule(std::shared_ptr<MLIRContext> context,
+                                     OwningOpRef<ModuleOp> moduleOp) {
+  assert(succeeded(verifyProgramModule(context, moduleOp.get(),
+                                       ProgramDialect::QC)) &&
+         "frontend built an invalid QC program");
+  return QCProgram({.context = std::move(context), .mod = std::move(moduleOp)});
+}
+
 QCProgram QCProgram::copy() const { return QCProgram(cloneStorage()); }
 
 FailureOr<QCOProgram> QCProgram::intoQCO() && {

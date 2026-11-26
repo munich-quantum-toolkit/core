@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace mlir {
 class Location;
@@ -59,9 +60,10 @@ enum class StandardGate : uint8_t {
   RZZ,
   XXPlusYY,
   XXMinusYY,
-  // Native pulses that frontends lower to a fixed-angle R and a global phase.
+  // Native aliases that frontends lower through `mlir::nativeGateAlias`.
   GPI,
   GPI2,
+  SqrtISwap,
 };
 
 struct StandardGateDescriptor {
@@ -88,6 +90,13 @@ getStandardGateDescriptor(StandardGate gate);
 /// Return the descriptor for an operation symbol, or null if none matches.
 [[nodiscard]] const StandardGateDescriptor*
 lookupStandardGateByOperationSymbol(llvm::StringRef symbol);
+
+/// Return the canonical name of `base` with one or two named controls.
+///
+/// Targets, OpenQASM and Qiskit spell these gates with one `c` per control,
+/// for example `cx` and `ccx`.
+[[nodiscard]] std::string controlledGateName(llvm::StringRef base,
+                                             size_t numControls);
 
 /// Emit one primitive QC standard gate without source-language phase rules.
 [[nodiscard]] LogicalResult emitStandardGate(OpBuilder& builder, Location loc,

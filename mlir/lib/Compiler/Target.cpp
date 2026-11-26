@@ -53,26 +53,42 @@
 #include <vector>
 
 namespace mlir {
-std::optional<NativeRAlias> nativeRAlias(StringRef name) {
-  return llvm::StringSwitch<std::optional<NativeRAlias>>(name)
+std::optional<NativeGateAlias> nativeGateAlias(StringRef name) {
+  static constexpr std::array<std::optional<double>, 2> GPI{
+      std::numbers::pi,
+      std::nullopt,
+  };
+  static constexpr std::array<std::optional<double>, 2> GPI2{
+      std::numbers::pi / 2.,
+      std::nullopt,
+  };
+  static constexpr std::array<std::optional<double>, 2> SQRT_ISWAP{
+      -std::numbers::pi / 2.,
+      0.,
+  };
+  return llvm::StringSwitch<std::optional<NativeGateAlias>>(name)
       .Case("gpi",
-            NativeRAlias{
-                .angle = std::numbers::pi,
+            NativeGateAlias{
+                .canonicalName = "r",
+                .numQubits = 1,
+                .parameters = GPI,
                 .globalPhase = std::numbers::pi / 2.,
             })
       .Case("gpi2",
-            NativeRAlias{
-                .angle = std::numbers::pi / 2.,
+            NativeGateAlias{
+                .canonicalName = "r",
+                .numQubits = 1,
+                .parameters = GPI2,
+                .globalPhase = 0.,
+            })
+      .Case("sqrt_iswap",
+            NativeGateAlias{
+                .canonicalName = "xx_plus_yy",
+                .numQubits = 2,
+                .parameters = SQRT_ISWAP,
                 .globalPhase = 0.,
             })
       .Default(std::nullopt);
-}
-
-bool isSqrtISwap(std::optional<double> theta, std::optional<double> beta) {
-  return theta && beta &&
-         std::abs(*theta + std::numbers::pi / 2.) <=
-             mqt::PARAMETER_COMPARISON_TOLERANCE &&
-         std::abs(*beta) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
 
 namespace {
@@ -80,114 +96,42 @@ namespace {
 using GateKind = CompilerTarget::GateKind;
 using SiteId = CompilerTarget::SiteId;
 
+/// The standard gate, with named controls, that realizes a gate kind.
 struct GateSpecification {
   GateKind kind{};
-  llvm::StringLiteral name;
-  size_t arity{};
-  size_t numParameters{};
+  qc::StandardGate gate{};
+  size_t numControls = 0;
 };
 
 constexpr std::array GATE_SPECIFICATIONS{
-    GateSpecification{
-        .kind = GateKind::U,
-        .name = "u",
-        .arity = 1,
-        .numParameters = 3,
-    },
-    GateSpecification{
-        .kind = GateKind::X,
-        .name = "x",
-        .arity = 1,
-        .numParameters = 0,
-    },
-    GateSpecification{
-        .kind = GateKind::SX,
-        .name = "sx",
-        .arity = 1,
-        .numParameters = 0,
-    },
-    GateSpecification{
-        .kind = GateKind::RZ,
-        .name = "rz",
-        .arity = 1,
-        .numParameters = 1,
-    },
-    GateSpecification{
-        .kind = GateKind::RX,
-        .name = "rx",
-        .arity = 1,
-        .numParameters = 1,
-    },
-    GateSpecification{
-        .kind = GateKind::RY,
-        .name = "ry",
-        .arity = 1,
-        .numParameters = 1,
-    },
-    GateSpecification{
-        .kind = GateKind::R,
-        .name = "r",
-        .arity = 1,
-        .numParameters = 2,
-    },
-    GateSpecification{
-        .kind = GateKind::RXX,
-        .name = "rxx",
-        .arity = 2,
-        .numParameters = 1,
-    },
-    GateSpecification{
-        .kind = GateKind::RYY,
-        .name = "ryy",
-        .arity = 2,
-        .numParameters = 1,
-    },
-    GateSpecification{
-        .kind = GateKind::RZX,
-        .name = "rzx",
-        .arity = 2,
-        .numParameters = 1,
-    },
-    GateSpecification{
-        .kind = GateKind::RZZ,
-        .name = "rzz",
-        .arity = 2,
-        .numParameters = 1,
-    },
-    GateSpecification{
-        .kind = GateKind::SQRTISWAP,
-        .name = "xx_plus_yy",
-        .arity = 2,
-        .numParameters = 2,
-    },
-    GateSpecification{
-        .kind = GateKind::ISWAP,
-        .name = "iswap",
-        .arity = 2,
-        .numParameters = 0,
-    },
-    GateSpecification{
-        .kind = GateKind::CZ,
-        .name = "cz",
-        .arity = 2,
-        .numParameters = 0,
-    },
-    GateSpecification{
-        .kind = GateKind::CX,
-        .name = "cx",
-        .arity = 2,
-        .numParameters = 0,
-    },
-    GateSpecification{
-        .kind = GateKind::ECR,
-        .name = "ecr",
-        .arity = 2,
-        .numParameters = 0,
-    },
-
+    GateSpecification{GateKind::U, qc::StandardGate::U3},
+    GateSpecification{GateKind::X, qc::StandardGate::X},
+    GateSpecification{GateKind::SX, qc::StandardGate::SX},
+    GateSpecification{GateKind::RZ, qc::StandardGate::RZ},
+    GateSpecification{GateKind::RX, qc::StandardGate::RX},
+    GateSpecification{GateKind::RY, qc::StandardGate::RY},
+    GateSpecification{GateKind::R, qc::StandardGate::R},
+    GateSpecification{GateKind::RXX, qc::StandardGate::RXX},
+    GateSpecification{GateKind::RYY, qc::StandardGate::RYY},
+    GateSpecification{GateKind::RZX, qc::StandardGate::RZX},
+    GateSpecification{GateKind::RZZ, qc::StandardGate::RZZ},
+    GateSpecification{GateKind::SQRTISWAP, qc::StandardGate::XXPlusYY},
+    GateSpecification{GateKind::ISWAP, qc::StandardGate::ISWAP},
+    GateSpecification{GateKind::CZ, qc::StandardGate::Z, 1},
+    GateSpecification{GateKind::CX, qc::StandardGate::X, 1},
+    GateSpecification{GateKind::ECR, qc::StandardGate::ECR},
 };
 
 } // namespace
+
+[[nodiscard]] static const GateSpecification& gateSpecification(GateKind gate) {
+  // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
+  const auto specification =
+      std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
+  assert(specification != GATE_SPECIFICATIONS.end() &&
+         "unknown compiler target gate");
+  return *specification;
+}
 
 /// Fixed parameters must admit the entangler used by native synthesis.
 static std::optional<double> synthesisParameter(GateKind gate,
@@ -197,7 +141,7 @@ static std::optional<double> synthesisParameter(GateKind gate,
     return std::numbers::pi / 2.;
   }
   if (gate == GateKind::SQRTISWAP) {
-    return parameter == 0 ? -std::numbers::pi / 2. : 0.;
+    return nativeGateAlias("sqrt_iswap")->parameters[parameter];
   }
   return std::nullopt;
 }
@@ -532,18 +476,33 @@ CompilerTarget::OperationCapability::create(
     }
   }
 
-  // Native GPI pulses expose only the azimuth of a fixed-angle R rotation.
-  if (const auto alias = nativeRAlias(canonical);
-      alias && arity == Arity::fixed(1) && numParameters == 1) {
-    canonical = "r";
-    numParameters = 2;
-    if (fixedParameters.empty()) {
-      fixedParameters.emplace_back();
+  // Native aliases match their standard gate with the fixed parameters.
+  if (const auto alias = nativeGateAlias(canonical);
+      alias && arity == Arity::fixed(alias->numQubits) &&
+      numParameters == alias->numNativeParameters()) {
+    std::vector<std::optional<double>> parameters;
+    std::vector<std::optional<ParameterBounds>> bounds;
+    size_t next = 0;
+    for (const auto fixed : alias->parameters) {
+      if (fixed) {
+        parameters.push_back(fixed);
+        bounds.emplace_back();
+        continue;
+      }
+      parameters.push_back(fixedParameters.empty() ? std::nullopt
+                                                   : fixedParameters[next]);
+      bounds.push_back(parameterBounds.empty() ? std::nullopt
+                                               : parameterBounds[next]);
+      ++next;
     }
-    fixedParameters.insert(fixedParameters.begin(), alias->angle);
-    if (!parameterBounds.empty()) {
-      parameterBounds.insert(parameterBounds.begin(), std::nullopt);
-    }
+    canonical = alias->canonicalName;
+    numParameters = parameters.size();
+    fixedParameters = std::move(parameters);
+    parameterBounds =
+        llvm::any_of(bounds,
+                     [](const auto& entry) { return entry.has_value(); })
+            ? std::move(bounds)
+            : std::vector<std::optional<ParameterBounds>>{};
   }
 
   return OperationCapability(std::move(name), std::move(canonical), arity,
@@ -1041,28 +1000,25 @@ bool CompilerTarget::Storage::supportsGate(
     GateKind gate, std::optional<ArrayRef<SiteId>> orderedSites,
     AngleSupport angles,
     function_ref<bool(const OperationCapability&)> filter) const {
-  if ((gate == GateKind::CX &&
-       supportsOperation("x", 2, 0, orderedSites, /*variadicOnly=*/true,
-                         nullptr, filter)) ||
-      (gate == GateKind::CZ &&
-       supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true,
-                         nullptr, filter)) ||
-      (gate == GateKind::SQRTISWAP &&
-       supportsOperation("sqrt_iswap", 2, 0, orderedSites, false, nullptr,
-                         filter))) {
-    return true;
+  const auto& specification = gateSpecification(gate);
+  const auto& descriptor = qc::getStandardGateDescriptor(specification.gate);
+  const auto arity = descriptor.targetCount + specification.numControls;
+  const auto supports = [&](StringRef name, bool variadicOnly) {
+    return supportsOperation(
+        name, arity, descriptor.parameterCount, orderedSites, variadicOnly,
+        nullptr, [=](const auto& operation) {
+          return (!filter || filter(operation)) &&
+                 matchesSynthesisParameters(operation, gate, angles);
+        });
+  };
+  if (specification.numControls == 0) {
+    return supports(descriptor.operationSymbol, false);
   }
-  // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
-  const auto specification =
-      std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
-  assert(specification != GATE_SPECIFICATIONS.end() &&
-         "unknown compiler target gate");
-  return supportsOperation(
-      specification->name, specification->arity, specification->numParameters,
-      orderedSites, false, nullptr, [=](const auto& operation) {
-        return (!filter || filter(operation)) &&
-               matchesSynthesisParameters(operation, gate, angles);
-      });
+  // Controlled gates are native under their name or as variadic controls.
+  return supports(qc::controlledGateName(descriptor.operationSymbol,
+                                         specification.numControls),
+                  false) ||
+         supports(descriptor.operationSymbol, true);
 }
 
 std::optional<CompilerTarget::SynthesisBasis>
@@ -1105,12 +1061,11 @@ CompilerTarget::Storage::resolveSingleQubitBasis(
     singleQubit = SingleQubitBasis::ZYZ;
   } else if (hasZRotation) {
     for (const auto gate : {GateKind::RX, GateKind::RY, GateKind::R}) {
-      // NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
-      const auto specification = std::ranges::find(GATE_SPECIFICATIONS, gate,
-                                                   &GateSpecification::kind);
+      const auto& descriptor =
+          qc::getStandardGateDescriptor(gateSpecification(gate).gate);
       const auto supportsFixedRotation = [&](double angle) {
         return supportsRotation(
-            specification->name, specification->numParameters,
+            descriptor.operationSymbol, descriptor.parameterCount,
             [angle](size_t parameter) {
               return std::optional{parameter == 0 ? angle : 0.};
             });
@@ -1707,8 +1662,8 @@ CompilerTarget::OperationMatch CompilerTarget::findOperation(
     return supported ? selected : nullptr;
   };
   if (numControls != 0 && numControls <= 2) {
-    if (const auto* operation = select(
-            (Twine(numControls == 1 ? "c" : "cc") + name).str(), false)) {
+    if (const auto* operation =
+            select(qc::controlledGateName(name, numControls), false)) {
       return {.capability = operation, .genericControls = false};
     }
   }
@@ -1771,13 +1726,6 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
       }
       return supports(body.getBaseSymbol(), controlled.getNumQubits(),
                       body.getNumParams(), /*variadicOnly=*/true, parameterAt);
-    }
-    if (auto exchange = dyn_cast<qco::XXPlusYYOp>(operation)) {
-      if (supports("sqrt_iswap", 2, 0) &&
-          isSqrtISwap(mqt::valueToConstantDouble(exchange.getTheta()),
-                      mqt::valueToConstantDouble(exchange.getBeta()))) {
-        return true;
-      }
     }
     return supports(unitary.getBaseSymbol(), unitary.getNumQubits(),
                     unitary.getNumParams(), false, [&](size_t index) {

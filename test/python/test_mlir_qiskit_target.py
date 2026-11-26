@@ -1051,7 +1051,7 @@ def test_native_r_export_rejects_incompatible_target(angle: float | Parameter) -
     circuit.r(angle, 0.2, 0)
     program = QCProgram.from_qiskit(circuit).to_qco()
     program.compile_for_target(TargetEnvironment(target, PayloadSpecification(PayloadFormat("openqasm", "3.0"))))
-    with pytest.raises(RuntimeError, match="fixed-angle R definition"):
+    with pytest.raises(RuntimeError, match="requires its fixed parameters"):
         program.to_qiskit(target=target)
 
 

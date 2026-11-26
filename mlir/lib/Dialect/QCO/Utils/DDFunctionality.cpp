@@ -16,6 +16,7 @@
 #include "dd/Package.hpp"
 #include "dd/ShotStreams.hpp"
 #include "dd/StateGeneration.hpp"
+#include "dd/WorkerBudget.hpp"
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
@@ -65,24 +66,19 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
-#include <charconv>
 #include <cmath>
-#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
 #include <functional>
 #include <future>
 #include <iterator>
 #include <limits>
 #include <map>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <random>
 #include <span>
 #include <string>
-#include <string_view>
 #include <system_error>
 #include <type_traits>
 #include <utility>
@@ -90,57 +86,9 @@
 #include <vector>
 
 namespace mlir::qco {
-namespace {
-struct WorkerBudget {
-  std::mutex mutex;
-  std::condition_variable available;
-  size_t active = 0;
-  const size_t limit = [] {
-    const size_t hardware = static_cast<size_t>(std::max(
-        1U, llvm::heavyweight_hardware_concurrency().compute_thread_count()));
-    if (const char* raw = std::getenv("MQT_CORE_DD_WORKER_BUDGET")) {
-      const std::string_view value(raw);
-      size_t parsed = 0;
-      const auto [end, error] =
-          std::from_chars(value.data(), value.data() + value.size(), parsed);
-      if (error == std::errc{} && end == value.data() + value.size() &&
-          parsed > 0) {
-        return std::min(parsed, hardware);
-      }
-    }
-    return hardware;
-  }();
-};
-} // namespace
-
-static WorkerBudget& workerBudget() {
-  static WorkerBudget budget;
+static dd::WorkerBudget& workerBudget() {
+  static dd::WorkerBudget budget;
   return budget;
-}
-
-static size_t reserveSamplingWorkers(size_t requested, size_t held = 0) {
-  auto& budget = workerBudget();
-  std::unique_lock lock(budget.mutex);
-  // Once a sampler has a slot, it can run all its streams with that grant.
-  if (held == 0) {
-    budget.available.wait(lock, [&] { return budget.active < budget.limit; });
-  }
-  const size_t extra = std::min(requested - held, budget.limit - budget.active);
-  budget.active += extra;
-  return held + extra;
-}
-
-static void releaseSamplingWorkers(size_t count) {
-  if (count == 0) {
-    return;
-  }
-  auto& budget = workerBudget();
-  {
-    const std::scoped_lock lock(budget.mutex);
-    assert(budget.active >= count);
-    budget.active -= count;
-  }
-  budget.available.notify_all();
 }
 
 namespace {
@@ -3136,9 +3084,9 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
   if (shotResults != nullptr) {
     shotResults->clear();
   }
-  size_t workers = shots == 0 ? 0 : reserveSamplingWorkers(1);
+  size_t workers = shots == 0 ? 0 : workerBudget().reserve(1);
   const auto release =
-      llvm::scope_exit([&] { releaseSamplingWorkers(workers); });
+      llvm::scope_exit([&] { workerBudget().release(workers); });
   auto packageResult = dd::Package::create(0);
   if (!packageResult) {
     return func.emitError(llvm::toString(packageResult.takeError()));
@@ -3186,7 +3134,7 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
   }
   requestedWorkers = std::min(requestedWorkers, shots);
   if (requestedWorkers > 1 && func.getContext()->isMultithreadingEnabled()) {
-    workers = reserveSamplingWorkers(requestedWorkers, workers);
+    workers = workerBudget().reserve(requestedWorkers, workers);
   }
   if (requestWorkers && workers > 1) {
     const size_t accepted = requestWorkers(workers);
@@ -3194,7 +3142,7 @@ sampleProgram(func::FuncOp func, size_t shots, uint64_t seed,
       return func.emitError()
              << "sampling worker grant must be between 1 and " << workers;
     }
-    releaseSamplingWorkers(workers - accepted);
+    workerBudget().release(workers - accepted);
     workers = accepted;
   }
   const size_t streamCount = seed != 0 ? requestedWorkers : workers;

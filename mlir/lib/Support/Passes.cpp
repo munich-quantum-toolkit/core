@@ -13,6 +13,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
@@ -299,7 +300,7 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
     applyDefaultTimingPassManagerCLOptions(pm);
   }
   if (!preservesLayout) {
-    moduleOp->removeAttr("mqt.layout");
+    moduleOp->removeAttr(mqt::kLayoutAttr);
   }
   DialectRegistry registry;
   memref::registerMemorySlotExternalModels(registry);

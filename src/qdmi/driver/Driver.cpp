@@ -32,12 +32,12 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <filesystem>
 #include <memory>
 #include <mutex>
 #include <new>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -373,32 +373,20 @@ Error QDMI_Device_impl_d::initialize(const qdmi::DeviceSessionConfig& config,
   if (childDevice != nullptr) {
     return Error::success();
   }
-  size_t childrenSize = 0;
-  const auto status = api_->device_session_query_device_property(
-      deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr,
-      &childrenSize);
-  if (status == QDMI_ERROR_NOTSUPPORTED) {
+  auto queried = qdmi::queryBuffer<llvm::SmallVector<QDMI_Child_Device, 0>>(
+      [this](const size_t size, void* value, size_t* sizeRet) {
+        return api_->device_session_query_device_property(
+            deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, size, value,
+            sizeRet);
+      },
+      "Failed to query child devices", "Failed to query child devices");
+  if (!queried) {
+    return queried.takeError();
+  }
+  if (!*queried) {
     return Error::success();
   }
-  if (auto error = qdmi::checkError(status, "Failed to query child devices")) {
-    return error;
-  }
-  if (childrenSize % sizeof(QDMI_Child_Device) != 0) {
-    return qdmi::makeError(QDMI_ERROR_FATAL,
-                           "Device returned an invalid child device list");
-  }
-  std::vector<QDMI_Child_Device> children(childrenSize /
-                                          sizeof(QDMI_Child_Device));
-  if ((!children.empty())) {
-    if (auto error = qdmi::checkError(
-            api_->device_session_query_device_property(
-                deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, childrenSize,
-                static_cast<void*>(children.data()), nullptr),
-            "Failed to query child devices")) {
-      return error;
-    }
-  }
-
+  const auto& children = **queried;
   childDevices_.reserve(children.size());
   for (auto* const child : children) {
     if (child == nullptr) {
@@ -485,28 +473,19 @@ void QDMI_Device_impl_d::freeJob(QDMI_Job job) {
 int QDMI_Device_impl_d::queryDeviceProperty(QDMI_Device_Property prop,
                                             const size_t size, void* value,
                                             size_t* sizeRet) const {
-  if (!id_.empty()) {
-    ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_ID, id_.c_str(), prop, size, value,
-                        sizeRet)
+  if (prop == QDMI_DEVICE_PROPERTY_ID && !id_.empty()) {
+    return qdmi::writeString(id_, size, value, sizeRet);
   }
   if (prop == QDMI_DEVICE_PROPERTY_CHILDDEVICES) {
     if (childDevices_.empty()) {
       return QDMI_ERROR_NOTSUPPORTED;
     }
-    const auto requiredSize = childDevices_.size() * sizeof(QDMI_Device);
-    if (value != nullptr) {
-      if (size < requiredSize) {
-        return QDMI_ERROR_INVALIDARGUMENT;
-      }
-      auto* devices = static_cast<QDMI_Device*>(value);
-      std::ranges::transform(
-          childDevices_, devices,
-          [](const auto& child) -> QDMI_Device { return child.get(); });
-    }
-    if (sizeRet != nullptr) {
-      *sizeRet = requiredSize;
-    }
-    return QDMI_SUCCESS;
+    return qdmi::writeResult<QDMI_Device>(
+        childDevices_.size(), size, value, sizeRet,
+        [this](std::span<QDMI_Device> output) {
+          std::ranges::transform(childDevices_, output.begin(),
+                                 [](const auto& child) { return child.get(); });
+        });
   }
   return api_->device_session_query_device_property(deviceSession_, prop, size,
                                                     value, sizeRet);
@@ -690,17 +669,7 @@ int QDMI_Session_impl_d::querySessionProperty(QDMI_Session_Property prop,
     return QDMI_ERROR_BADSTATE;
   }
   if (prop == QDMI_SESSION_PROPERTY_DEVICES) {
-    if (value != nullptr) {
-      if (size < devices_.size() * sizeof(QDMI_Device)) {
-        return QDMI_ERROR_INVALIDARGUMENT;
-      }
-      memcpy(value, static_cast<const void*>(devices_.data()),
-             devices_.size() * sizeof(QDMI_Device));
-    }
-    if (sizeRet != nullptr) {
-      *sizeRet = devices_.size() * sizeof(QDMI_Device);
-    }
-    return QDMI_SUCCESS;
+    return qdmi::writeList(devices_, size, value, sizeRet);
   }
   return QDMI_ERROR_NOTSUPPORTED;
 }
@@ -1057,20 +1026,14 @@ extern "C" QDMI_DRIVER_EXPORT int MQT_CORE_QDMI_driver_registered_device_ids_v1(
   for (const auto& id : *idsValue) {
     required += id.size() + 1;
   }
-  if (sizeRet != nullptr) {
-    *sizeRet = required;
-  }
-  if (ids != nullptr) {
-    if (size < required) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
-    auto output = llvm::MutableArrayRef(ids, required);
-    for (const auto& id : *idsValue) {
-      std::memcpy(output.data(), id.c_str(), id.size() + 1);
-      output = output.drop_front(id.size() + 1);
-    }
-  }
-  return QDMI_SUCCESS;
+  return qdmi::writeResult<char>(required, size, ids, sizeRet,
+                                 [&](std::span<char> output) {
+                                   auto next = output.begin();
+                                   for (const auto& id : *idsValue) {
+                                     next = std::ranges::copy(id, next).out;
+                                     *next++ = '\0';
+                                   }
+                                 });
 }
 
 extern "C" QDMI_DRIVER_EXPORT int

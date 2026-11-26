@@ -288,7 +288,7 @@ static LogicalResult prepareLayout(ModuleOp moduleOp,
 
 /// Accept only a circuit-wire layout that placement can compose.
 static LogicalResult verifyInputLayout(ModuleOp moduleOp) {
-  if (!moduleOp->hasAttr("mqt.layout")) {
+  if (!moduleOp->hasAttr(mqt::kLayoutAttr)) {
     return success();
   }
   auto count = moduleOp->getAttrOfType<IntegerAttr>(mqt::kSourceQubitCountAttr);

@@ -18,6 +18,7 @@
 #include "qdmi/client.h"
 #include "qdmi/types.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -27,7 +28,6 @@
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 #include <filesystem>
 #include <iterator>
 #include <map>
@@ -111,33 +111,15 @@ struct JobDeleter {
   std::shared_ptr<DriverSession> session;
 };
 
-[[nodiscard]] inline llvm::Expected<std::string>
-decodeText(std::string value, const std::string_view description) {
+/// Remove the terminator that a QDMI provider must append to a string.
+[[nodiscard]] inline llvm::Error stripTerminator(std::string& value,
+                                                 const llvm::Twine& message) {
   if (value.empty() || value.back() != '\0') {
-    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
-                           std::string(description) +
-                               " is not null-terminated");
-  }
-  if (value.find('\0') != value.size() - 1U) {
-    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
-                           std::string(description) +
-                               " contains an embedded null byte");
+    return qdmi::makeError(QDMI_ERROR_FATAL,
+                           message + ": missing string terminator");
   }
   value.pop_back();
-  return value;
-}
-
-[[nodiscard]] inline llvm::Expected<std::string>
-decodeText(const std::span<const std::byte> value,
-           const std::string_view description) {
-  if (value.empty()) {
-    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
-                           std::string(description) +
-                               " is not null-terminated");
-  }
-  return decodeText(
-      std::string{reinterpret_cast<const char*>(value.data()), value.size()},
-      description);
+  return llvm::Error::success();
 }
 
 [[nodiscard]] inline llvm::Expected<std::optional<size_t>>
@@ -151,13 +133,29 @@ queuePositionFromResult(const int result, const size_t queuePosition) {
   return std::optional<size_t>{std::move(queuePosition)};
 }
 
+/// Return a comma-separated list of `count` entries without its optional final
+/// comma, or nothing if the list has a different number of entries.
+///
+/// The count tells empty entries apart from a final comma.
+[[nodiscard]] inline std::optional<llvm::StringRef>
+trimList(const llvm::StringRef list, const size_t count) {
+  if (count == 0) {
+    return list.empty() ? std::optional{list} : std::nullopt;
+  }
+  const auto commas = list.count(',');
+  if (commas == count && list.ends_with(",")) {
+    return list.drop_back();
+  }
+  return commas == count - 1 ? std::optional{list} : std::nullopt;
+}
+
 /// Owns the provider's SHOTS payload and its validated number of rows.
 struct PackedShots {
-  std::vector<std::byte> bytes;
+  llvm::SmallVector<std::byte, 0> bytes;
   size_t count = 0;
 
   [[nodiscard]] static llvm::Expected<PackedShots>
-  parse(std::vector<std::byte> bytes, size_t count);
+  parse(llvm::SmallVector<std::byte, 0> bytes, size_t count);
 
   /// Split the payload lazily, including empty shots.
   [[nodiscard]] auto rows() const {
@@ -175,90 +173,41 @@ struct PackedShots {
 template <custom_property_value T, typename Query>
 [[nodiscard]] llvm::Expected<std::optional<T>>
 queryCustomValue(Query query, const llvm::Twine& description) {
-  size_t size = 0;
-  const auto sizeResult = query(0, nullptr, &size);
-  if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
-    return std::optional<T>{};
-  }
-  if (auto error =
-          checkError(sizeResult, "Querying " + description + " size")) {
-    return error;
-  }
-
-  std::vector<std::byte> bytes(size);
-  if (size != 0) {
-    if (auto error = checkError(query(size, bytes.data(), nullptr),
-                                "Querying " + description)) {
-      return error;
+  if constexpr (std::same_as<T, std::vector<std::byte>> ||
+                std::same_as<T, std::string>) {
+    auto value = queryBuffer<T>(query, "Querying " + description + " size",
+                                "Querying " + description);
+    if constexpr (std::same_as<T, std::string>) {
+      if (value && *value) {
+        if (auto error = stripTerminator(**value, "Querying " + description)) {
+          return error;
+        }
+      }
     }
-  }
-
-  if constexpr (std::same_as<T, std::vector<std::byte>>) {
-    return std::optional<std::vector<std::byte>>{std::move(bytes)};
-  } else if constexpr (std::same_as<T, std::string>) {
-    if (bytes.empty() || bytes.back() != std::byte{0}) {
-      return qdmi::makeError(
-          QDMI_ERROR_INVALIDARGUMENT,
-          ("Cannot decode " + description + " as a null-terminated string")
-              .str());
-    }
-    return std::optional<std::string>{
-        std::in_place, reinterpret_cast<const char*>(bytes.data()),
-        bytes.size() - 1};
+    return value;
   } else {
-    if (bytes.size() != sizeof(T)) {
+    auto size = querySize(query, "Querying " + description + " size");
+    if (!size) {
+      return size.takeError();
+    }
+    if (!*size) {
+      return std::optional<T>{};
+    }
+    if (**size != sizeof(T)) {
       return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
-                             ("Cannot decode " + description + ": expected " +
-                              llvm::Twine(sizeof(T)) +
-                              " bytes, but the device reported " +
-                              llvm::Twine(bytes.size()))
-                                 .str());
+                             "Cannot decode " + description + ": expected " +
+                                 llvm::Twine(sizeof(T)) +
+                                 " bytes, but the device reported " +
+                                 llvm::Twine(**size));
     }
     T value{};
-    std::memcpy(&value, bytes.data(), sizeof(T));
-    return std::optional<T>{std::move(value)};
-  }
-}
-
-template <typename Element>
-llvm::Error validateArraySize(const size_t size,
-                              const llvm::Twine& description) {
-  if (size % sizeof(Element) != 0U) {
-    return qdmi::makeError(QDMI_ERROR_INVALIDARGUMENT,
-                           ("Cannot decode " + description +
-                            ": the device reported " + llvm::Twine(size) +
-                            " bytes, which is not a multiple of " +
-                            llvm::Twine(sizeof(Element)))
-                               .str());
-  }
-  return llvm::Error::success();
-}
-
-template <typename Handle, typename Query>
-[[nodiscard]] llvm::Expected<std::optional<std::vector<Handle>>>
-queryHandleArray(Query query, const llvm::Twine& description) {
-  size_t size = 0;
-  const auto sizeResult = query(0, nullptr, &size);
-  if (sizeResult == QDMI_ERROR_NOTSUPPORTED) {
-    return std::optional<std::vector<Handle>>{};
-  }
-  if (auto error =
-          checkError(sizeResult, "Querying " + description + " size")) {
-    return error;
-  }
-  if (auto error = validateArraySize<Handle>(size, description)) {
-    return error;
-  }
-
-  std::vector<Handle> handles(size / sizeof(Handle));
-  if (size != 0) {
     if (auto error =
-            checkError(query(size, static_cast<void*>(handles.data()), nullptr),
-                       "Querying " + description)) {
+            queryInto(query, std::as_writable_bytes(std::span(&value, 1)),
+                      "Querying " + description)) {
       return error;
     }
+    return std::optional<T>{value};
   }
-  return std::optional<std::vector<Handle>>{std::move(handles)};
 }
 
 [[nodiscard]] inline llvm::Expected<QDMI_Device_Property>
@@ -497,62 +446,25 @@ namespace detail {
 template <maybe_optional_value_or_string_or_vector T, typename Query>
 [[nodiscard]] llvm::Expected<T>
 queryProperty(Query query, const llvm::Twine& msg, const llvm::Twine& sizeMsg) {
-  if constexpr (string_or_optional_string<T>) {
-    size_t size = 0;
-    auto result = query(0, nullptr, &size);
-
-    if constexpr (is_optional<T>) {
-      if (result == QDMI_ERROR_NOTSUPPORTED) {
+  if constexpr (string_or_optional_string<T> ||
+                maybe_optional_size_constructible_contiguous_range<T>) {
+    auto value = queryBuffer<remove_optional_t<T>>(query, sizeMsg, msg);
+    if (!value) {
+      return value.takeError();
+    }
+    if (!*value) {
+      if constexpr (is_optional<T>) {
         return T{};
+      } else {
+        return checkError(QDMI_ERROR_NOTSUPPORTED, sizeMsg);
       }
     }
-
-    if (auto error = checkError(result, sizeMsg)) {
-      return error;
-    }
-    if (size == 0) {
-      return qdmi::makeError(QDMI_ERROR_FATAL,
-                             (sizeMsg + ": missing string terminator").str());
-    }
-    std::string value(size, '\0');
-    result = query(size, value.data(), nullptr);
-    if (auto error = checkError(result, msg)) {
-      return error;
-    }
-    if (value.back() != '\0') {
-      return qdmi::makeError(QDMI_ERROR_FATAL,
-                             (msg + ": missing string terminator").str());
-    }
-    value.pop_back();
-    return T{std::move(value)};
-  } else if constexpr (maybe_optional_size_constructible_contiguous_range<T>) {
-    size_t size = 0;
-    auto result = query(0, nullptr, &size);
-
-    if constexpr (is_optional<T>) {
-      if (result == QDMI_ERROR_NOTSUPPORTED) {
-        return T{};
-      }
-    }
-
-    if (auto error = checkError(result, sizeMsg)) {
-      return error;
-    }
-    if (size % sizeof(typename remove_optional_t<T>::value_type) != 0) {
-      return qdmi::makeError(
-          QDMI_ERROR_FATAL,
-          (sizeMsg + ": byte count is not a multiple of the element size")
-              .str());
-    }
-    remove_optional_t<T> value(
-        size / sizeof(typename remove_optional_t<T>::value_type));
-    if (size != 0) {
-      result = query(size, value.data(), nullptr);
-      if (auto error = checkError(result, msg)) {
+    if constexpr (string_or_optional_string<T>) {
+      if (auto error = stripTerminator(**value, msg)) {
         return error;
       }
     }
-    return T{std::move(value)};
+    return T{std::move(**value)};
   } else {
     remove_optional_t<T> value{};
     const auto result = query(sizeof(remove_optional_t<T>), &value, nullptr);
@@ -1035,14 +947,24 @@ public:
 
   /// Gets a textual program without its terminating null byte.
   ///
-  /// Returns QDMI_ERROR_INVALIDARGUMENT if the format is not textual or the
-  /// device does not return a null-terminated payload.
+  /// Returns QDMI_ERROR_INVALIDARGUMENT if the format is not textual and
+  /// QDMI_ERROR_FATAL if the device omits the terminator.
   [[nodiscard]] llvm::Expected<std::string>
   getProgram(size_t programIndex = 0) const;
 
   /// Gets the submitted program bytes exactly as returned by the device.
   [[nodiscard]] llvm::Expected<std::vector<std::byte>>
   getProgramBytes(size_t programIndex = 0) const;
+
+  /// Returns the size in bytes of a submitted program.
+  [[nodiscard]] llvm::Expected<size_t>
+  getProgramSize(size_t programIndex = 0) const;
+
+  /// Reads a submitted program into `buffer` without an intermediate copy.
+  ///
+  /// `buffer` must hold exactly getProgramSize() bytes.
+  [[nodiscard]] llvm::Error readProgram(std::span<std::byte> buffer,
+                                        size_t programIndex = 0) const;
 
   /// Get the number of shots
   [[nodiscard]] llvm::Expected<size_t> getNumShots() const;
@@ -1057,6 +979,18 @@ public:
   /// Returns a result without interpreting its bytes.
   [[nodiscard]] llvm::Expected<std::vector<std::byte>>
   getResults(QDMI_Job_Result result, size_t programIndex = 0) const;
+
+  /// Returns the size in bytes of a result.
+  [[nodiscard]] llvm::Expected<size_t>
+  getResultSize(QDMI_Job_Result result, size_t programIndex = 0) const;
+
+  /// Reads a result into `buffer` without an intermediate copy.
+  ///
+  /// `buffer` must hold exactly getResultSize() bytes. Use
+  /// `std::as_writable_bytes` to read into typed storage.
+  [[nodiscard]] llvm::Error readResult(QDMI_Job_Result result,
+                                       std::span<std::byte> buffer,
+                                       size_t programIndex = 0) const;
 
   /// Gets the current number of jobs ahead of this job in its queue.
   ///

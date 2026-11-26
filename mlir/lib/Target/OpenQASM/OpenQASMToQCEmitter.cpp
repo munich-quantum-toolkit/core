@@ -1111,8 +1111,8 @@ private:
 
     const auto emitCatalogLowering = [&](ValueRange primitiveQubits) {
       const auto emitBody = [&](ValueRange bodyQubits) {
-        // Native pulses share the compiler's fixed-angle R definition.
-        if (const auto alias = nativeRAlias(
+        // Native aliases share the compiler's standard-gate definition.
+        if (const auto alias = nativeGateAlias(
                 qc::getStandardGateDescriptor(catalog->gate).operationSymbol)) {
           const auto constant = [&](double value) -> Value {
             return arith::ConstantFloatOp::create(
@@ -1121,9 +1121,16 @@ private:
           if (alias->globalPhase != 0.) {
             qc::GPhaseOp::create(opBuilder, loc, constant(alias->globalPhase));
           }
+          SmallVector<Value> values;
+          auto open = parameters.begin();
+          for (const auto fixed : alias->parameters) {
+            values.push_back(fixed ? constant(*fixed) : *open++);
+          }
           return qc::emitStandardGate(
-              opBuilder, loc, qc::StandardGate::R,
-              {constant(alias->angle), parameters.front()}, bodyQubits);
+              opBuilder, loc,
+              qc::lookupStandardGateByOperationSymbol(alias->canonicalName)
+                  ->gate,
+              values, bodyQubits);
         }
         if (catalog->gate == qc::StandardGate::BuiltinU ||
             catalog->gate == qc::StandardGate::U2 ||

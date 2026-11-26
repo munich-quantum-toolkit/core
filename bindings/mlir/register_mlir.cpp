@@ -36,6 +36,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/bench/Generate.h"
@@ -71,6 +72,7 @@
 #include "mlir/IR/MLIRContext.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LLVMContext.h"
@@ -796,7 +798,7 @@ qpyCircuit(mlir::QCProgram program,
           if constexpr (std::is_base_of_v<
                             mlir::Program,
                             std::remove_cvref_t<decltype(value)>>) {
-            if (value.module()->hasAttr("mqt.layout")) {
+            if (value.module()->hasAttr(mlir::mqt::kLayoutAttr)) {
               throw nb::builtin_exception(
                   nb::exception_type::runtime_error,
                   "Qiskit and QPY output require input without layout "
@@ -827,7 +829,7 @@ qpyCircuit(mlir::QCProgram program,
   if (qiskitOutput) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
     if (!includeOutputLayout) {
-      qc.module()->removeAttr("mqt.layout");
+      qc.module()->removeAttr(mlir::mqt::kLayoutAttr);
     }
     auto result = [&] {
       if (selected == OutputFormat::QPY) {
@@ -1234,11 +1236,8 @@ executeQIRInput(nb::handle program, size_t shots, uint64_t seed) {
 }
 
 [[nodiscard]] static DenseVector qirState(const qdmi::Job& job) {
-  auto values = [&] {
-    const nb::gil_scoped_release release;
-    return unwrap(job.getDenseStateVector());
-  }();
-  return bindings::ownedArray(std::move(values));
+  return bindings::readResultArray<std::complex<dd::fp>>(
+      job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0);
 }
 
 [[nodiscard]] static DenseVector simulateDense(PythonInputTypes& types,
@@ -1688,23 +1687,35 @@ Constants use absolute tolerance 1e-15 without angle wrapping.)pb")
                    "The default fidelity, if available.");
 
   m.def(
-      "_native_r_gate",
+      "_native_gate",
       [](const mlir::CompilerTarget::OperationCapability& capability) {
-        if (capability.canonicalName() != "r") {
+        const auto alias = mlir::nativeGateAlias(capability.name());
+        if (!alias || capability.canonicalName() != alias->canonicalName) {
           return nb::object(nb::none());
         }
+        const auto circuit = nb::module_::import_("qiskit.circuit");
         const auto fixed = capability.fixedParameters();
-        nb::object phase = fixed.size() == 2 && fixed[1]
-                               ? nb::object(nb::float_(*fixed[1]))
-                               : nb::module_::import_("qiskit.circuit")
-                                     .attr("Parameter")("phi");
-        return bindings::qiskit::nativeRGate(capability.name().str(), phase);
+        nb::list parameters;
+        for (const auto [index, value] : llvm::enumerate(alias->parameters)) {
+          if (value) {
+            continue;
+          }
+          parameters.append(
+              index < fixed.size() && fixed[index]
+                  ? nb::object(nb::float_(*fixed[index]))
+                  : circuit.attr("Parameter")("p" + std::to_string(index)));
+        }
+        return bindings::qiskit::nativeGate(
+            capability.name().str(),
+            nb::module_::import_("qiskit.circuit.library")
+                .attr("get_standard_gate_name_mapping")(),
+            parameters);
       },
       "capability"_a,
-      nb::sig("def _native_r_gate(capability: "
+      nb::sig("def _native_gate(capability: "
               "mqt.core.mlir.CompilerTarget.OperationCapability) "
               "-> qiskit.circuit.Gate | None"),
-      "Construct the Qiskit native pulse definition, if applicable.");
+      "Construct the Qiskit definition of a native alias gate, if applicable.");
 
   nb::enum_<mlir::CompilerTarget::GateKind>(
       compilerTarget, "GateKind", "Recognized native gate capability.")

@@ -27,7 +27,9 @@ using mlir::mqt::addConstantAngles;
 using mlir::mqt::classifyPhaseGate;
 using mlir::mqt::PARAMETER_COMPARISON_TOLERANCE;
 using mlir::mqt::PhaseGate;
+using mlir::mqt::reduceAngle;
 using mlir::mqt::scaleConstantAngle;
+using mlir::mqt::twoSum;
 
 TEST(AngleArithmeticTest, AcceptsExactCancellationAndSmallAdditionError) {
   const auto cancelled = addConstantAngles(1.0e308, -1.0e308);
@@ -60,6 +62,13 @@ TEST(AngleArithmeticTest, RejectsOverflowWhileRecoveringAdditionError) {
   ASSERT_TRUE(std::isfinite(negative + maximum));
   EXPECT_FALSE(addConstantAngles(negative, maximum));
   EXPECT_FALSE(addConstantAngles(maximum, negative));
+}
+
+TEST(AngleArithmeticTest, TwoSumRecoversTheExactRoundingError) {
+  const auto [sum, error] = twoSum(1.0, 0x1p-60);
+  EXPECT_EQ(sum, 1.0);
+  EXPECT_EQ(error, 0x1p-60);
+  static_assert(twoSum(0.5, 0.25) == std::pair{0.75, 0.0});
 }
 
 TEST(AngleArithmeticTest, AcceptsExactProductsAndSmallProductError) {
@@ -130,6 +139,37 @@ TEST(PhaseGateClassificationTest, PreservesPhaseLostByLargeAngleReduction) {
   ASSERT_GT(std::abs(std::sin(angle)), 0.01);
   EXPECT_FALSE(classifyPhaseGate(angle));
   EXPECT_FALSE(classifyPhaseGate(-angle));
+}
+
+TEST(AngleReductionTest, KeepsLargeAnglesAccurate) {
+  const double pi = std::numbers::pi;
+  // atan2(sin, cos) is an independent accurate reference for the phase.
+  for (const double angle :
+       {100.0, -100.0, 1.0e6, 1.0e9, -1.0e15, std::ldexp(2.0 * pi, 48)}) {
+    SCOPED_TRACE(angle);
+    EXPECT_NEAR(reduceAngle(angle, 2.0 * pi),
+                std::atan2(std::sin(angle), std::cos(angle)),
+                PARAMETER_COMPARISON_TOLERANCE);
+    const double half = angle / 2.0;
+    EXPECT_NEAR(reduceAngle(angle, 4.0 * pi),
+                2.0 * std::atan2(std::sin(half), std::cos(half)),
+                PARAMETER_COMPARISON_TOLERANCE);
+  }
+}
+
+TEST(AngleReductionTest, UsesHalfOpenIntervalsWithAnInclusiveUpperBound) {
+  const double pi = std::numbers::pi;
+  EXPECT_EQ(reduceAngle(pi, 2.0 * pi), pi);
+  EXPECT_EQ(reduceAngle(-pi, 2.0 * pi), pi);
+  EXPECT_EQ(reduceAngle(-2.0 * pi, 4.0 * pi), 2.0 * pi);
+  EXPECT_EQ(reduceAngle(-pi / 4.0, pi / 2.0), pi / 4.0);
+  EXPECT_EQ(reduceAngle(0.3, 2.0 * pi), 0.3);
+  EXPECT_NEAR(reduceAngle(1.5 * pi, 2.0 * pi), -pi / 2.0,
+              PARAMETER_COMPARISON_TOLERANCE);
+  EXPECT_NEAR(reduceAngle(3.0 * pi, 4.0 * pi), -pi,
+              PARAMETER_COMPARISON_TOLERANCE);
+  EXPECT_TRUE(std::isnan(
+      reduceAngle(std::numeric_limits<double>::infinity(), 2.0 * pi)));
 }
 
 } // namespace

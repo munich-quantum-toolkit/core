@@ -474,7 +474,7 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
     }
     return success();
   }
-  if (attribute.getName() == "mqt.layout") {
+  if (attribute.getName() == kLayoutAttr) {
     if (!isa<ModuleOp>(operation)) {
       return operation->emitError("qubit layout belongs on a program module");
     }

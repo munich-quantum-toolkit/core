@@ -299,14 +299,6 @@ bool CircuitRecorder::hasTouchedWires() const {
 
 mlir::QCProgram CircuitRecorder::takeProgram() {
   require(builder_ != nullptr, "No circuit is available for preparation.");
-  std::string diagnostics;
-  mlir::ScopedDiagnosticHandler handler(
-      compiler_.get(), [&](mlir::Diagnostic& diagnostic) {
-        llvm::raw_string_ostream stream(diagnostics);
-        diagnostic.print(stream);
-        stream << '\n';
-        return mlir::success();
-      });
   auto& builder = *builder_;
   auto bits = builder.allocClassicalBitRegister(
       static_cast<int64_t>(qubits_.size()), "c");
@@ -317,9 +309,7 @@ mlir::QCProgram CircuitRecorder::takeProgram() {
   }
   auto moduleOp = builder.finalize({bits});
   builder_.reset();
-  auto program = mlir::QCProgram::fromModule(compiler_, std::move(moduleOp));
-  require(mlir::succeeded(program), "Invalid recorded circuit: " + diagnostics);
-  return std::move(*program);
+  return mlir::QCProgram::fromBuiltModule(compiler_, std::move(moduleOp));
 }
 
 } // namespace mqt::pennylane

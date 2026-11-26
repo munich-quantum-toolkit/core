@@ -497,6 +497,20 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
   EXPECT_TRUE(mlir::failed(
       QCProgram::fromModule(otherContext, std::move(mismatchedModule))));
 }
+
+TEST(CompilerProgramOwnershipTest, AdoptsBuiltQCModules) {
+  auto context = createCompilerContext();
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  builder.h(builder.allocQubit());
+  auto moduleOp = builder.finalize();
+  auto borrowed = *moduleOp;
+
+  auto program = QCProgram::fromBuiltModule(context, std::move(moduleOp));
+
+  EXPECT_EQ(program.module(), borrowed);
+  EXPECT_TRUE(program.isValid());
+}
 TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, QCODialect, func::FuncDialect,
@@ -1107,6 +1121,54 @@ TEST_F(CompilerPipelineTest, BaseMeasurementMayBeInsertedIntoFreedQTensor) {
   ASSERT_TRUE(mlir::succeeded(llvmIR));
   EXPECT_NE(llvmIR->find("call void @__quantum__qis__mz__body"),
             std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, QCLowersFractionalAndSymbolicPowersToQIR) {
+  // QC lowers power modifiers without QCO, so it needs the same folds.
+  for (const auto& [source, profile, expected] : {
+           std::tuple{R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+pow(0.5) @ h q;
+pow(0.5) @ h q;
+h q;
+output bit result;
+result = measure q;
+)qasm",
+                      QIRProfile::Base, "0"},
+           // rx(5π) = rx(π), whose principal square root is rx(π/2).
+           std::tuple{R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+pow(0.5) @ rx(5 * pi) q;
+pow(0.5) @ rx(5 * pi) q;
+output bit result;
+result = measure q;
+)qasm",
+                      QIRProfile::Base, "1"},
+           // The loop keeps the exponent symbolic: X^(1/2 + 1 + 3/2) = X.
+           std::tuple{R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+for int i in [1:3] { pow(i / 2.0) @ x q; }
+output bit result;
+result = measure q;
+)qasm",
+                      QIRProfile::Adaptive, "1"},
+       }) {
+    SCOPED_TRACE(source);
+    auto qc = QCProgram::fromOpenQASMString(source);
+    MQT_ASSERT_SUCCESS(qc);
+    auto qir = std::move(*qc).intoQIR(profile);
+    ASSERT_TRUE(succeeded(qir));
+    const auto llvmIR = std::move(*qir).intoLLVMIR();
+    ASSERT_TRUE(succeeded(llvmIR));
+    auto session = value(::qir::JitSession::create(
+        *llvmIR, "pow-folding", ::qir::Execution::Sampling, 42));
+    std::vector<std::string> samples;
+    ASSERT_EQ(value(session->sample(4, samples)), 0);
+    EXPECT_EQ(samples, (std::vector<std::string>(4, expected)));
+  }
 }
 
 TEST_F(CompilerPipelineTest, QIRCleanupPromotesClassicalStorage) {

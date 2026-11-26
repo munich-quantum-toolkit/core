@@ -57,7 +57,7 @@ from mqt.core.mlir import (
     CompiledProgram,
     CompilerTarget,
     ProgramCapability,
-    _native_r_gate,
+    _native_gate,
     compile_program,
     serialize_program,
 )
@@ -313,7 +313,7 @@ class QDMIBackend(BackendV2):
                 gate = Gate(
                     name, capability.arity.value, [Parameter(f"p{i}") for i in range(capability.num_parameters)]
                 )
-            if (native_gate := _native_r_gate(capability)) is not None:
+            if (native_gate := _native_gate(capability)) is not None:
                 gate = native_gate
             name = ("mcphase" if name == "mcp" else name) if isinstance(gate, type) else gate.name
             self._operation_names[capability.name] = name

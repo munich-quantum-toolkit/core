@@ -20,10 +20,13 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <array>
+#include <cassert>
 #include <cstddef>
+#include <string>
 
 namespace mlir::qc {
 namespace {
@@ -63,6 +66,7 @@ constexpr std::array DESCRIPTORS{
     StandardGateDescriptor{StandardGate::XXMinusYY, "xx_minus_yy", 2, 0, 2},
     StandardGateDescriptor{StandardGate::GPI, "gpi", 1, 0, 1},
     StandardGateDescriptor{StandardGate::GPI2, "gpi2", 1, 0, 1},
+    StandardGateDescriptor{StandardGate::SqrtISwap, "sqrt_iswap", 0, 0, 2},
 };
 
 static_assert(
@@ -91,6 +95,13 @@ lookupStandardGateByOperationSymbol(const llvm::StringRef symbol) {
     }
   }
   return nullptr;
+}
+
+std::string controlledGateName(const llvm::StringRef base,
+                               const size_t numControls) {
+  assert((numControls == 1 || numControls == 2) &&
+         "named controls require one or two controls");
+  return (llvm::Twine(numControls == 1 ? "c" : "cc") + base).str();
 }
 
 LogicalResult emitStandardGate(OpBuilder& builder, const Location loc,
@@ -198,6 +209,7 @@ LogicalResult emitStandardGate(OpBuilder& builder, const Location loc,
   case StandardGate::CU:
   case StandardGate::GPI:
   case StandardGate::GPI2:
+  case StandardGate::SqrtISwap:
     return failure();
   }
   OperationState state(loc, operationName);

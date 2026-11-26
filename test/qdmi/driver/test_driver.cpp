@@ -1487,7 +1487,7 @@ TEST(DeviceRegistrationTest,
               return device.queryCustomOperations(
                   qdmi::CustomProperty::Custom3);
             }),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_FATAL);
 }
 
 TEST(DeviceRegistrationTest, CustomOperationRetainsOwningDeviceSession) {
