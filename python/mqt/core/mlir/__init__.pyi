@@ -684,8 +684,8 @@ class CompilerTarget:
                 unrestricted support.
         """
 
-def _native_r_gate(capability: CompilerTarget.OperationCapability) -> qiskit.circuit.Gate | None:
-    """Construct the Qiskit native pulse definition, if applicable."""
+def _native_gate(capability: CompilerTarget.OperationCapability) -> qiskit.circuit.Gate | None:
+    """Construct the Qiskit definition of a native alias gate, if applicable."""
 
 class TargetEnvironment(Generic[_TargetResultT_co]):
     """A compiler target paired with an execution format and its restrictions.

@@ -13,6 +13,7 @@
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -31,18 +32,31 @@ namespace mlir {
 class MLIRContext;
 class Operation;
 
-/// A native pulse alias for a fixed-angle R gate, including its global phase.
-struct NativeRAlias {
-  double angle;
+/// A native gate that applies a standard gate with some parameters fixed.
+///
+/// The native gate takes the parameters left open in `parameters`, in order,
+/// and equals the standard gate followed by a global phase of `globalPhase`.
+struct NativeGateAlias {
+  /// Canonical name of the standard gate.
+  llvm::StringLiteral canonicalName;
+  /// Number of qubits.
+  size_t numQubits;
+  /// Standard-gate parameters; empty entries are native parameters.
+  llvm::ArrayRef<std::optional<double>> parameters;
+  /// Global phase of the native gate relative to the standard gate.
   double globalPhase;
+
+  /// Return the number of parameters the native gate takes.
+  [[nodiscard]] size_t numNativeParameters() const {
+    return static_cast<size_t>(llvm::count(parameters, std::nullopt));
+  }
 };
 
-/// Return the fixed-angle R definition of a recognized native pulse name.
-[[nodiscard]] std::optional<NativeRAlias> nativeRAlias(llvm::StringRef name);
-
-/// Return whether XX+YY(theta, beta) is the fixed square root of iSWAP.
-[[nodiscard]] bool isSqrtISwap(std::optional<double> theta,
-                               std::optional<double> beta);
+/// Return the standard-gate definition of a recognized native gate name.
+///
+/// GPI and GPI2 are fixed-angle R gates, and `sqrt_iswap` is XX+YY(-π/2, 0).
+[[nodiscard]] std::optional<NativeGateAlias>
+nativeGateAlias(llvm::StringRef name);
 
 /// Immutable description of the operations and topology available to
 /// compilation.

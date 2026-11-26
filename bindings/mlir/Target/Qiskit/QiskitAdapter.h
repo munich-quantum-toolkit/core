@@ -32,6 +32,7 @@
 #include <qiskit/funcs_py.h>
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/SmallVector.h"
@@ -844,8 +845,8 @@ standardGateMapping(const std::string_view name) {
 /// GPI and GPI2 are target names for fixed-angle R gates with one phase.
 [[nodiscard]] static std::optional<double>
 nativeRAngle(nb::handle operation, const std::string_view name) {
-  const auto alias = mlir::nativeRAlias(name);
-  if (!alias ||
+  const auto alias = mlir::nativeGateAlias(name);
+  if (!alias || alias->canonicalName != "r" ||
       !nb::isinstance(operation,
                       nb::module_::import_("qiskit.circuit").attr("Gate"))) {
     return std::nullopt;
@@ -870,9 +871,9 @@ nativeRAngle(nb::handle operation, const std::string_view name) {
       if (gate.type().is(
               nb::module_::import_("qiskit.circuit.library").attr("RGate")) &&
           nb::len(angles) == 2U &&
-          angles[nb::int_(0)].equal(nb::float_(alias->angle)) &&
+          angles[nb::int_(0)].equal(nb::float_(*alias->parameters[0])) &&
           angles[nb::int_(1)].equal(parameters[nb::int_(0)])) {
-        return alias->angle;
+        return alias->parameters[0];
       }
     }
   } catch (const nb::python_error&) {
@@ -2440,7 +2441,6 @@ public:
                const std::vector<Parameter>& parameters) override {
     const auto* gate = versionGate(mapping);
     std::string nativeName;
-    bool fixedExchange = false;
     if (target_ != nullptr &&
         target_->nativeOperationsKind() ==
             mlir::CompilerTarget::NativeOperations::Kind::Explicit) {
@@ -2474,18 +2474,9 @@ public:
         selected = target_->findOperation(gate->name, qubits.size(), values,
                                           sites, 0, compatible);
       }
-      if (selected.capability == nullptr &&
-          mapping == StandardGateMapping{mlir::qc::StandardGate::XXPlusYY, 0} &&
-          values.size() == 2 && mlir::isSqrtISwap(values[0], values[1])) {
-        selected =
-            target_->findOperation("sqrt_iswap", qubits.size(), {}, sites);
-        fixedExchange = selected.capability != nullptr;
-      }
       if (selected.capability != nullptr && !selected.genericControls) {
         const auto& operation = *selected.capability;
-        if (!fixedExchange) {
-          gate = versionGate(operation);
-        }
+        gate = versionGate(operation);
         if (const auto* named = versionGate(operation.name());
             named != nullptr && named->translation == mapping) {
           gate = named;
@@ -2514,32 +2505,37 @@ public:
       throw std::runtime_error("Qiskit gate '" + std::string(gate->name) +
                                "' has incompatible arity");
     }
-    if (const auto alias = mlir::nativeRAlias(nativeName)) {
-      const auto angle = alias->angle;
-      if (mapping != StandardGateMapping{mlir::qc::StandardGate::R, 0} ||
-          parameters[0].getNumber() == nullptr ||
-          !(std::abs(parameters[0].getNumber()->value - angle) <=
-            mlir::mqt::PARAMETER_COMPARISON_TOLERANCE)) {
+    if (const auto alias = mlir::nativeGateAlias(nativeName)) {
+      if (alias->parameters.size() != parameters.size()) {
         throw std::runtime_error("Qiskit native gate '" + nativeName +
-                                 "' requires its fixed-angle R definition");
+                                 "' has incompatible arity");
       }
-      auto operation = nativeRGate(nativeName, pythonParameter(parameters[1]));
+      nb::list open;
+      for (const auto [fixed, parameter] :
+           llvm::zip_equal(alias->parameters, parameters)) {
+        if (!fixed) {
+          open.append(pythonParameter(parameter));
+        } else if (const auto* number = parameter.getNumber();
+                   number == nullptr ||
+                   !(std::abs(number->value - *fixed) <=
+                     mlir::mqt::PARAMETER_COMPARISON_TOLERANCE)) {
+          throw std::runtime_error("Qiskit native gate '" + nativeName +
+                                   "' requires its fixed parameters");
+        }
+      }
       if (alias->globalPhase != 0.) {
         pythonCircuit_.attr("global_phase") =
             pythonCircuit_.attr("global_phase")
                 .attr("__sub__")(alias->globalPhase);
       }
-      pythonCircuit_.attr("append")(operation, pythonQubits(qubits));
+      pythonCircuit_.attr("append")(
+          nativeGate(nativeName, standardGates(), open), pythonQubits(qubits));
       return;
     }
     if (extraControls != 0 ||
         (!nativeName.empty() && nativeName != gate->name)) {
-      if (!standardGates_.is_valid()) {
-        standardGates_ = nb::module_::import_("qiskit.circuit.library")
-                             .attr("get_standard_gate_name_mapping")();
-      }
       auto operation =
-          standardGates_[nb::str(gate->name.data(), gate->name.size())].attr(
+          standardGates()[nb::str(gate->name.data(), gate->name.size())].attr(
               "to_mutable")();
       nb::list values;
       for (const auto& parameter : parameters) {
@@ -2555,8 +2551,8 @@ public:
         auto definition = circuitModule.attr("QuantumCircuit")(qubits.size());
         definition.attr("append")(operation, definition.attr("qubits"),
                                   nb::arg("copy") = false);
-        auto alias = circuitModule.attr("Gate")(
-            nativeName, qubits.size(), fixedExchange ? nb::list() : values);
+        auto alias =
+            circuitModule.attr("Gate")(nativeName, qubits.size(), values);
         alias.attr("definition") = definition;
         operation = std::move(alias);
       }
@@ -3142,6 +3138,14 @@ private:
         "Qiskit circuit export encountered an unsupported control-flow kind");
   }
 
+  [[nodiscard]] nb::handle standardGates() {
+    if (!standardGates_.is_valid()) {
+      standardGates_ = nb::module_::import_("qiskit.circuit.library")
+                           .attr("get_standard_gate_name_mapping")();
+    }
+    return standardGates_;
+  }
+
   nb::object pythonCircuit_;
   nb::object qubits_;
   // Writer operations mutate this owned CircuitData; they must not replace it.
@@ -3271,8 +3275,9 @@ public:
               closedControlState(
                   nb::cast<uint64_t>(instruction.attr("num_ctrl_qubits")))) {
         reason = "open controls";
-      } else if (!nativeName ||
-                 (mlir::nativeRAlias(operationName) && !rAngle)) {
+      } else if (const auto alias = mlir::nativeGateAlias(operationName);
+                 !nativeName ||
+                 (alias && alias->canonicalName == "r" && !rAngle)) {
         reason = "custom or unsupported operation";
       } else if (operationName != *nativeName &&
                  (*nativeName == "measure" || *nativeName == "reset" ||

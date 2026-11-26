@@ -28,8 +28,13 @@ namespace nb = nanobind;
 /// Register private QDMI result conversion for Qiskit.
 void registerResultBindings(nb::module_& m);
 
-/// Construct a native R alias gate, or None for an unrecognized name.
-[[nodiscard]] nb::object nativeRGate(std::string_view name, nb::handle phase);
+/// Construct a native alias gate with its open parameters, or None for an
+/// unrecognized name or parameter count.
+///
+/// `standardGates` is Qiskit's standard-gate name mapping.
+[[nodiscard]] nb::object nativeGate(std::string_view name,
+                                    nb::handle standardGates,
+                                    const nb::list& parameters);
 
 /// Import a Qiskit QuantumCircuit into an independently owned QC program.
 ///

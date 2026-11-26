@@ -814,9 +814,11 @@ static Error normalizeNativeQISNames(llvm::Module& module) {
     }
     auto [gate, specialization] = name.split("__");
     llvm::StringRef canonical;
-    // Native GPI pulses keep the R(θ, φ) arguments of their compiled gate.
+    // Native aliases keep the arguments of their compiled standard gate.
     if (gate == "r" || gate == "gpi" || gate == "gpi2") {
       canonical = "prx";
+    } else if (gate == "sqrt_iswap") {
+      canonical = "xx_plus_yy";
     } else if (gate == "zz") {
       canonical = "rzz";
     } else if (gate == "u") {
