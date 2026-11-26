@@ -24,14 +24,8 @@
 namespace mlir::mqt {
 
 std::optional<double> addConstantAngles(double lhs, double rhs) {
-  const double sum = lhs + rhs;
-  if (!std::isfinite(sum)) {
-    return std::nullopt;
-  }
-  // TwoSum recovers the rounding error even when one operand is much smaller.
-  const double rhsRounded = sum - lhs;
-  const double error = (lhs - (sum - rhsRounded)) + (rhs - rhsRounded);
-  if (!std::isfinite(error) ||
+  const auto [sum, error] = twoSum(lhs, rhs);
+  if (!std::isfinite(sum) || !std::isfinite(error) ||
       std::abs(error) > PARAMETER_COMPARISON_TOLERANCE) {
     return std::nullopt;
   }
@@ -50,49 +44,39 @@ std::optional<double> scaleConstantAngle(double angle, double factor) {
 std::optional<PhaseGate> classifyPhaseGate(double angle) {
   const double normalized = normalizeAngle(angle);
   const double pi = std::numbers::pi;
-  const auto validatedGate = [&](PhaseGate gate, double real,
-                                 double imaginary) -> std::optional<PhaseGate> {
-    // Reduction by binary64 π can lose phase information for large angles.
-    if (std::abs(std::cos(angle) - real) <= PARAMETER_COMPARISON_TOLERANCE &&
-        std::abs(std::sin(angle) - imaginary) <=
-            PARAMETER_COMPARISON_TOLERANCE) {
-      return gate;
-    }
-    return std::nullopt;
+  const auto near = [&](double target) {
+    return std::abs(normalized - target) < PARAMETER_COMPARISON_TOLERANCE;
   };
-  if (std::abs(normalized) < PARAMETER_COMPARISON_TOLERANCE) {
-    return validatedGate(PhaseGate::Identity, 1.0, 0.0);
+  if (near(0.0)) {
+    return PhaseGate::Identity;
   }
-  if (std::abs(std::abs(normalized) - pi) < PARAMETER_COMPARISON_TOLERANCE) {
-    return validatedGate(PhaseGate::Z, -1.0, 0.0);
+  // normalizeAngle maps -π to π, but -π + ε stays near -π.
+  if (near(pi) || near(-pi)) {
+    return PhaseGate::Z;
   }
-  if (std::abs(normalized - pi / 2.0) < PARAMETER_COMPARISON_TOLERANCE) {
-    return validatedGate(PhaseGate::S, 0.0, 1.0);
+  if (near(pi / 2.0)) {
+    return PhaseGate::S;
   }
-  if (std::abs(normalized + pi / 2.0) < PARAMETER_COMPARISON_TOLERANCE) {
-    return validatedGate(PhaseGate::Sdg, 0.0, -1.0);
+  if (near(-pi / 2.0)) {
+    return PhaseGate::Sdg;
   }
-  if (std::abs(normalized - pi / 4.0) < PARAMETER_COMPARISON_TOLERANCE) {
-    const double component = std::sqrt(0.5);
-    return validatedGate(PhaseGate::T, component, component);
+  if (near(pi / 4.0)) {
+    return PhaseGate::T;
   }
-  if (std::abs(normalized + pi / 4.0) < PARAMETER_COMPARISON_TOLERANCE) {
-    const double component = std::sqrt(0.5);
-    return validatedGate(PhaseGate::Tdg, component, -component);
+  if (near(-pi / 4.0)) {
+    return PhaseGate::Tdg;
   }
   return std::nullopt;
 }
 
-double normalizeAngle(double theta) {
-  const double twoPi = 2.0 * std::numbers::pi;
-  theta = std::fmod(theta, twoPi);
-  if (theta > std::numbers::pi) {
-    theta -= twoPi;
+double reduceAngle(double angle, const double period) {
+  const double half = period / 2.0;
+  if (std::abs(angle) > half) {
+    // Scaling by a power of two is exact, and libm's tan reduces accurately.
+    const double scale = period / std::numbers::pi;
+    angle = scale * std::atan(std::tan(angle / scale));
   }
-  if (theta <= -std::numbers::pi) {
-    theta += twoPi;
-  }
-  return theta;
+  return angle == -half ? half : angle;
 }
 
 bool isValidGlobalPhaseAngle(const double theta) {

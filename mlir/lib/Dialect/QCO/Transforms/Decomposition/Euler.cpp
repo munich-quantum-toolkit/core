@@ -10,6 +10,7 @@
 
 #include "mqt/Dialect/QCO/Transforms/Decomposition/Euler.h"
 
+#include "mqt/Dialect/MQT/Utils/Angles.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
@@ -84,19 +85,9 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
   }
 
   constexpr double pi = std::numbers::pi;
-  constexpr double twoPi = 2.0 * std::numbers::pi;
-
-  double r = std::fmod(angle + pi, twoPi);
-  if (r < 0.0) {
-    r += twoPi;
-  }
-  double wrapped = r - pi;
-
-  if (wrapped >= pi - mqt::PARAMETER_COMPARISON_TOLERANCE) {
-    wrapped = -pi;
-  }
-
-  return wrapped;
+  // Mirroring normalizeAngle's (-π, π] yields [-π, π).
+  const double wrapped = -mqt::normalizeAngle(-angle);
+  return wrapped >= pi - mqt::PARAMETER_COMPARISON_TOLERANCE ? -pi : wrapped;
 }
 
 /// Conjugates a single-qubit matrix by Hadamard (`H * m * H`).
@@ -254,9 +245,7 @@ struct Unitary1QEulerPlan {
 } // namespace
 
 static double normalizeConstantRotationAngle(double angle) {
-  return std::abs(angle) <= 2. * std::numbers::pi
-             ? angle
-             : 4. * std::atan(std::tan(angle / 4.));
+  return mqt::reduceAngle(angle, 4. * std::numbers::pi);
 }
 
 RotationParameter normalizeRotationParameter(OpBuilder& builder, Location loc,

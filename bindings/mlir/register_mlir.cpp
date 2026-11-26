@@ -36,6 +36,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/bench/Generate.h"
@@ -797,7 +798,7 @@ qpyCircuit(mlir::QCProgram program,
           if constexpr (std::is_base_of_v<
                             mlir::Program,
                             std::remove_cvref_t<decltype(value)>>) {
-            if (value.module()->hasAttr("mqt.layout")) {
+            if (value.module()->hasAttr(mlir::mqt::kLayoutAttr)) {
               throw nb::builtin_exception(
                   nb::exception_type::runtime_error,
                   "Qiskit and QPY output require input without layout "
@@ -828,7 +829,7 @@ qpyCircuit(mlir::QCProgram program,
   if (qiskitOutput) {
     auto qc = std::move(std::get<mlir::QCProgram>(compiled));
     if (!includeOutputLayout) {
-      qc.module()->removeAttr("mqt.layout");
+      qc.module()->removeAttr(mlir::mqt::kLayoutAttr);
     }
     auto result = [&] {
       if (selected == OutputFormat::QPY) {

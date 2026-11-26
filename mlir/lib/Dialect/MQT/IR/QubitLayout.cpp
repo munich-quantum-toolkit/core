@@ -109,7 +109,7 @@ QubitLayout::fromAttr(Attribute attribute,
 
 FailureOr<QubitLayout> mlir::mqt::getCircuitLayout(ModuleOp moduleOp,
                                                    int64_t count) {
-  auto attribute = moduleOp->getAttr("mqt.layout");
+  auto attribute = moduleOp->getAttr(kLayoutAttr);
   if (!attribute) {
     QubitLayout identity{
         .initial = std::vector<int64_t>(count),

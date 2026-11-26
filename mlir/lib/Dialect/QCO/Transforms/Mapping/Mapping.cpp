@@ -197,7 +197,7 @@ public:
         routing[sites[wire]] = sites[destination];
       }
     }
-    module_->setAttr("mqt.layout", layout_->toAttr(module_.getContext()));
+    module_->setAttr(mqt::kLayoutAttr, layout_->toAttr(module_.getContext()));
     return success();
   }
 
@@ -1116,7 +1116,7 @@ protected:
                                         stats.nswaps}) == *expectedScore) &&
            "cold scoring and hot routing must agree");
 
-    if (auto attr = moduleOp->getAttrOfType<DictionaryAttr>("mqt.layout")) {
+    if (auto attr = moduleOp->getAttrOfType<DictionaryAttr>(mqt::kLayoutAttr)) {
       const auto permutation = sitePermutation(layout, state.layout);
       auto previous = attr.getAs<DenseI64ArrayAttr>("routing");
       if (previous && std::cmp_not_equal(previous.size(), permutation.size())) {
@@ -1131,7 +1131,7 @@ protected:
                         });
       NamedAttrList fields(attr);
       fields.set("routing", rewriter.getDenseI64ArrayAttr(routing));
-      moduleOp->setAttr("mqt.layout", fields.getDictionary(&getContext()));
+      moduleOp->setAttr(mqt::kLayoutAttr, fields.getDictionary(&getContext()));
     }
 
     // Collect statistics.
