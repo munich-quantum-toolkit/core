@@ -3492,8 +3492,7 @@ private:
       call.qubits.insert(call.qubits.begin(), controls.begin(), controls.end());
       if ((controls.size() == 1 || controls.size() == 2) &&
           call.modifiers.empty()) {
-        const auto alias =
-            (Twine(controls.size() == 1 ? "c" : "cc") + call.symbol).str();
+        const auto alias = qc::controlledGateName(call.symbol, controls.size());
         const auto* gate = openqasm::frontend::lookupGate(alias);
         const auto* baseGate = openqasm::frontend::lookupGate(call.symbol);
         if (gate && baseGate && gate->controlCount == controls.size() &&

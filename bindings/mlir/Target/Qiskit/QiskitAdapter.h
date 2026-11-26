@@ -3561,7 +3561,7 @@ private:
          name != "cz")) {
       return std::nullopt;
     }
-    return "c" + base.operationSymbol.str();
+    return mlir::qc::controlledGateName(base.operationSymbol, 1);
   }
 
   std::shared_ptr<OutputParameters> parameters_ =

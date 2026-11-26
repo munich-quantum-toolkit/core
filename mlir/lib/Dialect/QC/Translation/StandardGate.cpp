@@ -20,10 +20,13 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <array>
+#include <cassert>
 #include <cstddef>
+#include <string>
 
 namespace mlir::qc {
 namespace {
@@ -92,6 +95,13 @@ lookupStandardGateByOperationSymbol(const llvm::StringRef symbol) {
     }
   }
   return nullptr;
+}
+
+std::string controlledGateName(const llvm::StringRef base,
+                               const size_t numControls) {
+  assert((numControls == 1 || numControls == 2) &&
+         "named controls require one or two controls");
+  return (llvm::Twine(numControls == 1 ? "c" : "cc") + base).str();
 }
 
 LogicalResult emitStandardGate(OpBuilder& builder, const Location loc,
