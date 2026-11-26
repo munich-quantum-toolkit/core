@@ -51,8 +51,8 @@ if(TARGET LLVMSupport OR TARGET MLIRSupport)
     message(FATAL_ERROR "The embedding project must provide a compatible LLVM/MLIR SDK.")
   endif()
   find_package(MLIR ${LLVM_PACKAGE_VERSION} EXACT CONFIG REQUIRED)
-elseif("$ENV{CIBUILDWHEEL}" STREQUAL "1")
-  # Release wheels use the pinned SDK unless the caller supplies one explicitly.
+elseif(DEPLOY)
+  # Deployment builds use the pinned SDK unless the caller supplies one explicitly.
   set(MQT_CORE_MLIR_ASSERTIONS OFF)
   if(MLIR_DIR OR LLVM_DIR)
     find_package(
@@ -152,12 +152,12 @@ set(LLVM_ENABLE_ABI_BREAKING_CHECKS 0)
 include(HandleLLVMOptions)
 
 if(
-  "$ENV{CIBUILDWHEEL}" STREQUAL "1" AND
+  DEPLOY AND
   (NOT MLIR_VERSION STREQUAL MQT_CORE_MLIR_VERSION OR LLVM_ENABLE_ASSERTIONS
         OR LLVM_ENABLE_ABI_BREAKING_CHECKS OR NOT MLIR_INSTALL_PREFIX STREQUAL LLVM_INSTALL_PREFIX))
   message(
     FATAL_ERROR
-      "Release wheels require a matching LLVM/MLIR ${MQT_CORE_MLIR_VERSION} SDK with assertions and ABI-breaking checks disabled. Check MLIR_DIR and LLVM_DIR."
+      "Deployment builds require a matching LLVM/MLIR ${MQT_CORE_MLIR_VERSION} SDK with assertions and ABI-breaking checks disabled. Check MLIR_DIR and LLVM_DIR."
   )
 endif()
 
