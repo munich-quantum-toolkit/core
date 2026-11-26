@@ -260,6 +260,8 @@ def test_empty_qasm_program_retains_zero_qubit_state(ddsim_device: Device) -> No
     sample_job.wait()
     assert sample_job.get_shots() == [""] * 4
     assert sample_job.get_counts() == {}
+    # QDMI_JOB_RESULT_HIST_KEYS reports an empty result for zero-width outcomes.
+    assert sample_job.get_results(1) == b""
     assert sample_job.get_dense_statevector() == [1 + 0j]
     assert sample_job.get_sparse_statevector() == {"": 1 + 0j}
 
@@ -282,6 +284,8 @@ def test_simulator_job_result_bindings(ddsim_device: Device) -> None:
     assert state_vector.shape == (4,)
     assert state_vector.flags.c_contiguous
     assert state_vector == pytest.approx([inv_sqrt2, 0, 0, inv_sqrt2])
+    # QDMI_JOB_RESULT_STATEVECTOR_DENSE as raw bytes.
+    assert np.array_equal(np.frombuffer(job.get_results(3), np.complex128), state_vector)
 
     probabilities = job.get_dense_probabilities()
     assert probabilities.dtype == np.float64

@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <array>
+#include <complex>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -29,6 +30,7 @@
 #include <numbers>
 #include <optional>
 #include <ranges>
+#include <span>
 #include <stdexcept>
 #include <stdlib.h> // NOLINT(modernize-deprecated-headers)
 #include <string>
@@ -348,11 +350,10 @@ TEST(CustomPropertyTest, PropagatesQueryErrors) {
 
   const auto failingValueQuery = [](const size_t, void* value,
                                     size_t* sizeRet) {
-    if (sizeRet != nullptr) {
+    if (value == nullptr) {
       *sizeRet = sizeof(int);
       return QDMI_SUCCESS;
     }
-    EXPECT_NE(value, nullptr);
     return QDMI_ERROR_INVALIDARGUMENT;
   };
   EXPECT_EQ(errorStatus([&] {
@@ -370,18 +371,19 @@ TEST(CustomPropertyTest, SupportsEmptyRawValues) {
 }
 
 TEST(CustomPropertyTest, RejectsIncompatibleRepresentations) {
+  // A device that omits a string terminator breaks the QDMI contract.
   const std::vector<std::byte> empty;
   EXPECT_EQ(errorStatus([&] {
               return detail::queryCustomValue<std::string>(queryBytes(empty),
                                                            "test property");
             }),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_FATAL);
   const std::vector<std::byte> malformedString{std::byte{'n'}, std::byte{'o'}};
-  EXPECT_EQ(errorStatus([&] {
+  EXPECT_EQ(errorMessage([&] {
               return detail::queryCustomValue<std::string>(
                   queryBytes(malformedString), "test property");
             }),
-            QDMI_ERROR_INVALIDARGUMENT);
+            "Querying test property: missing string terminator");
   EXPECT_EQ(errorStatus([&] {
               return detail::queryCustomValue<double>(queryBytes(bytesOf(true)),
                                                       "test property");
@@ -409,22 +411,51 @@ TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
 }
 
 TEST(JobShotsTest, PreservesZeroWidthShots) {
-  const auto noShots = value(detail::PackedShots::parse(bytesOf(""), 0));
-  const auto oneShot = value(detail::PackedShots::parse(bytesOf(""), 1));
-  const auto fourShots = value(detail::PackedShots::parse(bytesOf(",,,"), 4));
+  const auto noShots =
+      value(detail::PackedShots::parse(llvm::to_vector<0>(bytesOf("")), 0));
+  const auto oneShot =
+      value(detail::PackedShots::parse(llvm::to_vector<0>(bytesOf("")), 1));
+  const auto fourShots =
+      value(detail::PackedShots::parse(llvm::to_vector<0>(bytesOf(",,,")), 4));
   EXPECT_TRUE(noShots.rows().empty());
   EXPECT_THAT(llvm::to_vector(oneShot.rows()), testing::ElementsAre(""));
   EXPECT_THAT(llvm::to_vector(fourShots.rows()),
               testing::ElementsAre("", "", "", ""));
 }
 
+TEST(JobShotsTest, AcceptsFinalComma) {
+  const auto shots =
+      value(detail::PackedShots::parse(llvm::to_vector<0>(bytesOf("0,1,")), 2));
+  EXPECT_THAT(llvm::to_vector(shots.rows()), testing::ElementsAre("0", "1"));
+  const auto empty =
+      value(detail::PackedShots::parse(llvm::to_vector<0>(bytesOf(",,")), 2));
+  EXPECT_THAT(llvm::to_vector(empty.rows()), testing::ElementsAre("", ""));
+}
+
+TEST(ResultListTest, CountSeparatesEmptyEntriesFromFinalComma) {
+  EXPECT_EQ(detail::trimList("", 0), llvm::StringRef(""));
+  EXPECT_EQ(detail::trimList("", 1), llvm::StringRef(""));
+  EXPECT_EQ(detail::trimList(",", 1), llvm::StringRef(""));
+  EXPECT_EQ(detail::trimList(",", 2), llvm::StringRef(","));
+  EXPECT_EQ(detail::trimList("a,b,", 2), llvm::StringRef("a,b"));
+  EXPECT_EQ(detail::trimList("a,b,", 3), llvm::StringRef("a,b,"));
+  EXPECT_EQ(detail::trimList(",", 0), std::nullopt);
+  EXPECT_EQ(detail::trimList("a,b", 1), std::nullopt);
+  EXPECT_EQ(detail::trimList("a,b,", 1), std::nullopt);
+  EXPECT_EQ(detail::trimList("a", 2), std::nullopt);
+}
+
 TEST(JobShotsTest, ValidatesShotCount) {
-  EXPECT_EQ(
-      errorStatus([] { return detail::PackedShots::parse(bytesOf("0,1"), 1); }),
-      QDMI_ERROR_FATAL);
-  EXPECT_EQ(
-      errorStatus([] { return detail::PackedShots::parse(bytesOf("0"), 2); }),
-      QDMI_ERROR_FATAL);
+  EXPECT_EQ(errorStatus([] {
+              return detail::PackedShots::parse(
+                  llvm::to_vector<0>(bytesOf("0,1")), 1);
+            }),
+            QDMI_ERROR_FATAL);
+  EXPECT_EQ(errorStatus([] {
+              return detail::PackedShots::parse(
+                  llvm::to_vector<0>(bytesOf("0")), 2);
+            }),
+            QDMI_ERROR_FATAL);
 }
 
 TEST(QDMITest, StatusToString) {
@@ -909,6 +940,30 @@ TEST_F(SimulatorJobTest, getDenseStateVectorReturnsValidState) {
   EXPECT_NEAR(std::abs(stateVector[1]), 0.0, 1e-10);      // |01⟩
   EXPECT_NEAR(std::abs(stateVector[2]), 0.0, 1e-10);
   EXPECT_NEAR(std::abs(stateVector[3]), invSqrt2, 1e-10); // |11⟩
+}
+
+TEST_F(SimulatorJobTest, ReadsResultsAndProgramsIntoCallerBuffers) {
+  EXPECT_TRUE(value(job.wait()));
+  constexpr auto result = QDMI_JOB_RESULT_STATEVECTOR_DENSE;
+  ASSERT_EQ(value(job.getResultSize(result)), 4 * sizeof(std::complex<double>));
+  std::vector<std::complex<double>> state(4);
+  value(job.readResult(result, std::as_writable_bytes(std::span(state))));
+  EXPECT_EQ(state, value(job.getDenseStateVector()));
+  // The buffer must hold exactly the result.
+  EXPECT_EQ(errorStatus([&] {
+              return job.readResult(
+                  result, std::as_writable_bytes(std::span(state).first(3)));
+            }),
+            QDMI_ERROR_INVALIDARGUMENT);
+  std::vector<std::byte> larger(value(job.getResultSize(result)) + 1);
+  EXPECT_EQ(errorStatus([&] { return job.readResult(result, larger); }),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(errorStatus([&] { return job.readResult(result, {}); }),
+            QDMI_ERROR_INVALIDARGUMENT);
+
+  std::vector<std::byte> program(value(job.getProgramSize()));
+  value(job.readProgram(program));
+  EXPECT_EQ(program, value(job.getProgramBytes()));
 }
 
 TEST_F(SimulatorJobTest, getDenseProbabilitiesReturnsValidProbabilities) {

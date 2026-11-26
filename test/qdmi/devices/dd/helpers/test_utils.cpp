@@ -172,100 +172,54 @@ std::vector<std::string> splitCSV(const std::string& csv) {
   return out;
 }
 
+namespace {
+template <typename T>
+std::vector<T> getResult(MQT_DDSIM_QDMI_Device_Job job,
+                         const QDMI_Job_Result result) {
+  std::vector<T> values(querySize(job, result) / sizeof(T));
+  if (!values.empty()) {
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job, 0U, result,
+                                                    values.size() * sizeof(T),
+                                                    values.data(), nullptr),
+              QDMI_SUCCESS);
+  }
+  return values;
+}
+
+std::vector<std::string> getKeys(MQT_DDSIM_QDMI_Device_Job job,
+                                 const QDMI_Job_Result result) {
+  const auto keys = getResult<char>(job, result);
+  return splitCSV(keys.empty() ? std::string{}
+                               : std::string(keys.data(), keys.size() - 1));
+}
+} // namespace
+
 std::pair<std::vector<std::string>, std::vector<size_t>>
 getHistogram(MQT_DDSIM_QDMI_Device_Job job) {
-  const size_t ks = querySize(job, QDMI_JOB_RESULT_HIST_KEYS);
-  std::string keys(ks > 0 ? ks - 1 : 0, '\0');
-  if (ks > 0) {
-    const auto rc = MQT_DDSIM_QDMI_device_job_get_results(
-        job, 0U, QDMI_JOB_RESULT_HIST_KEYS, ks, keys.data(), nullptr);
-    EXPECT_EQ(rc, QDMI_SUCCESS);
-  }
-  auto keyVec = splitCSV(keys);
-  const size_t vs = querySize(job, QDMI_JOB_RESULT_HIST_VALUES);
-  std::vector<size_t> vals(vs / sizeof(size_t));
-  if (vs > 0) {
-    const auto rc = MQT_DDSIM_QDMI_device_job_get_results(
-        job, 0U, QDMI_JOB_RESULT_HIST_VALUES, vs, vals.data(), nullptr);
-    EXPECT_EQ(rc, QDMI_SUCCESS);
-  }
-  return {std::move(keyVec), std::move(vals)};
+  return {getKeys(job, QDMI_JOB_RESULT_HIST_KEYS),
+          getResult<size_t>(job, QDMI_JOB_RESULT_HIST_VALUES)};
 }
 
 std::vector<std::complex<double>> getDenseState(MQT_DDSIM_QDMI_Device_Job job) {
-  const size_t sz = querySize(job, QDMI_JOB_RESULT_STATEVECTOR_DENSE);
-  std::vector<double> buf(sz / sizeof(double));
-  if (sz > 0) {
-    const auto rc = MQT_DDSIM_QDMI_device_job_get_results(
-        job, 0U, QDMI_JOB_RESULT_STATEVECTOR_DENSE, sz, buf.data(), nullptr);
-    EXPECT_EQ(rc, QDMI_SUCCESS);
-  }
-  std::vector<std::complex<double>> out;
-  out.reserve(buf.size() / 2);
-  for (size_t i = 0; i + 1 < buf.size(); i += 2) {
-    out.emplace_back(buf[i], buf[i + 1]);
-  }
-  return out;
+  return getResult<std::complex<double>>(job,
+                                         QDMI_JOB_RESULT_STATEVECTOR_DENSE);
 }
 
 std::pair<std::vector<std::string>, std::vector<std::complex<double>>>
 getSparseState(MQT_DDSIM_QDMI_Device_Job job) {
-  const size_t ks = querySize(job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS);
-  std::string keys(ks > 0 ? ks - 1 : 0, '\0');
-  if (ks > 0) {
-    const auto rc = MQT_DDSIM_QDMI_device_job_get_results(
-        job, 0U, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, ks, keys.data(),
-        nullptr);
-    EXPECT_EQ(rc, QDMI_SUCCESS);
-  }
-  auto keyVec = splitCSV(keys);
-  const size_t vs = querySize(job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES);
-  std::vector<double> vals(vs / sizeof(double));
-  if (vs > 0) {
-    const auto rc = MQT_DDSIM_QDMI_device_job_get_results(
-        job, 0U, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, vs, vals.data(),
-        nullptr);
-    EXPECT_EQ(rc, QDMI_SUCCESS);
-  }
-  std::vector<std::complex<double>> out;
-  out.reserve(vals.size() / 2);
-  for (size_t i = 0; i + 1 < vals.size(); i += 2) {
-    out.emplace_back(vals[i], vals[i + 1]);
-  }
-  return {std::move(keyVec), std::move(out)};
+  return {getKeys(job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS),
+          getResult<std::complex<double>>(
+              job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES)};
 }
 
 std::vector<double> getDenseProbabilities(MQT_DDSIM_QDMI_Device_Job job) {
-  const size_t sz = querySize(job, QDMI_JOB_RESULT_PROBABILITIES_DENSE);
-  std::vector<double> out(sz / sizeof(double));
-  if (sz > 0) {
-    const auto rc = MQT_DDSIM_QDMI_device_job_get_results(
-        job, 0U, QDMI_JOB_RESULT_PROBABILITIES_DENSE, sz, out.data(), nullptr);
-    EXPECT_EQ(rc, QDMI_SUCCESS);
-  }
-  return out;
+  return getResult<double>(job, QDMI_JOB_RESULT_PROBABILITIES_DENSE);
 }
 
 std::pair<std::vector<std::string>, std::vector<double>>
 getSparseProbabilities(MQT_DDSIM_QDMI_Device_Job job) {
-  const size_t ks = querySize(job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS);
-  std::string keys(ks > 0 ? ks - 1 : 0, '\0');
-  if (ks > 0) {
-    const auto rc = MQT_DDSIM_QDMI_device_job_get_results(
-        job, 0U, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS, ks, keys.data(),
-        nullptr);
-    EXPECT_EQ(rc, QDMI_SUCCESS);
-  }
-  auto keyVec = splitCSV(keys);
-  const size_t vs = querySize(job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES);
-  std::vector<double> vals(vs / sizeof(double));
-  if (vs > 0) {
-    const auto rc = MQT_DDSIM_QDMI_device_job_get_results(
-        job, 0U, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, vs, vals.data(),
-        nullptr);
-    EXPECT_EQ(rc, QDMI_SUCCESS);
-  }
-  return {std::move(keyVec), std::move(vals)};
+  return {getKeys(job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS),
+          getResult<double>(job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES)};
 }
 
 } // namespace qdmi_test

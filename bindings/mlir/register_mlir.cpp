@@ -1236,11 +1236,8 @@ executeQIRInput(nb::handle program, size_t shots, uint64_t seed) {
 }
 
 [[nodiscard]] static DenseVector qirState(const qdmi::Job& job) {
-  auto values = [&] {
-    const nb::gil_scoped_release release;
-    return unwrap(job.getDenseStateVector());
-  }();
-  return bindings::ownedArray(std::move(values));
+  return bindings::readResultArray<std::complex<dd::fp>>(
+      job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0);
 }
 
 [[nodiscard]] static DenseVector simulateDense(PythonInputTypes& types,
