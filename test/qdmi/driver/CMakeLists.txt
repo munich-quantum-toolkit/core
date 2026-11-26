@@ -39,7 +39,7 @@ if(TARGET MQT::CoreQDMIDriver)
     APPEND
     PROPERTY EXPORT_PROPERTIES QDMI_DEVICE_ID QDMI_DEVICE_PREFIX QDMI_RUNTIME_FILES)
   add_library(mqt-core-qdmi-session-device SHARED session_device.cpp)
-  target_link_libraries(mqt-core-qdmi-session-device PRIVATE qdmi::qdmi)
+  target_link_libraries(mqt-core-qdmi-session-device PRIVATE qdmi::qdmi MQT::ProjectWarnings)
   set_target_properties(
     mqt-core-qdmi-session-device
     PROPERTIES
