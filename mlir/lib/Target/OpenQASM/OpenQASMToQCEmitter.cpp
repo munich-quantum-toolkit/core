@@ -1473,9 +1473,7 @@ private:
       return {};
     }
     const auto lhsType = program.expressions.at(condition.comparisonLhs).type;
-    [[maybe_unused]] const auto rhsType =
-        program.expressions.at(condition.comparisonRhs).type;
-    assert(lhsType == rhsType &&
+    assert(lhsType == program.expressions.at(condition.comparisonRhs).type &&
            "semantic analysis must normalize comparison operands");
     if (lhsType == frontend::ScalarType::Float ||
         lhsType == frontend::ScalarType::Angle) {
