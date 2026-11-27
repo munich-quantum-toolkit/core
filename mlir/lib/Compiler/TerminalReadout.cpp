@@ -67,6 +67,7 @@ analyzeTerminalReadout(ModuleOp moduleOp) {
   DenseMap<Value, Register> registers;
   std::map<size_t, Value> measuredSites;
   SmallVector<Operation*> oldReadout;
+  SymbolTableCollection symbols;
   for (auto& operation : block.without_terminator()) {
     if (isa<arith::ConstantOp, qc::StaticOp>(operation)) {
       continue;
@@ -108,7 +109,7 @@ analyzeTerminalReadout(ModuleOp moduleOp) {
       oldReadout.push_back(&operation);
     } else {
       if (auto call = dyn_cast<func::CallOp>(operation)) {
-        auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+        auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
             call, call.getCalleeAttr());
         // Defined functions can hide sites or classical references. Native
         // declarations act only on their explicit qubit operands.
@@ -176,6 +177,7 @@ normalizeTerminalReadout(ModuleOp moduleOp) {
   if (!entry) {
     return std::nullopt;
   }
+  SymbolTableCollection symbols;
   const auto nativeReuse = entry.walk([&](Operation* operation) {
     if (auto measurement = dyn_cast<qc::MeasureOp>(operation)) {
       measuredQubits.insert(measurement.getQubit());
@@ -183,7 +185,7 @@ normalizeTerminalReadout(ModuleOp moduleOp) {
         measuredIndices.insert(site.getIndex());
       }
     } else if (auto call = dyn_cast<func::CallOp>(operation)) {
-      auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+      auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
           call, call.getCalleeAttr());
       if (callee && callee.isExternal()) {
         nativeAfterMeasurement |= !measuredQubits.empty();

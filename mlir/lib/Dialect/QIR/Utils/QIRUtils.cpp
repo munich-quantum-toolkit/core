@@ -15,6 +15,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -44,14 +45,24 @@
 namespace mlir::qir {
 
 void removeUnusedDeclarations(ModuleOp moduleOp, StringRef prefix) {
-  const auto uses = SymbolTable::getSymbolUses(&moduleOp.getBodyRegion());
-  if (!uses) {
-    return;
-  }
   DenseSet<StringAttr> referencedSymbols;
-  for (const auto& use : *uses) {
-    referencedSymbols.insert(use.getSymbolRef().getRootReference());
-  }
+  const auto record = [&](Attribute attribute) {
+    attribute.walk([&](SymbolRefAttr reference) {
+      referencedSymbols.insert(reference.getRootReference());
+    });
+  };
+  moduleOp.getBodyRegion().walk([&](Operation* operation) {
+    // Materializing call properties dominates the walk. The callee is the
+    // only symbol a call's properties reference.
+    if (auto call = dyn_cast<LLVM::CallOp>(operation)) {
+      if (auto callee = call.getCalleeAttr()) {
+        referencedSymbols.insert(callee.getAttr());
+      }
+      record(operation->getDiscardableAttrDictionary());
+      return;
+    }
+    record(operation->getAttrDictionary());
+  });
   for (auto function :
        llvm::make_early_inc_range(moduleOp.getOps<LLVM::LLVMFuncOp>())) {
     if (function.isExternal() && function.getName().starts_with(prefix) &&
@@ -267,12 +278,17 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
   }
 
   auto function = cast<LLVM::LLVMFuncOp>(fnDecl);
+  // Rebuilding argument attributes on every call dominates measurement-heavy
+  // lowering, so set them only when they are missing.
+  const auto ensureArgAttr = [&](unsigned index, StringRef name) {
+    if (!function.getArgAttr(index, name)) {
+      function.setArgAttr(index, name, builder.getUnitAttr());
+    }
+  };
   if (fnName == QIR_MEASURE) {
-    function.setArgAttr(1, LLVM::LLVMDialect::getWriteOnlyAttrName(),
-                        builder.getUnitAttr());
+    ensureArgAttr(1, LLVM::LLVMDialect::getWriteOnlyAttrName());
   } else if (fnName == QIR_READ_RESULT) {
-    function.setArgAttr(0, LLVM::LLVMDialect::getReadonlyAttrName(),
-                        builder.getUnitAttr());
+    ensureArgAttr(0, LLVM::LLVMDialect::getReadonlyAttrName());
   }
   if (fnName != QIR_MEASURE && fnName != QIR_RESET) {
     return function;

@@ -53,6 +53,7 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/Dialect/Tensor/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -746,14 +747,28 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
 static LogicalResult
 nameOpaqueQIRGates(ModuleOp moduleOp,
                    const std::optional<CompilerTarget>& target) {
-  DenseSet<Operation*> named;
-  for (auto function :
-       llvm::make_early_inc_range(moduleOp.getOps<func::FuncOp>())) {
-    if (!function.isExternal() ||
-        !llvm::any_of(function.getArgumentTypes(),
-                      [](Type type) { return isa<qc::QubitType>(type); })) {
-      continue;
+  auto* ctx = moduleOp.getContext();
+  SmallVector<func::FuncOp> opaque;
+  for (auto function : moduleOp.getOps<func::FuncOp>()) {
+    if (function.isExternal() &&
+        llvm::any_of(function.getArgumentTypes(),
+                     [](Type type) { return isa<qc::QubitType>(type); })) {
+      opaque.push_back(function);
     }
+  }
+  if (opaque.empty()) {
+    return success();
+  }
+  // One walk serves the native-name checks of every opaque function.
+  DenseMap<StringAttr, SmallVector<func::CallOp>> calls;
+  if (target) {
+    moduleOp.walk([&](func::CallOp call) {
+      calls[call.getCalleeAttr().getAttr()].push_back(call);
+    });
+  }
+  DenseSet<Operation*> named;
+  DenseMap<StringAttr, StringAttr> renames;
+  for (auto function : opaque) {
     auto source = function->getAttrOfType<StringAttr>(
         mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
     StringRef name = source ? source.getValue() : function.getSymName();
@@ -785,40 +800,27 @@ nameOpaqueQIRGates(ModuleOp moduleOp,
       return function.emitError("unsupported opaque QIR gate signature: ")
              << name;
     }
-    if (target) {
-      const auto result = moduleOp.walk([&](func::CallOp call) {
-        if (call.getCallee() != function.getSymName()) {
-          return WalkResult::advance();
+    for (auto call : calls.lookup(function.getSymNameAttr())) {
+      SmallVector<CompilerTarget::SiteId> sites;
+      SmallVector<std::optional<double>> values;
+      for (auto operand : call.getOperands()) {
+        if (operand.getType().isF64()) {
+          values.push_back(mqt::valueToDouble(operand));
+        } else if (auto site = operand.getDefiningOp<qc::StaticOp>()) {
+          sites.push_back(static_cast<CompilerTarget::SiteId>(site.getIndex()));
+        } else {
+          return call.emitError("native QIR gates require static target sites");
         }
-        SmallVector<CompilerTarget::SiteId> sites;
-        SmallVector<std::optional<double>> values;
-        for (auto operand : call.getOperands()) {
-          if (operand.getType().isF64()) {
-            values.push_back(mqt::valueToDouble(operand));
-          } else if (auto site = operand.getDefiningOp<qc::StaticOp>()) {
-            sites.push_back(
-                static_cast<CompilerTarget::SiteId>(site.getIndex()));
-          } else {
-            call.emitError("native QIR gates require static target sites");
-            return WalkResult::interrupt();
-          }
-        }
-        const auto* capability =
-            target->findOperation(name, sites.size(), values, sites).capability;
-        if (!capability) {
-          call.emitError("external gate is not native for the target");
-          return WalkResult::interrupt();
-        }
-        call->setAttr(qir::QIR_NATIVE_NAME_ATTR,
-                      StringAttr::get(moduleOp.getContext(),
-                                      (Twine("__quantum__qis__") +
-                                       capability->name() + "__body")
-                                          .str()));
-        return WalkResult::advance();
-      });
-      if (result.wasInterrupted()) {
-        return failure();
       }
+      const auto* capability =
+          target->findOperation(name, sites.size(), values, sites).capability;
+      if (capability == nullptr) {
+        return call.emitError("external gate is not native for the target");
+      }
+      call->setAttr(qir::QIR_NATIVE_NAME_ATTR,
+                    StringAttr::get(ctx, (Twine("__quantum__qis__") +
+                                          capability->name() + "__body")
+                                             .str()));
     }
     auto* existing = moduleOp.lookupSymbol(symbol);
     if (existing != nullptr && existing != function) {
@@ -830,28 +832,46 @@ nameOpaqueQIRGates(ModuleOp moduleOp,
                << symbol;
       }
     }
-    if (failed(SymbolTable::replaceAllSymbolUses(
-            function, StringAttr::get(moduleOp.getContext(), symbol),
-            moduleOp))) {
-      return function.emitError("could not resolve opaque QIR gate uses");
-    }
+    const auto symbolAttr = StringAttr::get(ctx, symbol);
+    renames[function.getSymNameAttr()] = symbolAttr;
     if (existing != nullptr && existing != function) {
       function.erase();
       continue;
     }
-    function.setSymName(symbol);
+    function.setSymName(symbolAttr);
     for (size_t index = parameters; index < types.size(); ++index) {
-      function.setArgAttr(index, qir::QIR_QUBIT_ARG_ATTR,
-                          UnitAttr::get(moduleOp.getContext()));
+      function.setArgAttr(index, qir::QIR_QUBIT_ARG_ATTR, UnitAttr::get(ctx));
     }
     named.insert(function);
   }
+  // Rename all uses in one walk instead of one module walk per function.
+  AttrTypeReplacer replacer;
+  replacer.addReplacement(
+      [&](FlatSymbolRefAttr reference) -> std::optional<Attribute> {
+        if (auto renamed = renames.lookup(reference.getAttr())) {
+          return FlatSymbolRefAttr::get(renamed);
+        }
+        return std::nullopt;
+      });
+  replacer.recursivelyReplaceElementsIn(moduleOp, /*replaceAttrs=*/true,
+                                        /*replaceLocs=*/false,
+                                        /*replaceTypes=*/false);
   return success();
 }
 
+SmallVector<cbit::StoreOp> getFusedStores(qc::MeasureOp measure) {
+  SmallVector<cbit::StoreOp> stores;
+  for (auto* user : measure->getUsers()) {
+    if (auto store = dyn_cast<cbit::StoreOp>(user);
+        store && store->hasAttr(QIR_FUSED_STORE_ATTR)) {
+      stores.push_back(store);
+    }
+  }
+  return stores;
+}
+
 LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
-                                      bool allowComputedOutputs,
-                                      bool deferMeasurementStores) {
+                                      bool allowComputedOutputs) {
   auto funcOp = mqt::getEntryPoint(cast<ModuleOp>(moduleOp));
   bool hasInvalidMemory = false;
   moduleOp->walk([&](Operation* operation) {
@@ -990,6 +1010,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     return true;
   };
 
+  // Destination register and index of each fused measurement.
+  DenseMap<Operation*, std::pair<size_t, Value>> destinations;
   DenseMap<Block*, DenseSet<Operation*>> fusionCandidates;
   funcOp.walk([&](cbit::StoreOp storeOp) {
     auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
@@ -1042,8 +1064,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     }
     const auto destination =
         std::pair<size_t, Value>{registerIndex, storeOp.getIndex()};
-    const auto [it, inserted] = state.cregMeasurements.try_emplace(
-        measureOp.getOperation(), destination);
+    const auto [it, inserted] =
+        destinations.try_emplace(measureOp.getOperation(), destination);
     if (!inserted && it->second != destination) {
       if (useBooleanStorage(registerIndex)) {
         return;
@@ -1059,8 +1081,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
   }
   DenseSet<size_t> sharedRegisters;
   for (auto* measurement : llvm::make_first_range(state.measuredResults)) {
-    if (auto it = state.cregMeasurements.find(measurement);
-        it != state.cregMeasurements.end()) {
+    if (auto it = destinations.find(measurement); it != destinations.end()) {
       sharedRegisters.insert(it->second.first);
     }
   }
@@ -1084,8 +1105,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
       }
     }
     for (auto* measurement : llvm::make_first_range(state.measuredResults)) {
-      auto it = state.cregMeasurements.find(measurement);
-      if (it == state.cregMeasurements.end()) {
+      auto it = destinations.find(measurement);
+      if (it == destinations.end()) {
         continue;
       }
       const auto& destination = it->second;
@@ -1111,9 +1132,6 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     return state.cregs[state.cregIndices.at(store.getReg().getDefiningOp())]
         .booleanStorage;
   });
-  state.cregMeasurements.remove_if([&](const auto& measurement) {
-    return state.cregs[measurement.second.first].booleanStorage;
-  });
 
   OpBuilder builder(returnOp);
   auto zero = arith::ConstantIntOp::create(builder, returnOp.getLoc(), 0, 64);
@@ -1129,22 +1147,9 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
         measureOp->isBeforeInBlock(allocOp)) {
       rewriter.moveOpBefore(allocOp, measureOp);
     }
-    if (deferMeasurementStores) {
-      state.deferredMeasurementStores[storeOp] = measureOp;
-    } else {
-      storeOp.erase();
-    }
+    storeOp->setAttr(QIR_FUSED_STORE_ATTR, rewriter.getUnitAttr());
   }
   return success();
-}
-
-void finalizeClassicalResults(LoweringState& state) {
-  for (auto [store, measurement] : state.deferredMeasurementStores) {
-    auto storeOp = cast<cbit::StoreOp>(store);
-    state.cregMeasurements.at(measurement).second = storeOp.getIndex();
-    storeOp.erase();
-  }
-  state.deferredMeasurementStores.clear();
 }
 
 } // namespace mlir

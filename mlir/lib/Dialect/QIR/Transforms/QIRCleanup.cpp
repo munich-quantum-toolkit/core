@@ -11,7 +11,12 @@
 #include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Transforms/RegionUtils.h"
+
+#include <tuple>
 
 namespace mlir::qir {
 
@@ -22,7 +27,16 @@ namespace {
 
 struct QIRCleanupPass final : impl::QIRCleanupPassBase<QIRCleanupPass> {
 protected:
-  void runOnOperation() override { removeUnusedDeclarations(getOperation()); }
+  void runOnOperation() override {
+    auto moduleOp = getOperation();
+    // The cleanup canonicalizer skips region simplification, whose dead-value
+    // analysis dominates large programs; erasing unreachable blocks suffices.
+    IRRewriter rewriter(moduleOp.getContext());
+    for (auto function : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
+      std::ignore = eraseUnreachableBlocks(rewriter, function.getBody());
+    }
+    removeUnusedDeclarations(moduleOp);
+  }
 };
 
 } // namespace

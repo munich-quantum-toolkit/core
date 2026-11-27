@@ -464,11 +464,12 @@ TEST_F(QCToQIRAdaptiveNativeTest,
   LoweringState state;
   ASSERT_TRUE(succeeded(prepareClassicalResults(*moduleOp, state, true)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  EXPECT_EQ(state.cregMeasurements.at(measure),
-            (std::pair<size_t, Value>{0, index}));
+  const auto fused = getFusedStores(measure);
+  ASSERT_EQ(fused.size(), 1U);
+  EXPECT_EQ(fused.front(), store);
+  EXPECT_EQ(store.getIndex(), index);
   EXPECT_EQ(measure->getParentOp(), loop.getOperation());
   EXPECT_TRUE(DominanceInfo(*moduleOp).dominates(index, measure));
-  EXPECT_TRUE(loop.getBody()->getOps<cbit::StoreOp>().empty());
 
   ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*converted)));
   EXPECT_TRUE(succeeded(verify(*converted)));
@@ -539,7 +540,7 @@ TEST_F(QCToQIRAdaptiveNativeTest,
     LoweringState state;
     ASSERT_TRUE(succeeded(prepareClassicalResults(*moduleOp, state, true)));
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
-    EXPECT_TRUE(state.cregMeasurements.empty());
+    EXPECT_TRUE(getFusedStores(measurement).empty());
     EXPECT_EQ(store.getIndex(), index);
     EXPECT_TRUE(measurement->isBeforeInBlock(index.getDefiningOp()));
   }

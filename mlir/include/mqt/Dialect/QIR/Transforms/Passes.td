@@ -48,7 +48,8 @@ def QIRSetAttributesAndMetadata
 
 def QIRCleanupPass : Pass<"qir-cleanup", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];
-  let summary = "Remove unused external LLVM function declarations.";
+  let summary =
+      "Remove unreachable blocks and unused external function declarations.";
 }
 
 #endif // MLIR_DIALECT_QIR_TRANSFORMS_PASSES_TD
