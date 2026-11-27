@@ -9,9 +9,11 @@
 # set required cmake version
 cmake_minimum_required(VERSION 3.29...4.5)
 
+include(cmake/GetVersion.cmake)
 project(
   mqt-core
   LANGUAGES C CXX
+  VERSION ${MQT_CORE_VERSION}
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
 if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
@@ -70,16 +72,6 @@ if(APPLE
    AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17.0.0")
   message(FATAL_ERROR "MQT Core requires AppleClang 17 or newer to build MLIR")
 endif()
-
-# try to determine the project version
-include(GetVersion)
-get_mqt_core_version()
-
-project(
-  mqt-core
-  LANGUAGES C CXX
-  VERSION ${MQT_CORE_VERSION}
-  DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 

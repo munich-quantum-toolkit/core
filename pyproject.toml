@@ -11,12 +11,12 @@ build-backend = "scikit_build_core.build"
 requires = [
   "nanobind~=3.1.0",
   "scikit-build-core>=1.1",
-  "vcs-versioning>=2.3",
 ]
 
 
 [project]
 name = "mqt-core"
+version = "4.2.2.dev0"
 description = "The Backbone of the Munich Quantum Toolkit"
 readme = "README.md"
 keywords = [
@@ -57,7 +57,7 @@ classifiers = [
   "Topic :: Software Development :: Compilers",
   "Typing :: Typed",
 ]
-dynamic = [ "import-names", "import-namespaces", "version" ]
+dynamic = [ "import-names", "import-namespaces" ]
 dependencies = [
   "nanobind-backend>=1",
 ]
@@ -155,7 +155,6 @@ build = [
   "cmake>=4.4.1",
   "nanobind~=3.1.0",
   "scikit-build-core>=1.1",
-  "vcs-versioning>=2.3",
 ]
 catalyst = [ "mqt-core[catalyst]" ]
 cpp-lint = [
@@ -206,7 +205,6 @@ version = ">=1.10"
 
 [tool.scikit-build.sdist]
 
-include = [ "python/mqt/core/_version.py" ]
 exclude = [
   "**/.github",
   "**/doc",
@@ -237,6 +235,13 @@ components = [
   "qdmi_Development",
 ]
 
+[[tool.scikit-build.generate]]
+path = "mqt/core/_version.py"
+template = '''
+__version__ = version = "${version}"
+__version_tuple__ = version_tuple = tuple(int(part) if part.isdecimal() else part for part in version.split("."))
+'''
+
 [[tool.scikit-build.overrides]]
 if.python-version = ">=3.15"
 if.abi-flags = "t"
@@ -247,7 +252,7 @@ wheel.py-api = "cp315t"
 required-version = ">=0.13.4"
 cache-keys = [
   { file = "pyproject.toml" },
-  { git = { commit = true, tags = true } },
+  { git = { commit = true } },
   { file = "CMakeLists.txt" },
   { file = "cmake/**/*" },
   { file = "bindings/**/*" },
@@ -390,7 +395,6 @@ PC170 = "We do not use rST files anymore"
 
 
 [tool.check-sdist]
-sdist-only = [ "python/mqt/core/_version.py" ]
 git-only = [
   "docs/*",
   "test/*",
@@ -489,11 +493,3 @@ exclude_also = [
   "raise AssertionError",
   "raise NotImplementedError"
 ]
-
-
-[[tool.dynamic-metadata]]
-provider = "vcs_versioning"
-
-
-[tool.vcs-versioning]
-write_to = "python/mqt/core/_version.py"

@@ -385,9 +385,9 @@ links.
 
 Between releases, `CHANGELOG.md` and `UPGRADING.md` contain only published
 releases. Create their next sections during release preparation and finalize the
-version and release date before publishing. Version tags drive package metadata;
-do not edit generated version files to stage a release. Release preparation does
-not itself publish a release.
+version and release date before publishing. Set the release version in the
+`[project]` table in `pyproject.toml`. Both Python and native builds read it
+from there.
 
 ## Testing priorities
 
@@ -474,12 +474,12 @@ them. Give figures descriptive alternative text and preserve full contracts in
 linked references when they would interrupt a tutorial.
 
 CI builds PR previews with a shallow checkout. The installed package and docs
-show `0.0.0.dev<PR number>`. Main and release tags use the version derived from
-Git history. The shared change detector selects the docs job for the aggregate
-**🚦 Check**. After CI finishes, a separate workflow publishes the HTML and
-offline ZIP to [Read the Docs][rtd-direct-upload] if the PR, branch, or tag
-still points to the build commit. On Read the Docs, `latest` follows `main` and
-`stable` follows the highest `vMAJOR.MINOR.PATCH` tag.
+show the version declared in `pyproject.toml`. The shared change detector
+selects the docs job for the aggregate **🚦 Check**. After CI finishes, a
+separate workflow publishes the HTML and offline ZIP to
+[Read the Docs][rtd-direct-upload] if the PR, branch, or tag still points to the
+build commit. On Read the Docs, `latest` follows `main` and `stable` follows the
+highest `vMAJOR.MINOR.PATCH` tag.
 
 [rtd-direct-upload]: https://docs.readthedocs.com/platform/stable/guides/build/direct-upload.html
 
