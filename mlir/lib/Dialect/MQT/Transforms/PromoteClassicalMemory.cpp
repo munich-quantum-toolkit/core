@@ -12,7 +12,9 @@
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/MemRef/IR/MemRefMemorySlot.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Operation.h"
@@ -35,39 +37,49 @@ namespace {
 struct PromoteClassicalMemory final
     : impl::PromoteClassicalMemoryBase<PromoteClassicalMemory> {
   using PromoteClassicalMemoryBase::PromoteClassicalMemoryBase;
-  OpPassManager normalization_{ModuleOp::getOperationName()};
   OpPassManager pipeline_{ModuleOp::getOperationName()};
 
   PromoteClassicalMemory() {
-    // Control-flow cleanup can expose static indices required by promotion.
-    normalization_.addPass(createCanonicalizerPass());
     pipeline_.addPass(createSROA());
     pipeline_.addPass(createMem2Reg());
   }
 
   void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<arith::ArithDialect, cbit::CBitDialect>();
+    registry.insert<arith::ArithDialect, cbit::CBitDialect,
+                    memref::MemRefDialect, scf::SCFDialect>();
     memref::registerMemorySlotExternalModels(registry);
-    normalization_.getDependentDialects(registry);
     pipeline_.getDependentDialects(registry);
   }
 
 protected:
   void runOnOperation() override {
-    const auto allocation = getOperation().walk([](Operation* op) {
-      return isa<PromotableAllocationOpInterface,
-                 DestructurableAllocationOpInterface>(op)
-                 ? WalkResult::interrupt()
-                 : WalkResult::advance();
+    // Index arithmetic, static control flow and views decide which accesses
+    // become static; quantum operations never do.
+    SmallVector<Operation*> normalized;
+    bool promotable = false;
+    getOperation().walk([&](Operation* op) {
+      promotable |= isa<PromotableAllocationOpInterface,
+                        DestructurableAllocationOpInterface>(op);
+      if (isa<arith::ArithDialect, cbit::CBitDialect, scf::SCFDialect,
+              memref::MemRefDialect>(op->getDialect())) {
+        normalized.push_back(op);
+      }
     });
-    if (!allocation.wasInterrupted()) {
+    if (!promotable) {
       markAllAnalysesPreserved();
       return;
     }
-    if (failed(runPipeline(normalization_, getOperation()))) {
-      signalPassFailure();
-      return;
-    }
+    RewritePatternSet normalization(&getContext());
+    // Reads forward written registers, constant conditions select static
+    // indices, loop-carried views are forwarded, and constant view offsets
+    // need their result type updated.
+    cbit::ReadOp::getCanonicalizationPatterns(normalization, &getContext());
+    scf::IfOp::getCanonicalizationPatterns(normalization, &getContext());
+    scf::ForOp::getCanonicalizationPatterns(normalization, &getContext());
+    memref::SubViewOp::getCanonicalizationPatterns(normalization,
+                                                   &getContext());
+    // Like the canonicalizer, keep whatever converged.
+    (void)applyOpPatternsGreedily(normalized, std::move(normalization));
     // Only wide snapshots need comparison lowering before promotion.
     const auto wideRead = getOperation().walk([](cbit::ReadOp read) {
       return read.getType().getWidth() > 64 ? WalkResult::interrupt()

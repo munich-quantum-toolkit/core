@@ -127,6 +127,8 @@ QCProgram::intoOpenQASM3(const TargetEnvironment* environment) && {
   if (failed(runWithPassManager(
           *storage.mod,
           [](OpPassManager& pm) {
+            // Emission needs canonical control flow, not only promoted memory.
+            pm.addPass(createCanonicalizerPass());
             pm.addPass(mqt::createPromoteClassicalMemory());
           },
           "failed to prepare QC for OpenQASM export"))) {

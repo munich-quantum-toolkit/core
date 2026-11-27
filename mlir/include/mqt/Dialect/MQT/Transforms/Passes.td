@@ -81,8 +81,10 @@ def PromoteClassicalMemory
     : Pass<"promote-classical-memory", "mlir::ModuleOp"> {
   let summary = "Promote local classical memory to SSA values";
   let description = [{
-    Folds access indices, splits local allocations with SROA, and promotes
-    supported loads and stores with Mem2Reg. Local CBit registers support up to
+    Folds access indices, forwards register writes to reads, resolves static
+    `scf.if` and `scf.for` structure, splits local allocations with SROA, and
+    promotes supported loads and stores with Mem2Reg. It does not canonicalize
+    unrelated operations. Local CBit registers support up to
     256 bits with static accesses. Packed reads support up to 64 bits; wider
     reads are expanded at their snapshot point when all reads of the register
     feed constant comparisons. Escaping registers retain storage.
