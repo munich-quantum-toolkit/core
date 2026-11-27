@@ -278,7 +278,7 @@ build-frontend = "uv"
 config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
 environment = { DEPLOY = "ON" }
 before-all = 'cmake -E rm -rf "{package}/build/cibuildwheel-stamps"'
-test-command = "pytest test/python --maxprocesses=2 --dist=worksteal"
+test-command = "pytest test/python --maxprocesses=4"
 test-groups = [ "test" ]
 test-sources = [
   "bindings/mlir/Target/Qiskit/SupportedVersions.inc",
