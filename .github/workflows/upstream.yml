@@ -33,7 +33,7 @@ jobs:
 
   catalyst-upstream-tests:
     name: 🐍⚛️ Catalyst development
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@5111762228d11d2d44dead3362a7bd3fcc174efe # zizmor: ignore[stale-action-refs]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@ffe0f2765a034310f50e3e17715e744daf9789b1 # v3.0.0
     with:
       runs-on: ubuntu-26.04
       sessions: '["catalyst-dev"]'
@@ -47,7 +47,7 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [ubuntu-26.04, macos-15, windows-2025]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-qiskit-upstream-tests.yml@5111762228d11d2d44dead3362a7bd3fcc174efe # zizmor: ignore[stale-action-refs]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-qiskit-upstream-tests.yml@ffe0f2765a034310f50e3e17715e744daf9789b1 # v3.0.0
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-z3: true
@@ -58,7 +58,7 @@ jobs:
     name: Report Qiskit failure
     needs: qiskit-upstream-tests
     if: ${{ always() }}
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@5111762228d11d2d44dead3362a7bd3fcc174efe # zizmor: ignore[stale-action-refs]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@ffe0f2765a034310f50e3e17715e744daf9789b1 # v3.0.0
     with:
       tests-result: ${{ needs.qiskit-upstream-tests.result }}
       name: Qiskit
@@ -70,7 +70,7 @@ jobs:
     name: Report Catalyst failure
     needs: [catalyst-upstream-tests, catalyst-abi-check]
     if: ${{ always() }}
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@5111762228d11d2d44dead3362a7bd3fcc174efe # zizmor: ignore[stale-action-refs]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-upstream-issue.yml@ffe0f2765a034310f50e3e17715e744daf9789b1 # v3.0.0
     with:
       tests-result: ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}
       name: Catalyst

@@ -649,6 +649,8 @@ details, and apply the relevant labels for Release Drafter.
 When it is time to release a new version of MQT Core, create a PR that prepares
 the release. This PR should:
 
+- set the stable release version in `pyproject.toml` and the top-level CMake
+  `project()` declaration, and clear `PROJECT_VERSION_PRERELEASE`,
 - prepare the changelog and upgrade guide from the Git history, merged PR
   descriptions, the Release Drafter draft, and any existing Unreleased notes.
   Use the commits included in the release, accounting for backports and changes
@@ -718,10 +720,12 @@ respective PR does not influence the type of an upcoming release.
 
 :::
 
-Once everything is in order, you can merge the PR preparing the release.
-Afterward, navigate to the
-[Releases page](https://github.com/munich-quantum-toolkit/core/releases) on
-GitHub, edit the release draft if necessary, and publish the release.
+After merging the release preparation PR, run the [CD workflow] on `main` with
+that version. The workflow builds the Python distributions, publishes the GitHub
+release, and uploads the distributions to PyPI. The `release` environment
+controls approval before publication.
+
+[CD workflow]: https://github.com/munich-quantum-toolkit/core/actions/workflows/cd.yml
 
 <!--- Links --->
 [clion]: https://www.jetbrains.com/clion/

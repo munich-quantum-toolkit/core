@@ -1,53 +1,90 @@
 name: CD 🚀
 on:
-  release:
-    types: [published]
   workflow_dispatch:
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+    inputs:
+      version:
+        description: Release version (X.Y.Z)
+        required: true
+        type: string
 
 permissions: {}
 
+concurrency:
+  group: release
+  queue: max
+  cancel-in-progress: false
+
 jobs:
-  build-sdist:
-    name: 🐍 Packaging
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-sdist.yml@5111762228d11d2d44dead3362a7bd3fcc174efe # zizmor: ignore[stale-action-refs]
+  check-release:
+    name: 🔍 Check release
     permissions:
       contents: read
+    runs-on: ubuntu-slim
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-  # Builds wheels on all supported platforms using cibuildwheel.
-  # The wheels are uploaded as GitHub artifacts `dev-cibw-*` or `cibw-*`, depending on whether the workflow is triggered from a PR or a release.
-  build-wheel:
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: false
+
+      - name: Check branch and project version
+        id: version
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          version=$(uv version --short)
+          if [[ ! "$version" =~ ^[0-9]+[.][0-9]+[.][0-9]+$ || "$GITHUB_REF" != "refs/heads/main" ]]; then
+            echo "Release requires a stable X.Y.Z version on main." >&2
+            exit 1
+          fi
+          if [[ "$RELEASE_VERSION" != "$version" ]]; then
+            echo "Requested version $RELEASE_VERSION does not match project version $version." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  packaging:
     name: 🐍 Packaging
-    strategy:
-      fail-fast: false
-      matrix:
-        runs-on:
-          [
-            ubuntu-26.04,
-            ubuntu-26.04-arm,
-            macos-26,
-            windows-2025,
-            windows-11-arm,
-          ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@5111762228d11d2d44dead3362a7bd3fcc174efe # zizmor: ignore[stale-action-refs]
+    needs: check-release
+    permissions:
+      contents: read
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-cibuildwheel.yml@ffe0f2765a034310f50e3e17715e744daf9789b1 # v3.0.0
     with:
-      runs-on: ${{ matrix.runs-on }}
       use-sccache-gha: true
-    permissions:
-      contents: read
 
-  # Downloads the previously generated artifacts and deploys to PyPI on published releases.
-  deploy:
-    if: github.event_name == 'release' && github.event.action == 'published'
-    name: 🚀 Deploy to PyPI
+  approve-release:
+    name: 🔐 Approve release
+    needs: packaging
+    runs-on: ubuntu-slim
+    environment: release
+    steps:
+      - run: echo "Release approved."
+
+  publish-github:
+    name: 🚀 Publish to GitHub
+    needs: [check-release, approve-release]
+    permissions:
+      contents: write
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-github-release.yml@ffe0f2765a034310f50e3e17715e744daf9789b1 # v3.0.0
+    secrets:
+      APP_ID: ${{ secrets.APP_ID }}
+      APP_PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY }}
+    with:
+      version: ${{ needs.check-release.outputs.version }}
+      has-upgrade-guide: true
+      release-name: MQT Core ${{ needs.check-release.outputs.version }} Release
+
+  publish-pypi:
+    name: 🚀 Publish to PyPI
     runs-on: ubuntu-latest
     environment:
       name: pypi
       url: https://pypi.org/p/mqt.core
-    needs: [build-sdist, build-wheel]
+    needs: [packaging, publish-github]
     permissions:
       attestations: write # Needed to attest the built artifacts
       contents: read
@@ -58,7 +95,7 @@ jobs:
           pattern: cibw-*
           path: dist
           merge-multiple: true
-      - name: Generate artifact attestation for sdist and wheel(s)
+      - name: Generate artifact attestation for sdist and wheels
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/*

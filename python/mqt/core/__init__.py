@@ -22,8 +22,7 @@ if sys.platform == "win32":  # ruff:ignore[non-empty-init-module] Native imports
     os.add_dll_directory(str(distribution("mqt-core").locate_file("mqt/core/bin")))
 
 
-from mqt.core._version import version as __version__
-from mqt.core._version import version_tuple as version_info
+from mqt.core._version import __version__, version_info
 from mqt.core._warnings import UntestedVersionWarning
 
 __all__ = ["UntestedVersionWarning", "__version__", "version_info"]

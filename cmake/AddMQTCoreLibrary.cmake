@@ -87,5 +87,5 @@ function(add_mqt_core_library name)
   endif()
 
   # Make version available
-  target_compile_definitions(${name} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+  target_compile_definitions(${name} PRIVATE MQT_CORE_VERSION="${PROJECT_VERSION_FULL}")
 endfunction()

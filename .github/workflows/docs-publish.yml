@@ -9,7 +9,7 @@ permissions: {}
 
 jobs:
   publish:
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@5111762228d11d2d44dead3362a7bd3fcc174efe # zizmor: ignore[stale-action-refs]
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-docs.yml@ffe0f2765a034310f50e3e17715e744daf9789b1 # v3.0.0
     with:
       project-slug: mqt-core
       build-workflows: '[".github/workflows/ci.yml", ".github/workflows/docs.yml"]'

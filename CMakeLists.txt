@@ -12,7 +12,18 @@ cmake_minimum_required(VERSION 3.29...4.5)
 project(
   mqt-core
   LANGUAGES C CXX
+  VERSION 4.2.2
   DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
+
+set(PROJECT_VERSION_PRERELEASE ".dev0")
+set(PROJECT_VERSION_FULL "${PROJECT_VERSION}${PROJECT_VERSION_PRERELEASE}")
+
+if(SKBUILD AND NOT PROJECT_VERSION_FULL STREQUAL SKBUILD_PROJECT_VERSION_FULL)
+  message(
+    FATAL_ERROR
+      "CMake version ${PROJECT_VERSION_FULL} differs from Python version ${SKBUILD_PROJECT_VERSION_FULL}"
+  )
+endif()
 
 if(NOT DEFINED CMAKE_CXX_STANDARD OR CMAKE_CXX_STANDARD LESS 20)
   set(CMAKE_CXX_STANDARD 20 CACHE STRING "C++ standard to conform to" FORCE)
@@ -70,16 +81,6 @@ if(APPLE
    AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS "17.0.0")
   message(FATAL_ERROR "MQT Core requires AppleClang 17 or newer to build MLIR")
 endif()
-
-# try to determine the project version
-include(GetVersion)
-get_mqt_core_version()
-
-project(
-  mqt-core
-  LANGUAGES C CXX
-  VERSION ${MQT_CORE_VERSION}
-  DESCRIPTION "MQT Core - The Backbone of the Munich Quantum Toolkit")
 
 set(MQT_CORE_TARGET_NAME "mqt-core")
 
