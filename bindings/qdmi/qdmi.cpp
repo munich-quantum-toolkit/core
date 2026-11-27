@@ -33,7 +33,6 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/JSON.h"
 
-#include <array>
 #include <complex>
 #include <cstddef>
 #include <filesystem>
@@ -49,7 +48,7 @@ namespace mqt {
 using bindings::bindResult;
 using bindings::invoke;
 using bindings::PythonCustomJobParameter;
-using bindings::toCustomJobParameter;
+using bindings::toJobParameters;
 
 namespace nb = nanobind;
 using namespace nb::literals;
@@ -681,17 +680,12 @@ when the custom slot is unsupported.)pb");
          const std::optional<PythonCustomJobParameter>& custom3,
          const std::optional<PythonCustomJobParameter>& custom4,
          const std::optional<PythonCustomJobParameter>& custom5) {
-        const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
-        };
+        const auto parameters = toJobParameters(numShots, custom1, custom2,
+                                                custom3, custom4, custom5);
         return withProgramPayload(program, [&](const auto& payload) {
           const nb::gil_scoped_release release;
-          return invoke([&] {
-            return self.submitJob(payload, format, numShots, params[0],
-                                  params[1], params[2], params[3], params[4]);
-          });
+          return invoke(
+              [&] { return self.submitJob(payload, format, parameters); });
         });
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),
@@ -711,18 +705,12 @@ when the custom slot is unsupported.)pb");
          const std::optional<PythonCustomJobParameter>& custom3,
          const std::optional<PythonCustomJobParameter>& custom4,
          const std::optional<PythonCustomJobParameter>& custom5) {
-        const auto params = std::array{
-            toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-            toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-            toCustomJobParameter(custom5),
-        };
+        const auto parameters = toJobParameters(numShots, custom1, custom2,
+                                                custom3, custom4, custom5);
         return withProgramPayload(program, [&](const auto& payload) {
           const nb::gil_scoped_release release;
-          return invoke([&] {
-            return self.trySubmitJob(payload, format, numShots, params[0],
-                                     params[1], params[2], params[3],
-                                     params[4]);
-          });
+          return invoke(
+              [&] { return self.trySubmitJob(payload, format, parameters); });
         });
       },
       "program"_a, "program_format"_a, "num_shots"_a = nb::none(),

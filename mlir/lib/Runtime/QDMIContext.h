@@ -48,15 +48,15 @@ public:
           bool retained) const;
   /// Submit compatible programs with defaults or a complete per-call override.
   [[nodiscard]] llvm::Expected<std::optional<qdmi::Job>>
-  trySubmit(llvm::ArrayRef<const mlir::CompiledProgram*> programs,
-            int64_t shots, const BorrowedJobParameters* parameters = nullptr,
+  trySubmit(llvm::ArrayRef<const mlir::CompiledProgram*> programs, size_t shots,
+            const BorrowedJobParameters* parameters = nullptr,
             const mlir::TargetEnvironment* destination = nullptr) const;
   [[nodiscard]] llvm::Expected<qdmi::Job>
-  submit(const mlir::CompiledProgram& program, int64_t shots) const;
+  submit(const mlir::CompiledProgram& program, size_t shots) const;
   /// Check whether the device accepts `count` programs of `format` with
   /// defaults or a complete per-call parameter override, without submitting.
   [[nodiscard]] llvm::Expected<bool>
-  supports(QDMI_Program_Format format, size_t count, int64_t shots,
+  supports(QDMI_Program_Format format, size_t count, size_t shots,
            const BorrowedJobParameters* parameters = nullptr) const;
 
 private:

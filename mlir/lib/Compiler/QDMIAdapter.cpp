@@ -16,6 +16,7 @@
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Support/Passes.h"
 #include "qdmi/QDMI.hpp"
@@ -33,10 +34,17 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/BinaryFormat/Magic.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/VersionTuple.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -1169,32 +1177,71 @@ requireSubmission(Expected<std::optional<qdmi::Job>> submitted) {
   return std::move(**submitted);
 }
 
-Expected<qdmi::Job>
-submitProgram(const qdmi::Device& device, const CompiledProgram& program,
-              int64_t numShots,
-              const std::optional<qdmi::CustomJobParameter>& custom1,
-              const std::optional<qdmi::CustomJobParameter>& custom2,
-              const std::optional<qdmi::CustomJobParameter>& custom3,
-              const std::optional<qdmi::CustomJobParameter>& custom4,
-              const std::optional<qdmi::CustomJobParameter>& custom5) {
-  return requireSubmission(trySubmitPrograms(device, {&program}, numShots,
-                                             custom1, custom2, custom3, custom4,
-                                             custom5));
+Expected<std::optional<QDMI_Program_Format>>
+detectQIRFormat(const StringRef payload, const bool otherText) {
+  const bool binary =
+      llvm::identify_magic(payload) == llvm::file_magic::bitcode;
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic diagnostic;
+  const auto module = llvm::getLazyIRModule(
+      llvm::MemoryBuffer::getMemBuffer(payload, "<qir>", false), diagnostic,
+      context);
+  if (!module) {
+    if (otherText && !binary) {
+      return std::nullopt;
+    }
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print("qir", stream);
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             message);
+  }
+  std::optional<QDMI_Program_Format> format;
+  for (const auto& function : *module) {
+    if (!function.hasFnAttribute(::qir::ENTRY_POINT_ATTR)) {
+      continue;
+    }
+    if (format) {
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "QIR requires exactly one entry point");
+    }
+    const auto attribute = function.getFnAttribute(::qir::QIR_PROFILES_ATTR);
+    const auto profile = attribute.isStringAttribute()
+                             ? attribute.getValueAsString()
+                             : StringRef{};
+    if (profile == StringRef(::qir::BASE_PROFILE)) {
+      format = binary ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
+                      : QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+    } else if (profile == StringRef(::qir::ADAPTIVE_PROFILE)) {
+      format = binary ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
+                      : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+    } else {
+      return createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "QIR entry point requires a Base or Adaptive profile");
+    }
+  }
+  if (!format) {
+    return createStringError(std::make_error_code(std::errc::invalid_argument),
+                             "QIR requires exactly one entry point");
+  }
+  return format;
 }
 
-Expected<qdmi::Job>
-submitProgram(const qdmi::Device& device, CompilerInput program,
-              int64_t numShots, std::optional<QDMI_Program_Format> format,
-              const std::optional<qdmi::CustomJobParameter>& custom1,
-              const std::optional<qdmi::CustomJobParameter>& custom2,
-              const std::optional<qdmi::CustomJobParameter>& custom3,
-              const std::optional<qdmi::CustomJobParameter>& custom4,
-              const std::optional<qdmi::CustomJobParameter>& custom5,
-              const CompilationOptions& options) {
-  if (numShots < 0) {
-    return createStringError(std::make_error_code(std::errc::invalid_argument),
-                             "num_shots must be nonnegative");
-  }
+Expected<qdmi::Job> submitProgram(const qdmi::Device& device,
+                                  const CompiledProgram& program,
+                                  const qdmi::JobParameters& parameters,
+                                  const TargetEnvironment* destination) {
+  return requireSubmission(
+      trySubmitPrograms(device, {&program}, parameters, destination));
+}
+
+Expected<qdmi::Job> submitProgram(const qdmi::Device& device,
+                                  CompilerInput program,
+                                  const qdmi::JobParameters& parameters,
+                                  std::optional<QDMI_Program_Format> format,
+                                  const CompilationOptions& options) {
   auto compiled = compileProgram(std::move(program), device, format, options);
   if (!compiled) {
     return compiled.takeError();
@@ -1204,9 +1251,7 @@ submitProgram(const qdmi::Device& device, CompilerInput program,
                              "Compile explicitly and retain the result layout "
                              "before submitting this program");
   }
-  return requireSubmission(
-      trySubmitPrograms(device, {&*compiled}, numShots, custom1, custom2,
-                        custom3, custom4, custom5, &compiled->environment()));
+  return submitProgram(device, *compiled, parameters, &compiled->environment());
 }
 
 // A newly queried destination is owned by the caller. A retained destination
@@ -1218,7 +1263,7 @@ checkProgramSubmission(const qdmi::Device& device,
   if (programs.empty() || llvm::is_contained(programs, nullptr)) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument),
-        "A program batch requires non-null programs and nonnegative num_shots");
+        "A program batch requires non-null programs");
   }
   const auto format = programs.front()->programFormat();
   std::optional<TargetEnvironment> snapshot;
@@ -1235,6 +1280,10 @@ checkProgramSubmission(const qdmi::Device& device,
       return llvm::createStringError(
           std::make_error_code(std::errc::invalid_argument),
           "A program batch must use the same payload format");
+    }
+    // A program compiled for this destination is compatible by construction.
+    if (&program->environment() == destination) {
+      continue;
     }
     if (auto error =
             validateTargetCompatibility(program->environment(), *destination)) {
@@ -1260,18 +1309,9 @@ prepareProgramSubmission(const qdmi::Device& device,
 
 llvm::Expected<std::optional<qdmi::Job>>
 trySubmitPrograms(const qdmi::Device& device,
-                  ArrayRef<const CompiledProgram*> programs, int64_t numShots,
-                  const std::optional<qdmi::CustomJobParameter>& custom1,
-                  const std::optional<qdmi::CustomJobParameter>& custom2,
-                  const std::optional<qdmi::CustomJobParameter>& custom3,
-                  const std::optional<qdmi::CustomJobParameter>& custom4,
-                  const std::optional<qdmi::CustomJobParameter>& custom5,
+                  ArrayRef<const CompiledProgram*> programs,
+                  const qdmi::JobParameters& parameters,
                   const TargetEnvironment* destination) {
-  if (numShots < 0) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "A program batch requires non-null programs and nonnegative num_shots");
-  }
   auto prepared = checkProgramSubmission(device, programs, destination);
   if (!prepared) {
     return prepared.takeError();
@@ -1286,8 +1326,7 @@ trySubmitPrograms(const qdmi::Device& device,
     }
     payloads.push_back(*bytes);
   }
-  return device.trySubmitJob(payloads, format, static_cast<size_t>(numShots),
-                             custom1, custom2, custom3, custom4, custom5);
+  return device.trySubmitJob(payloads, format, parameters);
 }
 
 } // namespace mlir

@@ -392,7 +392,7 @@ TEST(ResultsStatevector, RepresentationsAndBufferSizes) {
   }
 }
 
-TEST(ResultsStatevector, SamplingRequestsInvalidWithShotsZero) {
+TEST(ResultsStatevector, ZeroShotsYieldEmptySamplingResults) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
@@ -401,15 +401,23 @@ TEST(ResultsStatevector, SamplingRequestsInvalidWithShotsZero) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, 0, QDMI_JOB_RESULT_SHOTS, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, 0, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, 0, QDMI_JOB_RESULT_HIST_VALUES, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
+  // No shots means empty shot and histogram lists, not a caller error.
+  for (const auto result : {
+           QDMI_JOB_RESULT_SHOTS,
+           QDMI_JOB_RESULT_HIST_KEYS,
+           QDMI_JOB_RESULT_HIST_VALUES,
+       }) {
+    size_t size = 1;
+    std::array<char, 1> buffer{};
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, 0, result, 0,
+                                                    nullptr, &size),
+              QDMI_SUCCESS);
+    EXPECT_EQ(size, 0U);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                  j.job, 0, result, buffer.size(), buffer.data(), &size),
+              QDMI_SUCCESS);
+    EXPECT_EQ(size, 0U);
+  }
 }
 
 TEST(ResultsStatevector, QIRBaseStringYieldsBellState) {

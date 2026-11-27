@@ -106,14 +106,14 @@ Context::Context(const qdmi::Device& device, runtime::JobParameters parameters,
           device,
           unwrap(mlir::targetEnvironmentFromDevice(device, programFormat)),
           std::move(parameters)),
-      qubits_(unwrap(device.getQubitsNum())), options_(options) {}
+      qubits_(unwrap(device.getQubitsNum())), options_(std::move(options)) {}
 
 std::shared_ptr<Context>
 Context::create(const qdmi::Device& device, runtime::JobParameters parameters,
                 std::optional<QDMI_Program_Format> programFormat,
                 mlir::CompilationOptions options) {
-  auto context = std::shared_ptr<Context>(
-      new Context(device, std::move(parameters), programFormat, options));
+  auto context = std::shared_ptr<Context>(new Context(
+      device, std::move(parameters), programFormat, std::move(options)));
   auto& entries = registry();
   const std::scoped_lock lock(entries.mutex);
   require(entries.next < UINT64_MAX - 1, "QDMI context ID space exhausted.");
@@ -171,8 +171,7 @@ const runtime::Readout& QDMIDevice::read(bool samples) {
                                                         context_->options()));
     }
     if (!job_) {
-      auto job =
-          unwrap(context_->submit(*compiled_, static_cast<int64_t>(shots_)));
+      auto job = unwrap(context_->submit(*compiled_, shots_));
       require(unwrap(job.wait()) && unwrap(job.check()) == QDMI_JOB_STATUS_DONE,
               "QDMI job did not complete successfully.");
       job_ = std::move(job);

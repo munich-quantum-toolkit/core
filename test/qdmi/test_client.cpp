@@ -117,7 +117,8 @@ bit[1] c;
 h q[0];
 c[0] = measure q[0];
 )";
-    return value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
+    return value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
+                                  {.shots = 10}));
   }
 };
 
@@ -134,7 +135,8 @@ qubit[2] q;
 h q[0];
 cx q[0], q[1];
 )";
-    return value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 0));
+    return value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3,
+                                  {.shots = 0}));
   }
 };
 
@@ -743,8 +745,8 @@ h q[0];
 cx q[0], q[1];
 c = measure q;)";
 
-  const auto job =
-      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 100));
+  const auto job = value(device.submitJob(
+      qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, {.shots = 100}));
 
   EXPECT_FALSE(value(job.getId()).empty());
   EXPECT_EQ(value(job.getProgramFormat()), QDMI_PROGRAM_FORMAT_QASM3);
@@ -760,8 +762,8 @@ TEST_F(DDSimulatorDeviceTest, IndexedProgramsKeepTheirResults) {
       "OPENQASM 3.0; include \"stdgates.inc\"; qubit[1] q; bit[1] c; x "
       "q[0]; c[0] = measure q[0];",
   };
-  const auto job =
-      value(device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 4));
+  const auto job = value(
+      device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, {.shots = 4}));
 
   ASSERT_TRUE(value(job.wait()));
   EXPECT_EQ(value(job.getNumPrograms()), programs.size());
@@ -781,43 +783,49 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobRejectsIncompatiblePayloadKinds) {
   const std::string textProgram = "OPENQASM 3.0;";
 
   EXPECT_EQ(errorStatus([&] {
-              return device.submitJob(textProgram,
-                                      QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 0);
+              return device.submitJob(
+                  textProgram, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, {.shots = 0});
             }),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST_F(DDSimulatorDeviceTest, SubmitJobValidatesCustomParameters) {
   constexpr auto program = "OPENQASM 3.0; qubit q; bit c = measure q;";
-  const auto job = value(device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3,
-                                          10, 7, std::nullopt, 4));
+  const auto job =
+      value(device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3,
+                             {.shots = 10, .custom = {7, std::nullopt, 4}}));
   ASSERT_TRUE(value(job.wait()));
   EXPECT_EQ(value(job.getCounts()), (std::map<std::string, size_t>{{"0", 10}}));
   EXPECT_EQ(errorStatus([&] {
-              return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                                      std::nullopt, std::nullopt,
-                                      std::string("custom"));
+              return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3,
+                                      {.shots = 10,
+                                       .custom = {std::nullopt, std::nullopt,
+                                                  std::string("custom")}});
             }),
             QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(errorStatus([&] {
-              return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                                      std::nullopt, std::nullopt, true);
+              return device.submitJob(
+                  program, QDMI_PROGRAM_FORMAT_QASM3,
+                  {.shots = 10, .custom = {std::nullopt, std::nullopt, true}});
             }),
             QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(errorStatus([&] {
-              return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                                      std::nullopt, std::nullopt, std::nullopt,
-                                      42);
+              return device.submitJob(
+                  program, QDMI_PROGRAM_FORMAT_QASM3,
+                  {.shots = 10,
+                   .custom = {std::nullopt, std::nullopt, std::nullopt, 42}});
             }),
             QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(errorStatus([&] {
-              return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                                      std::nullopt, true);
+              return device.submitJob(
+                  program, QDMI_PROGRAM_FORMAT_QASM3,
+                  {.shots = 10, .custom = {std::nullopt, true}});
             }),
             QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(errorStatus([&] {
-              return device.submitJob(program, QDMI_PROGRAM_FORMAT_QASM3, 10,
-                                      std::nullopt, 1);
+              return device.submitJob(
+                  program, QDMI_PROGRAM_FORMAT_QASM3,
+                  {.shots = 10, .custom = {std::nullopt, 1}});
             }),
             QDMI_ERROR_INVALIDARGUMENT);
 }
@@ -829,8 +837,8 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const auto job2 =
-      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
+  const auto job2 = value(
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, {.shots = 10}));
 
   EXPECT_NE(value(job.getId()), value(job2.getId()));
 }
@@ -902,8 +910,8 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 )";
-  const auto jobToCancel =
-      value(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10));
+  const auto jobToCancel = value(
+      device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, {.shots = 10}));
 
   auto error = jobToCancel.cancel();
   const auto status = value(jobToCancel.check());
@@ -926,6 +934,12 @@ TEST_F(JobTest, CancelCompletedJobReturnsError) {
 
   EXPECT_EQ(errorStatus([&] { return job.cancel(); }),
             QDMI_ERROR_INVALIDARGUMENT);
+}
+
+TEST_F(SimulatorJobTest, ZeroShotsYieldEmptySamples) {
+  ASSERT_TRUE(value(job.wait()));
+  EXPECT_TRUE(value(job.getShots()).empty());
+  EXPECT_TRUE(value(job.getCounts()).empty());
 }
 
 TEST_F(SimulatorJobTest, getDenseStateVectorReturnsValidState) {

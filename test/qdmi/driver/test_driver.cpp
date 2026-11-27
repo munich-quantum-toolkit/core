@@ -1406,9 +1406,18 @@ TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
       qdmi::CustomProperty::Custom3, qdmi::CustomProperty::Custom4,
       qdmi::CustomProperty::Custom5,
   };
-  const auto job = value(
-      device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1, payloads[0],
-                       payloads[1], payloads[2], payloads[3], payloads[4]));
+  const auto job = value(device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3,
+                                          {
+                                              .shots = 1,
+                                              .custom =
+                                                  {
+                                                      payloads[0],
+                                                      payloads[1],
+                                                      payloads[2],
+                                                      payloads[3],
+                                                      payloads[4],
+                                                  },
+                                          }));
   const auto expectedPayloads = payloads;
   for (auto& payload : payloads) {
     payload.clear();
@@ -1417,9 +1426,9 @@ TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
     EXPECT_EQ(value(job.getCustomResult<std::vector<std::byte>>(slots[i])),
               expectedPayloads[i]);
   }
-  const auto scalarJob =
-      value(device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1,
-                             std::string{"text"}, true, -7, 2.5));
+  const auto scalarJob = value(device.submitJob(
+      "program", QDMI_PROGRAM_FORMAT_QASM3,
+      {.shots = 1, .custom = {std::string{"text"}, true, -7, 2.5}}));
   EXPECT_EQ(value(scalarJob.getCustomResult<std::string>(slots[0])), "text");
   EXPECT_EQ(value(scalarJob.getCustomResult<std::vector<std::byte>>(slots[1])),
             bytesOf(true));
@@ -1428,8 +1437,9 @@ TEST(DeviceRegistrationTest, CustomJobParametersPreserveNativeRepresentations) {
   EXPECT_EQ(value(scalarJob.getCustomResult<std::vector<std::byte>>(slots[3])),
             bytesOf(2.5));
   EXPECT_EQ(errorStatus([&] {
-              return device.submitJob("program", QDMI_PROGRAM_FORMAT_QASM3, 1,
-                                      std::vector<std::byte>{});
+              return device.submitJob(
+                  "program", QDMI_PROGRAM_FORMAT_QASM3,
+                  {.shots = 1, .custom = {std::vector<std::byte>{}}});
             }),
             QDMI_ERROR_INVALIDARGUMENT);
 }
@@ -1584,8 +1594,8 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
     auto const device =
         value(qdmi::Session::openDevice("test.session-overrides"));
     baseline = value(device.getName());
-    job.emplace(
-        value(device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, 1)));
+    job.emplace(value(device.submitJob(
+        "OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, {.shots = 1})));
   }
 
   ASSERT_TRUE(job.has_value());
@@ -1602,7 +1612,7 @@ TEST(DeviceRegistrationTest, ValidatesHistogramKeys) {
       value(qdmi::builtin_driver::openDevice("test.session-overrides"));
   const auto submit = [&](std::span<const char> keys) {
     return value(device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2,
-                                  std::nullopt, std::as_bytes(keys)));
+                                  {.custom = {std::as_bytes(keys)}}));
   };
   for (const auto* keys : {"", "00", "00,", ",", "00,11", ",00", "00,,"}) {
     const std::string_view input(keys);
@@ -1630,7 +1640,7 @@ TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
                       device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1)));
   EXPECT_TRUE(errorStatus([&] {
                 return device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1,
-                                        size_t{1});
+                                        {.shots = 1});
               }).has_value());
 }
 
@@ -1756,8 +1766,8 @@ TEST(DeviceRegistrationTest, SubmitsOrderedBinaryProgramsAtomically) {
       programs[0],
       programs[1],
   };
-  const auto job =
-      value(device.submitJob(views, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, 3U));
+  const auto job = value(device.submitJob(
+      views, QDMI_PROGRAM_FORMAT_QIRBASEMODULE, {.shots = 3U}));
   EXPECT_EQ(value(job.getNumPrograms()), programs.size());
   EXPECT_EQ(value(job.getProgramBytes(0U)), programs[0]);
   EXPECT_EQ(value(job.getProgramBytes(1U)), programs[1]);
@@ -1769,8 +1779,8 @@ TEST(DeviceRegistrationTest, SubmitsOrderedTextProgramsAtomically) {
       value(qdmi::Session::openDevice("test.session-overrides"));
   const std::array<std::string, 2> programs{"OPENQASM 3.0;", "OPENQASM 3.0;"};
 
-  const auto job =
-      value(device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, 3U));
+  const auto job = value(
+      device.submitJob(programs, QDMI_PROGRAM_FORMAT_QASM3, {.shots = 3U}));
   ASSERT_EQ(value(job.getNumPrograms()), programs.size());
   for (size_t index = 0U; index < programs.size(); ++index) {
     EXPECT_EQ(value(job.getProgram(index)), programs[index]);
@@ -1784,17 +1794,18 @@ TEST(DeviceRegistrationTest, JudgesProgramListsWithRequestedShots) {
   // The test device accepts at most eight shots in total.
   constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
   EXPECT_TRUE(value(device.supportsJob(format, 3U)));
-  EXPECT_TRUE(value(device.supportsJob(format, 2U, 4U)));
-  EXPECT_FALSE(value(device.supportsJob(format, 3U, 4U)));
+  EXPECT_TRUE(value(device.supportsJob(format, 2U, {.shots = 4U})));
+  EXPECT_FALSE(value(device.supportsJob(format, 3U, {.shots = 4U})));
 
   const std::array<std::string, 3> programs{
       "OPENQASM 3.0;",
       "OPENQASM 3.0;",
       "OPENQASM 3.0;",
   };
-  EXPECT_FALSE(value(device.trySubmitJob(programs, format, 4U)).has_value());
-  const auto job =
-      value(device.trySubmitJob(std::span(programs).first(2U), format, 4U));
+  EXPECT_FALSE(
+      value(device.trySubmitJob(programs, format, {.shots = 4U})).has_value());
+  const auto job = value(device.trySubmitJob(std::span(programs).first(2U),
+                                             format, {.shots = 4U}));
   ASSERT_TRUE(job.has_value());
   EXPECT_EQ(value(job->getNumPrograms()), 2U);
   EXPECT_EQ(value(job->getNumShots()), 4U);

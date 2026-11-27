@@ -55,7 +55,6 @@ target_link_libraries(
     MQTCompilerCatalystAdapter
     MQTQDMIExecution
     MQTCompilerPipeline
-    LLVMIRReader
     MLIRAnalysis
     MLIRMQTDialect
     MLIRMQTUtils

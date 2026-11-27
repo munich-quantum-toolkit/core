@@ -1105,7 +1105,8 @@ auto qdmi::dd::ProgramResult::getHistogram(const QDMI_Job_Result result,
     });
   }
   const auto writeHistogram = [&](const auto& counts) -> QDMI_STATUS {
-    if (counts.size() == 1 && counts.begin()->first.empty()) {
+    if (counts.empty() ||
+        (counts.size() == 1 && counts.begin()->first.empty())) {
       return reportEmptyResult(sizeRet);
     }
     if (result == QDMI_JOB_RESULT_HIST_VALUES) {
@@ -1282,15 +1283,9 @@ auto qdmi::dd::ProgramResult::getResults(const QDMI_Job_Result result,
   case QDMI_JOB_RESULT_CUSTOM1:
     return getQIROutput(size, data, sizeRet);
   case QDMI_JOB_RESULT_SHOTS:
-    if (shots_.empty() && compactCounts_.empty()) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
     return getShots(size, data, sizeRet);
   case QDMI_JOB_RESULT_HIST_KEYS:
   case QDMI_JOB_RESULT_HIST_VALUES:
-    if (shots_.empty() && compactCounts_.empty()) {
-      return QDMI_ERROR_INVALIDARGUMENT;
-    }
     return getHistogram(result, size, data, sizeRet);
   case QDMI_JOB_RESULT_STATEVECTOR_DENSE:
   case QDMI_JOB_RESULT_PROBABILITIES_DENSE:

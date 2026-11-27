@@ -739,88 +739,51 @@ public:
   queryCustomOperations(CustomProperty property) const;
 
   /// Submit one text program with the given format and job parameters.
-  [[nodiscard]] llvm::Expected<Job> submitJob(
-      const std::string& program, QDMI_Program_Format format,
-      std::optional<size_t> numShots = std::nullopt,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+  [[nodiscard]] llvm::Expected<Job>
+  submitJob(const std::string& program, QDMI_Program_Format format,
+            const JobParameters& parameters = {}) const;
 
   /// Submit one exact-byte program with the given format and job parameters.
-  [[nodiscard]] llvm::Expected<Job> submitJob(
-      std::span<const std::byte> program, QDMI_Program_Format format,
-      std::optional<size_t> numShots = std::nullopt,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+  [[nodiscard]] llvm::Expected<Job>
+  submitJob(std::span<const std::byte> program, QDMI_Program_Format format,
+            const JobParameters& parameters = {}) const;
 
   /// Returns no job only when the device rejects this text program before
   /// submission.
-  [[nodiscard]] llvm::Expected<std::optional<Job>> trySubmitJob(
-      const std::string& program, QDMI_Program_Format format,
-      std::optional<size_t> numShots = std::nullopt,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+  [[nodiscard]] llvm::Expected<std::optional<Job>>
+  trySubmitJob(const std::string& program, QDMI_Program_Format format,
+               const JobParameters& parameters = {}) const;
 
   /// Returns no job only when the device rejects this binary program before
   /// submission.
-  [[nodiscard]] llvm::Expected<std::optional<Job>> trySubmitJob(
-      std::span<const std::byte> program, QDMI_Program_Format format,
-      std::optional<size_t> numShots = std::nullopt,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+  [[nodiscard]] llvm::Expected<std::optional<Job>>
+  trySubmitJob(std::span<const std::byte> program, QDMI_Program_Format format,
+               const JobParameters& parameters = {}) const;
 
   /// Submits an ordered list of text programs with common job parameters.
   ///
   /// The required text terminator is included exactly once per payload.
-  [[nodiscard]] llvm::Expected<Job> submitJob(
-      std::span<const std::string> programs, QDMI_Program_Format format,
-      std::optional<size_t> numShots = std::nullopt,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+  [[nodiscard]] llvm::Expected<Job>
+  submitJob(std::span<const std::string> programs, QDMI_Program_Format format,
+            const JobParameters& parameters = {}) const;
 
   /// Returns no job only when the device rejects this list before submission.
-  [[nodiscard]] llvm::Expected<std::optional<Job>> trySubmitJob(
-      std::span<const std::string> programs, QDMI_Program_Format format,
-      std::optional<size_t> numShots = std::nullopt,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+  [[nodiscard]] llvm::Expected<std::optional<Job>>
+  trySubmitJob(std::span<const std::string> programs,
+               QDMI_Program_Format format,
+               const JobParameters& parameters = {}) const;
 
   /// Submits an ordered list of exact-byte programs with common job parameters.
-  [[nodiscard]] llvm::Expected<Job> submitJob(
-      std::span<const std::span<const std::byte>> programs,
-      QDMI_Program_Format format, std::optional<size_t> numShots = std::nullopt,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+  [[nodiscard]] llvm::Expected<Job>
+  submitJob(std::span<const std::span<const std::byte>> programs,
+            QDMI_Program_Format format,
+            const JobParameters& parameters = {}) const;
 
   /// Returns no job only when the device rejects this list before submission.
-  [[nodiscard]] llvm::Expected<std::optional<Job>> trySubmitJob(
-      std::span<const std::span<const std::byte>> programs,
-      QDMI_Program_Format format, std::optional<size_t> numShots = std::nullopt,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+  [[nodiscard]] llvm::Expected<std::optional<Job>>
+  trySubmitJob(std::span<const std::span<const std::byte>> programs,
+               QDMI_Program_Format format,
+               const JobParameters& parameters = {}) const;
 
   /// Checks whether the device accepts a job of `count` programs in `format`
   /// with the given job parameters.
@@ -829,14 +792,9 @@ public:
   /// the device does not support this format and count with these parameters.
   /// A device can still decline the actual programs.
   /// @see QDMI_job_set_programs
-  [[nodiscard]] llvm::Expected<bool> supportsJob(
-      QDMI_Program_Format format, size_t count,
-      std::optional<size_t> numShots = std::nullopt,
-      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
-      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+  [[nodiscard]] llvm::Expected<bool>
+  supportsJob(QDMI_Program_Format format, size_t count,
+              const JobParameters& parameters = {}) const;
 
   /// Retrieves an existing job by its device-provided ID.
   ///
@@ -884,22 +842,12 @@ private:
   /// Create a job with custom parameters and, if the device accepts it before
   /// the program format is known, the shot count.
   [[nodiscard]] llvm::Expected<Job>
-  createJob(std::optional<size_t> numShots,
-            const std::optional<CustomJobParameter>& custom1,
-            const std::optional<CustomJobParameter>& custom2,
-            const std::optional<CustomJobParameter>& custom3,
-            const std::optional<CustomJobParameter>& custom4,
-            const std::optional<CustomJobParameter>& custom5) const;
+  createJob(const JobParameters& parameters) const;
 
   [[nodiscard]] llvm::Expected<std::optional<Job>>
   submitJobImpl(QDMI_Program_Format format, std::span<const size_t> sizes,
                 std::span<const void* const> programs,
-                std::optional<size_t> numShots,
-                const std::optional<CustomJobParameter>& custom1,
-                const std::optional<CustomJobParameter>& custom2,
-                const std::optional<CustomJobParameter>& custom3,
-                const std::optional<CustomJobParameter>& custom4,
-                const std::optional<CustomJobParameter>& custom5) const;
+                const JobParameters& parameters) const;
 
   llvm::Error setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
                                 const CustomJobParameter& value) const;

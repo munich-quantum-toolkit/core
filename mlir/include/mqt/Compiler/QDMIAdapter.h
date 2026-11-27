@@ -179,6 +179,14 @@ private:
   std::optional<size_t> resultWidth_;
 };
 
+/// Detect the QDMI format of a QIR payload from its single entry point.
+///
+/// Reads only the module header and function attributes. Text that is not
+/// LLVM IR yields `std::nullopt` if `otherText` is set, and an error with the
+/// parser diagnostic otherwise.
+[[nodiscard]] llvm::Expected<std::optional<QDMI_Program_Format>>
+detectQIRFormat(llvm::StringRef payload, bool otherText = false);
+
 /// Compile for a QDMI device.
 [[nodiscard]] llvm::Expected<CompiledProgram>
 compileProgram(CompilerInput program, const qdmi::Device& device,
@@ -188,14 +196,13 @@ compileProgram(CompilerInput program, const qdmi::Device& device,
 /// Check the destination supports the program before creating a QDMI job.
 /// Raw job results require decoding with the compiled result layout, if
 /// present.
-[[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
-    const qdmi::Device& device, const CompiledProgram& program,
-    int64_t numShots = 1024,
-    const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom3 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt);
+///
+/// Without a retained destination, snapshot the device without calibration.
+/// A program compiled for the retained destination is not checked again.
+[[nodiscard]] llvm::Expected<qdmi::Job>
+submitProgram(const qdmi::Device& device, const CompiledProgram& program,
+              const qdmi::JobParameters& parameters = {.shots = 1024},
+              const TargetEnvironment* destination = nullptr);
 
 /// Check one format group and retain its destination requirements.
 ///
@@ -214,25 +221,17 @@ prepareProgramSubmission(const qdmi::Device& device,
 /// provider declined a multi-program job before submission; other failures
 /// return an error. No job is submitted unless every target is compatible.
 /// A retained destination snapshot must belong to the supplied device session.
-[[nodiscard]] llvm::Expected<std::optional<qdmi::Job>> trySubmitPrograms(
-    const qdmi::Device& device, llvm::ArrayRef<const CompiledProgram*> programs,
-    int64_t numShots = 1024,
-    const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom3 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt,
-    const TargetEnvironment* destination = nullptr);
+[[nodiscard]] llvm::Expected<std::optional<qdmi::Job>>
+trySubmitPrograms(const qdmi::Device& device,
+                  llvm::ArrayRef<const CompiledProgram*> programs,
+                  const qdmi::JobParameters& parameters = {.shots = 1024},
+                  const TargetEnvironment* destination = nullptr);
 
 /// Compile and submit source using one snapshot of the destination.
-[[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
-    const qdmi::Device& device, CompilerInput program, int64_t numShots = 1024,
-    std::optional<QDMI_Program_Format> format = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom3 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
-    const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt,
-    const CompilationOptions& options = {});
+[[nodiscard]] llvm::Expected<qdmi::Job>
+submitProgram(const qdmi::Device& device, CompilerInput program,
+              const qdmi::JobParameters& parameters = {.shots = 1024},
+              std::optional<QDMI_Program_Format> format = std::nullopt,
+              const CompilationOptions& options = {});
 
 } // namespace mlir

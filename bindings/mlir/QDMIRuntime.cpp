@@ -110,7 +110,7 @@ obtain a fresh destination snapshot. Returns destinations indexed by format.
       .def(
           "submit",
           [](const runtime::Context& context,
-             const mlir::CompiledProgram& program, int64_t shots) {
+             const mlir::CompiledProgram& program, size_t shots) {
             const nb::gil_scoped_release release;
             return unwrap(context.submit(program, shots));
           },
@@ -128,18 +128,17 @@ Returns:
           "try_submit",
           [](const runtime::Context& context,
              const std::vector<const mlir::CompiledProgram*>& programs,
-             int64_t shots,
+             size_t shots,
              const std::optional<PythonCustomJobParameter>& custom1,
              const std::optional<PythonCustomJobParameter>& custom2,
              const std::optional<PythonCustomJobParameter>& custom3,
              const std::optional<PythonCustomJobParameter>& custom4,
              const std::optional<PythonCustomJobParameter>& custom5,
              const mlir::TargetEnvironment* destination) {
-            const runtime::BorrowedJobParameters parameters{
-                toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-                toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-                toCustomJobParameter(custom5),
-            };
+            const auto parameters =
+                toJobParameters(std::nullopt, custom1, custom2, custom3,
+                                custom4, custom5)
+                    .custom;
             const nb::gil_scoped_release release;
             return unwrap(context.trySubmit(programs, shots,
                                             custom1 || custom2 || custom3 ||
@@ -173,17 +172,16 @@ retained defaults.
       .def(
           "supports",
           [](const runtime::Context& context, const QDMI_Program_Format format,
-             const size_t count, int64_t shots,
+             const size_t count, size_t shots,
              const std::optional<PythonCustomJobParameter>& custom1,
              const std::optional<PythonCustomJobParameter>& custom2,
              const std::optional<PythonCustomJobParameter>& custom3,
              const std::optional<PythonCustomJobParameter>& custom4,
              const std::optional<PythonCustomJobParameter>& custom5) {
-            const runtime::BorrowedJobParameters parameters{
-                toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-                toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-                toCustomJobParameter(custom5),
-            };
+            const auto parameters =
+                toJobParameters(std::nullopt, custom1, custom2, custom3,
+                                custom4, custom5)
+                    .custom;
             const nb::gil_scoped_release release;
             return unwrap(context.supports(format, count, shots,
                                            custom1 || custom2 || custom3 ||
