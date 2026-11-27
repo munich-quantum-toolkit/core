@@ -80,25 +80,30 @@ namespace base {
 using namespace qc;
 using namespace qir;
 
-/// Returns the result pointer the `qc::MeasureOp` @p op writes to, or
-/// a null value if it does not write into a classical register.
-static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
-                                                   Operation* op) {
-  const auto it = state.cregMeasurements.find(op);
-  if (it == state.cregMeasurements.end()) {
+/// Return the result pointer that @p op writes to through its fused stores and
+/// erase those stores, or return a null value without fused stores.
+static FailureOr<Value>
+resolveRegisterMeasurement(LoweringState& state, MeasureOp op,
+                           ConversionPatternRewriter& rewriter) {
+  const auto stores = getFusedStores(op);
+  if (stores.empty()) {
     return Value{};
   }
-  auto [registerIndex, index] = it->second;
-  const auto indexValue = getConstantIntValue(index);
+  auto store = stores.front();
+  const auto indexValue = getConstantIntValue(store.getIndex());
   if (!indexValue) {
     op->emitError("QIR Base Profile requires constant classical-register "
                   "measurement indices");
     return failure();
   }
-  const auto& results = state.cregs[registerIndex].results;
+  const auto& results =
+      state.cregs[state.cregIndices.at(store.getReg().getDefiningOp())].results;
   if (*indexValue < 0 || static_cast<size_t>(*indexValue) >= results.size()) {
     op->emitError("classical-register measurement index is out of bounds");
     return failure();
+  }
+  for (auto fused : stores) {
+    rewriter.eraseOp(fused);
   }
   return results[static_cast<size_t>(*indexValue)];
 }
@@ -327,7 +332,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 
     OpBuilder::InsertionGuard guard(rewriter);
 
-    auto registerResult = resolveRegisterMeasurement(state, op.getOperation());
+    auto registerResult = resolveRegisterMeasurement(state, op, rewriter);
     if (failed(registerResult)) {
       return failure();
     }
@@ -445,7 +450,7 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
         const auto& reg = state.cregs[entry.second];
         return reg.record && !reg.booleanStorage &&
                llvm::any_of(entry.first->getUsers(), [&](Operation* user) {
-                 return !state.deferredMeasurementStores.contains(user);
+                 return !user->hasAttr(QIR_FUSED_STORE_ATTR);
                });
       })) {
     return success();
@@ -528,7 +533,7 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
   moduleOp->walk(
       [&](cbit::LoadOp loadOp) { prepareRead(loadOp, loadOp.getReg()); });
   moduleOp->walk([&](cbit::StoreOp storeOp) {
-    if (state.deferredMeasurementStores.contains(storeOp)) {
+    if (storeOp->hasAttr(QIR_FUSED_STORE_ATTR)) {
       return;
     }
     const auto representation = representations.lookup(storeOp.getReg());
@@ -547,23 +552,26 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
   return success(!hasInvalidAccess);
 }
 
-/// Returns the result pointer the `qc::MeasureOp` @p op writes to, or
-/// `nullptr` if it does not write into a classical register.
-static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
+/// Return the result pointer that @p op writes to through its fused stores and
+/// erase those stores, or return `nullptr` without fused stores.
+static Value resolveRegisterMeasurement(LoweringState& state, MeasureOp op,
                                         ConversionPatternRewriter& rewriter) {
-  const auto it = state.cregMeasurements.find(op);
-  if (it == state.cregMeasurements.end()) {
+  const auto stores = getFusedStores(op);
+  if (stores.empty()) {
     return nullptr;
   }
-  auto [registerIndex, index] = it->second;
-  auto& reg = state.cregs[registerIndex];
+  auto store = stores.front();
+  auto& reg = state.cregs[state.cregIndices.at(store.getReg().getDefiningOp())];
   assert(reg.array && "result array must be allocated");
   auto loc = op->getLoc();
   auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-  auto remappedIndex = rewriter.getRemappedValue(index);
+  auto index = rewriter.getRemappedValue(store.getIndex());
   auto elementptr = LLVM::GEPOp::create(rewriter, loc, ptrType, ptrType,
-                                        reg.array, ValueRange{remappedIndex})
+                                        reg.array, ValueRange{index})
                         .getResult();
+  for (auto fused : stores) {
+    rewriter.eraseOp(fused);
+  }
   return LLVM::LoadOp::create(rewriter, loc, ptrType, elementptr).getResult();
 }
 
@@ -590,10 +598,10 @@ convertQubitMemRefAllocOp(memref::AllocOp op, memref::AllocOp::Adaptor adaptor,
                                     op.getType().getShape()[0])
                .getResult();
   }
-  state.qregSizes.try_emplace(op.getMemref(), size);
-
   auto array =
       LLVM::AllocaOp::create(rewriter, loc, ptrType, ptrType, size).getResult();
+  // Releases see the converted array, also through reference casts.
+  state.qregSizes.try_emplace(array, size);
   auto zero = LLVM::ZeroOp::create(rewriter, loc, ptrType).getResult();
   LLVM::CallOp::create(rewriter, loc, fnDec, ValueRange{size, array, zero});
 
@@ -768,8 +776,8 @@ struct ConvertQubitAllocaOp final : OpConversionPattern<memref::AllocaOp> {
 };
 
 /// Shape casts retain the same reference buffer and quantum allocation size.
-struct ConvertQubitCastOp final : StatefulOpConversionPattern<memref::CastOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+struct ConvertQubitCastOp final : OpConversionPattern<memref::CastOp> {
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(memref::CastOp op, OpAdaptor adaptor,
@@ -778,10 +786,6 @@ struct ConvertQubitCastOp final : StatefulOpConversionPattern<memref::CastOp> {
     if (!type || type.getRank() != 1 ||
         !isa<QubitType>(type.getElementType())) {
       return failure();
-    }
-    auto& sizes = getState().qregSizes;
-    if (auto size = sizes.lookup(op.getSource())) {
-      sizes[op.getResult()] = size;
     }
     rewriter.replaceOp(op, adaptor.getSource());
     return success();
@@ -876,7 +880,7 @@ struct ConvertMemRefDeallocOp final
     auto i64Type = rewriter.getI64Type();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
-    auto size = state.qregSizes.lookup(op.getMemref());
+    auto size = state.qregSizes.lookup(adaptor.getMemref());
     if (!size) {
       return rewriter.notifyMatchFailure(op, "unknown qubit register");
     }
@@ -1014,8 +1018,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     auto voidType = LLVM::LLVMVoidType::get(ctx);
 
     auto returnedResult = state.measuredResults.find(op);
-    auto result =
-        resolveRegisterMeasurement(state, op.getOperation(), rewriter);
+    auto result = resolveRegisterMeasurement(state, op, rewriter);
     if (!result) {
       if (returnedResult != state.measuredResults.end()) {
         result = getResultPtr(state, op.getOperation(), rewriter);
@@ -1044,8 +1047,10 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       return failure();
     }
 
-    // Create read-result call if the result is used
-    if (op.getResult().use_empty()) {
+    // Create read-result call if the result has uses besides fused stores
+    if (llvm::all_of(op->getUsers(), [](Operation* user) {
+          return user->hasAttr(QIR_FUSED_STORE_ATTR);
+        })) {
       rewriter.eraseOp(op);
     } else {
       auto fnSig = LLVM::LLVMFunctionType::get(rewriter.getI1Type(), {ptrType});
@@ -1066,9 +1071,10 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 static void populatePatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state) {
-  patterns.add<ConvertQubitAllocaOp, ConvertQubitStoreOp>(typeConverter, ctx);
+  patterns.add<ConvertQubitAllocaOp, ConvertQubitStoreOp, ConvertQubitCastOp>(
+      typeConverter, ctx);
   patterns.add<ConvertCBitAllocOp, ConvertCBitLoadOp, ConvertCBitStoreOp,
-               ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertQubitCastOp,
+               ConvertMemRefAllocOp, ConvertMemRefLoadOp,
                ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
                ConvertQCMeasureOp, ConvertQCResetOp>(typeConverter, ctx,
                                                      &state);
@@ -1255,8 +1261,7 @@ private:
                            FrozenRewritePatternSet(std::move(patterns)));
     }
     if (failed(prepareClassicalResults(moduleOp, state,
-                                       /*allowComputedOutputs=*/adaptive,
-                                       /*deferMeasurementStores=*/adaptive))) {
+                                       /*allowComputedOutputs=*/adaptive))) {
       return failure();
     }
     if (adaptive &&
@@ -1274,9 +1279,6 @@ private:
               applyPartialConversion(moduleOp, target, std::move(patterns)))) {
         return failure();
       }
-    }
-    if (adaptive) {
-      finalizeClassicalResults(state);
     }
 
     auto main = moduleOp.lookupSymbol<LLVM::LLVMFuncOp>(entryPointName);

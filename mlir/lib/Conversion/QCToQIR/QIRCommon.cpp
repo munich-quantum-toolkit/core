@@ -859,9 +859,19 @@ nameOpaqueQIRGates(ModuleOp moduleOp,
   return success();
 }
 
+SmallVector<cbit::StoreOp> getFusedStores(qc::MeasureOp measure) {
+  SmallVector<cbit::StoreOp> stores;
+  for (auto* user : measure->getUsers()) {
+    if (auto store = dyn_cast<cbit::StoreOp>(user);
+        store && store->hasAttr(QIR_FUSED_STORE_ATTR)) {
+      stores.push_back(store);
+    }
+  }
+  return stores;
+}
+
 LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
-                                      bool allowComputedOutputs,
-                                      bool deferMeasurementStores) {
+                                      bool allowComputedOutputs) {
   auto funcOp = mqt::getEntryPoint(cast<ModuleOp>(moduleOp));
   bool hasInvalidMemory = false;
   moduleOp->walk([&](Operation* operation) {
@@ -1000,6 +1010,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     return true;
   };
 
+  // Destination register and index of each fused measurement.
+  DenseMap<Operation*, std::pair<size_t, Value>> destinations;
   DenseMap<Block*, DenseSet<Operation*>> fusionCandidates;
   funcOp.walk([&](cbit::StoreOp storeOp) {
     auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
@@ -1052,8 +1064,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     }
     const auto destination =
         std::pair<size_t, Value>{registerIndex, storeOp.getIndex()};
-    const auto [it, inserted] = state.cregMeasurements.try_emplace(
-        measureOp.getOperation(), destination);
+    const auto [it, inserted] =
+        destinations.try_emplace(measureOp.getOperation(), destination);
     if (!inserted && it->second != destination) {
       if (useBooleanStorage(registerIndex)) {
         return;
@@ -1069,8 +1081,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
   }
   DenseSet<size_t> sharedRegisters;
   for (auto* measurement : llvm::make_first_range(state.measuredResults)) {
-    if (auto it = state.cregMeasurements.find(measurement);
-        it != state.cregMeasurements.end()) {
+    if (auto it = destinations.find(measurement); it != destinations.end()) {
       sharedRegisters.insert(it->second.first);
     }
   }
@@ -1094,8 +1105,8 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
       }
     }
     for (auto* measurement : llvm::make_first_range(state.measuredResults)) {
-      auto it = state.cregMeasurements.find(measurement);
-      if (it == state.cregMeasurements.end()) {
+      auto it = destinations.find(measurement);
+      if (it == destinations.end()) {
         continue;
       }
       const auto& destination = it->second;
@@ -1121,9 +1132,6 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
     return state.cregs[state.cregIndices.at(store.getReg().getDefiningOp())]
         .booleanStorage;
   });
-  state.cregMeasurements.remove_if([&](const auto& measurement) {
-    return state.cregs[measurement.second.first].booleanStorage;
-  });
 
   OpBuilder builder(returnOp);
   auto zero = arith::ConstantIntOp::create(builder, returnOp.getLoc(), 0, 64);
@@ -1139,22 +1147,9 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
         measureOp->isBeforeInBlock(allocOp)) {
       rewriter.moveOpBefore(allocOp, measureOp);
     }
-    if (deferMeasurementStores) {
-      state.deferredMeasurementStores[storeOp] = measureOp;
-    } else {
-      storeOp.erase();
-    }
+    storeOp->setAttr(QIR_FUSED_STORE_ATTR, rewriter.getUnitAttr());
   }
   return success();
-}
-
-void finalizeClassicalResults(LoweringState& state) {
-  for (auto [store, measurement] : state.deferredMeasurementStores) {
-    auto storeOp = cast<cbit::StoreOp>(store);
-    state.cregMeasurements.at(measurement).second = storeOp.getIndex();
-    storeOp.erase();
-  }
-  state.deferredMeasurementStores.clear();
 }
 
 } // namespace mlir
