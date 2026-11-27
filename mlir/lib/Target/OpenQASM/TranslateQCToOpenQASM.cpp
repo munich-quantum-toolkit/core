@@ -96,6 +96,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -3885,9 +3886,7 @@ private:
 LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
                                      llvm::raw_ostream& output,
                                      const TargetEnvironment* environment) {
-  if (failed(verify(*moduleOp))) {
-    return failure();
-  }
+  assert(succeeded(verify(*moduleOp)) && "OpenQASM export requires valid IR");
   return OpenQASMEmitter(*moduleOp, false, environment).emit(output);
 }
 
@@ -3906,9 +3905,7 @@ translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
 FailureOr<std::string>
 translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp,
                        const TargetEnvironment* environment) {
-  if (failed(verify(*moduleOp))) {
-    return failure();
-  }
+  assert(succeeded(verify(*moduleOp)) && "OpenQASM export requires valid IR");
   std::string source;
   llvm::raw_string_ostream stream(source);
   if (failed(OpenQASMEmitter(*moduleOp, true, environment).emit(stream))) {
