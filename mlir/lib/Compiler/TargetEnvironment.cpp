@@ -57,6 +57,40 @@ bool isControlFlowCapability(const llvm::StringRef id) {
          id == ProgramCapability::CLASSICAL_ASSIGNMENT;
 }
 
+/// Return the compiler output for a format, if the compiler can emit it.
+static std::optional<ProgramFormat>
+resolveCompilerOutput(const PayloadFormat& format,
+                      const std::optional<mqt::PayloadVersionRange>& versions) {
+  const bool text = format.encoding == PayloadEncoding::Text;
+  if (format.id == mqt::IQM_JSON_FORMAT_ID && format.version.empty() &&
+      format.profile.empty() && text) {
+    return ProgramFormat::IQMJSON;
+  }
+  if (format.id == mqt::OPENQASM_FORMAT_ID && versions &&
+      format.profile.empty() && text) {
+    if (versions->withinMajor(2) &&
+        versions->contains(llvm::VersionTuple(2, 0))) {
+      return ProgramFormat::OpenQASM2;
+    }
+    if (versions->withinMajor(3) &&
+        versions->select({llvm::VersionTuple(3, 0), llvm::VersionTuple(3, 1)},
+                         llvm::VersionTuple(3))) {
+      return ProgramFormat::OpenQASM3;
+    }
+  }
+  if (format.id == mqt::QIR_FORMAT_ID && versions && versions->withinMajor(2) &&
+      versions->select({llvm::VersionTuple(2, 0), llvm::VersionTuple(2, 1)},
+                       llvm::VersionTuple(2))) {
+    if (format.profile == mqt::QIR_BASE_PROFILE) {
+      return ProgramFormat::QIRBase;
+    }
+    if (format.profile == mqt::QIR_ADAPTIVE_PROFILE) {
+      return ProgramFormat::QIRAdaptive;
+    }
+  }
+  return std::nullopt;
+}
+
 llvm::Expected<PayloadSpecification>
 PayloadSpecification::forProgramFormat(ProgramFormat format,
                                        PayloadEncoding encoding) {
@@ -204,6 +238,14 @@ PayloadSpecification::create(PayloadFormat format,
     }
   }
 
+  // The compiler's own formats must name an output it can emit.
+  if ((format.id == mqt::OPENQASM_FORMAT_ID ||
+       format.id == mqt::QIR_FORMAT_ID ||
+       format.id == mqt::IQM_JSON_FORMAT_ID) &&
+      !resolveCompilerOutput(format, versions)) {
+    return invalidPayload(
+        "MQT Compiler cannot emit the selected payload format");
+  }
   return PayloadSpecification(std::move(format), versions,
                               std::move(capabilities),
                               optionalCapabilitiesKnown);
@@ -254,40 +296,6 @@ PayloadSpecification::create(const mqt::PayloadSpecAttr attribute) {
                 attribute.getOptionalCapabilitiesKnown());
 }
 
-/// Return the compiler output for a format, if the compiler can emit it.
-static std::optional<ProgramFormat>
-resolveCompilerOutput(const PayloadFormat& format,
-                      const std::optional<mqt::PayloadVersionRange>& versions) {
-  const bool text = format.encoding == PayloadEncoding::Text;
-  if (format.id == mqt::IQM_JSON_FORMAT_ID && format.version.empty() &&
-      format.profile.empty() && text) {
-    return ProgramFormat::IQMJSON;
-  }
-  if (format.id == mqt::OPENQASM_FORMAT_ID && versions &&
-      format.profile.empty() && text) {
-    if (versions->withinMajor(2) &&
-        versions->contains(llvm::VersionTuple(2, 0))) {
-      return ProgramFormat::OpenQASM2;
-    }
-    if (versions->withinMajor(3) &&
-        versions->select({llvm::VersionTuple(3, 0), llvm::VersionTuple(3, 1)},
-                         llvm::VersionTuple(3))) {
-      return ProgramFormat::OpenQASM3;
-    }
-  }
-  if (format.id == mqt::QIR_FORMAT_ID && versions && versions->withinMajor(2) &&
-      versions->select({llvm::VersionTuple(2, 0), llvm::VersionTuple(2, 1)},
-                       llvm::VersionTuple(2))) {
-    if (format.profile == mqt::QIR_BASE_PROFILE) {
-      return ProgramFormat::QIRBase;
-    }
-    if (format.profile == mqt::QIR_ADAPTIVE_PROFILE) {
-      return ProgramFormat::QIRAdaptive;
-    }
-  }
-  return std::nullopt;
-}
-
 PayloadSpecification::PayloadSpecification(
     PayloadFormat format, std::optional<mqt::PayloadVersionRange> versions,
     std::vector<ProgramCapability> capabilities,
@@ -306,12 +314,9 @@ const PayloadFormat& PayloadSpecification::format() const noexcept {
   return format_;
 }
 
-llvm::Expected<ProgramFormat> PayloadSpecification::compilerOutput() const {
-  if (!output_) {
-    return invalidPayload(
-        "MQT Compiler cannot emit the selected payload format");
-  }
-  return *output_;
+std::optional<ProgramFormat>
+PayloadSpecification::compilerOutput() const noexcept {
+  return output_;
 }
 
 llvm::ArrayRef<ProgramCapability>

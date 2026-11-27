@@ -705,9 +705,11 @@ qdmiFormatForPayload(const PayloadSpecification& payload) {
       payload.versionRange()->contains(llvm::VersionTuple(17))) {
     return QDMI_PROGRAM_FORMAT_QPY;
   }
-  auto output = payload.compilerOutput();
+  const auto output = payload.compilerOutput();
   if (!output) {
-    return output.takeError();
+    return createStringError(
+        std::errc::invalid_argument,
+        "MQT Compiler cannot emit the selected payload format");
   }
   const bool binary = payload.format().encoding == PayloadEncoding::Binary;
   switch (*output) {
@@ -1127,11 +1129,10 @@ CompiledProgram::serializeAttached(QCProgram program,
     return CompiledProgram(environment, std::move(*payload), *format,
                            std::move(layout), resultWidth);
   }
-  auto output = environment.payloadSpecification().compilerOutput();
-  if (!output) {
-    return output.takeError();
-  }
-  auto exported = exportQCProgram(std::move(program), *output, options);
+  // qdmiFormatForPayload accepted the format, so the compiler emits it.
+  auto exported = exportQCProgram(
+      std::move(program), *environment.payloadSpecification().compilerOutput(),
+      options);
   if (failed(exported)) {
     return diagnostics.takeError(
         std::make_error_code(std::errc::invalid_argument));

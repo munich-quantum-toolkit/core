@@ -113,7 +113,9 @@ public:
   ///
   /// Versions accept numeric ceilings or comma-conjoined >=, <, <= bounds.
   /// Bare versions retain a same-major ceiling; omitted components are zero.
-  /// An empty version identifies an unversioned format.
+  /// An empty version identifies an unversioned format. OpenQASM, QIR and
+  /// IQM JSON specifications must select a version, profile and encoding the
+  /// compiler emits.
   [[nodiscard]] static llvm::Expected<PayloadSpecification>
   create(PayloadFormat format, std::vector<ProgramCapability> capabilities = {},
          bool optionalCapabilitiesKnown = false);
@@ -132,8 +134,9 @@ public:
 
   /// Return the compiler output selected by the program format.
   ///
-  /// The output is resolved once on construction.
-  [[nodiscard]] llvm::Expected<ProgramFormat> compilerOutput() const;
+  /// Specifications of OpenQASM, QIR and IQM JSON always name an output the
+  /// compiler emits. Other formats, such as QPY, have none.
+  [[nodiscard]] std::optional<ProgramFormat> compilerOutput() const noexcept;
 
   /// Return the supported program features in reported order.
   [[nodiscard]] llvm::ArrayRef<ProgramCapability> capabilities() const noexcept;

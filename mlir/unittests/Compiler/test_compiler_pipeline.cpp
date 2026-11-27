@@ -2094,15 +2094,18 @@ TEST_F(CompilerPipelineTest, QIRReceiverRangePromotesMinimumVersion) {
   for (const auto* version : {">=2,<3", ">=2.1,<3", ">=2.2,<3", "2.99"}) {
     auto input = QCProgram::fromOpenQASMString("OPENQASM 3; qubit q; h q;");
     MQT_ASSERT_SUCCESS(input);
-    const auto payload = llvm::cantFail(PayloadSpecification::create(
-        {.id = "qir", .version = version, .profile = "base"}));
-    attachTargetEnvironment(
-        input->module(), TargetEnvironment(makeUnrestrictedTarget(), payload));
-    auto result = std::move(*input).intoQIR(QIRProfile::Base);
+    auto payload = PayloadSpecification::create(
+        {.id = "qir", .version = version, .profile = "base"});
+    // No known QIR version satisfies this receiver range.
     if (StringRef(version) == ">=2.2,<3") {
-      EXPECT_TRUE(failed(result));
+      EXPECT_FALSE(static_cast<bool>(payload));
+      llvm::consumeError(payload.takeError());
       continue;
     }
+    attachTargetEnvironment(
+        input->module(), TargetEnvironment(makeUnrestrictedTarget(),
+                                           llvm::cantFail(std::move(payload))));
+    auto result = std::move(*input).intoQIR(QIRProfile::Base);
     MQT_ASSERT_SUCCESS(result);
     ASSERT_TRUE(succeeded(result->cleanup()));
     auto ir = std::move(*result).intoLLVMIR();

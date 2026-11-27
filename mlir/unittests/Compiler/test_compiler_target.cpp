@@ -314,8 +314,9 @@ TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
            std::pair{"2.1.3", "2.1.3"},
        }) {
     SCOPED_TRACE(input);
+    // A provider format, so that the unversioned row is valid too.
     const auto payload = valid(mlir::PayloadSpecification::create(
-        {.id = "qir", .version = input, .profile = "base"}));
+        {.id = "example", .version = input, .profile = "base"}));
     EXPECT_EQ(payload.format().version, expected);
     EXPECT_EQ(
         valid(mlir::PayloadSpecification::create(payload.materialize(context)))
@@ -323,16 +324,16 @@ TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
         payload.format());
   }
 
-  EXPECT_EQ(valid(valid(mlir::PayloadSpecification::create({.id = "iqm-json"}))
-                      .compilerOutput()),
+  EXPECT_EQ(valid(mlir::PayloadSpecification::create({.id = "iqm-json"}))
+                .compilerOutput(),
             mlir::ProgramFormat::IQMJSON);
   const auto qir = valid(mlir::PayloadSpecification::create(
       {.id = "qir", .version = "2.1", .profile = "base"}));
-  EXPECT_EQ(valid(qir.compilerOutput()), mlir::ProgramFormat::QIRBase);
+  EXPECT_EQ(qir.compilerOutput(), mlir::ProgramFormat::QIRBase);
   for (const auto* version : {"3", "3.0", "3.0.0", "3.1"}) {
     const auto qasm = valid(mlir::PayloadSpecification::create(
         {.id = "openqasm", .version = version}));
-    EXPECT_EQ(valid(qasm.compilerOutput()), mlir::ProgramFormat::OpenQASM3);
+    EXPECT_EQ(qasm.compilerOutput(), mlir::ProgramFormat::OpenQASM3);
   }
   expectInvalid(
       mlir::PayloadSpecification::create({.id = "openqasm", .version = "3"},
@@ -341,7 +342,7 @@ TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
       "multiway branching");
   const auto exactMajor = valid(mlir::PayloadSpecification::create(
       {.id = "qir", .version = "2", .profile = "base"}));
-  EXPECT_EQ(valid(exactMajor.compilerOutput()), mlir::ProgramFormat::QIRBase);
+  EXPECT_EQ(exactMajor.compilerOutput(), mlir::ProgramFormat::QIRBase);
 }
 
 TEST(PayloadSpecificationTest, NormalizesTypedVersionShorthand) {
@@ -355,7 +356,7 @@ TEST(PayloadSpecificationTest, NormalizesTypedVersionShorthand) {
   ASSERT_TRUE(attribute);
   const auto payload = valid(mlir::PayloadSpecification::create(attribute));
   EXPECT_EQ(payload.format().version, "2.1.0");
-  EXPECT_EQ(valid(payload.compilerOutput()), mlir::ProgramFormat::QIRBase);
+  EXPECT_EQ(payload.compilerOutput(), mlir::ProgramFormat::QIRBase);
   EXPECT_EQ(payload.materialize(context).getFormat().getVersion().getValue(),
             "2.1.0");
 }
@@ -1908,18 +1909,18 @@ TEST(PayloadSpecificationTest, NumericReceiverVersionRanges) {
   for (const auto* version : {">=3,<4", "<4,>=3.0", "3.99"}) {
     const auto payload = valid(mlir::PayloadSpecification::create(
         {.id = "openqasm", .version = version}));
-    EXPECT_EQ(valid(payload.compilerOutput()), mlir::ProgramFormat::OpenQASM3);
+    EXPECT_EQ(payload.compilerOutput(), mlir::ProgramFormat::OpenQASM3);
     EXPECT_EQ(
         valid(mlir::PayloadSpecification::create(payload.materialize(context)))
             .versionRange(),
         payload.versionRange());
   }
   for (const auto* version : {">=2,<4", ">=3.2,<4", ">=4,<5"}) {
-    const auto payload = valid(mlir::PayloadSpecification::create(
-        {.id = "openqasm", .version = version}));
-    auto output = payload.compilerOutput();
-    EXPECT_FALSE(output) << version;
-    llvm::consumeError(output.takeError());
+    SCOPED_TRACE(version);
+    expectInvalid(mlir::PayloadSpecification::create(
+                      {.id = "openqasm", .version = version}),
+                  "Invalid payload specification: MQT Compiler cannot emit "
+                  "the selected payload format");
   }
 }
 

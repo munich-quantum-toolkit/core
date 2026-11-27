@@ -838,9 +838,10 @@ def test_empty_compiled_program_round_trips_through_mlir() -> None:
     assert "func.func @main() attributes" in qc.ir
     restored = QCProgram.from_mlir_str(qc.ir).to_qiskit()
 
-    assert restored.num_qubits == 0
+    # The attached target supplies its single qubit.
+    assert restored.num_qubits == 1
     assert restored.num_clbits == 0
-    assert Operator(restored) == Operator(circuit)
+    assert Operator(restored) == Operator(QuantumCircuit(1))
 
 
 @pytest.fixture(scope="module")

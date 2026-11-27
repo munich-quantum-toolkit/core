@@ -4617,10 +4617,10 @@ def test_native_layout_uses_recorded_physical_sites(sites: list[int]) -> None:
     expected.compose(circuit, range(2), inplace=True)
     np.testing.assert_allclose(Operator.from_circuit(exported).data, Operator(expected).data, atol=1e-12)
 
-    without_target = restored.to_qiskit(copy=True)
-    assert without_target.layout is None
-    assert without_target.num_qubits == max(sites) + 1
-    np.testing.assert_allclose(Operator(without_target).data, Operator(exported).data, atol=1e-12)
+    attached = restored.to_qiskit(copy=True)
+    assert attached.layout is not None
+    assert attached.num_qubits == max(sites) + 1
+    np.testing.assert_allclose(Operator.from_circuit(attached).data, Operator(expected).data, atol=1e-12)
 
     reversed_target = CompilerTarget(
         "reversed site order",

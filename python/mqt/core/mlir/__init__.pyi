@@ -1028,8 +1028,9 @@ class QCProgram(Program):
         Args:
             target: Map static site IDs to qubit indices in target site order. All
                 qubits must be static sites of the target. Select applicable standard
-                gate names without checking device execution support. None applies no
-                target site mapping.
+                gate names without checking device execution support. None uses the
+                target the program was compiled for, if any, including its payload
+                control-flow limits; otherwise no target site mapping applies.
             copy: Preserve the source program by exporting a copy.
         """
 
@@ -1243,8 +1244,9 @@ class QCOProgram(Program):
         Args:
             target: Map static site IDs to qubit indices in target site order. All
                 qubits must be static sites of the target. Select applicable standard
-                gate names without checking device execution support. None applies no
-                target site mapping.
+                gate names without checking device execution support. None uses the
+                target the program was compiled for, if any, including its payload
+                control-flow limits; otherwise no target site mapping applies.
             copy: Preserve the source program by exporting a copy.
         """
 

@@ -26,8 +26,9 @@ with open("output.qpy", "wb") as stream:
 ```
 
 The tuple unpacking requires exactly one circuit. QC and QCO programs both
-provide `to_qiskit()`; pass `copy=True` to preserve the source or `target=` to
-map compiler site IDs through a target. The
+provide `to_qiskit()`; pass `copy=True` to preserve the source. A program
+compiled for a target exports for that target; pass `target=` to map compiler
+site IDs of other native programs through a target. The
 [supported circuit translation](#supported-circuit-translation) defines which
 circuit features survive conversion.
 

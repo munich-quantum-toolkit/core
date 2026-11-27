@@ -3147,12 +3147,9 @@ exportCircuitImpl(mlir::QCProgram program,
 
 nb::object exportCircuit(mlir::QCProgram program,
                          const mlir::CompilerTarget* target) {
-  return exportCircuitImpl(std::move(program), target, nullptr);
-}
-
-nb::object exportCompiledCircuit(mlir::QCProgram program) {
-  if (!program.module()->hasAttr(mlir::mqt::TargetEnvAttr::name)) {
-    return exportCircuitImpl(std::move(program), nullptr, nullptr);
+  if (target != nullptr ||
+      !program.module()->hasAttr(mlir::mqt::TargetEnvAttr::name)) {
+    return exportCircuitImpl(std::move(program), target, nullptr);
   }
   const mlir::TargetEnvironmentAnalysis attached(program.module());
   if (!attached) {

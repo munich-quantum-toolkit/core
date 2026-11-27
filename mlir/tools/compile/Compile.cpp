@@ -583,11 +583,11 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
     std::optional<TargetEnvironment> targetEnvironment;
     if (compilerTarget) {
       if (outputFormat.getNumOccurrences() == 0 && !emitQPY) {
-        auto compilerOutput = selectedPayload->compilerOutput();
-        if (!compilerOutput) {
-          return compilerOutput.takeError();
+        parsedOutputFormat = selectedPayload->compilerOutput();
+        if (!parsedOutputFormat) {
+          return llvm::createStringError(
+              "MQT Compiler cannot emit the selected payload format");
         }
-        parsedOutputFormat = *compilerOutput;
       }
       targetEnvironment.emplace(std::move(*compilerTarget),
                                 std::move(*selectedPayload));

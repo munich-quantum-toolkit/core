@@ -743,18 +743,14 @@ payloadForOutput(OutputFormat output) {
     auto payload = payloadForOutput(selected);
     if (targetEnvironment) {
       const auto& requested = targetEnvironment->payloadSpecification();
-      auto targetOutput = requested.compilerOutput();
+      const auto targetOutput = requested.compilerOutput();
       if (selected == OutputFormat::QC ||
           selected == OutputFormat::QCOOptimized ||
           selected == OutputFormat::Jeff ||
-          (targetOutput && selected != OutputFormat::Qiskit &&
-           *targetOutput == static_cast<mlir::ProgramFormat>(selected))) {
-        if (!targetOutput) {
-          llvm::consumeError(targetOutput.takeError());
-        }
+          (selected != OutputFormat::Qiskit &&
+           targetOutput == static_cast<mlir::ProgramFormat>(selected))) {
         payload = requested;
       } else {
-        llvm::consumeError(targetOutput.takeError());
         payload = payload.restrictCapabilities(requested);
       }
       outputEnvironment.emplace(targetEnvironment->target(),
@@ -806,7 +802,7 @@ payloadForOutput(OutputFormat output) {
     if (!includeOutputLayout) {
       qc.module()->removeAttr(mlir::mqt::kLayoutAttr);
     }
-    auto result = bindings::qiskit::exportCompiledCircuit(std::move(qc));
+    auto result = bindings::qiskit::exportCircuit(std::move(qc));
     if (input.format == OutputFormat::Qiskit) {
       result.attr("name") = program.attr("name");
       result.attr("metadata") = nb::module_::import_("copy").attr("deepcopy")(
@@ -1219,7 +1215,7 @@ generateBenchmark(const Benchmark& benchmark) {
 exportQPY(mlir::QCProgram program) {
   const nb::gil_scoped_acquire acquire;
   try {
-    auto circuit = bindings::qiskit::exportCompiledCircuit(std::move(program));
+    auto circuit = bindings::qiskit::exportCircuit(std::move(program));
     auto data = nb::cast<nb::bytes>(writeQPY(circuit));
     return std::string(data.c_str(), data.size());
   } catch (const std::exception& error) {
@@ -2272,8 +2268,9 @@ selected target.
 Args:
     target: Map static site IDs to qubit indices in target site order. All
         qubits must be static sites of the target. Select applicable standard
-        gate names without checking device execution support. None applies no
-        target site mapping.
+        gate names without checking device execution support. None uses the
+        target the program was compiled for, if any, including its payload
+        control-flow limits; otherwise no target site mapping applies.
     copy: Preserve the source program by exporting a copy.)pb")
       .def(
           "to_qco",
@@ -2470,8 +2467,9 @@ selected target.
 Args:
     target: Map static site IDs to qubit indices in target site order. All
         qubits must be static sites of the target. Select applicable standard
-        gate names without checking device execution support. None applies no
-        target site mapping.
+        gate names without checking device execution support. None uses the
+        target the program was compiled for, if any, including its payload
+        control-flow limits; otherwise no target site mapping applies.
     copy: Preserve the source program by exporting a copy.)pb")
       .def(
           "to_qc",

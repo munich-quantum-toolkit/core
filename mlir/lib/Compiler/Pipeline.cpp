@@ -753,9 +753,11 @@ runDefaultPipeline(CompilerInput program, ProgramFormat output,
 Expected<CompilerProgram>
 runDefaultPipeline(CompilerInput program, const TargetEnvironment& environment,
                    const CompilationOptions& options) {
-  auto output = environment.payloadSpecification().compilerOutput();
+  const auto output = environment.payloadSpecification().compilerOutput();
   if (!output) {
-    return output.takeError();
+    return createStringError(
+        std::errc::invalid_argument,
+        "MQT Compiler cannot emit the selected payload format");
   }
   return runDefaultPipeline(std::move(program), *output, environment, options);
 }
