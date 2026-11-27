@@ -12,6 +12,7 @@
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRefMemorySlot.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Operation.h"
@@ -46,6 +47,7 @@ struct PromoteClassicalMemory final
 
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<arith::ArithDialect, cbit::CBitDialect>();
+    memref::registerMemorySlotExternalModels(registry);
     normalization_.getDependentDialects(registry);
     pipeline_.getDependentDialects(registry);
   }

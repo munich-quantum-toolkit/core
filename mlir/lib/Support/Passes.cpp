@@ -23,7 +23,6 @@
 
 #include "mlir/Debug/ExecutionContext.h"
 #include "mlir/Debug/Observers/ActionProfiler.h"
-#include "mlir/Dialect/MemRef/IR/MemRefMemorySlot.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
@@ -130,7 +129,8 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
   pm.addPass(qco::createCombineControlledGates());
   pm.addPass(mqt::createSimplifyQuantum());
-  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCanonicalizerPass(
+      CanonicalizerPassOptions{.cseBetweenIterations = true}));
   pm.addPass(mqt::createRemoveUnusedQubits());
 }
 
@@ -142,12 +142,11 @@ void populateOpenQASM2PreparationPipeline(OpPassManager& pm,
   pm.addPass(qco::createUnrollLoopsForPayload(options));
   pm.addPass(mqt::createUnrollModifiers());
   pm.addPass(mqt::createLowerQuantumModifiers());
-  pm.addPass(createCanonicalizerPass());
 }
 
 void populateQIRPreparationPipeline(OpPassManager& pm,
                                     mqt::PayloadSpecAttr payload) {
-  pm.addPass(createInlinerPass());
+  pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(mqt::createUnrollModifiers());
   if (payload.getFormat().getProfile() == "base") {
@@ -156,7 +155,6 @@ void populateQIRPreparationPipeline(OpPassManager& pm,
     stream << payload;
     pm.addPass(qco::createUnrollLoopsForPayload(options));
   }
-  pm.addPass(createCanonicalizerPass());
 }
 
 void populateQubitReusePipeline(OpPassManager& pm) {
@@ -307,9 +305,6 @@ LogicalResult runWithCompilationOptions(PassManager& pm, ModuleOp moduleOp,
   if (!preservesLayout) {
     moduleOp->removeAttr(mqt::kLayoutAttr);
   }
-  DialectRegistry registry;
-  memref::registerMemorySlotExternalModels(registry);
-  moduleOp.getContext()->appendDialectRegistry(registry);
   if (options.enableTiming) {
     pm.enableTiming();
   }
@@ -370,10 +365,17 @@ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeUnusedValues) {
   }
 }
 
+void populateQIRCleanupPipeline(OpPassManager& pm, QIRProfile profile) {
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(createCSEPass());
+  pm.addPass(createMem2Reg());
+  pm.addPass(qir::createQIRCleanupPass());
+  pm.addPass(qir::createQIRSetAttributesAndMetadata({profile}));
+}
+
 void populateJeffCleanupPipeline(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
-  pm.addPass(createRemoveDeadValuesPass());
 }
 
 [[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp mod) {

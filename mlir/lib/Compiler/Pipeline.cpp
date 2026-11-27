@@ -22,6 +22,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
+#include "mqt/Dialect/QTensor/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 #include "mqt/Target/IQM/Export.h"
 #include "mqt/Target/OpenQASM/TranslateQCToOpenQASM.h"
@@ -436,11 +437,13 @@ static void populateExportPipeline(OpPassManager& pm, ProgramFormat output,
     pm.addPass(mqt::createPromoteClassicalMemory());
     return;
   case ProgramFormat::OpenQASM2:
-    populateQCExportPipeline(pm);
+    pm.addPass(mqt::createSimplifyClassicalControl());
+    pm.addPass(mqt::createPromoteClassicalMemory());
     populateOpenQASM2PreparationPipeline(
         pm, llvm::cantFail(PayloadSpecification::forProgramFormat(
                                ProgramFormat::OpenQASM2))
                 .materialize(context));
+    populateQCStructuralCleanupPipeline(pm);
     return;
   case ProgramFormat::QIRBase:
   case ProgramFormat::QIRAdaptive:
@@ -523,16 +526,21 @@ static void populateQCOOptimizationPipeline(OpPassManager& pm,
                                             std::string_view qcoPipeline,
                                             bool inlineCalls) {
   if (inlineCalls) {
-    pm.addPass(createInlinerPass());
+    pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   }
-  populateQCOCleanupPipeline(pm);
+  // Optimizations need promoted classical values, not compact storage.
+  populateQCOCleanupPipeline(pm, /*removeUnusedValues=*/false);
   if (qcoPipeline == "mqt-qco-default") {
+    // The default optimizations end canonicalized; only compact storage.
     populateDefaultQCOOptimizationPipeline(pm);
-  } else {
-    // The pipeline was validated before compilation started.
-    llvm::cantFail(parseModulePassPipeline(qcoPipeline, pm));
-    pm.addPass(qco::createVerifyQCOProgram());
+    pm.addPass(qtensor::createShrinkQTensorToFitPass());
+    pm.addPass(createSymbolDCEPass());
+    pm.addPass(createRemoveDeadValuesPass());
+    return;
   }
+  // The pipeline was validated before compilation started.
+  llvm::cantFail(parseModulePassPipeline(qcoPipeline, pm));
+  pm.addPass(qco::createVerifyQCOProgram());
   populateQCOCleanupPipeline(pm);
 }
 

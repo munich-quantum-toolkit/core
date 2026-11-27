@@ -32,7 +32,6 @@
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
 #include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
-#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/Conversion/SCFToControlFlow/SCFToControlFlow.h"
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -213,14 +212,6 @@ finalizeQIRMetadata(ModuleOp moduleOp, QIRProfile profile,
 }
 
 LogicalResult prepareQIRClassicalMemory(ModuleOp moduleOp) {
-  DialectRegistry registry;
-  registerQIRClassicalTensorDialects(registry);
-  auto* context = moduleOp.getContext();
-  context->appendDialectRegistry(registry);
-  context
-      ->loadDialect<affine::AffineDialect, bufferization::BufferizationDialect,
-                    linalg::LinalgDialect, memref::MemRefDialect,
-                    scf::SCFDialect, tensor::TensorDialect>();
   // Read-only tensors and explicit destinations need no alias analysis.
   bufferization::BufferizationOptions options;
   options.allowUnknownOps = true;
@@ -325,9 +316,16 @@ LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
   if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
     return failure();
   }
-  PassManager manager(ctx);
-  manager.addPass(createReconcileUnrealizedCastsPass());
-  return manager.run(moduleOp);
+  SmallVector<UnrealizedConversionCastOp> casts;
+  moduleOp.walk(
+      [&](UnrealizedConversionCastOp cast) { casts.push_back(cast); });
+  SmallVector<UnrealizedConversionCastOp> remaining;
+  reconcileUnrealizedCasts(casts, &remaining);
+  if (!remaining.empty()) {
+    return remaining.front().emitError(
+        "failed to legalize operation 'builtin.unrealized_conversion_cast'");
+  }
+  return success();
 }
 
 QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
