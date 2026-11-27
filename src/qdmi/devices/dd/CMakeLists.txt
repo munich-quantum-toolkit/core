@@ -33,13 +33,9 @@ if(NOT TARGET ${TARGET_NAME})
 
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon LLVMSupport)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
-  # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
-  # LLVM's process-wide registries when it loads this device.
-  if(APPLE)
-    target_link_options(${TARGET_NAME} PRIVATE "LINKER:-exported_symbol,_${QDMI_PREFIX}_QDMI_*")
-  elseif(UNIX)
-    target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
-  endif()
+  # Export only the QDMI interface. A plugin-enabled host could otherwise interpose LLVM's
+  # process-wide registries from static dependencies when it loads this device.
+  configure_qdmi_exports(TARGET ${TARGET_NAME} INTERFACE device PREFIX ${QDMI_PREFIX})
   if(WIN32)
     target_compile_definitions(${TARGET_NAME} PRIVATE NOMINMAX)
   endif()

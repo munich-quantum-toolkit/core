@@ -257,7 +257,9 @@ CC=clang-23 CXX=clang++-23 uv pip install mqt.core --no-binary mqt.core \
 Keep native builds on compatible CPUs. For redistribution, set
 `-Ccmake.define.DEPLOY=ON` and choose the target platform's compiler and system
 baseline. Cibuildwheel sets deployment mode explicitly for release wheels. The
-`DEPLOY` environment variable overrides the CMake setting.
+`DEPLOY` environment variable overrides the CMake setting. Deployment builds use
+the pinned LLVM/MLIR SDK unless `MLIR_DIR` or `LLVM_DIR` selects one, and
+require it without assertions or ABI-breaking checks.
 
 Clang and Apple Clang use ThinLTO through CMake's `ENABLE_IPO` option. For a
 local C++ build, `cmake --preset release` selects the same release defaults;
