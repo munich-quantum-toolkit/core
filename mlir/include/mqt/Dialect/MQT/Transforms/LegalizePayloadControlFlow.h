@@ -13,6 +13,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <array>
@@ -63,6 +64,12 @@ public:
   [[nodiscard]] bool coversBranch(Operation* operation, Value condition,
                                   uint64_t depth) const;
   [[nodiscard]] bool coversBranch(Operation* operation, Value condition) const;
+
+  /// Validate a branch with bodies emitted by an exporter.
+  ///
+  /// A null condition represents a generated single-bit local variable.
+  [[nodiscard]] bool coversBranch(Value condition, uint64_t depth,
+                                  function_ref<bool()> unitaryBranches) const;
   [[nodiscard]] bool coversDepth(PayloadControlFeature feature,
                                  Operation* operation) const;
   [[nodiscard]] bool coversDepth(PayloadControlFeature feature,

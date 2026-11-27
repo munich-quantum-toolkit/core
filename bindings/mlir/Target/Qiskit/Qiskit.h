@@ -80,8 +80,9 @@ importTargetEnvironment(nb::handle target, std::optional<size_t> nativeWidth,
 
 /// Consume a QC program to build a Qiskit circuit.
 ///
-/// An explicit target maps site IDs to qubits. Otherwise the attached
-/// `mqt.target_env`, if any, supplies the target and its payload limits.
+/// An explicit target selects gate names and maps site IDs to qubits.
+/// Otherwise the attached `mqt.target_env` supplies payload limits and selects
+/// the device mapping for statically mapped qubits.
 [[nodiscard]] nb::object
 exportCircuit(mlir::QCProgram program,
               const mlir::CompilerTarget* target = nullptr);

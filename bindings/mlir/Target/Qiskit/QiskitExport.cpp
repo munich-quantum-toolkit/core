@@ -18,6 +18,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
+#include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
@@ -350,6 +351,9 @@ checkedTargetSiteId(const uint64_t index) {
   return left + right;
 }
 
+using mlir::mqt::PayloadControlFeature;
+using mlir::mqt::PayloadControlSupport;
+
 namespace {
 struct QuantumRegister {
   std::string name;
@@ -358,6 +362,11 @@ struct QuantumRegister {
 };
 
 struct ExportState {
+  explicit ExportState(const PayloadControlSupport* support)
+      : controlSupport(support) {}
+
+  const PayloadControlSupport* controlSupport;
+
   struct ClassicalRegisterInfo {
     size_t registerIndex;
     uint32_t base;
@@ -880,8 +889,10 @@ collectUnitaryInstruction(mlir::Operation& operation,
   return result;
 }
 
-static void collectResources(mlir::func::FuncOp function, ExportState& state,
-                             const mlir::CompilerTarget* const target) {
+[[nodiscard]] static const mlir::CompilerTarget*
+collectResources(mlir::func::FuncOp function, ExportState& state,
+                 const mlir::CompilerTarget* target, bool requirePlacement) {
+  bool deviceTarget = target != nullptr && target->hasDeviceConstraints();
   llvm::StringSet<> usedNames;
   for (const auto& parameter : state.parameterNames) {
     usedNames.insert(parameter.getKey());
@@ -893,11 +904,29 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
             mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
       usedNames.insert(name.getValue());
     }
+    if (deviceTarget) {
+      auto alloc = llvm::dyn_cast<mlir::memref::AllocOp>(operation);
+      if (llvm::isa<mlir::qc::AllocOp>(operation) ||
+          (alloc &&
+           llvm::isa<mlir::qc::QubitType>(alloc.getType().getElementType()))) {
+        if (requirePlacement) {
+          throw std::runtime_error(
+              "target-aware Qiskit export requires statically mapped qubits");
+        }
+        // An attached target can accompany program qubits before placement.
+        deviceTarget = false;
+        target = nullptr;
+      }
+    }
+  }
+  if (deviceTarget) {
+    const auto lastQubit = checkedIndex(*target->maxSiteId(), "target site");
+    state.numQubits = checkedAdd(lastQubit, 1U, "target qubit");
   }
   llvm::DenseSet<uint32_t> staticIndices;
   for (auto& operation : function.getBody().front()) {
     if (auto staticQubit = llvm::dyn_cast<mlir::qc::StaticOp>(operation)) {
-      if (target != nullptr) {
+      if (deviceTarget) {
         const auto vertex =
             target->vertexForSite(checkedTargetSiteId(staticQubit.getIndex()));
         if (!vertex) {
@@ -917,10 +946,6 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
   }
   for (auto& operation : function.getBody().front()) {
     if (auto alloc = llvm::dyn_cast<mlir::qc::AllocOp>(operation)) {
-      if (target != nullptr) {
-        throw std::runtime_error(
-            "target-aware Qiskit export requires statically mapped qubits");
-      }
       state.qubits[alloc.getResult()] = state.numQubits;
       if (const auto location = llvm::dyn_cast<mlir::NameLoc>(alloc.getLoc())) {
         const auto name = location.getName().getValue();
@@ -943,10 +968,6 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
           "allocations");
     }
     if (llvm::isa<mlir::qc::QubitType>(type.getElementType())) {
-      if (target != nullptr) {
-        throw std::runtime_error(
-            "target-aware Qiskit export requires statically mapped qubits");
-      }
       const auto size = checkedIndex(type.getShape()[0], "qubit-register size");
       state.quantumBases[alloc.getResult()] = state.numQubits;
       state.quantumSizes[alloc.getResult()] = size;
@@ -1046,7 +1067,7 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
           "QC to Qiskit export does not support duplicate result registers");
     }
   }
-  if (target != nullptr) {
+  if (deviceTarget && (requirePlacement || state.quantumRegisters.empty())) {
     state.quantumRegisters.push_back(
         {.name = "q", .start = 0U, .size = state.numQubits});
   }
@@ -1144,6 +1165,7 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
     state.classicalRegisters.push_back(std::move(reg));
     state.numClbits = checkedAdd(state.numClbits, size, "classical-bit");
   }
+  return target;
 }
 
 [[nodiscard]] static std::optional<uint64_t>
@@ -2277,6 +2299,36 @@ collectResultBlock(mlir::Block& block, mlir::ValueRange results,
                       isConditionOperation);
 }
 
+[[noreturn]] static void throwControlFlowCapabilityError(ControlFlowKind kind) {
+  throw std::runtime_error("Qiskit output requires target capability '" +
+                           controlFlowCapability(kind).str() +
+                           "' and must meet its limits");
+}
+
+[[nodiscard]] static bool isUnitaryBranch(const ExportedCircuit& circuit) {
+  return llvm::all_of(circuit.instructions, [](const auto& instruction) {
+    switch (instruction.kind) {
+    case ExportedInstruction::Kind::Measure:
+    case ExportedInstruction::Kind::Reset:
+    case ExportedInstruction::Kind::Store:
+      return false;
+    default:
+      return !instruction.controlFlow ||
+             llvm::all_of(instruction.controlFlow->blocks, isUnitaryBranch);
+    }
+  });
+}
+
+static void validateBranch(const PayloadControlSupport* support,
+                           mlir::Value condition, size_t depth,
+                           const ExportedControlFlow& branch) {
+  if (support != nullptr && !support->coversBranch(condition, depth, [&] {
+        return llvm::all_of(branch.blocks, isUnitaryBranch);
+      })) {
+    throwControlFlowCapabilityError(ControlFlowKind::IfElse);
+  }
+}
+
 [[nodiscard]] static std::unique_ptr<ExportedControlFlow>
 collectIf(mlir::scf::IfOp ifOp, ExportedCircuit& containing, ExportState& state,
           const size_t controlFlowDepth) {
@@ -2294,6 +2346,8 @@ collectIf(mlir::scf::IfOp ifOp, ExportedCircuit& containing, ExportState& state,
                                                 ifOp.getResults(), state,
                                                 controlFlowDepth + 1U));
   }
+  validateBranch(state.controlSupport, ifOp.getCondition(),
+                 controlFlowDepth + 1U, *result);
   return result;
 }
 
@@ -2316,6 +2370,13 @@ collectFor(mlir::scf::ForOp loop, ExportedCircuit& containing,
         "Qiskit for-loop export requires constant bounds and a positive step");
   }
 
+  const auto count = rangeLength(*lower, *upper, *step);
+  if (state.controlSupport != nullptr &&
+      !state.controlSupport->coversIteration(
+          PayloadControlFeature::CountedIteration, controlFlowDepth + 1U,
+          llvm::APInt(64U, count))) {
+    throwControlFlowCapabilityError(ControlFlowKind::For);
+  }
   auto result = std::make_unique<ExportedControlFlow>();
   result->kind = ControlFlowKind::For;
   result->loop = {
@@ -2358,7 +2419,6 @@ collectFor(mlir::scf::ForOp loop, ExportedCircuit& containing,
   if (projection && loopParameter &&
       circuitUsesParameterName(body, loopParameterName)) {
     result->loop.parameter = *loopParameter;
-    const auto count = rangeLength(*lower, *upper, *step);
     if (count != 0U) {
       result->loop.start =
           checkedAffine(projection->multiplier, *lower, projection->offset,
@@ -2387,6 +2447,12 @@ collectFor(mlir::scf::ForOp loop, ExportedCircuit& containing,
 collectWhile(mlir::scf::WhileOp loop, ExportedCircuit& containing,
              ExportState& state, const size_t controlFlowDepth) {
   validateControlFlowDepth(controlFlowDepth);
+  if (state.controlSupport != nullptr &&
+      !state.controlSupport->coversIteration(
+          PayloadControlFeature::ConditionalLoop, controlFlowDepth + 1U,
+          std::nullopt)) {
+    throwControlFlowCapabilityError(ControlFlowKind::While);
+  }
   auto& before = loop.getBefore().front();
   auto& after = loop.getAfter().front();
   auto condition = llvm::cast<mlir::scf::ConditionOp>(before.getTerminator());
@@ -2446,6 +2512,7 @@ collectWhile(mlir::scf::WhileOp loop, ExportedCircuit& containing,
   assignEdge(before.getArguments(), yield.getResults(), tail, state,
              *yield.getOperation());
   exit->blocks.push_back(std::move(tail));
+  validateBranch(state.controlSupport, {}, controlFlowDepth + 2U, *exit);
   body.instructions.push_back({
       .kind = ExportedInstruction::Kind::ControlFlow,
       .controlFlow = std::move(exit),
@@ -2465,6 +2532,11 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
               ExportState& state, const size_t controlFlowDepth) {
   declareLocals(switchOp.getResults(), containing, state);
   validateControlFlowDepth(controlFlowDepth);
+  if (state.controlSupport != nullptr &&
+      !state.controlSupport->coversMultiwayBranching(controlFlowDepth + 1U,
+                                                     switchOp.getNumCases())) {
+    throwControlFlowCapabilityError(ControlFlowKind::Switch);
+  }
   auto result = std::make_unique<ExportedControlFlow>();
   result->kind = ControlFlowKind::Switch;
   result->target =
@@ -2787,7 +2859,7 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
 
 static void validateCircuit(const ExportedCircuit& circuit,
                             const VersionedTranslation& translation,
-                            const mlir::PayloadSpecification* payload,
+                            bool allowsAssignment,
                             llvm::StringSet<>& calledGates) {
   for (const auto& instruction : circuit.instructions) {
     if (instruction.kind == ExportedInstruction::Kind::Gate &&
@@ -2813,24 +2885,14 @@ static void validateCircuit(const ExportedCircuit& circuit,
         }
       }
     }
-    llvm::StringRef capability;
-    if (instruction.kind == ExportedInstruction::Kind::ControlFlow) {
-      capability = controlFlowCapability(instruction.controlFlow->kind);
-    } else if (instruction.kind == ExportedInstruction::Kind::Store) {
-      capability = mlir::ProgramCapability::CLASSICAL_ASSIGNMENT;
-    } else {
-      continue;
-    }
-    if (payload != nullptr && !capability.empty() &&
-        llvm::none_of(payload->capabilities(), [&](const auto& supported) {
-          return supported.id == capability && supported.value == 0;
-        })) {
-      throw std::runtime_error("Qiskit output requires target capability '" +
-                               capability.str() + "'");
+    if (!allowsAssignment &&
+        instruction.kind == ExportedInstruction::Kind::Store) {
+      throw std::runtime_error(
+          "Qiskit output requires target capability 'classical-assignment'");
     }
     if (instruction.controlFlow) {
       for (const auto& block : instruction.controlFlow->blocks) {
-        validateCircuit(block, translation, payload, calledGates);
+        validateCircuit(block, translation, allowsAssignment, calledGates);
       }
     }
   }
@@ -2957,9 +3019,10 @@ collectGateFunctions(mlir::ModuleOp moduleOp, mlir::func::FuncOp entryPoint) {
 }
 
 [[nodiscard]] static ExportedGateDefinition
-collectGateDefinition(mlir::func::FuncOp function) {
+collectGateDefinition(mlir::func::FuncOp function,
+                      const PayloadControlSupport* controlSupport) {
   const auto numParameters = gateParameterCount(function);
-  ExportState state;
+  ExportState state(controlSupport);
   for (auto argument : function.getArguments().take_front(numParameters)) {
     auto parameter =
         Parameter::symbol("p" + std::to_string(argument.getArgNumber()));
@@ -2992,10 +3055,8 @@ collectGateDefinition(mlir::func::FuncOp function) {
 }
 
 [[nodiscard]] static nb::object
-exportCircuitImpl(mlir::QCProgram program,
-                  const mlir::CompilerTarget* const target,
+exportCircuitImpl(mlir::QCProgram program, const mlir::CompilerTarget* target,
                   const mlir::PayloadSpecification* const payload) {
-  const bool deviceTarget = target != nullptr && target->hasDeviceConstraints();
   auto moduleOp = program.module();
   auto function = mlir::mqt::getEntryPoint(moduleOp);
   if (!function) {
@@ -3036,21 +3097,24 @@ exportCircuitImpl(mlir::QCProgram program,
     throw std::runtime_error(
         "QC to Qiskit export requires a single-block entry function");
   }
+  const auto support =
+      payload != nullptr
+          ? std::optional(PayloadControlSupport::forPayload(*payload))
+          : std::nullopt;
+  const auto* controlSupport = support ? &*support : nullptr;
   const auto gateFunctions = collectGateFunctions(moduleOp, function);
   std::vector<ExportedGateDefinition> gateDefinitions;
   gateDefinitions.reserve(gateFunctions.size());
   for (auto gateFunction : gateFunctions) {
-    gateDefinitions.push_back(collectGateDefinition(gateFunction));
+    gateDefinitions.push_back(
+        collectGateDefinition(gateFunction, controlSupport));
   }
-  ExportState state;
+  ExportState state(controlSupport);
   collectParameters(function, state);
-  if (deviceTarget) {
-    const auto lastQubit = checkedIndex(*target->maxSiteId(), "target site");
-    state.numQubits = checkedAdd(lastQubit, 1U, "target qubit");
-  }
   materializeBooleanResults(function);
   prepareMeasurementStores(function);
-  collectResources(function, state, deviceTarget ? target : nullptr);
+  target = collectResources(function, state, target,
+                            /*requirePlacement=*/payload == nullptr);
   indexWrites(function.getBody().front(), state.writes);
   auto circuit = collectBlock(function.getBody().front(), state, 0U);
   llvm::StringSet<> usedNames;
@@ -3062,11 +3126,18 @@ exportCircuitImpl(mlir::QCProgram program,
                                                   state.numClbits, "classical");
 
   auto translation = selectTranslation();
+  const bool allowsAssignment =
+      payload == nullptr ||
+      llvm::any_of(payload->capabilities(), [](const auto& capability) {
+        return capability.id == mlir::ProgramCapability::CLASSICAL_ASSIGNMENT &&
+               capability.value == 0;
+      });
   llvm::StringSet<> calledGates;
   for (const auto& definition : gateDefinitions) {
-    validateCircuit(definition.circuit, *translation, payload, calledGates);
+    validateCircuit(definition.circuit, *translation, allowsAssignment,
+                    calledGates);
   }
-  validateCircuit(circuit, *translation, payload, calledGates);
+  validateCircuit(circuit, *translation, allowsAssignment, calledGates);
   for (auto external : moduleOp.getOps<mlir::func::FuncOp>()) {
     if (!external.isExternal() || !calledGates.contains(external.getName())) {
       continue;
@@ -3138,8 +3209,21 @@ exportCircuitImpl(mlir::QCProgram program,
     }
     layout->sites.reset();
     writer->setLayout(*layout);
-  } else if (layout && layout->initial.size() == state.numQubits &&
-             !layout->sites && target == nullptr) {
+  } else if (layout && !layout->sites &&
+             (layout->initial.size() == state.numQubits ||
+              (target != nullptr && target->hasDeviceConstraints() &&
+               layout->initial.size() < state.numQubits))) {
+    // Circuit-wire layouts already use physical indices. Extra target wires
+    // keep their own positions in both permutations.
+    const auto extend = [&](std::vector<int64_t>& permutation) {
+      const auto width = static_cast<ptrdiff_t>(permutation.size());
+      permutation.resize(state.numQubits);
+      std::iota(permutation.begin() + width, permutation.end(), width);
+    };
+    extend(layout->initial);
+    if (layout->routing) {
+      extend(*layout->routing);
+    }
     writer->setLayout(*layout);
   }
   return writer->finish();

@@ -6523,13 +6523,21 @@ TEST_F(CompilerPipelineTest, NativePulseOpenQASMPreservesArityAndPhase) {
           llvm::cantFail(Capability::create("gpi2", 1, 1)),
           llvm::cantFail(Capability::create("measure", 1, 0)),
       })));
-  const TargetEnvironment environment(target, makePayloadSpecification());
+  const TargetEnvironment environment(
+      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  ProgramFormat::OpenQASM3)));
   auto qc = QCProgram::fromOpenQASMString(
       "OPENQASM 3; include \"stdgates.inc\"; qubit q; "
       "ry(0.73) q; rz(0.37) q; rx(-1.2) q;");
   MQT_ASSERT_SUCCESS(qc);
   auto original = std::move(*qc).intoQCO();
   ASSERT_TRUE(succeeded(original));
+  auto executable = runDefaultPipeline(original->copy(),
+                                       ProgramFormat::OpenQASM3, environment);
+  MQT_ASSERT_SUCCESS(executable);
+  const auto& payload = std::get<OpenQASMProgram>(*executable).source();
+  EXPECT_NE(payload.find("gpi("), std::string::npos);
+  EXPECT_EQ(payload.find("gphase("), std::string::npos);
   auto native = original->copy();
   ASSERT_TRUE(succeeded(native.compileForTarget(environment)));
   auto lowered = std::move(native).intoQC();

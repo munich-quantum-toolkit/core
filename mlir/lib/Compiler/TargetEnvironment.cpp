@@ -239,16 +239,17 @@ PayloadSpecification::create(PayloadFormat format,
   }
 
   // The compiler's own formats must name an output it can emit.
+  const auto output = resolveCompilerOutput(format, versions);
   if ((format.id == mqt::OPENQASM_FORMAT_ID ||
        format.id == mqt::QIR_FORMAT_ID ||
        format.id == mqt::IQM_JSON_FORMAT_ID) &&
-      !resolveCompilerOutput(format, versions)) {
+      !output) {
     return invalidPayload(
         "MQT Compiler cannot emit the selected payload format");
   }
   return PayloadSpecification(std::move(format), versions,
                               std::move(capabilities),
-                              optionalCapabilitiesKnown);
+                              optionalCapabilitiesKnown, output);
 }
 
 llvm::Expected<PayloadSpecification>
@@ -299,11 +300,10 @@ PayloadSpecification::create(const mqt::PayloadSpecAttr attribute) {
 PayloadSpecification::PayloadSpecification(
     PayloadFormat format, std::optional<mqt::PayloadVersionRange> versions,
     std::vector<ProgramCapability> capabilities,
-    const bool optionalCapabilitiesKnown)
+    const bool optionalCapabilitiesKnown, std::optional<ProgramFormat> output)
     : format_(std::move(format)), versionRange_(versions),
       capabilities_(std::move(capabilities)),
-      optionalCapabilitiesKnown_(optionalCapabilitiesKnown),
-      output_(resolveCompilerOutput(format_, versionRange_)) {}
+      optionalCapabilitiesKnown_(optionalCapabilitiesKnown), output_(output) {}
 
 const std::optional<mqt::PayloadVersionRange>&
 PayloadSpecification::versionRange() const noexcept {
@@ -361,7 +361,8 @@ PayloadSpecification PayloadSpecification::restrictCapabilities(
     capabilities.push_back(std::move(restricted));
   }
   return {format_, versionRange_, std::move(capabilities),
-          optionalCapabilitiesKnown_ && other.optionalCapabilitiesKnown_};
+          optionalCapabilitiesKnown_ && other.optionalCapabilitiesKnown_,
+          output_};
 }
 
 bool PayloadSpecification::supportsUnrestrictedMultiwayBranching()

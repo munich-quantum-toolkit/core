@@ -426,15 +426,10 @@ static QIRProfile qirProfile(ProgramFormat output) {
 static void populateExportPipeline(OpPassManager& pm, ProgramFormat output,
                                    const TargetEnvironment* environment,
                                    MLIRContext& context) {
-  const bool dropGlobalPhases =
-      environment != nullptr && environment->dropsGlobalPhases();
   switch (output) {
   case ProgramFormat::OpenQASM3:
     populateQCStructuralCleanupPipeline(pm);
     pm.addPass(mqt::createPromoteClassicalMemory());
-    if (dropGlobalPhases) {
-      pm.addPass(mqt::createDropGlobalPhases());
-    }
     return;
   case ProgramFormat::OpenQASM2:
     pm.addPass(mqt::createSimplifyClassicalControl());
@@ -455,7 +450,7 @@ static void populateExportPipeline(OpPassManager& pm, ProgramFormat output,
                                    ? ProgramFormat::QIRAdaptive
                                    : ProgramFormat::QIRBase))
                 .materialize(context));
-    if (dropGlobalPhases) {
+    if (environment != nullptr && environment->dropsGlobalPhases()) {
       pm.addPass(mqt::createDropGlobalPhases());
     }
     populateQCToQIRPipeline(pm, profile);
@@ -480,7 +475,8 @@ finishExport(ProgramAccess::Storage storage, ProgramFormat output,
   case ProgramFormat::OpenQASM3: {
     auto source = output == ProgramFormat::OpenQASM2
                       ? qc::translateQCToOpenQASM2(std::move(storage.mod))
-                      : qc::translateQCToOpenQASM3(std::move(storage.mod));
+                      : qc::translateQCToOpenQASM3(std::move(storage.mod),
+                                                   /*forExecution=*/true);
     if (failed(source)) {
       return failure();
     }

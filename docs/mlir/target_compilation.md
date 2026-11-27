@@ -244,11 +244,12 @@ by
 \operatorname{GPi2}(\phi) = R(\pi/2, \phi).
 ```
 
-Native OpenQASM export therefore emits `gphase(-π/2)` when replacing `R(π, φ)`
-with `gpi(φ)`; `gpi2` needs no phase correction. MQT Core's OpenQASM angles are
-in radians. IonQ's API expresses the phase in turns, so the same axis angle
-there is `φ / (2π)`. Check the destination interface's units when exchanging
-these gates.
+Direct OpenQASM export preserves the exact phase by emitting `gphase(-π/2)` when
+replacing `R(π, φ)` with `gpi(φ)`. Executable OpenQASM omits the entry-point
+correction when the target lacks `gphase`. The `gpi2` gate needs no phase
+correction. MQT Core's OpenQASM angles are in radians. IonQ's API expresses the
+phase in turns, so the same axis angle there is `φ / (2π)`. Check the
+destination interface's units when exchanging these gates.
 
 MQT Core's default OpenQASM import mode accepts `gpi(φ)`, `gpi2(φ)`, and the
 two-qubit `zz(θ)` alias of `rzz(θ)` with these radian definitions. Native QIR

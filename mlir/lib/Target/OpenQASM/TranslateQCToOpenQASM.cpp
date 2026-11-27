@@ -207,8 +207,10 @@ public:
                 .wasInterrupted();
   }
 
-  [[nodiscard]] LogicalResult emit(llvm::raw_ostream& sourceStream) {
-    if (failed(preflight())) {
+  [[nodiscard]] LogicalResult emit(llvm::raw_ostream& sourceStream,
+                                   bool forExecution = false) {
+    assert(succeeded(verify(moduleOp)) && "OpenQASM export requires valid IR");
+    if (failed(preflight(forExecution))) {
       return failure();
     }
     if (version2_) {
@@ -321,6 +323,7 @@ private:
   std::optional<mqt::PayloadControlSupport> controlSupport_;
   uint64_t controlDepth_ = 0;
   bool version2_ = false;
+  bool dropEntryPhase_ = false;
 
   bool hasNonOutputGlobals_ = false;
   std::string deviceRegister_;
@@ -838,12 +841,14 @@ private:
     return success();
   }
 
-  [[nodiscard]] LogicalResult preflight() {
+  [[nodiscard]] LogicalResult preflight(bool forExecution) {
     if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
       const TargetEnvironmentAnalysis environment(moduleOp);
       if (!environment) {
         return fail(moduleOp, environment.error());
       }
+      dropEntryPhase_ =
+          forExecution && environment.environment().dropsGlobalPhases();
       if (environment.environment().target().nativeOperationsKind() ==
           CompilerTarget::NativeOperations::Kind::Explicit) {
         nativeTarget_ = environment.environment().target();
@@ -1425,6 +1430,7 @@ private:
 
     llvm::SaveAndRestore outputGuard(output, &definitionOutput);
     llvm::SaveAndRestore functionGuard(function, gate);
+    llvm::SaveAndRestore phaseGuard(dropEntryPhase_, false);
     if (failed(emitBlock(gate.getBody().front()))) {
       return failure();
     }
@@ -1723,6 +1729,9 @@ private:
       return emitGateStatement(*emitted, call, *output);
     }
     if (auto unitary = dyn_cast<UnitaryOpInterface>(&operation)) {
+      if (dropEntryPhase_ && isa<GPhaseOp>(unitary.getOperation())) {
+        return success();
+      }
       if (auto barrier = dyn_cast<BarrierOp>(&operation)) {
         llvm::StringSet<> seen;
         *output << "barrier ";
@@ -3298,7 +3307,16 @@ private:
       return constantGateParameter(parameters[i]);
     };
     const auto symbol = body.getBaseSymbol();
-    const auto compatibleSpelling = [this, symbol](const auto& operation) {
+    const auto compatibleSpelling = [this, symbol,
+                                     controlCount](const auto& operation) {
+      if (controlCount != 0) {
+        // A controlled alias turns its phase correction into a relative phase.
+        const auto alias = nativeGateAlias(operation.name());
+        if (alias && operation.canonicalName() == alias->canonicalName &&
+            alias->globalPhase != 0.) {
+          return false;
+        }
+      }
       // Standard U-family spellings differ from QC by a phase.
       return operation.name() != "U" && operation.name() != "u2" &&
              operation.name() != "u3" && operation.name() != "cu3" &&
@@ -3357,7 +3375,7 @@ private:
         }
         call.parameters.erase(call.parameters.begin() + index);
       }
-      if (alias->globalPhase != 0.) {
+      if (alias->globalPhase != 0. && !dropEntryPhase_) {
         auto phase =
             emitConstant(FloatAttr::get(Float64Type::get(unitary.getContext()),
                                         -alias->globalPhase),
@@ -3882,21 +3900,20 @@ private:
 
 LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
                                      llvm::raw_ostream& output) {
-  assert(succeeded(verify(*moduleOp)) && "OpenQASM export requires valid IR");
   return OpenQASMEmitter(*moduleOp).emit(output);
 }
 
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
+                                              bool forExecution) {
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream))) {
+  if (failed(OpenQASMEmitter(*moduleOp).emit(stream, forExecution))) {
     return failure();
   }
   return source;
 }
 
 FailureOr<std::string> translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp) {
-  assert(succeeded(verify(*moduleOp)) && "OpenQASM export requires valid IR");
   std::string source;
   llvm::raw_string_ostream stream(source);
   if (failed(OpenQASMEmitter(*moduleOp, true).emit(stream))) {

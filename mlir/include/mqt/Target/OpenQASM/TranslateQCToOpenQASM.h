@@ -40,7 +40,10 @@ LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
                                      llvm::raw_ostream& output);
 
 /// Consume a QC module and translate it to an owned OpenQASM source string.
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp);
+/// Executable output omits entry-point global phase when the target requires
+/// it.
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
+                                              bool forExecution = false);
 
 /// Consume a verified QC module and emit OpenQASM 2 with bound parameters.
 ///
@@ -52,7 +55,7 @@ FailureOr<std::string> translateQCToOpenQASM2(ModuleOp) = delete;
 
 // OwningOpRef implicitly accepts borrowed handles; reject accidental ownership.
 LogicalResult translateQCToOpenQASM3(ModuleOp, llvm::raw_ostream&) = delete;
-FailureOr<std::string> translateQCToOpenQASM3(ModuleOp) = delete;
+FailureOr<std::string> translateQCToOpenQASM3(ModuleOp, bool = false) = delete;
 
 } // namespace qc
 } // namespace mlir

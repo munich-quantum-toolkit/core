@@ -163,7 +163,8 @@ private:
   PayloadSpecification(PayloadFormat format,
                        std::optional<mqt::PayloadVersionRange> versions,
                        std::vector<ProgramCapability> capabilities,
-                       bool optionalCapabilitiesKnown);
+                       bool optionalCapabilitiesKnown,
+                       std::optional<ProgramFormat> output);
 
   PayloadFormat format_;
   std::optional<mqt::PayloadVersionRange> versionRange_;

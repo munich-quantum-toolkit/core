@@ -1808,6 +1808,42 @@ def test_consumed_jeff_write_raises(tmp_path: Path) -> None:
         program.write(tmp_path / "consumed.jeff")
 
 
+@requires_qiskit_translation
+def test_qiskit_export_enforces_attached_loop_limit() -> None:
+    """Check the payload bound against the trip count of a descending loop."""
+    circuit = QuantumCircuit(1)
+    indexset = range(5, -1, -2)
+    with circuit.for_loop(indexset) as iteration:
+        circuit.rx(iteration, 0)
+    program = QCProgram.from_qiskit(circuit, native=True).to_qco()
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+
+    for limit in (len(indexset) - 1, len(indexset)):
+        payload = PayloadSpecification(
+            PayloadFormat("qpy", "17", encoding=PayloadEncoding.BINARY),
+            [
+                ProgramCapability(
+                    ProgramCapability.COUNTED_ITERATION,
+                    constraints=[ProgramConstraint(ProgramConstraint.MAX_ITERATION_COUNT, limit)],
+                )
+            ],
+        )
+        program.run_pass_pipeline("builtin.module()", target_environment=TargetEnvironment(target, payload))
+        if limit < len(indexset):
+            with pytest.raises(RuntimeError, match="counted-iteration"):
+                program.to_qiskit(copy=True)
+        else:
+            loop = program.to_qiskit().data[0].operation
+            assert isinstance(loop, qiskit.circuit.ForLoopOp)
+            values, parameter, body = loop.params
+            assert list(values) == list(indexset)
+            assert body.data[0].operation == library.RXGate(parameter)
+
+
 @pytest.mark.parametrize("capability_id", [None, "forward-branching-typo"])
 def test_target_compilation_preserves_diagnostics(capability_id: str | None, capfd: pytest.CaptureFixture[str]) -> None:
     """Keep native control-flow legality errors in the Python exception."""

@@ -4528,6 +4528,32 @@ def test_transpiler_added_ancillas_and_routing_round_trip() -> None:
     np.testing.assert_allclose(Operator.from_circuit(restored).data, Operator.from_circuit(circuit).data)
 
 
+@pytest.mark.parametrize("native", [False, True])
+def test_attached_target_preserves_imported_qiskit_layout(*, native: bool) -> None:
+    """Keep the imported permutation when a pass attaches a target without placing qubits."""
+    original = QuantumCircuit(2)
+    original.x(0)
+    original.h(1)
+    circuit = transpile(original, initial_layout=[1, 0], optimization_level=0)
+    target = CompilerTarget(
+        3,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_qiskit(circuit, native=native).to_qco()
+    program.run_pass_pipeline(
+        "builtin.module(canonicalize)", target_environment=_test_target_environment(target), preserve_layout=True
+    )
+    restored = program.to_qiskit()
+    assert restored.layout is not None
+    assert restored.layout.initial_index_layout(filter_ancillas=True) == [1, 0]
+    width = 3 if native else 2
+    assert restored.num_qubits == width
+    expected = QuantumCircuit(width)
+    expected.compose(original, inplace=True)
+    np.testing.assert_allclose(Operator.from_circuit(restored).data, Operator(expected).data, atol=1e-12)
+
+
 @pytest.mark.parametrize("routed", [False, True])
 @pytest.mark.parametrize("basis", ["u", "fixed_rx"])
 @pytest.mark.parametrize("disabled_site", [False, True])
@@ -4814,10 +4840,10 @@ def test_export_loaded_qubit_references() -> None:
 
 
 @pytest.mark.parametrize(("slots", "error"), [((1, 0), "consecutive qubits"), ((0, 1), "must not overlap")])
-def test_invalid_named_quantum_register_spans(slots: tuple[int, int], error: str) -> None:
-    """Reject reversed wires and overlap with the physical target register."""
+def test_qiskit_named_physical_registers(slots: tuple[int, int], error: str) -> None:
+    """Keep contiguous named wires when the physical target is attached."""
     target = CompilerTarget(
-        2,
+        3,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
@@ -4830,11 +4856,22 @@ def test_invalid_named_quantum_register_spans(slots: tuple[int, int], error: str
     %reg = memref.alloca() {{mqt.register_name = "pair"}} : memref<2x!qc.qubit>
     memref.store %q{slots[0]}, %reg[%c0] : memref<2x!qc.qubit>
     memref.store %q{slots[1]}, %reg[%c1] : memref<2x!qc.qubit>
+    %selected = memref.load %reg[%c0] : memref<2x!qc.qubit>
+    qc.x %selected : !qc.qubit
     return
   }}
 }}""")
     with pytest.raises(RuntimeError, match=error):
-        program.to_qiskit(target=target)
+        program.to_qiskit(target=target, copy=True)
+    if slots == (0, 1):
+        native = program.to_qco()
+        native.run_pass_pipeline("builtin.module()", target_environment=_test_target_environment(target))
+        circuit = native.to_qiskit()
+        assert circuit.num_qubits == 3
+        (gate,) = circuit.data
+        bit = circuit.find_bit(gate.qubits[0])
+        assert bit.index == 0
+        assert [(reg.name, index) for reg, index in bit.registers] == [("pair", 0)]
 
 
 @pytest.mark.parametrize("native", [False, True])
