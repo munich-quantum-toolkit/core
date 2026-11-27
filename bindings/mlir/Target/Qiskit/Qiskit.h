@@ -83,9 +83,8 @@ importTargetEnvironment(nb::handle target, std::optional<size_t> nativeWidth,
 exportCircuit(mlir::QCProgram program,
               const mlir::CompilerTarget* target = nullptr);
 
-/// Export a compiled circuit, including layout and payload control-flow limits.
-[[nodiscard]] nb::object
-exportCircuit(mlir::QCProgram program,
-              const mlir::TargetEnvironment& environment);
+/// Export a compiled circuit for its attached `mqt.target_env`, if any,
+/// including layout and payload control-flow limits.
+[[nodiscard]] nb::object exportCompiledCircuit(mlir::QCProgram program);
 
 } // namespace mqt::bindings::qiskit

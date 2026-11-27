@@ -16,6 +16,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
@@ -3070,7 +3071,8 @@ exportCircuitImpl(mlir::QCProgram program,
     if (!external.isExternal() || !calledGates.contains(external.getName())) {
       continue;
     }
-    if (payload == nullptr || payload->format().id != "qpy") {
+    if (payload == nullptr ||
+        payload->format().id != mlir::mqt::QPY_FORMAT_ID) {
       throw std::runtime_error("Opaque native calls require QPY serialization");
     }
     const auto numParameters = gateParameterCount(external);
@@ -3148,8 +3150,15 @@ nb::object exportCircuit(mlir::QCProgram program,
   return exportCircuitImpl(std::move(program), target, nullptr);
 }
 
-nb::object exportCircuit(mlir::QCProgram program,
-                         const mlir::TargetEnvironment& environment) {
+nb::object exportCompiledCircuit(mlir::QCProgram program) {
+  if (!program.module()->hasAttr(mlir::mqt::TargetEnvAttr::name)) {
+    return exportCircuitImpl(std::move(program), nullptr, nullptr);
+  }
+  const mlir::TargetEnvironmentAnalysis attached(program.module());
+  if (!attached) {
+    throw nb::value_error(attached.error().str().c_str());
+  }
+  const auto& environment = attached.environment();
   return exportCircuitImpl(std::move(program), &environment.target(),
                            &environment.payloadSpecification());
 }

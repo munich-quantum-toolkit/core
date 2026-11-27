@@ -681,9 +681,7 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
     }
 
     if (emitQPY) {
-      auto payload =
-          qpyWriter(std::move(std::get<QCProgram>(*compiled)),
-                    targetEnvironment ? &*targetEnvironment : nullptr);
+      auto payload = qpyWriter(std::move(std::get<QCProgram>(*compiled)));
       if (!payload) {
         return llvm::createStringError("QPY export failed: " +
                                        llvm::toString(payload.takeError()));

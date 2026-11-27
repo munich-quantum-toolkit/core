@@ -2018,7 +2018,9 @@ TEST_F(CompilerPipelineTest, QIRChecksLoopBoundsBeforeLowering) {
     auto output = [&] {
       ScopedDiagnosticHandler handler(input->module().getContext(),
                                       [](Diagnostic&) { return success(); });
-      return input->copy().intoQIR(QIRProfile::Adaptive, &environment);
+      auto copy = input->copy();
+      attachTargetEnvironment(copy.module(), environment);
+      return std::move(copy).intoQIR(QIRProfile::Adaptive);
     }();
     ASSERT_EQ(succeeded(output), branchFlag != 0);
     if (branchFlag == 0) {
@@ -2095,13 +2097,8 @@ TEST_F(CompilerPipelineTest, QIRReceiverRangePromotesMinimumVersion) {
     const auto payload = llvm::cantFail(PayloadSpecification::create(
         {.id = "qir", .version = version, .profile = "base"}));
     attachTargetEnvironment(
-        input->module(),
-        TargetEnvironment(
-            makeUnrestrictedTarget(),
-            llvm::cantFail(PayloadSpecification::create(
-                {.id = "qir", .version = ">=2.2,<3", .profile = "base"}))));
-    const TargetEnvironment environment(makeUnrestrictedTarget(), payload);
-    auto result = std::move(*input).intoQIR(QIRProfile::Base, &environment);
+        input->module(), TargetEnvironment(makeUnrestrictedTarget(), payload));
+    auto result = std::move(*input).intoQIR(QIRProfile::Base);
     if (StringRef(version) == ">=2.2,<3") {
       EXPECT_TRUE(failed(result));
       continue;
@@ -2125,7 +2122,8 @@ TEST_F(CompilerPipelineTest, ValidatesCapabilitiesAfterMemoryPromotion) {
         makeUnrestrictedTarget(),
         llvm::cantFail(PayloadSpecification::create(
             {.id = "qir", .version = version, .profile = "adaptive"})));
-    auto program = std::move(*qc).intoQIR(QIRProfile::Adaptive, &environment);
+    attachTargetEnvironment(qc->module(), environment);
+    auto program = std::move(*qc).intoQIR(QIRProfile::Adaptive);
     MQT_ASSERT_SUCCESS(program);
     auto ir = std::move(*program).intoLLVMIR();
     MQT_ASSERT_SUCCESS(ir);
@@ -5667,7 +5665,9 @@ TEST_F(CompilerPipelineTest, TableSwitchCountsExplicitLabelsAgainstPayload) {
                     .constraints = {{.id = "max-case-count", .value = limit}},
                 },
             })));
-    auto source = program->copy().intoOpenQASM3(&environment);
+    auto copy = program->copy();
+    attachTargetEnvironment(copy.module(), environment);
+    auto source = std::move(copy).intoOpenQASM3();
     ASSERT_EQ(succeeded(source), limit == 2);
     if (succeeded(source)) {
       EXPECT_TRUE(StringRef(source->source()).contains("case 1, 3"));
@@ -7518,7 +7518,8 @@ TEST_F(CompilerPipelineTest,
   EXPECT_LE(count, 4U);
   auto qc = std::move(*program).intoQC();
   MQT_ASSERT_SUCCESS(qc);
-  auto output = std::move(*qc).intoOpenQASM3(&environment);
+  attachTargetEnvironment(qc->module(), environment);
+  auto output = std::move(*qc).intoOpenQASM3();
   MQT_ASSERT_SUCCESS(output);
   EXPECT_EQ(StringRef(output->source()).count("sqrt_iswap "), count);
 }

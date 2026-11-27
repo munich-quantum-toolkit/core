@@ -17,6 +17,7 @@
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
@@ -167,10 +168,8 @@ namespace {
 
 class OpenQASMEmitter {
 public:
-  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false,
-                           const TargetEnvironment* environment = nullptr)
-      : version2_(version2), moduleOp(moduleOp),
-        preparedEnvironment(environment) {}
+  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false)
+      : version2_(version2), moduleOp(moduleOp) {}
 
   [[nodiscard]] static bool hasGateSignature(func::FuncOp function) {
     if (function.getNumResults() != 0) {
@@ -328,7 +327,6 @@ private:
   uint64_t deviceWidth_ = 0;
   DenseMap<Operation*, cbit::StoreOp> measurementStores;
   ModuleOp moduleOp;
-  const TargetEnvironment* preparedEnvironment;
   func::FuncOp function;
   raw_indented_ostream* output = nullptr;
   DenseMap<Value, Resource> resources;
@@ -841,10 +839,8 @@ private:
   }
 
   [[nodiscard]] LogicalResult preflight() {
-    if (preparedEnvironment != nullptr ||
-        moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
-      const TargetEnvironmentAnalysis environment(moduleOp,
-                                                  preparedEnvironment);
+    if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+      const TargetEnvironmentAnalysis environment(moduleOp);
       if (!environment) {
         return fail(moduleOp, environment.error());
       }
@@ -857,7 +853,7 @@ private:
       }
       const auto& format =
           environment.environment().payloadSpecification().format();
-      if (format.id == "openqasm") {
+      if (format.id == mqt::OPENQASM_FORMAT_ID) {
         acceptedVersions_ =
             environment.environment().payloadSpecification().versionRange();
         controlSupport_ =
@@ -3885,31 +3881,25 @@ private:
 } // namespace
 
 LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                     llvm::raw_ostream& output,
-                                     const TargetEnvironment* environment) {
+                                     llvm::raw_ostream& output) {
   assert(succeeded(verify(*moduleOp)) && "OpenQASM export requires valid IR");
-  return OpenQASMEmitter(*moduleOp, false, environment).emit(output);
+  return OpenQASMEmitter(*moduleOp).emit(output);
 }
 
-FailureOr<std::string>
-translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                       const TargetEnvironment* environment) {
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(
-          translateQCToOpenQASM3(std::move(moduleOp), stream, environment))) {
+  if (failed(translateQCToOpenQASM3(std::move(moduleOp), stream))) {
     return failure();
   }
   return source;
 }
 
-FailureOr<std::string>
-translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp,
-                       const TargetEnvironment* environment) {
+FailureOr<std::string> translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp) {
   assert(succeeded(verify(*moduleOp)) && "OpenQASM export requires valid IR");
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(OpenQASMEmitter(*moduleOp, true, environment).emit(stream))) {
+  if (failed(OpenQASMEmitter(*moduleOp, true).emit(stream))) {
     return failure();
   }
   return source;

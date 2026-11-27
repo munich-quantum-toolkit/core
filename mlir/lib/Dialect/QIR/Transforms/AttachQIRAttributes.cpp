@@ -155,7 +155,7 @@ private:
     if (auto target =
             m->getAttrOfType<mqt::TargetEnvAttr>(mqt::TargetEnvAttr::name)) {
       const auto format = target.getPayloadSpecification().getFormat();
-      if (format.getId().getValue() == "qir") {
+      if (format.getId().getValue() == mqt::QIR_FORMAT_ID) {
         const auto accepted =
             mqt::PayloadVersionRange::parse(format.getVersion().getValue());
         const auto selected =

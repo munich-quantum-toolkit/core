@@ -19,6 +19,14 @@
 
 namespace mlir::mqt {
 
+/// Payload format IDs and QIR profile names understood by the compiler.
+inline constexpr llvm::StringLiteral OPENQASM_FORMAT_ID = "openqasm";
+inline constexpr llvm::StringLiteral QIR_FORMAT_ID = "qir";
+inline constexpr llvm::StringLiteral IQM_JSON_FORMAT_ID = "iqm-json";
+inline constexpr llvm::StringLiteral QPY_FORMAT_ID = "qpy";
+inline constexpr llvm::StringLiteral QIR_BASE_PROFILE = "base";
+inline constexpr llvm::StringLiteral QIR_ADAPTIVE_PROFILE = "adaptive";
+
 /// Numeric receiver-version interval with an inclusive lower bound.
 ///
 /// Constraints support >=, <, and <=, joined by commas. Bare versions retain

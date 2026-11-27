@@ -11,6 +11,7 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
@@ -1558,10 +1559,11 @@ protected:
     }
     const bool indexed = environment.environment().supportsIndexedQubits();
     const auto& payload = environment.environment().payloadSpecification();
+    const auto& format = payload.format();
     const bool supportsFloatBranches =
-        (payload.format().id == "qir" &&
-         payload.format().profile == "adaptive") ||
-        (payload.format().id == "openqasm" && payload.versionRange() &&
+        (format.id == mqt::QIR_FORMAT_ID &&
+         format.profile == mqt::QIR_ADAPTIVE_PROFILE) ||
+        (format.id == mqt::OPENQASM_FORMAT_ID && payload.versionRange() &&
          payload.versionRange()->withinMajor(3));
     const bool canEmitRuntimeBranches =
         supportsFloatBranches &&

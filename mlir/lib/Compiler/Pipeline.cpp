@@ -85,15 +85,12 @@ namespace mlir {
 }
 
 /// Lower quantum modifiers and convert QC to QIR.
-static void populateQCToQIRPipeline(OpPassManager& pm, QIRProfile profile,
-                                    const TargetEnvironment* environment) {
+static void populateQCToQIRPipeline(OpPassManager& pm, QIRProfile profile) {
   pm.addPass(mqt::createLowerQuantumModifiers());
   if (profile == QIRProfile::Adaptive) {
     pm.addPass(mqt::createPromoteClassicalMemory());
   }
-  const QCToQIROptions options{.profile = profile};
-  pm.addPass(environment != nullptr ? createQCToQIR(options, *environment)
-                                    : createQCToQIR(options));
+  pm.addPass(createQCToQIR(QCToQIROptions{.profile = profile}));
 }
 
 /// Convert QCO to QC and expand virtual resonator couplings.
@@ -121,8 +118,7 @@ LogicalResult QCProgram::normalizeGlobalPhases() {
   return mqt::normalizeGlobalPhases(mod());
 }
 
-FailureOr<OpenQASMProgram>
-QCProgram::intoOpenQASM3(const TargetEnvironment* environment) && {
+FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM3() && {
   auto storage = std::move(*this).releaseStorage();
   if (failed(runWithPassManager(
           *storage.mod,
@@ -132,7 +128,7 @@ QCProgram::intoOpenQASM3(const TargetEnvironment* environment) && {
           "failed to prepare QC for OpenQASM export"))) {
     return failure();
   }
-  auto source = qc::translateQCToOpenQASM3(std::move(storage.mod), environment);
+  auto source = qc::translateQCToOpenQASM3(std::move(storage.mod));
   if (failed(source)) {
     return failure();
   }
@@ -156,35 +152,32 @@ static FailureOr<IQMJSONProgram> exportIQMJSON(QIRProgram& qir,
 
 FailureOr<IQMJSONProgram>
 QCProgram::intoIQMJSON(const CompilerTarget& target) && {
-  const TargetEnvironment environment(
-      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
-                  ProgramFormat::IQMJSON)));
-  auto exported =
-      exportQCProgram(std::move(*this), ProgramFormat::IQMJSON, &environment);
+  attachTargetEnvironment(
+      mod(), TargetEnvironment(
+                 target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                             ProgramFormat::IQMJSON))));
+  auto exported = exportQCProgram(std::move(*this), ProgramFormat::IQMJSON);
   if (failed(exported)) {
     return failure();
   }
   return std::move(std::get<IQMJSONProgram>(*exported));
 }
 
-FailureOr<OpenQASMProgram>
-QCProgram::intoOpenQASM2(const TargetEnvironment* environment) && {
+FailureOr<OpenQASMProgram> QCProgram::intoOpenQASM2() && {
   auto storage = std::move(*this).releaseStorage();
-  auto source = qc::translateQCToOpenQASM2(std::move(storage.mod), environment);
+  auto source = qc::translateQCToOpenQASM2(std::move(storage.mod));
   if (failed(source)) {
     return failure();
   }
   return OpenQASMProgram(std::move(*source));
 }
 
-FailureOr<QIRProgram>
-QCProgram::intoQIR(QIRProfile profile,
-                   const TargetEnvironment* environment) && {
+FailureOr<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   auto storage = std::move(*this).releaseStorage();
   if (failed(runWithPassManager(
           *storage.mod,
-          [profile, environment](OpPassManager& pm) {
-            populateQCToQIRPipeline(pm, profile, environment);
+          [profile](OpPassManager& pm) {
+            populateQCToQIRPipeline(pm, profile);
           },
           "failed to convert QC to QIR"))) {
     return failure();
@@ -428,13 +421,20 @@ static QIRProfile qirProfile(ProgramFormat output) {
 }
 
 /// Prepare compiled QC for the selected output format.
+///
+/// `environment` is the target environment attached to the module, if any.
 static void populateExportPipeline(OpPassManager& pm, ProgramFormat output,
                                    const TargetEnvironment* environment,
                                    MLIRContext& context) {
+  const bool dropGlobalPhases =
+      environment != nullptr && environment->dropsGlobalPhases();
   switch (output) {
   case ProgramFormat::OpenQASM3:
     populateQCStructuralCleanupPipeline(pm);
     pm.addPass(mqt::createPromoteClassicalMemory());
+    if (dropGlobalPhases) {
+      pm.addPass(mqt::createDropGlobalPhases());
+    }
     return;
   case ProgramFormat::OpenQASM2:
     pm.addPass(mqt::createSimplifyClassicalControl());
@@ -455,10 +455,10 @@ static void populateExportPipeline(OpPassManager& pm, ProgramFormat output,
                                    ? ProgramFormat::QIRAdaptive
                                    : ProgramFormat::QIRBase))
                 .materialize(context));
-    if (output == ProgramFormat::IQMJSON) {
+    if (dropGlobalPhases) {
       pm.addPass(mqt::createDropGlobalPhases());
     }
-    populateQCToQIRPipeline(pm, profile, environment);
+    populateQCToQIRPipeline(pm, profile);
     return;
   }
   default:
@@ -478,10 +478,9 @@ finishExport(ProgramAccess::Storage storage, ProgramFormat output,
     return CompilerProgram(QCProgram(std::move(storage)));
   case ProgramFormat::OpenQASM2:
   case ProgramFormat::OpenQASM3: {
-    auto source =
-        output == ProgramFormat::OpenQASM2
-            ? qc::translateQCToOpenQASM2(std::move(storage.mod), environment)
-            : qc::translateQCToOpenQASM3(std::move(storage.mod), environment);
+    auto source = output == ProgramFormat::OpenQASM2
+                      ? qc::translateQCToOpenQASM2(std::move(storage.mod))
+                      : qc::translateQCToOpenQASM3(std::move(storage.mod));
     if (failed(source)) {
       return failure();
     }
@@ -502,8 +501,16 @@ finishExport(ProgramAccess::Storage storage, ProgramFormat output,
 }
 
 FailureOr<CompilerProgram> exportQCProgram(QCProgram qc, ProgramFormat output,
-                                           const TargetEnvironment* environment,
                                            const CompilationOptions& options) {
+  std::optional<TargetEnvironmentAnalysis> attached;
+  const TargetEnvironment* environment = nullptr;
+  if (qc.module()->hasAttr(mqt::TargetEnvAttr::name)) {
+    attached.emplace(qc.module());
+    if (!*attached) {
+      return qc.module().emitError(attached->error());
+    }
+    environment = &attached->environment();
+  }
   if (output != ProgramFormat::QC &&
       failed(runWithPassManager(
           qc.module(),
@@ -606,7 +613,7 @@ runDefaultPipelineImpl(CompilerInput program, ProgramFormat output,
     }
     populateQCOToQCPipeline(pm);
     // Export reads the target that target compilation keeps attached.
-    populateExportPipeline(pm, output, nullptr, *moduleOp.getContext());
+    populateExportPipeline(pm, output, environment, *moduleOp.getContext());
   };
   // Target compilation composes input layouts. The QIR and `jeff` conversions
   // drop layouts; untargeted optimization invalidates them.

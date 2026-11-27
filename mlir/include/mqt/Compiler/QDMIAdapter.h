@@ -38,9 +38,9 @@ class Operation;
 namespace mlir {
 
 /// Optional QPY exporter installed by the Python bindings.
-/// The callback owns its output and must acquire the Python GIL itself.
-using QPYExporter = llvm::Expected<std::string> (*)(QCProgram,
-                                                    const TargetEnvironment&);
+/// The callback reads the attached target environment, owns its output and
+/// must acquire the Python GIL itself.
+using QPYExporter = llvm::Expected<std::string> (*)(QCProgram);
 void setQPYExporter(QPYExporter exporter);
 
 /// One alternative in the temporary operation-parameter metadata contract.
@@ -172,6 +172,11 @@ private:
                   QDMI_Program_Format format,
                   std::optional<ResultLayout> resultLayout,
                   std::optional<size_t> resultWidth);
+
+  /// Serialize a program whose module already carries `environment`.
+  [[nodiscard]] static llvm::Expected<CompiledProgram>
+  serializeAttached(QCProgram program, const TargetEnvironment& environment,
+                    const CompilationOptions& options);
   TargetEnvironment environment_;
   std::string payload_;
   QDMI_Program_Format format_;

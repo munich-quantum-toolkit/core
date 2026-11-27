@@ -13,6 +13,7 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
@@ -698,7 +699,7 @@ static bool supportsCapability(const ProgramCapability& compiled,
 
 static Expected<QDMI_Program_Format>
 qdmiFormatForPayload(const PayloadSpecification& payload) {
-  if (payload.format().id == "qpy" &&
+  if (payload.format().id == mqt::QPY_FORMAT_ID &&
       payload.format().encoding == PayloadEncoding::Binary &&
       payload.versionRange() &&
       payload.versionRange()->contains(llvm::VersionTuple(17))) {
@@ -735,7 +736,11 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
   switch (format) {
   case QDMI_PROGRAM_FORMAT_QPY:
     return PayloadSpecification::create(
-        {.id = "qpy", .version = "17", .encoding = PayloadEncoding::Binary},
+        {
+            .id = mqt::QPY_FORMAT_ID.str(),
+            .version = "17",
+            .encoding = PayloadEncoding::Binary,
+        },
         {
             {.id = ProgramCapability::FORWARD_BRANCHING.str()},
             {.id = ProgramCapability::COUNTED_ITERATION.str()},
@@ -950,7 +955,7 @@ Error validateTargetCompatibility(const TargetEnvironment& compiled,
   if (lhs.siteIds() != rhs.siteIds()) {
     return incompatible("ordered site mapping differs");
   }
-  if (compiled.payloadSpecification().format().id == "iqm-json" &&
+  if (compiled.payloadSpecification().format().id == mqt::IQM_JSON_FORMAT_ID &&
       !std::ranges::equal(
           lhs.sites(), rhs.sites(),
           [](const auto& a, const auto& b) { return a.name() == b.name(); })) {
@@ -1041,8 +1046,9 @@ CompiledProgram::compile(CompilerInput program,
         if (!native) {
           return native.takeError();
         }
-        return serialize(std::move(std::get<QCProgram>(*native)), environment,
-                         stepOptions);
+        // Target compilation attached the environment.
+        return serializeAttached(std::move(std::get<QCProgram>(*native)),
+                                 environment, stepOptions);
       });
 }
 
@@ -1054,6 +1060,14 @@ CompiledProgram::serialize(QCProgram program,
     return createStringError(std::errc::invalid_argument,
                              "Executable programs require a device target");
   }
+  attachTargetEnvironment(program.module(), environment);
+  return serializeAttached(std::move(program), environment, options);
+}
+
+Expected<CompiledProgram>
+CompiledProgram::serializeAttached(QCProgram program,
+                                   const TargetEnvironment& environment,
+                                   const CompilationOptions& options) {
   auto format = qdmiFormatForPayload(environment.payloadSpecification());
   if (!format) {
     return format.takeError();
@@ -1072,8 +1086,7 @@ CompiledProgram::serialize(QCProgram program,
     return diagnostics.takeError(
         std::make_error_code(std::errc::invalid_argument));
   }
-  if (*format != QDMI_PROGRAM_FORMAT_IQMJSON &&
-      !environment.target().supportsOperation("gphase", 0, 1)) {
+  if (environment.dropsGlobalPhases()) {
     IRRewriter rewriter(context.get());
     mqt::dropGlobalPhases(program.module(), rewriter);
   }
@@ -1107,7 +1120,7 @@ CompiledProgram::serialize(QCProgram program,
           std::make_error_code(std::errc::not_supported),
           "QPY output requires the Python Qiskit bindings");
     }
-    auto payload = exporter(std::move(program), environment);
+    auto payload = exporter(std::move(program));
     if (!payload) {
       return payload.takeError();
     }
@@ -1118,8 +1131,7 @@ CompiledProgram::serialize(QCProgram program,
   if (!output) {
     return output.takeError();
   }
-  auto exported =
-      exportQCProgram(std::move(program), *output, &environment, options);
+  auto exported = exportQCProgram(std::move(program), *output, options);
   if (failed(exported)) {
     return diagnostics.takeError(
         std::make_error_code(std::errc::invalid_argument));
