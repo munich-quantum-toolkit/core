@@ -124,6 +124,8 @@ finalizeQIRMetadata(ModuleOp moduleOp, QIRProfile profile,
                     function_ref<LogicalResult(OpPassManager&)> runPipeline);
 
 /// Bufferize classical tensors and expose strided-copy loops before lowering.
+///
+/// The dialects of `registerQIRClassicalTensorDialects` must be loaded.
 [[nodiscard]] LogicalResult prepareQIRClassicalMemory(ModuleOp moduleOp);
 
 /// Lower remaining classical dialects and reconcile casts for either profile.
