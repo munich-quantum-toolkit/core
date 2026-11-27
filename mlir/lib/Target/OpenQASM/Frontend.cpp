@@ -159,6 +159,7 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
                                   .includeEnd = builder.getIncludes().size(),
                               });
   };
+  builder.reserveFor(sources->getMemoryBuffer(mainBufferId)->getBuffer());
   parseSource(mainBufferId);
   if (!failedParsing && builder.getIncludes().empty() &&
       builder.getBody().size() <= EXPANDED_STATEMENT_LIMIT) {

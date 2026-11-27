@@ -255,27 +255,21 @@ def ElidePermutations : Pass<"elide-permutations", "mlir::ModuleOp"> {
     an imported Qiskit `final_layout` takes. Placement composes that layout
     into the published qubit layout.
 
+    With `terminal-only`, the pass only elides SWAPs in the straight-line
+    suffix of the entry block that follows its last non-SWAP multi-qubit
+    operation, reset, region, or opaque quantum boundary. Intermediate
+    measurements and disposal also end the suffix. Single-qubit gates may
+    follow those SWAPs. Earlier SWAPs remain, so a program already routed for a
+    sparse topology keeps its local interactions. This mode requires source
+    labels from `mqt-target-prepare`; other programs remain unchanged. Target
+    compilation uses it for explicit coupling graphs, and the
+    `elide-terminal-swaps` pipeline is a shorthand for it.
+
     Run after inlining and cleanup, before fusion and placement.
   }];
-}
-
-def ElideTerminalSwapsPass : Pass<"elide-terminal-swaps", "mlir::ModuleOp"> {
-  let dependentDialects = ["mlir::qco::QCODialect",
-                           "mlir::qtensor::QTensorDialect",
-                           "mlir::arith::ArithDialect"];
-  let summary = "Record terminal SWAPs in the layout before placement";
-  let description = [{
-    Restricts `elide-permutations` to SWAPs in the straight-line suffix of the
-    entry block that follows its last non-SWAP multi-qubit operation, reset,
-    region, or opaque quantum boundary. Intermediate measurements and disposal
-    also end the suffix. Single-qubit gates may follow those SWAPs. Earlier
-    SWAPs remain, so a program already routed for a sparse topology keeps
-    its local interactions.
-
-    Requires source labels from `mqt-target-prepare` and records the output
-    permutation for placement like `elide-permutations`. Other programs remain
-    unchanged. Target compilation uses this pass for explicit coupling graphs.
-  }];
+  let options = [Option<"terminalOnly", "terminal-only", "bool",
+                        /*default=*/"false",
+                        "Only record the terminal SWAPs of the entry block.">];
 }
 
 def PlacementPass : Pass<"place-qubits", "mlir::ModuleOp"> {
@@ -288,8 +282,7 @@ def PlacementPass : Pass<"place-qubits", "mlir::ModuleOp"> {
     not enforce adjacency; use `place-and-route` for sparse topologies.
 
     Input qubit labels prepared by `mqt-target-prepare` produce layout metadata,
-    including any output permutation recorded by `elide-permutations` or
-    `elide-terminal-swaps`. Supported tensor and control-flow forms follow the
+    including any output permutation recorded by `elide-permutations`. Supported tensor and control-flow forms follow the
     placement requirements of target compilation.
   }];
 }

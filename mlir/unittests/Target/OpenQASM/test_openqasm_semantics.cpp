@@ -2832,3 +2832,45 @@ TEST(OpenQASMFrontendTest, AcceptsExactWidthBitStringsAndFloatCasts) {
 }
 
 } // namespace
+
+TEST(OpenQASMFrontendTest, RoundsDecimalFloatLiteralsCorrectly) {
+  struct Literal {
+    llvm::StringLiteral spelling;
+    double value;
+  };
+  // Compiler literals are correctly rounded; subnormals and underflow take
+  // the out-of-range path of the conversion.
+  constexpr auto literals = std::to_array<Literal>({
+      {"0.1", 0.1},
+      {".5", 0.5},
+      {"5.", 5.0},
+      {"1E+3", 1e3},
+      {"1e-3", 1e-3},
+      {"1_2.3_4e+1_0", 12.34e10},
+      {"3.14159265358979323846264338327950288", std::numbers::pi},
+      {"0.30000000000000004", 0.30000000000000004},
+      {"1.7976931348623157e308", 1.7976931348623157e308},
+      {"2.2250738585072014e-308", 2.2250738585072014e-308},
+      {"4.9e-324", 4.9e-324},
+      {"1e-400", 0.0},
+  });
+  for (const auto& literal : literals) {
+    SCOPED_TRACE(literal.spelling.str());
+    const std::string source = "OPENQASM 3.1; include \"stdgates.inc\"; "
+                               "qubit q; rx(" +
+                               literal.spelling.str() + ") q;";
+    auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
+    ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+    const auto* application = std::get_if<openqasm::frontend::GateApplication>(
+        &analyzed.program->statements[analyzed.program->body.back()].data);
+    ASSERT_NE(application, nullptr);
+    const auto& parameter =
+        analyzed.program->expressions.at(application->parameters.front());
+    const auto& value =
+        parameter.kind == openqasm::frontend::ExpressionKind::Cast
+            ? analyzed.program->expressions.at(parameter.lhs)
+            : parameter;
+    ASSERT_EQ(value.kind, openqasm::frontend::ExpressionKind::Constant);
+    EXPECT_EQ(std::get<double>(value.constant), literal.value);
+  }
+}

@@ -168,7 +168,6 @@ def DurationUnitAttr : MQTAttr<"DurationUnit", "duration_unit"> {
   }];
   let parameters = (ins "StringAttr":$unit, "FloatAttr":$scale_factor);
   let assemblyFormat = "`<` struct(params) `>`";
-  let genVerifyDecl = 1;
 }
 
 def SiteAttr : MQTAttr<"Site", "site"> {
@@ -181,7 +180,6 @@ def SiteAttr : MQTAttr<"Site", "site"> {
   let parameters = (ins "int64_t":$id, OptionalParameter<"StringAttr">:$name,
       MQTOptionalUInt64Parameter<>:$t1, MQTOptionalUInt64Parameter<>:$t2);
   let assemblyFormat = "`<` struct(params) `>`";
-  let genVerifyDecl = 1;
 }
 
 def CouplingAttr : MQTAttr<"Coupling", "coupling"> {
@@ -193,7 +191,6 @@ def CouplingAttr : MQTAttr<"Coupling", "coupling"> {
   }];
   let parameters = (ins "int64_t":$source, "int64_t":$target);
   let assemblyFormat = "`<` struct(params) `>`";
-  let genVerifyDecl = 1;
 }
 
 def SiteTupleAttr : MQTAttr<"SiteTuple", "site_tuple"> {
@@ -209,7 +206,6 @@ def SiteTupleAttr : MQTAttr<"SiteTuple", "site_tuple"> {
       MQTOptionalUInt64Parameter<>:$duration,
       OptionalParameter<"FloatAttr">:$fidelity);
   let assemblyFormat = "`<` $sites (`,` struct($duration, $fidelity)^)? `>`";
-  let genVerifyDecl = 1;
 }
 
 def OperationArityAttr : MQTAttr<"OperationArity", "operation_arity"> {
@@ -223,7 +219,6 @@ def OperationArityAttr : MQTAttr<"OperationArity", "operation_arity"> {
   let parameters = (ins EnumParameter<OperationArityKind>:$kind,
       "uint64_t":$value);
   let assemblyFormat = "`<` struct(params) `>`";
-  let genVerifyDecl = 1;
 }
 
 def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
@@ -255,7 +250,6 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
       OptionalParameter<"StringAttr">:$canonical_name,
       OptionalParameter<"ArrayAttr">:$parameter_bounds);
   let assemblyFormat = "`<` struct(params) `>`";
-  let genVerifyDecl = 1;
 }
 
 def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
@@ -267,6 +261,8 @@ def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
     marker denotes a target without device sites or placement constraints.
     Gate-set synthesis preserves the program qubit interface, including idle
     inputs and terminal permutations.
+    The target attributes record facts without checking them; `CompilerTarget`
+    checks every target rule when it is built from this attribute.
 
     The following target has two explicitly connected sites and one native
     operation:
@@ -290,7 +286,6 @@ def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
       MQTArrayRefParameter<"NativeOperationAttr">:$operations,
       OptionalParameter<"UnitAttr">:$gate_set);
   let assemblyFormat = "`<` struct(params) `>`";
-  let genVerifyDecl = 1;
 }
 
 def PayloadEncoding : I32EnumAttr<"PayloadEncoding", "Payload encoding",

@@ -2994,6 +2994,7 @@ TEST(OpenQASM3EmissionTest, RejectsExcessiveClassicalRegisterWidth) {
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(moduleOp))));
 }
 
+// Export requires verified IR; the verifier rejects the first and third body.
 TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
   DialectRegistry registry = emissionDialects();
   MLIRContext context(registry);
@@ -3006,7 +3007,7 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
                         [&](Value target) { nonUnitaryBuilder.reset(target); });
   auto nonUnitaryModule = nonUnitaryBuilder.finalize();
   ASSERT_TRUE(nonUnitaryModule);
-  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(std::move(nonUnitaryModule))));
+  EXPECT_TRUE(failed(verify(*nonUnitaryModule)));
 
   qc::QCProgramBuilder emptyBuilder(&context);
   emptyBuilder.initialize();
@@ -3025,8 +3026,7 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidModifierBodies) {
   });
   auto capturedQubitModule = capturedQubitBuilder.finalize();
   ASSERT_TRUE(capturedQubitModule);
-  EXPECT_TRUE(
-      failed(qc::translateQCToOpenQASM3(std::move(capturedQubitModule))));
+  EXPECT_TRUE(failed(verify(*capturedQubitModule)));
 
   qc::QCProgramBuilder zeroTargetBuilder(&context);
   zeroTargetBuilder.initialize();

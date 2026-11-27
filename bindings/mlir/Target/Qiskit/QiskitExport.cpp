@@ -2129,13 +2129,19 @@ static void prepareMeasurementStores(mlir::func::FuncOp function) {
     auto destination = destinations.lookup(measure);
     mlir::OpBuilder builder(measure);
     if (destination) {
-      if (auto* definition = destination.getIndex().getDefiningOp();
-          definition && definition->getBlock() == measure->getBlock() &&
-          measure->isBeforeInBlock(definition)) {
-        destination.getIndexMutable().assign(
-            mlir::arith::ConstantIndexOp::create(
-                builder, measure.getLoc(),
-                *mlir::getConstantIntValue(destination.getIndex())));
+      // Scan the few operations up to the store instead of querying the block
+      // order, which each move invalidates for the whole block.
+      auto* const definition = destination.getIndex().getDefiningOp();
+      for (auto* between = measure->getNextNode();
+           between != nullptr && between != destination.getOperation();
+           between = between->getNextNode()) {
+        if (between == definition) {
+          destination.getIndexMutable().assign(
+              mlir::arith::ConstantIndexOp::create(
+                  builder, measure.getLoc(),
+                  *mlir::getConstantIntValue(destination.getIndex())));
+          break;
+        }
       }
       destination->moveAfter(measure);
     } else {
@@ -2662,7 +2668,7 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         continue;
       }
       if (auto delay = llvm::dyn_cast<mlir::qc::DelayOp>(operation)) {
-        DelayDuration duration{.unit = delay.getUnit().str()};
+        DelayDuration duration{.unit = delay.getUnit()};
         if (const auto ticks =
                 llvm::dyn_cast<mlir::IntegerAttr>(delay.getDuration())) {
           duration.value = ticks.getValue().getZExtValue();
@@ -2673,7 +2679,7 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         circuit.instructions.push_back({
             .kind = ExportedInstruction::Kind::Delay,
             .qubits = mapQubits(delay.getQubit(), state.qubits),
-            .delay = std::make_unique<DelayDuration>(std::move(duration)),
+            .delay = std::make_unique<DelayDuration>(duration),
         });
         continue;
       }
@@ -3013,8 +3019,18 @@ exportCircuitImpl(mlir::QCProgram program,
   mlir::scf::WhileOp::getCanonicalizationPatterns(patterns,
                                                   moduleOp.getContext());
   // Fold scalar control flow without applying resource or snapshot rewrites.
-  if (mlir::failed(
-          mlir::applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+  // Gates and constants have neither folders nor matching patterns, so only
+  // the remaining operations need a visit.
+  llvm::SmallVector<mlir::Operation*> scalarOperations;
+  moduleOp.walk([&](mlir::Operation* operation) {
+    if (operation != moduleOp &&
+        !llvm::isa<mlir::qc::UnitaryOpInterface, mlir::arith::ConstantOp>(
+            operation)) {
+      scalarOperations.push_back(operation);
+    }
+  });
+  if (mlir::failed(mlir::applyOpPatternsGreedily(scalarOperations,
+                                                 std::move(patterns)))) {
     throw std::runtime_error("failed to normalize arithmetic for Qiskit");
   }
   if (function.getBody().empty() ||

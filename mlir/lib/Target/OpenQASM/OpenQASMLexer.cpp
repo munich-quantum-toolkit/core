@@ -24,11 +24,13 @@
 #include "llvm/Support/Error.h"
 
 #include <cctype>
+#include <charconv>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iterator>
 #include <optional>
+#include <system_error>
 #include <utility>
 
 namespace mlir::openqasm::frontend::detail {
@@ -282,6 +284,18 @@ Token Lexer::lexIdentifierOrKeyword(const char* start) {
   return token;
 }
 
+/// Convert decimal floating-point digits without separators, correctly
+/// rounded. Return false if `digits` is not a complete decimal literal.
+static bool parseDecimalFloat(const StringRef digits, double& value) {
+  const auto [end, error] =
+      std::from_chars(digits.begin(), digits.end(), value);
+  if (error != std::errc::result_out_of_range) {
+    return error == std::errc{} && end == digits.end();
+  }
+  // APFloat keeps the previous underflow and overflow results.
+  return !digits.getAsDouble(value);
+}
+
 Token Lexer::lexNumber(const char* start) {
   const auto isSeparator = [](const char value) { return value == '_'; };
   unsigned radix = 10;
@@ -339,8 +353,7 @@ Token Lexer::lexNumber(const char* start) {
       });
   if (isFloat) {
     token.kind = TokenKind::FloatLiteral;
-    if (invalidSeparators ||
-        StringRef(normalized).getAsDouble(token.floatValue) ||
+    if (invalidSeparators || !parseDecimalFloat(normalized, token.floatValue) ||
         !std::isfinite(token.floatValue)) {
       token.kind = TokenKind::Error;
     }

@@ -321,7 +321,7 @@ private:
     if (slice != nullptr) {
       *slice = Slice{.start = range.lhs, .step = range.step, .stop = range.rhs};
     }
-    return sink.addExpression(range);
+    return sink.addExpression(std::move(range));
   }
 
   //===--- Version ------------------------------------------------------===//
@@ -1677,7 +1677,7 @@ private:
       expr.location = loc;
       expr.kind = kind;
       expr.lhs = *operand;
-      return sink.addExpression(expr);
+      return sink.addExpression(std::move(expr));
     }
     return parsePower();
   }
@@ -1713,18 +1713,18 @@ private:
         return sink.error(current().loc, "bit strings require binary digits");
       }
       advance();
-      return sink.addExpression(expr);
+      return sink.addExpression(std::move(expr));
     case TokenKind::True:
     case TokenKind::False:
       expr.kind = Expr::Kind::Bool;
       expr.boolean = current().kind == TokenKind::True;
       advance();
-      return sink.addExpression(expr);
+      return sink.addExpression(std::move(expr));
     case TokenKind::FloatLiteral:
       expr.kind = Expr::Kind::Float;
       expr.floatingPoint = current().floatValue;
       advance();
-      return sink.addExpression(expr);
+      return sink.addExpression(std::move(expr));
     case TokenKind::IntegerLiteral:
       expr.kind = Expr::Kind::Int;
       expr.integer = current().intValue;
@@ -1740,7 +1740,7 @@ private:
             .rhs = integer,
         });
       }
-      return sink.addExpression(expr);
+      return sink.addExpression(std::move(expr));
     case TokenKind::Bool:
     case TokenKind::Bit:
     case TokenKind::Int:
@@ -1772,7 +1772,7 @@ private:
                                              : Expr::Kind::AngleCast;
       expr.lhs = size;
       expr.rhs = *operand;
-      return sink.addExpression(expr);
+      return sink.addExpression(std::move(expr));
     }
     case TokenKind::Identifier: {
       if (peek().kind == TokenKind::LParen) {
@@ -1795,7 +1795,7 @@ private:
         }
         expr.kind = expr.slice ? Expr::Kind::Slice : Expr::Kind::Index;
       }
-      return sink.addExpression(expr);
+      return sink.addExpression(std::move(expr));
     }
     // `pow` is also a gate modifier, so it has a dedicated token.
     case TokenKind::Pow:
@@ -1852,7 +1852,7 @@ private:
     if (failed(expect(TokenKind::RParen))) {
       return failure();
     }
-    return sink.addExpression(expr);
+    return sink.addExpression(std::move(expr));
   }
 
   [[nodiscard]] SyntaxExpressionId makeBinary(const Expr::Kind kind,
@@ -1864,7 +1864,7 @@ private:
     expr.kind = kind;
     expr.lhs = lhs;
     expr.rhs = rhs;
-    return sink.addExpression(expr);
+    return sink.addExpression(std::move(expr));
   }
 
   // Parser collaborators are mandatory and outlive this single parse.

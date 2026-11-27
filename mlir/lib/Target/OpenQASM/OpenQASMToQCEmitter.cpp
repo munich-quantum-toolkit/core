@@ -14,6 +14,7 @@
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Utils/DelayUnit.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -67,6 +68,20 @@
 #include <vector>
 
 namespace mlir::qc::detail {
+
+/// Wrap `location` in call sites for the include stack of `source`.
+static Location
+withIncludeStack(Location location,
+                 const openqasm::frontend::SourceLocation& source,
+                 MLIRContext& context) {
+  for (const auto& frame : source.includeStack) {
+    location = CallSiteLoc::get(location,
+                                FileLineColLoc::get(&context, frame.filename,
+                                                    frame.line, frame.column));
+  }
+  return location;
+}
+
 namespace {
 
 namespace frontend = openqasm::frontend;
@@ -134,6 +149,7 @@ public:
                      bufferization::BufferizationDialect>();
     builder.setListener(&emissionBudget);
     builder.initialize();
+    mainEntry = builder.getInsertionBlock();
     if (llvm::any_of(program.gates,
                      [](const auto& gate) { return gate.name == "main"; })) {
       // A dot cannot occur in a source gate identifier.
@@ -223,6 +239,9 @@ private:
   // The engine cannot exist without the program and context that outlive it.
   const openqasm::frontend::TypedProgram& program;
   MLIRContext& context;
+  StringAttr filename;
+  Block* mainEntry = nullptr;
+  DenseMap<uint64_t, Value> registerIndices;
   EmissionBudget emissionBudget;
   qc::QCProgramBuilder builder;
   std::vector<Value> qubitValues;
@@ -246,9 +265,16 @@ private:
   /// Undo only writes since a branch/loop checkpoint, including new locals.
   SmallVector<std::pair<StateSlot, Value>> scalarUpdates_;
 
-  [[nodiscard]] Location
-  getLocation(const frontend::SourceLocation& source) const {
-    return getOpenQASMLocation(source, context);
+  [[nodiscard]] Location getLocation(const frontend::SourceLocation& source) {
+    // Statements of one file share its name; skip re-uniquing it per statement.
+    if (!filename || filename.getValue() != source.filename) {
+      filename = StringAttr::get(&context, source.filename);
+    }
+    Location location =
+        FileLineColLoc::get(filename, source.line, source.column);
+    return source.includeStack.empty()
+               ? location
+               : withIncludeStack(location, source, context);
   }
 
   [[nodiscard]] static bool
@@ -933,6 +959,19 @@ private:
     return indices;
   }
 
+  /// Register accesses only occur in the main function, so one constant per
+  /// literal index at its entry dominates every access.
+  [[nodiscard]] Value registerIndex(const uint64_t index) {
+    auto& constant = registerIndices[index];
+    if (!constant) {
+      const OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPointToStart(mainEntry);
+      constant =
+          arith::ConstantIndexOp::create(builder, static_cast<int64_t>(index));
+    }
+    return constant;
+  }
+
   Value resolveQubit(const frontend::QubitReference& reference,
                      ValueRange gateQubits, Value index = {}) {
     switch (reference.kind) {
@@ -964,8 +1003,7 @@ private:
         continue;
       }
       if (!reference.provenIndex) {
-        indices[position] = arith::ConstantIndexOp::create(
-            builder, static_cast<int64_t>(reference.index));
+        indices[position] = registerIndex(reference.index);
         continue;
       }
       indices[position] =
@@ -1751,7 +1789,7 @@ private:
             qc::DelayOp::create(
                 builder, loc,
                 resolveQubit(data.qubit, gateQubits, indices.front()), duration,
-                builder.getStringAttr(data.unit));
+                *mqt::symbolizeDelayUnit(data.unit));
           } else if constexpr (std::is_same_v<T, frontend::BarrierStatement>) {
             const auto indices = emitQubitIndices(data.qubits);
             if (emissionBudget.isExhausted()) {
@@ -2926,14 +2964,9 @@ private:
 
 Location getOpenQASMLocation(const frontend::SourceLocation& source,
                              MLIRContext& context) {
-  Location location = FileLineColLoc::get(&context, source.filename,
-                                          source.line, source.column);
-  for (const auto& frame : source.includeStack) {
-    auto caller =
-        FileLineColLoc::get(&context, frame.filename, frame.line, frame.column);
-    location = CallSiteLoc::get(location, caller);
-  }
-  return location;
+  return withIncludeStack(FileLineColLoc::get(&context, source.filename,
+                                              source.line, source.column),
+                          source, context);
 }
 
 OwningOpRef<ModuleOp> emitOpenQASMToQC(const frontend::TypedProgram& program,

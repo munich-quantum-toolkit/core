@@ -47,6 +47,8 @@
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Interfaces/ControlFlowInterfaces.h"
 #include "mlir/Pass/PassManager.h"
+#include "mlir/Rewrite/FrozenRewritePatternSet.h"
+#include "mlir/Rewrite/PatternApplicator.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -1131,14 +1133,48 @@ static LogicalResult reserveRegisterResults(ModuleOp moduleOp,
   return success();
 }
 
+/// Collect structured operations so that parents precede their nested
+/// operations and later operations of a block precede earlier ones.
+static void collectStructuredOperations(Region& region,
+                                        SmallVectorImpl<Operation*>& ops) {
+  for (auto& block : region) {
+    for (auto& op : llvm::reverse(block)) {
+      if (isa<scf::SCFDialect>(op.getDialect()) &&
+          !op.hasTrait<OpTrait::IsTerminator>()) {
+        ops.push_back(&op);
+      }
+      for (auto& nested : op.getRegions()) {
+        collectStructuredOperations(nested, ops);
+      }
+    }
+  }
+}
+
 /// Lower structured control flow to the cf dialect before function conversion.
+///
+/// Lowering a parent first keeps its region terminators in place. Lowering the
+/// last construct of a block first means each block split moves only the
+/// operations up to the next construct; a dialect conversion would record every
+/// moved operation, which is quadratic in the number of constructs per block.
 static LogicalResult lowerStructuredControlFlow(ModuleOp moduleOp,
                                                 ConversionTarget& target) {
   RewritePatternSet patterns(moduleOp.getContext());
   target.addIllegalDialect<scf::SCFDialect>();
   target.addLegalDialect<cf::ControlFlowDialect, arith::ArithDialect>();
   populateSCFToControlFlowConversionPatterns(patterns);
-  return applyPartialConversion(moduleOp, target, std::move(patterns));
+  const FrozenRewritePatternSet frozen(std::move(patterns));
+  PatternApplicator applicator(frozen);
+  applicator.applyDefaultCostModel();
+  SmallVector<Operation*> ops;
+  collectStructuredOperations(moduleOp.getBodyRegion(), ops);
+  PatternRewriter rewriter(moduleOp.getContext());
+  for (auto* op : ops) {
+    rewriter.setInsertionPoint(op);
+    if (failed(applicator.matchAndRewrite(op, rewriter))) {
+      return op->emitOpError("cannot be lowered to unstructured control flow");
+    }
+  }
+  return success();
 }
 
 } // namespace adaptive

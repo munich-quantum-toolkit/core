@@ -25,7 +25,10 @@ class TargetEnvironment;
 
 namespace qc {
 
-/// Consume a QC module and translate it to portable OpenQASM.
+/// Consume a verified QC module and translate it to portable OpenQASM.
+///
+/// Only builds with assertions verify the module again; programs and pass
+/// pipelines already guarantee valid IR.
 ///
 /// Non-gate helpers are inlined and array views normalized in the supplied
 /// module. Gate definitions and supported structured control flow are
@@ -42,7 +45,7 @@ FailureOr<std::string>
 translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
                        const TargetEnvironment* environment = nullptr);
 
-/// Consume a QC module and emit OpenQASM 2 with bound parameters.
+/// Consume a verified QC module and emit OpenQASM 2 with bound parameters.
 ///
 /// Measurements must write output registers. Register-equality conditions are
 /// supported; other control flow, classical assignments, and residual modifiers

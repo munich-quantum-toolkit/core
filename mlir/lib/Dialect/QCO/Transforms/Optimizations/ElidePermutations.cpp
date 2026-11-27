@@ -877,19 +877,11 @@ namespace {
 
 struct ElidePermutations final
     : impl::ElidePermutationsBase<ElidePermutations> {
-protected:
-  void runOnOperation() override {
-    if (failed(elidePermutations(getOperation(), /*terminalOnly=*/false))) {
-      signalPassFailure();
-    }
-  }
-};
+  using ElidePermutationsBase::ElidePermutationsBase;
 
-struct ElideTerminalSwapsPass final
-    : impl::ElideTerminalSwapsPassBase<ElideTerminalSwapsPass> {
 protected:
   void runOnOperation() override {
-    if (failed(elidePermutations(getOperation(), /*terminalOnly=*/true))) {
+    if (failed(elidePermutations(getOperation(), terminalOnly))) {
       signalPassFailure();
     }
   }

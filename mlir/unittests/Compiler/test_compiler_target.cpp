@@ -67,6 +67,18 @@ static void expectInvalid(llvm::Expected<T> value,
   EXPECT_EQ(llvm::toString(value.takeError()), expectedMessage);
 }
 
+/// Parse a target attribute and expect target construction to reject it.
+static void expectInvalidTarget(mlir::MLIRContext& context,
+                                const std::string& source,
+                                const std::string_view expectedMessage) {
+  SCOPED_TRACE(source);
+  const auto attribute =
+      mlir::dyn_cast_if_present<mlir::mqt::CompilationTargetAttr>(
+          mlir::parseAttribute(source, &context));
+  ASSERT_TRUE(attribute);
+  expectInvalid(mlir::CompilerTarget::create(attribute), expectedMessage);
+}
+
 namespace {
 
 using Target = mlir::CompilerTarget;
@@ -1027,21 +1039,76 @@ TEST(CompilerTargetTest, GateSetRejectsDeviceConstraints) {
                 "Gate-set target cannot contain site-specific operations");
   mlir::MLIRContext context;
   context.loadDialect<mlir::mqt::MQTDialect>();
-  mlir::ScopedDiagnosticHandler handler(
-      &context, [](mlir::Diagnostic&) { return mlir::success(); });
+  expectInvalidTarget(
+      context,
+      "#mqt.compilation_target<sites = [], connectivity = all_to_all, "
+      "couplings = [], native_operations = unrestricted, operations = []>",
+      "Compiler target must contain at least one site");
   for (const auto* source : {
-           "#mqt.compilation_target<sites = [], connectivity = all_to_all, "
-           "couplings = [], native_operations = unrestricted, operations = []>",
            "#mqt.compilation_target<sites = [<id = 0>], connectivity = "
-           "all_to_all, "
-           "couplings = [], native_operations = unrestricted, operations = [], "
-           "gate_set = unit>",
+           "all_to_all, couplings = [], native_operations = unrestricted, "
+           "operations = [], gate_set = unit>",
            "#mqt.compilation_target<sites = [], connectivity = explicit, "
            "couplings = [], native_operations = unrestricted, operations = [], "
            "gate_set = unit>",
        }) {
-    EXPECT_FALSE(mlir::parseAttribute(source, &context));
+    expectInvalidTarget(context, source,
+                        "Gate-set target cannot contain device constraints");
   }
+}
+
+TEST(CompilerTargetTest, RejectsInvalidTargetAttributes) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const std::string sites = "sites = [<id = 0>, <id = 1>, <id = 2>], ";
+  const std::string unrestricted =
+      "native_operations = unrestricted, operations = []>";
+  const std::string allToAll = "connectivity = all_to_all, couplings = [], ";
+  const auto operation = [](const std::string& body) {
+    return "native_operations = explicit, operations = [<" + body + ">]>";
+  };
+  const auto check = [&](const std::string& body,
+                         const std::string_view message) {
+    expectInvalidTarget(context, "#mqt.compilation_target<" + body, message);
+  };
+  check("name = \"\", " + sites + allToAll + unrestricted,
+        "Compiler target name must not be empty when present");
+  check("sites = [<id = 0>, <id = 0>], " + allToAll + unrestricted,
+        "Compiler target contains duplicate site IDs");
+  check(sites +
+            "connectivity = all_to_all, couplings = [<source = 0, "
+            "target = 1>], " +
+            unrestricted,
+        "Compiler target couplings require explicit connectivity");
+  check(sites + allToAll +
+            "native_operations = unrestricted, operations = [<name = \"x\", "
+            "arity = #mqt.operation_arity<kind = fixed, value = 1>, "
+            "num_parameters = 0, site_tuples = []>]>",
+        "Compiler target operations require explicit native operations");
+  check(sites +
+            "connectivity = explicit, couplings = [<source = 0, "
+            "target = 3>], " +
+            unrestricted,
+        "Compiler target topology references an unknown site");
+  check("sites = [<id = 0, t1 = 100>], " + allToAll + unrestricted,
+        "Compiler target timing metadata requires a duration unit");
+  check(sites +
+            "connectivity = explicit, couplings = [<source = 0, target = 1>, "
+            "<source = 1, target = 2>], " +
+            operation("name = \"cz\", arity = #mqt.operation_arity<kind = "
+                      "fixed, value = 2>, num_parameters = 0, site_tuples = "
+                      "[<[2, 0]>]"),
+        "native operation 'cz' on sites 2, 0 requires a coupling");
+  check(sites + allToAll +
+            operation("name = \"rx\", arity = #mqt.operation_arity<kind = "
+                      "fixed, value = 1>, num_parameters = 1, "
+                      "site_tuples = [], fixed_parameters = [1 : i64]"),
+        "Compiler target fixed parameters must be finite f64 values or unit");
+  check(sites + allToAll +
+            operation("name = \"rx\", arity = #mqt.operation_arity<kind = "
+                      "fixed, value = 1>, num_parameters = 1, "
+                      "site_tuples = [], fixed_parameters = [unit, unit]"),
+        "Compiler target fixed parameters must match its parameter count");
 }
 
 TEST(CompilerTargetTest, RoundTripsSupportedTargetStates) {
@@ -1195,27 +1262,6 @@ TEST(CompilerTargetTest, RejectsInvalidFixedParameters) {
       OperationCapability::create("u", 1, 3, {}, std::nullopt, std::nullopt,
                                   {std::nullopt, std::nullopt, std::nullopt}));
   EXPECT_TRUE(unrestricted.fixedParameters().empty());
-}
-
-TEST(CompilerTargetTest, RejectsMalformedFixedParameterAttributes) {
-  mlir::MLIRContext context;
-  context.loadDialect<mlir::mqt::MQTDialect>();
-  mlir::ScopedDiagnosticHandler handler(
-      &context, [](mlir::Diagnostic&) { return mlir::success(); });
-  for (const auto* parameters : {
-           "[unit, unit]",
-           "[1 : i64]",
-           "[1.0 : f32]",
-           "[0x7FF0000000000000 : f64]",
-       }) {
-    SCOPED_TRACE(parameters);
-    const auto source =
-        std::string{"#mqt.native_operation<name = \"rx\", "
-                    "arity = #mqt.operation_arity<kind = fixed, value = 1>, "
-                    "num_parameters = 1, fixed_parameters = "} +
-        parameters + ">";
-    EXPECT_FALSE(mlir::parseAttribute(source, &context));
-  }
 }
 
 TEST(CompilerTargetTest, ChecksFixedValuesInsideNativeControls) {
