@@ -1295,21 +1295,20 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
     durationUnit = std::move(*unit);
   }
 
-  std::vector<Coupling> couplings;
+  auto connectivity = Connectivity::allToAll();
   if (attribute.getConnectivity() == mqt::ConnectivityKind::Explicit) {
-    couplings.reserve(attribute.getCouplings().size());
+    connectivity.kind_ = Connectivity::Kind::Explicit;
+    connectivity.couplings_.reserve(attribute.getCouplings().size());
     for (const auto coupling : attribute.getCouplings()) {
-      couplings.emplace_back(coupling.getSource(), coupling.getTarget());
+      connectivity.couplings_.emplace_back(coupling.getSource(),
+                                           coupling.getTarget());
     }
   }
-  auto connectivity =
-      attribute.getConnectivity() == mqt::ConnectivityKind::AllToAll
-          ? Connectivity::allToAll()
-          : Connectivity::fromCouplings(couplings);
 
   auto nativeOperations = NativeOperations::unrestricted();
   if (attribute.getNativeOperations() == mqt::NativeOperationsKind::Explicit) {
-    std::vector<OperationCapability> operations;
+    nativeOperations.kind_ = NativeOperations::Kind::Explicit;
+    auto& operations = nativeOperations.operations_;
     operations.reserve(attribute.getOperations().size());
     for (const auto operationAttr : attribute.getOperations()) {
       if (operationAttr.getArity().getValue() >
@@ -1388,7 +1387,6 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
       }
       operations.emplace_back(std::move(*operation));
     }
-    nativeOperations = NativeOperations::fromOperations(operations);
   }
 
   return createImpl(std::move(name), std::move(sites), std::move(connectivity),
