@@ -896,7 +896,6 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
   llvm::DenseSet<uint32_t> staticIndices;
   for (auto& operation : function.getBody().front()) {
     if (auto staticQubit = llvm::dyn_cast<mlir::qc::StaticOp>(operation)) {
-      uint32_t index = 0;
       if (target != nullptr) {
         const auto vertex =
             target->vertexForSite(checkedTargetSiteId(staticQubit.getIndex()));
@@ -905,16 +904,14 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
               "QC static qubit is not a site of the supplied compiler target");
         }
       }
-      index = checkedIndex(staticQubit.getIndex(), "qubit");
-      if (index == std::numeric_limits<uint32_t>::max()) {
-        throw std::runtime_error("qubit count cannot be represented by Qiskit");
-      }
+      const auto index = checkedIndex(staticQubit.getIndex(), "qubit");
       if (!staticIndices.insert(index).second) {
         throw std::runtime_error(
             "QC to Qiskit export does not support aliased static qubits");
       }
       state.qubits[staticQubit.getQubit()] = index;
-      state.numQubits = std::max(state.numQubits, index + 1U);
+      state.numQubits =
+          std::max(state.numQubits, checkedAdd(index, 1U, "qubit"));
     }
   }
   for (auto& operation : function.getBody().front()) {
@@ -3047,9 +3044,8 @@ exportCircuitImpl(mlir::QCProgram program,
   ExportState state;
   collectParameters(function, state);
   if (deviceTarget) {
-    state.numQubits = checkedIndex(
-        static_cast<uint64_t>(*llvm::max_element(target->siteIds())) + 1,
-        "target address width");
+    const auto lastQubit = checkedIndex(*target->maxSiteId(), "target site");
+    state.numQubits = checkedAdd(lastQubit, 1U, "target qubit");
   }
   materializeBooleanResults(function);
   prepareMeasurementStores(function);

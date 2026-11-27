@@ -146,6 +146,9 @@ public:
     /// Return the raw T2 coherence time, if available.
     [[nodiscard]] std::optional<uint64_t> t2() const noexcept;
 
+    /// Return whether the site reports a T1 or T2 coherence time.
+    [[nodiscard]] bool hasCoherenceTimes() const noexcept { return t1_ || t2_; }
+
   private:
     Site(SiteId id, std::optional<std::string> name, std::optional<uint64_t> t1,
          std::optional<uint64_t> t2);
@@ -455,8 +458,14 @@ public:
   /// Return the number of compiler vertices and hardware sites.
   [[nodiscard]] size_t numSites() const noexcept;
 
+  /// Return the largest physical site ID, or nullopt for a gate-set target.
+  [[nodiscard]] std::optional<SiteId> maxSiteId() const noexcept;
+
   /// Return detailed sites in dense compiler-vertex order.
   [[nodiscard]] llvm::ArrayRef<Site> sites() const noexcept;
+
+  /// Return the sites that report T1 or T2, in compiler-vertex order.
+  [[nodiscard]] std::vector<Site> sitesWithCoherenceTimes() const;
 
   /// Return sites supporting a single-qubit gate.
   ///
