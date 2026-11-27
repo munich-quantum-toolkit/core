@@ -4141,18 +4141,20 @@ def test_named_non_f64_runtime_input_is_rejected_on_export() -> None:
     assert runtime.ir == source_ir
 
 
-def test_target_aware_qiskit_export_rejects_unrepresentable_site_ids() -> None:
-    """Reject physical site IDs outside Qiskit's supported address width."""
+@pytest.mark.parametrize(("site_id", "quantity"), [(2**32 - 1, "target qubit count"), (2**63 - 1, "target site index")])
+def test_target_aware_qiskit_export_rejects_unrepresentable_site_ids(site_id: int, quantity: str) -> None:
+    """Both the site index and the number of wires must fit Qiskit's register."""
     target = CompilerTarget(
         "sparse target",
-        [CompilerTarget.Site(10), CompilerTarget.Site(4294967296)],
+        [CompilerTarget.Site(10), CompilerTarget.Site(site_id)],
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
+    assert target.max_site_id == site_id
     program = QCProgram.from_mlir_str(
         """module {
   func.func @main() attributes {mqt.entry_point} {
-    %q = qc.static 4294967296 : !qc.qubit
+    %q = qc.static 10 : !qc.qubit
     qc.x %q : !qc.qubit
     return
   }
@@ -4160,7 +4162,7 @@ def test_target_aware_qiskit_export_rejects_unrepresentable_site_ids() -> None:
 """
     )
 
-    with pytest.raises(RuntimeError, match="target address width index cannot be represented"):
+    with pytest.raises(RuntimeError, match=f"{quantity} cannot be represented by Qiskit"):
         program.to_qiskit(target=target)
 
 

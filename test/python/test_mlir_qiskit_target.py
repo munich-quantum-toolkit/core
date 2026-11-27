@@ -1514,6 +1514,7 @@ def test_gate_set_synthesis_preserves_program_qubits(*, with_environment: bool) 
     compiler_target = CompilerTarget.for_gate_set(gates)
     assert not compiler_target.has_device_constraints
     assert compiler_target.num_sites == 0
+    assert compiler_target.max_site_id is None
     selected_target = (
         TargetEnvironment(compiler_target, PayloadSpecification(PayloadFormat("openqasm", "3.0")))
         if with_environment

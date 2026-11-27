@@ -25,6 +25,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
@@ -42,6 +43,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -901,9 +903,8 @@ llvm::Error CompilerTarget::Storage::initialize(bool deviceConstraints) {
     }
   }
 
-  const auto hasSiteTiming = llvm::any_of(sites, [](const auto& site) {
-    return site.t1().has_value() || site.t2().has_value();
-  });
+  const auto hasSiteTiming =
+      std::ranges::any_of(sites, &Site::hasCoherenceTimes);
   const auto hasOperationTiming =
       llvm::any_of(operations, [](const auto& operation) {
         return operation.duration().has_value() ||
@@ -1427,16 +1428,30 @@ size_t CompilerTarget::numSites() const noexcept {
   return storage_->sites.size();
 }
 
+std::optional<SiteId> CompilerTarget::maxSiteId() const noexcept {
+  if (auto ids = siteIds(); !ids.empty()) {
+    return *llvm::max_element(ids);
+  }
+  return std::nullopt;
+}
+
 ArrayRef<CompilerTarget::Site> CompilerTarget::sites() const noexcept {
   return storage_->sites;
 }
 
+std::vector<CompilerTarget::Site>
+CompilerTarget::sitesWithCoherenceTimes() const {
+  std::vector<Site> result;
+  std::ranges::copy_if(sites(), std::back_inserter(result),
+                       &Site::hasCoherenceTimes);
+  return result;
+}
+
 std::vector<SiteId> CompilerTarget::placeableSites() const {
-  if (nativeOperationsKind() == NativeOperations::Kind::Unrestricted) {
-    return {siteIds().begin(), siteIds().end()};
-  }
-  llvm::DenseSet<SiteId> unary;
-  llvm::DenseSet<SiteId> measured;
+  const auto numVertices = storage_->siteToVertex.size();
+  BitVector unary(numVertices, nativeOperationsKind() ==
+                                   NativeOperations::Kind::Unrestricted);
+  BitVector measured(numVertices);
   for (const auto& op : operations()) {
     const auto name = op.canonicalName();
     if (!op.arity().accepts(1) || name == "reset" || name == "barrier") {
@@ -1452,20 +1467,24 @@ std::vector<SiteId> CompilerTarget::placeableSites() const {
     }
     auto& supported = name == "measure" ? measured : unary;
     if (op.siteTuples().empty()) {
-      supported.insert(siteIds().begin(), siteIds().end());
+      supported.set();
     } else {
       for (const auto& tuple : op.siteTuples()) {
-        if (tuple.sites().size() == 1) {
-          supported.insert(tuple.sites().front());
-        }
+        supported.set(
+            static_cast<unsigned>(*vertexForSite(tuple.sites().front())));
       }
     }
   }
+  if (measured.any()) {
+    unary &= measured;
+  }
+  if (unary.all()) {
+    return {siteIds().begin(), siteIds().end()};
+  }
   std::vector<SiteId> result;
-  for (const auto site : siteIds()) {
-    if (unary.contains(site) && (measured.empty() || measured.contains(site))) {
-      result.push_back(site);
-    }
+  result.reserve(unary.count());
+  for (const auto vertex : unary.set_bits()) {
+    result.push_back(siteForVertex(vertex));
   }
   return result;
 }

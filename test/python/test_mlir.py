@@ -1889,6 +1889,8 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert [target.num_sites for target in targets] == [2, 2, 2, 2]
     assert targets[1].name == "dense"
     assert targets[3].name == "sparse"
+    (timed_site,) = targets.pop().sites_with_coherence_times
+    assert (timed_site.id, timed_site.name, timed_site.t1, timed_site.t2) == (10, "q0", 100, 200)
     assert sites[0].name == "q0"
     assert sites[0].t1 == 100
     assert sites[0].t2 == 200

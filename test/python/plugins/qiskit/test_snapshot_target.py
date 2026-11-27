@@ -26,7 +26,7 @@ from mqt.core.mlir import (
     serialize_program,
 )
 from mqt.core.plugins.qiskit import QDMIBackend
-from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError, UnsupportedOperationError
+from mqt.core.plugins.qiskit.exceptions import CircuitValidationError, UnsupportedDeviceError, UnsupportedOperationError
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.builtin_driver import open_device
 
@@ -50,38 +50,43 @@ def test_snapshot_properties_variants_and_opaque_operations(monkeypatch: pytest.
     capability = CompilerTarget.OperationCapability
     site_tuple = CompilerTarget.SiteTuple
     target = CompilerTarget(
-        [CompilerTarget.Site(0, t1=100), CompilerTarget.Site(2, t2=200), CompilerTarget.Site(5)],
+        [CompilerTarget.Site(5), CompilerTarget.Site(1, t1=100), CompilerTarget.Site(2, t2=200)],
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            capability("prx", 1, 2, [[0], [2]]),
+            capability("prx", 1, 2, [[1], [2]]),
             capability("gphase", 0, 1),
-            capability("measure", 1, 0, [[0], [2], [5]]),
+            capability("measure", 1, 0, [[1], [2], [5]]),
             capability("mcx", CompilerTarget.OperationArity.variadic(2), 0),
-            capability("rzz", 2, 1, [site_tuple([0, 2], duration=20, fidelity=0.99)], fixed_parameters=[0.5]),
-            capability("rzz", 2, 1, [[2, 0]], fixed_parameters=[0.8]),
-            capability("custom_native", 2, 1, [[0, 2]], parameter_bounds=[(-1.0, 1.0)]),
-            capability("custom_native", 1, 1, [[0]], parameter_bounds=[(-1.0, 1.0)]),
+            capability("rzz", 2, 1, [site_tuple([1, 2], duration=20, fidelity=0.99)], fixed_parameters=[0.5]),
+            capability("rzz", 2, 1, [[2, 1]], fixed_parameters=[0.8]),
+            capability("custom_native", 2, 1, [[1, 2]], parameter_bounds=[(-1.0, 1.0)]),
+            capability("custom_native", 1, 1, [[1]], parameter_bounds=[(-1.0, 1.0)]),
         ]),
         duration_unit=CompilerTarget.DurationUnit("ns", 2.0),
     )
     backend = backend_for_snapshot(monkeypatch, target)
     assert "global_phase" in backend.target.operation_names
     assert backend.num_qubits == 3
-    assert set(backend.target["r"]) == {(0,), (2,)}
-    assert backend.target["rzz"][0, 2].duration == pytest.approx(40e-9)
-    assert backend.target["rzz"][0, 2].error == pytest.approx(0.01)
+    assert set(backend.target["r"]) == {(1,), (2,)}
+    assert backend.target["rzz"][1, 2].duration == pytest.approx(40e-9)
+    assert backend.target["rzz"][1, 2].error == pytest.approx(0.01)
     coherence = backend.target.qubit_properties
     assert coherence is not None
-    assert coherence[0].t1 == pytest.approx(200e-9)
+    assert coherence[1].t1 == pytest.approx(200e-9)
+    assert coherence[0].t1 is None
+    assert coherence[0].t2 is None
     assert coherence[2].t2 == pytest.approx(400e-9)
     assert backend.coupling_map is None
     circuit = QuantumCircuit(3)
-    circuit.rzz(0.8, 2, 0)
-    circuit.append(Gate("prx", 1, [0.5, 0.25]), [0])
-    circuit.append(Gate("custom_native", 2, [0.2]), [0, 2])
-    circuit.append(Gate("custom_native", 1, [0.2]), [0])
+    circuit.rzz(0.8, 2, 1)
+    circuit.append(Gate("prx", 1, [0.5, 0.25]), [1])
+    circuit.append(Gate("custom_native", 2, [0.2]), [1, 2])
+    circuit.append(Gate("custom_native", 1, [0.2]), [1])
     backend.validate_circuit(circuit, native=True)
-    circuit.append(Gate("custom_native", 2, [2.0]), [0, 2])
+    backend.validate_circuit(QuantumCircuit(6), native=True)
+    with pytest.raises(CircuitValidationError, match="6 addressable positions"):
+        backend.validate_circuit(QuantumCircuit(7), native=True)
+    circuit.append(Gate("custom_native", 2, [2.0]), [1, 2])
     with pytest.raises(UnsupportedOperationError, match="custom_native"):
         backend.validate_circuit(circuit, native=True)
     invalid = QuantumCircuit(3)
@@ -94,7 +99,7 @@ def test_snapshot_star_target_requires_compiler(monkeypatch: pytest.MonkeyPatch)
     """Resonators never become Qiskit placement sites or native two-qubit edges."""
     capability = CompilerTarget.OperationCapability
     target = CompilerTarget(
-        3,
+        [CompilerTarget.Site(0), CompilerTarget.Site(1, t2=100), CompilerTarget.Site(2)],
         connectivity=CompilerTarget.Connectivity([(0, 1), (2, 1)]),
         native_operations=CompilerTarget.NativeOperations([
             capability("r", 1, 2, [[0], [2]]),
@@ -102,10 +107,14 @@ def test_snapshot_star_target_requires_compiler(monkeypatch: pytest.MonkeyPatch)
             capability("move", 2, 0, [[0, 1], [2, 1]]),
             capability("cz", 2, 0, [[0, 1], [2, 1]]),
         ]),
+        duration_unit=CompilerTarget.DurationUnit("ns", 1.0),
     )
     backend = backend_for_snapshot(monkeypatch, target)
     assert {"r", "measure", "barrier"} <= backend.target.operation_names
     assert not {"cz", "move"} & backend.target.operation_names
+    coherence = backend.target.qubit_properties
+    assert coherence is not None
+    assert all(properties.t2 is None for properties in coherence)
     circuit = QuantumCircuit(3)
     circuit.cz(0, 2)
     with pytest.raises(UnsupportedOperationError, match=r"backend\.compile"):
@@ -128,6 +137,7 @@ def test_snapshot_global_operations_stay_global(monkeypatch: pytest.MonkeyPatch)
     assert {"x", "cx", "ccx", "mcx"} <= backend.target.operation_names
     assert backend.coupling_map is None
     assert backend.num_qubits == 65535
+    assert backend.target.qubit_properties is None
 
 
 def test_snapshot_without_placeable_sites_is_rejected(monkeypatch: pytest.MonkeyPatch) -> None:

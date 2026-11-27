@@ -1944,6 +1944,12 @@ Raises:
           "Sites supporting a compiler-targetable single-qubit gate.\n\n"
           "If the target supports measurement, these sites must also "
           "support readout.")
+      .def_prop_ro(
+          "max_site_id", &mlir::CompilerTarget::maxSiteId,
+          "The largest physical site ID, or None for a gate-set target.")
+      .def_prop_ro("sites_with_coherence_times",
+                   &mlir::CompilerTarget::sitesWithCoherenceTimes,
+                   "Sites that report T1 or T2, in compiler-vertex order.")
       .def_prop_ro("num_sites", &mlir::CompilerTarget::numSites,
                    "The number of target sites.")
       .def_prop_ro(

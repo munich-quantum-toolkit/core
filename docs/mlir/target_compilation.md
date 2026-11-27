@@ -198,9 +198,14 @@ mapped = compile_program(bell_qasm, target=target, output=OutputFormat.QC)
 
 Each operation capability describes a gate's qubit and parameter counts, the
 ordered sites on which it can act, and any parameter restrictions or calibration
-values. Represent alternative implementations as separate capabilities. Site IDs
-identify hardware locations and need not be consecutive. Use
-{py:class}`~mqt.core.mlir.TargetEnvironment` with a
+values. Represent alternative implementations as separate capabilities.
+
+Physical site IDs can start above zero or have gaps. For sites 1, 2, and 5,
+{py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` is 3 and
+{py:attr}`~mqt.core.mlir.CompilerTarget.max_site_id` is 5. A gate-set target has
+no sites and reports `None` for its maximum site ID.
+
+Use {py:class}`~mqt.core.mlir.TargetEnvironment` with a
 {py:class}`~mqt.core.mlir.PayloadSpecification` to restrict the output format
 and supported control flow explicitly. A QDMI format list alone does not
 describe these restrictions; the adapter uses the compiler-supported format

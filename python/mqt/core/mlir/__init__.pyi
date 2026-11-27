@@ -633,6 +633,14 @@ class CompilerTarget:
         """
 
     @property
+    def max_site_id(self) -> int | None:
+        """The largest physical site ID, or None for a gate-set target."""
+
+    @property
+    def sites_with_coherence_times(self) -> list[CompilerTarget.Site]:
+        """Sites that report T1 or T2, in compiler-vertex order."""
+
+    @property
     def num_sites(self) -> int:
         """The number of target sites."""
 

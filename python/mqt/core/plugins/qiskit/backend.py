@@ -276,13 +276,17 @@ class QDMIBackend(BackendV2):
             UnsupportedOperationError: If Qiskit cannot represent a capability.
         """
         snapshot = self._environment.target
-        sites = snapshot.sites
-        self._native_width = max((site.id for site in sites), default=-1) + 1
-        self._placeable_sites = set(snapshot.placeable_sites)
-        if not self._placeable_sites:
+        max_site_id = snapshot.max_site_id
+        placeable = snapshot.placeable_sites
+        if max_site_id is None or not placeable:
             msg = "The device has no sites with single-qubit gates and measurement."
             raise UnsupportedDeviceError(msg)
-        width = max(self._placeable_sites) + 1
+        self._native_width = max_site_id + 1
+        width = self._native_width
+        self._placeable_sites: set[int] | None = None
+        if len(placeable) < width:
+            self._placeable_sites = set(placeable)
+            width = max(placeable) + 1
         target = Target(description=f"QDMI device: {self.name}", num_qubits=width)
         standard: dict[str, Instruction | type[Instruction]] = get_standard_gate_name_mapping()
         standard.update({"gphase": standard["global_phase"], "mcx": MCXGate, "mcp": MCPhaseGate})
@@ -377,7 +381,7 @@ class QDMIBackend(BackendV2):
                 loci = [
                     (tuple(item.sites), item.duration, item.fidelity)
                     for item in placements
-                    if set(item.sites) <= self._placeable_sites
+                    if self._placeable_sites is None or self._placeable_sites.issuperset(item.sites)
                 ]
             else:
                 loci = [(None, None, None)]
@@ -416,10 +420,10 @@ class QDMIBackend(BackendV2):
         if ProgramCapability.CLASSICAL_ASSIGNMENT in capabilities:
             target.add_instruction(Store, name="store")
         target.add_instruction(Barrier, name="barrier")
-        if any(site.t1 is not None or site.t2 is not None for site in sites):
-            properties = [QubitProperties() for _ in range(width)]
-            for site in sites:
-                if site.id in self._placeable_sites:
+        if timed_sites := snapshot.sites_with_coherence_times:
+            properties = [QubitProperties()] * width
+            for site in timed_sites:
+                if self._placeable_sites is None or site.id in self._placeable_sites:
                     properties[site.id] = QubitProperties(
                         t1=self._duration_seconds(site.t1), t2=self._duration_seconds(site.t2)
                     )
@@ -495,7 +499,9 @@ class QDMIBackend(BackendV2):
                 names = self._target_names.get(operation_name)
                 if names is None:
                     names = [name for gate, name in self._target_classes if isinstance(operation, gate)]
-                supported = (not native or set(qargs) <= self._placeable_sites) and any(
+                supported = (
+                    not native or self._placeable_sites is None or self._placeable_sites.issuperset(qargs)
+                ) and any(
                     self._target.instruction_supported(
                         name, **({"qargs": qargs, "parameters": operation.params} if native else {})
                     )
