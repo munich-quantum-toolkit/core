@@ -10,5 +10,5 @@
 
 from importlib import metadata
 
-__version__ = version = metadata.version("mqt-core")
-__version_tuple__ = version_tuple = tuple(int(part) if part.isdecimal() else part for part in version.split("."))
+__version__ = metadata.version("mqt-core")
+version_info = tuple(int(part) if part.isdecimal() else part for part in __version__.split("."))
