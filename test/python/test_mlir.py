@@ -2597,10 +2597,11 @@ def test_sample_imported_native_cu3() -> None:
 def test_source_submission_requires_explicit_result_layout() -> None:
     """Source-only submission cannot discard nonidentity classical destinations."""
     source = "OPENQASM 3; qubit[2] q; bit[2] c; x q[0]; c[1] = measure q[0]; c[0] = measure q[1];"
+    open_target = partial(open_builtin_device, "mqt.ddsim.default", custom1="2")
     with pytest.raises(ValueError, match="Compile explicitly and retain the result layout"):
-        submit_program(source, target="mqt.ddsim.default", num_shots=4)
-    compiled = compile_program(source, target="mqt.ddsim.default")
+        submit_program(source, target=open_target(), num_shots=4)
+    compiled = compile_program(source, target=open_target())
     assert compiled.result_layout is not None
-    job = submit_program(compiled, target="mqt.ddsim.default", num_shots=4)
+    job = submit_program(compiled, target=open_target(), num_shots=4)
     assert job.wait()
     assert {compiled.result_layout.decode_bits(bits): count for bits, count in job.get_counts().items()} == {"10": 4}
