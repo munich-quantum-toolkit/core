@@ -20,6 +20,7 @@
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/DelayUnit.h"
 #include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
@@ -1671,14 +1672,14 @@ private:
         auto unit = delay.getUnit();
         auto literal = cast<FloatAttr>(delay.getDuration());
         const auto amount = std::abs(literal.getValueAsDouble());
-        if (unit == "ps") {
+        if (unit == mqt::DelayUnit::ps) {
           const double ns = amount / 1000;
           if (ns == 0 && amount != 0) {
             return fail(delay,
                         "delay is too small for an OpenQASM duration literal");
           }
           literal = FloatAttr::get(literal.getType(), ns);
-          unit = "ns";
+          unit = mqt::DelayUnit::ns;
         } else if (literal.getValue().isNegZero()) {
           literal = FloatAttr::get(literal.getType(), 0.0);
         }
@@ -1686,7 +1687,7 @@ private:
         if (failed(text)) {
           return failure();
         }
-        *output << *text << unit;
+        *output << *text << mqt::stringifyDelayUnit(unit);
       }
       *output << "] " << *qubit << ";\n";
       return success();

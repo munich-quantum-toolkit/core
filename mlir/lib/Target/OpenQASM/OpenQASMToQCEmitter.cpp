@@ -14,6 +14,7 @@
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Utils/DelayUnit.h"
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -1751,7 +1752,7 @@ private:
             qc::DelayOp::create(
                 builder, loc,
                 resolveQubit(data.qubit, gateQubits, indices.front()), duration,
-                builder.getStringAttr(data.unit));
+                *mqt::symbolizeDelayUnit(data.unit));
           } else if constexpr (std::is_same_v<T, frontend::BarrierStatement>) {
             const auto indices = emitQubitIndices(data.qubits);
             if (emissionBudget.isExhausted()) {

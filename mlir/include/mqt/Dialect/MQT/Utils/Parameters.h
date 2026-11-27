@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Dialect/MQT/Utils/DelayUnit.h" // IWYU pragma: export
+
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Location.h"
@@ -25,9 +27,9 @@
 
 namespace mlir::mqt {
 
-/// Check the duration and unit of a QC or QCO delay.
+/// Check the duration of a QC or QCO delay in @p unit.
 [[nodiscard]] LogicalResult
-verifyDelayDuration(Operation* op, Attribute duration, StringRef unit);
+verifyDelayDuration(Operation* op, Attribute duration, DelayUnit unit);
 
 /// Absolute tolerance used when comparing static operation parameters.
 inline constexpr double PARAMETER_COMPARISON_TOLERANCE = 1e-15;

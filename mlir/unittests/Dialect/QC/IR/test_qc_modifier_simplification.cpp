@@ -25,6 +25,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Verifier.h"
@@ -35,8 +36,10 @@
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <numbers>
+#include <string>
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -66,6 +69,37 @@ protected:
     return moduleOp;
   }
 };
+
+TEST_F(QCModifierSimplificationTest, DelayUnitsAreKeywords) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @test(%q: !qc.qubit) {
+      qc.delay %q 32 : ui64 dt : !qc.qubit
+      qc.delay %q 1.5 : f64 ns : !qc.qubit
+      return
+    }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  std::string printed;
+  llvm::raw_string_ostream os(printed);
+  moduleOp->print(os);
+  EXPECT_NE(printed.find("32 : ui64 dt"), std::string::npos);
+  EXPECT_NE(printed.find("1.500000e+00 : f64 ns"), std::string::npos);
+
+  const ScopedDiagnosticHandler silence(&context_,
+                                        [](Diagnostic&) { return success(); });
+  // Clock ticks must be integers, and only known units parse.
+  for (const auto* source : {
+           "func.func @f(%q: !qc.qubit) { qc.delay %q 1.5 : f64 dt : "
+           "!qc.qubit\n return }",
+           "func.func @f(%q: !qc.qubit) { qc.delay %q 1.5 : f64 fs : "
+           "!qc.qubit\n return }",
+       }) {
+    auto invalid = parseSourceString<ModuleOp>(source, &context_);
+    EXPECT_TRUE(!invalid || failed(verify(*invalid))) << source;
+  }
+}
 
 TEST_F(QCModifierSimplificationTest, InverseU2PreservesLargeAngles) {
   constexpr StringLiteral source = R"mlir(

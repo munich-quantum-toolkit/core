@@ -11,6 +11,7 @@
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/DelayUnit.cpp.inc"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -36,20 +37,17 @@
 namespace mlir::mqt {
 
 LogicalResult verifyDelayDuration(Operation* op, Attribute value,
-                                  StringRef unit) {
-  if (unit == "dt") {
+                                  DelayUnit unit) {
+  if (unit == DelayUnit::dt) {
     if (!isa<IntegerAttr>(value)) {
       return op->emitOpError("requires integer clock ticks");
     }
     return success();
   }
   const auto duration = dyn_cast<FloatAttr>(value);
-  if ((unit != "s" && unit != "ms" && unit != "us" && unit != "ns" &&
-       unit != "ps") ||
-      !duration || !duration.getValue().isFinite() ||
+  if (!duration || !duration.getValue().isFinite() ||
       duration.getValueAsDouble() < 0) {
-    return op->emitOpError(
-        "requires a finite nonnegative duration in s, ms, us, ns or ps");
+    return op->emitOpError("requires a finite nonnegative duration");
   }
   return success();
 }
