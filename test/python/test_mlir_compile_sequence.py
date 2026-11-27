@@ -27,7 +27,7 @@ from mqt.core.mlir import (
     sample,
     submit_program,
 )
-from mqt.core.qdmi import open_device
+from mqt.core.qdmi.builtin_driver import open_device
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -70,7 +70,7 @@ def test_sequence_infers_each_source_format(tmp_path: Path, *, as_paths: bool) -
 
 def test_sequence_for_device() -> None:
     """Compile a sequence to device payloads and execute each result."""
-    device = open_device("mqt.ddsim.default")
+    device = open_device("mqt.ddsim.default", custom1="1")
     compiled = compile_program((ZERO, ONE), target=device)
     assert_type(compiled, list[CompiledProgram])
     results = []
