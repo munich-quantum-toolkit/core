@@ -316,9 +316,9 @@ LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
   if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
     return failure();
   }
-  SmallVector<UnrealizedConversionCastOp> casts;
-  moduleOp.walk(
-      [&](UnrealizedConversionCastOp cast) { casts.push_back(cast); });
+  // The array overload would copy the casts into this set anyway.
+  DenseSet<UnrealizedConversionCastOp> casts;
+  moduleOp.walk([&](UnrealizedConversionCastOp cast) { casts.insert(cast); });
   SmallVector<UnrealizedConversionCastOp> remaining;
   reconcileUnrealizedCasts(casts, &remaining);
   if (!remaining.empty()) {
@@ -893,13 +893,22 @@ LogicalResult prepareClassicalResults(Operation* moduleOp, LoweringState& state,
           nameOpaqueQIRGates(cast<ModuleOp>(moduleOp), state.nativeTarget))) {
     return failure();
   }
-  SmallVector<func::ReturnOp> returns;
-  funcOp.walk([&](func::ReturnOp op) { returns.push_back(op); });
-  if (returns.size() != 1) {
+  // `func.return` only terminates top-level blocks of its function.
+  func::ReturnOp returnOp;
+  for (auto& block : funcOp.getBody()) {
+    if (auto terminator = dyn_cast_or_null<func::ReturnOp>(
+            block.empty() ? nullptr : &block.back())) {
+      if (returnOp) {
+        returnOp = {};
+        break;
+      }
+      returnOp = terminator;
+    }
+  }
+  if (!returnOp) {
     return funcOp.emitError(
         "QIR output requires a single return in the entry function");
   }
-  auto returnOp = returns.front();
   SmallVector<cbit::StoreOp> consumedStores;
   DominanceInfo dominance(funcOp);
   IRRewriter rewriter(moduleOp->getContext());
