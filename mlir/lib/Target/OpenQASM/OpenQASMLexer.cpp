@@ -33,6 +33,11 @@
 #include <system_error>
 #include <utility>
 
+#ifdef __APPLE__
+#include <cerrno>
+#include <xlocale.h>
+#endif
+
 namespace mlir::openqasm::frontend::detail {
 
 [[nodiscard]] static bool canStartIdentifier(char c) {
@@ -286,7 +291,7 @@ Token Lexer::lexIdentifierOrKeyword(const char* start) {
 
 /// Convert decimal floating-point digits without separators, correctly
 /// rounded. Return false if `digits` is not a complete decimal literal.
-static bool parseDecimalFloat(const StringRef digits, double& value) {
+static bool parseDecimalFloat(llvm::SmallString<32>& digits, double& value) {
 // libc++ never defines __cpp_lib_to_chars and ships floating-point from_chars
 // in its dylib only from LLVM 20 (macOS 26), as its availability macro reports.
 #if (defined(_LIBCPP_VERSION) &&                                               \
@@ -298,10 +303,18 @@ static bool parseDecimalFloat(const StringRef digits, double& value) {
   if (error != std::errc::result_out_of_range) {
     return error == std::errc{} && end == digits.end();
   }
+#elif defined(__APPLE__)
+  // Older macOS targets lack it; strtod_l rounds correctly, too, and a null
+  // locale selects the C locale (xlocale(3)).
+  errno = 0;
+  char* end = nullptr;
+  value = strtod_l(digits.c_str(), &end, nullptr);
+  if (errno != ERANGE) {
+    return end == digits.end();
+  }
 #endif
-  // APFloat keeps the previous underflow and overflow results and serves
-  // older macOS deployment targets.
-  return !digits.getAsDouble(value);
+  // APFloat keeps the previous underflow and overflow results.
+  return !StringRef(digits).getAsDouble(value);
 }
 
 Token Lexer::lexNumber(const char* start) {
