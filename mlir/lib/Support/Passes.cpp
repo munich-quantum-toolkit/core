@@ -77,7 +77,6 @@ void registerMQTCompilerPasses() {
     qco::registerCombineControlledGates();
     qco::registerDecomposeMultiControlled();
     qco::registerElidePermutations();
-    qco::registerElideTerminalSwapsPass();
     qco::registerFuseSingleQubitUnitaryRuns();
     qco::registerFuseTwoQubitGates();
     qco::registerHadamardLifting();
@@ -114,6 +113,12 @@ void registerMQTCompilerPasses() {
         "mqt-qubit-reuse",
         "Prepare a QCO program for qubit reuse and reuse eligible qubits.",
         populateQubitReusePipeline);
+    // Keeps the shipped pass name working in textual pipelines.
+    PassPipelineRegistration<>(
+        "elide-terminal-swaps", "Run `elide-permutations{terminal-only=true}`.",
+        [](OpPassManager& pm) {
+          pm.addPass(qco::createElidePermutations({.terminalOnly = true}));
+        });
     return true;
   }();
   static_cast<void>(REGISTERED);

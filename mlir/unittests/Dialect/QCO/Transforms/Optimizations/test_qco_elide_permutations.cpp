@@ -81,8 +81,7 @@ protected:
 
   static void rewrite(ModuleOp program, bool terminal = false) {
     PassManager pm(program.getContext());
-    pm.addPass(terminal ? createElideTerminalSwapsPass()
-                        : createElidePermutations());
+    pm.addPass(createElidePermutations({.terminalOnly = terminal}));
     ASSERT_TRUE(succeeded(pm.run(program)));
     EXPECT_TRUE(succeeded(verify(program)));
     EXPECT_TRUE(succeeded(verifyLinearity(program)));
