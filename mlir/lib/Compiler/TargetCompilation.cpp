@@ -560,12 +560,10 @@ static void populateDecompositionAndPlacement(OpPassManager& pm,
   pm.addPass(mqt::createRemoveUnusedQubits());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
   // Source SWAPs before later interactions can already route explicit graphs.
-  if (target.connectivityKind() ==
-      CompilerTarget::Connectivity::Kind::Explicit) {
-    pm.addPass(qco::createElideTerminalSwapsPass());
-  } else {
-    pm.addPass(qco::createElidePermutations());
-  }
+  pm.addPass(qco::createElidePermutations({
+      .terminalOnly = target.connectivityKind() ==
+                      CompilerTarget::Connectivity::Kind::Explicit,
+  }));
   if (target.connectivityKind() ==
       CompilerTarget::Connectivity::Kind::AllToAll) {
     pm.addPass(qco::createPlacementPass());

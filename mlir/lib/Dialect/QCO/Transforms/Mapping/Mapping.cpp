@@ -1116,22 +1116,29 @@ protected:
                                         stats.nswaps}) == *expectedScore) &&
            "cold scoring and hot routing must agree");
 
-    if (auto attr = moduleOp->getAttrOfType<DictionaryAttr>(mqt::kLayoutAttr)) {
+    if (auto attr = moduleOp->getAttr(mqt::kLayoutAttr)) {
+      auto parsed = mqt::QubitLayout::fromAttr(
+          attr, [&] { return moduleOp.emitError(); });
+      if (failed(parsed)) {
+        signalPassFailure();
+        return;
+      }
       const auto permutation = sitePermutation(layout, state.layout);
-      auto previous = attr.getAs<DenseI64ArrayAttr>("routing");
-      if (previous && std::cmp_not_equal(previous.size(), permutation.size())) {
+      if (std::cmp_not_equal(parsed->initial.size(), permutation.size())) {
         moduleOp.emitError("routing layout width does not match the target");
         signalPassFailure();
         return;
       }
-      const auto routing =
-          map_to_vector(llvm::seq<size_t>(0, permutation.size()),
-                        [&](size_t site) -> int64_t {
-                          return permutation[previous ? previous[site] : site];
-                        });
-      NamedAttrList fields(attr);
-      fields.set("routing", rewriter.getDenseI64ArrayAttr(routing));
-      moduleOp->setAttr(mqt::kLayoutAttr, fields.getDictionary(&getContext()));
+      // Compose this routing after any routing an earlier pass recorded.
+      std::vector<int64_t> routing(permutation.size());
+      for (auto [site, output] : llvm::enumerate(routing)) {
+        output = static_cast<int64_t>(
+            permutation[parsed->routing
+                            ? static_cast<size_t>((*parsed->routing)[site])
+                            : site]);
+      }
+      parsed->routing = std::move(routing);
+      moduleOp->setAttr(mqt::kLayoutAttr, parsed->toAttr(&getContext()));
     }
 
     // Collect statistics.

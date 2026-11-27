@@ -81,8 +81,7 @@ protected:
 
   static void rewrite(ModuleOp program, bool terminal = false) {
     PassManager pm(program.getContext());
-    pm.addPass(terminal ? createElideTerminalSwapsPass()
-                        : createElidePermutations());
+    pm.addPass(createElidePermutations({.terminalOnly = terminal}));
     ASSERT_TRUE(succeeded(pm.run(program)));
     EXPECT_TRUE(succeeded(verify(program)));
     EXPECT_TRUE(succeeded(verifyLinearity(program)));
@@ -232,7 +231,7 @@ TEST_F(ElidePermutationsTest, SwapOrdersTheOtherWireAfterADelay) {
     func.func @main() attributes {mqt.entry_point} {
       %a = qco.alloc : !qco.qubit
       %b = qco.alloc : !qco.qubit
-      %timed = qco.delay %a 32 : ui64 "dt" : !qco.qubit
+      %timed = qco.delay %a 32 : ui64 dt : !qco.qubit
       %sa, %sb = qco.swap %timed, %b : !qco.qubit, !qco.qubit
       %x = qco.x %sb : !qco.qubit
       qco.sink %sa : !qco.qubit

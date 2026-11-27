@@ -2198,7 +2198,7 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
         duration = builder.getF64FloatAttr(std::get<double>(delay.value));
       }
       mlir::qc::DelayOp::create(builder, getQubit(instruction.qubits.front()),
-                                duration, builder.getStringAttr(delay.unit));
+                                duration, delay.unit);
       break;
     }
     case OperationKind::Unknown:

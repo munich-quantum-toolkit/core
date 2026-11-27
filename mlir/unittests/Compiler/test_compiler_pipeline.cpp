@@ -3683,7 +3683,7 @@ TEST_F(CompilerPipelineTest, TerminalSwapElisionLeavesStructuredPackingIntact) {
     MQT_ASSERT_SUCCESS(program);
     const auto before = program->str();
     PassManager pm(program->module().getContext());
-    pm.addPass(qco::createElideTerminalSwapsPass());
+    pm.addPass(qco::createElidePermutations({.terminalOnly = true}));
     ASSERT_TRUE(succeeded(pm.run(program->module())));
     EXPECT_EQ(program->str(), before);
   }

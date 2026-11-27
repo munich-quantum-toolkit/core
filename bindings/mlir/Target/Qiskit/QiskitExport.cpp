@@ -2668,7 +2668,7 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         continue;
       }
       if (auto delay = llvm::dyn_cast<mlir::qc::DelayOp>(operation)) {
-        DelayDuration duration{.unit = delay.getUnit().str()};
+        DelayDuration duration{.unit = delay.getUnit()};
         if (const auto ticks =
                 llvm::dyn_cast<mlir::IntegerAttr>(delay.getDuration())) {
           duration.value = ticks.getValue().getZExtValue();
@@ -2679,7 +2679,7 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         circuit.instructions.push_back({
             .kind = ExportedInstruction::Kind::Delay,
             .qubits = mapQubits(delay.getQubit(), state.qubits),
-            .delay = std::make_unique<DelayDuration>(std::move(duration)),
+            .delay = std::make_unique<DelayDuration>(duration),
         });
         continue;
       }

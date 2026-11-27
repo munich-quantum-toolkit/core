@@ -1119,8 +1119,13 @@ public:
         unit = nb::cast<std::string>(literal.attr("unit")());
         value = literal.attr("value")();
       }
-      DelayDuration duration{.unit = unit};
-      if (unit == "dt") {
+      const auto delayUnit = mlir::mqt::symbolizeDelayUnit(unit);
+      if (!delayUnit) {
+        throw std::runtime_error("Qiskit delay uses unsupported time unit '" +
+                                 unit + "'");
+      }
+      DelayDuration duration{.unit = *delayUnit};
+      if (*delayUnit == mlir::mqt::DelayUnit::dt) {
         uint64_t ticks = 0;
         if (!nb::try_cast(value, ticks)) {
           throw std::runtime_error(
@@ -1140,7 +1145,7 @@ public:
           .kind = kind,
           .name = "delay",
           .qubits = pythonInstructionBits(index, "qubits"),
-          .delay = std::make_unique<DelayDuration>(std::move(duration)),
+          .delay = std::make_unique<DelayDuration>(duration),
       };
     }
     if (kind == OperationKind::ControlFlow) {
@@ -2772,7 +2777,8 @@ public:
       // QPY preserves SI units in typed duration literals.
       const auto literal =
           python_->circuit.attr("Duration")
-              .attr(duration.unit.c_str())(std::get<double>(duration.value));
+              .attr(mlir::mqt::stringifyDelayUnit(duration.unit).data())(
+                  std::get<double>(duration.value));
       const auto expression = python_->expr.attr("lift")(literal);
       pythonCircuit_.attr("delay")(expression, qubit);
     }

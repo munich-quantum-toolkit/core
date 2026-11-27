@@ -9,6 +9,7 @@
 #ifndef MLIR_DIALECT_QC_IR_QCOPS_TD
 #define MLIR_DIALECT_QC_IR_QCOPS_TD
 
+include "mqt/Dialect/MQT/Utils/DelayUnit.td"
 include "mqt/Dialect/QC/IR/QCDialect.td"
 include "mqt/Dialect/QC/IR/QCInterfaces.td"
 include "mqt/Dialect/QC/IR/QCTypes.td"
@@ -130,7 +131,7 @@ def DelayOp : QCOp<"delay"> {
     finite, nonnegative floating-point value and the specified time unit.
   }];
   let arguments = (ins QubitArg<QubitType, "the idle qubit">:$qubit,
-      AnyAttrOf<[UI64Attr, F64Attr]>:$duration, StrAttr:$unit);
+      AnyAttrOf<[UI64Attr, F64Attr]>:$duration, MQT_DelayUnit:$unit);
   let assemblyFormat = "$qubit $duration $unit attr-dict `:` type($qubit)";
   let hasVerifier = 1;
 }

@@ -9,6 +9,7 @@
 #ifndef MLIR_DIALECT_QCO_IR_QCOOPS_TD
 #define MLIR_DIALECT_QCO_IR_QCOOPS_TD
 
+include "mqt/Dialect/MQT/Utils/DelayUnit.td"
 include "mqt/Dialect/QCO/IR/QCODialect.td"
 include "mqt/Dialect/QCO/IR/QCOInterfaces.td"
 include "mqt/Dialect/QCO/IR/QCOTypes.td"
@@ -146,7 +147,7 @@ def DelayOp : SingleQubitWireOp<"delay", [SameOperandsAndResultType]> {
     SI durations use a finite, nonnegative floating-point value.
   }];
   let arguments = (ins Arg<QubitType, "the idle qubit", [MemWrite]>:$qubit_in,
-      AnyAttrOf<[UI64Attr, F64Attr]>:$duration, StrAttr:$unit);
+      AnyAttrOf<[UI64Attr, F64Attr]>:$duration, MQT_DelayUnit:$unit);
   let results = (outs QubitType:$qubit_out);
   let assemblyFormat =
       "$qubit_in $duration $unit attr-dict `:` type($qubit_in)";

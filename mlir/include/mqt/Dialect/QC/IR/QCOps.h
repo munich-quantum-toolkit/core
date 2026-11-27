@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mqt/Dialect/MQT/Utils/DelayUnit.h" // IWYU pragma: export
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 

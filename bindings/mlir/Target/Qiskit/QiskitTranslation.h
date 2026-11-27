@@ -13,6 +13,7 @@
 #include "mqt/Compiler/Target.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
+#include "mqt/Dialect/MQT/Utils/DelayUnit.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 
 #include "nanobind/nanobind.h"
@@ -218,7 +219,7 @@ struct StandardGateMapping {
 
 struct DelayDuration {
   std::variant<uint64_t, double> value;
-  std::string unit;
+  mlir::mqt::DelayUnit unit;
 };
 
 struct Instruction {
