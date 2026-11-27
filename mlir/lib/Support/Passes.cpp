@@ -366,7 +366,11 @@ void populateQCOCleanupPipeline(OpPassManager& pm, bool removeUnusedValues) {
 }
 
 void populateQIRCleanupPipeline(OpPassManager& pm, QIRProfile profile) {
-  pm.addPass(createCanonicalizerPass());
+  // Region simplification dominates large programs; qir-cleanup erases the
+  // unreachable blocks that folded branches leave behind.
+  GreedyRewriteConfig config;
+  config.setRegionSimplificationLevel(GreedySimplifyRegionLevel::Disabled);
+  pm.addPass(createCanonicalizerPass(config));
   pm.addPass(createCSEPass());
   pm.addPass(createMem2Reg());
   pm.addPass(qir::createQIRCleanupPass());

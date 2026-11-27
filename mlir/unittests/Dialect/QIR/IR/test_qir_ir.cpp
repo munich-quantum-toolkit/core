@@ -131,6 +131,30 @@ TEST_F(QIRTest, CleanupPreservesCheckedQubitAllocation) {
   EXPECT_EQ(load.getAddr(), calls[0].getOperand(2));
 }
 
+TEST_F(QIRTest, CleanupErasesUnreachableBlocks) {
+  auto program = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.func @__quantum__qis__x__body(!llvm.ptr)
+    llvm.func @__quantum__qis__z__body(!llvm.ptr)
+    llvm.func @main() attributes {passthrough = ["entry_point"]} {
+      %zero = llvm.mlir.zero : !llvm.ptr
+      llvm.call @__quantum__qis__x__body(%zero) : (!llvm.ptr) -> ()
+      llvm.br ^exit
+    ^unreachable:
+      llvm.call @__quantum__qis__z__body(%zero) : (!llvm.ptr) -> ()
+      llvm.br ^exit
+    ^exit:
+      llvm.return
+    }
+  })mlir",
+                                             context.get());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(
+      succeeded(runQIRCleanupPipeline(program.get(), QIRProfile::Adaptive)));
+  EXPECT_TRUE(succeeded(verify(*program)));
+  EXPECT_TRUE(program->lookupSymbol("__quantum__qis__x__body"));
+  EXPECT_FALSE(program->lookupSymbol("__quantum__qis__z__body"));
+}
+
 TEST_F(QIRTest, CanonicalizesDuplicateStaticQubits) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
