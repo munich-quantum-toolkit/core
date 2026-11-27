@@ -41,6 +41,9 @@ add_mlir_library(
   QDMIAdapter.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
+  LINK_COMPONENTS
+  BinaryFormat
+  IRReader
   LINK_LIBS
   PUBLIC
   MQTCompilerTarget

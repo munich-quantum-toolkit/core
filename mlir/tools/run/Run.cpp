@@ -11,22 +11,15 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/ResultLayout.h"
-#include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "qdmi/QDMI.hpp"
 
 #include "NativeCommands.h"
 
-#include "llvm/BinaryFormat/Magic.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Path.h"
-#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
@@ -37,8 +30,8 @@
 #include <utility>
 
 static llvm::Expected<qdmi::Job>
-submit(const qdmi::Device& device, const std::string& path, int64_t shots,
-       const std::optional<qdmi::CustomJobParameter>& seed,
+submit(const qdmi::Device& device, const std::string& path,
+       const qdmi::JobParameters& parameters,
        std::optional<mlir::ResultLayout>& layout,
        std::optional<size_t>& width) {
   const auto submitSource = [&](auto program) -> llvm::Expected<qdmi::Job> {
@@ -56,7 +49,9 @@ submit(const qdmi::Device& device, const std::string& path, int64_t shots,
           "Return measured bits to count their outcomes.");
     }
     layout = compiled->resultLayout();
-    return mlir::submitProgram(device, *compiled, shots, seed);
+    // The program was just compiled for this device snapshot.
+    return mlir::submitProgram(device, *compiled, parameters,
+                               &compiled->environment());
   };
   if (const auto format = mlir::inputFormatForPath(path)) {
     return submitSource(mlir::loadCompilerInput(path, format));
@@ -67,58 +62,23 @@ submit(const qdmi::Device& device, const std::string& path, int64_t shots,
     return llvm::errorCodeToError(buffer.getError());
   }
   const auto bytes = (*buffer)->getBuffer();
+  const auto binary = std::as_bytes(std::span(bytes.data(), bytes.size()));
   if (extension == ".json") {
     return device.submitJob(bytes.str(), QDMI_PROGRAM_FORMAT_IQMJSON,
-                            static_cast<size_t>(shots));
+                            {.shots = parameters.shots});
   }
   if (extension == ".qpy") {
-    return device.submitJob(
-        std::as_bytes(std::span(bytes.data(), bytes.size())),
-        QDMI_PROGRAM_FORMAT_QPY, static_cast<size_t>(shots));
+    return device.submitJob(binary, QDMI_PROGRAM_FORMAT_QPY,
+                            {.shots = parameters.shots});
   }
-  llvm::LLVMContext context;
-  llvm::SMDiagnostic diagnostic;
-  auto module =
-      llvm::parseIR((*buffer)->getMemBufferRef(), diagnostic, context);
-  if (!module) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print("mqt-core", stream);
-    return llvm::createStringError(message);
+  auto format = mlir::detectQIRFormat(bytes);
+  if (!format) {
+    return format.takeError();
   }
-  std::optional<bool> adaptive;
-  for (const auto& function : *module) {
-    if (function.isDeclaration() ||
-        !function.hasFnAttribute(::qir::ENTRY_POINT_ATTR)) {
-      continue;
-    }
-    if (!function.hasFnAttribute(::qir::QIR_PROFILES_ATTR)) {
-      return llvm::createStringError("QIR entry point is missing qir_profiles");
-    }
-    const auto profile =
-        function.getFnAttribute(::qir::QIR_PROFILES_ATTR).getValueAsString();
-    if (adaptive || (profile != llvm::StringRef(::qir::BASE_PROFILE) &&
-                     profile != llvm::StringRef(::qir::ADAPTIVE_PROFILE))) {
-      return llvm::createStringError(
-          "Expected one Base or Adaptive QIR entry point");
-    }
-    adaptive = profile == llvm::StringRef(::qir::ADAPTIVE_PROFILE);
+  if (qdmi::isBinaryProgramFormat(**format)) {
+    return device.submitJob(binary, **format, parameters);
   }
-  if (!adaptive) {
-    return llvm::createStringError("No QIR entry point found");
-  }
-  const bool binary = llvm::identify_magic(bytes) == llvm::file_magic::bitcode;
-  const auto format = *adaptive
-                          ? (binary ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
-                                    : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING)
-                          : (binary ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
-                                    : QDMI_PROGRAM_FORMAT_QIRBASESTRING);
-  if (!binary) {
-    return device.submitJob(bytes.str(), format, static_cast<size_t>(shots),
-                            seed);
-  }
-  return device.submitJob(std::as_bytes(std::span(bytes.data(), bytes.size())),
-                          format, static_cast<size_t>(shots), seed);
+  return device.submitJob(bytes.str(), **format, parameters);
 }
 
 int mqtCoreRunProgram(int argc, char** argv) {
@@ -158,14 +118,14 @@ int mqtCoreRunProgram(int argc, char** argv) {
   }
   const auto device =
       exitOnError(qdmi::builtin_driver::openDevice(deviceId.getValue()));
-  const std::optional<qdmi::CustomJobParameter> randomSeed =
-      seed.getNumOccurrences() != 0
-          ? std::optional<qdmi::CustomJobParameter>(seed.getValue())
-          : std::nullopt;
+  qdmi::JobParameters parameters{.shots = static_cast<size_t>(shots)};
+  if (seed.getNumOccurrences() != 0) {
+    parameters.custom[0] = seed.getValue();
+  }
   std::optional<mlir::ResultLayout> layout;
   std::optional<size_t> width;
   const auto job =
-      exitOnError(submit(device, input, shots, randomSeed, layout, width));
+      exitOnError(submit(device, input, parameters, layout, width));
   exitOnError(job.wait());
   llvm::json::Object counts;
   const auto decoded = exitOnError(mlir::decodeCounts(

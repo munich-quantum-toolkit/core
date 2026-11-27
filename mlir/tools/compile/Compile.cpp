@@ -113,18 +113,25 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
         "narrower gates undecomposed."),
     llvm::cl::init(3));
 
-/// Report a violated QDMI command-line constraint.
-[[nodiscard]] static LogicalResult reportQDMIErrorIf(const bool condition,
-                                                     const Twine& message) {
-  if (!condition) {
-    return success();
-  }
-  llvm::errs() << message << "\n";
-  return failure();
+/// An error whose diagnostics were already reported.
+[[nodiscard]] static llvm::Error reportedError() {
+  return llvm::createStringError(llvm::inconvertibleErrorCode(), "");
+}
+
+/// Print every error that was not reported yet and return the exit code.
+[[nodiscard]] static int exitCode(llvm::Error error) {
+  int code = 0;
+  llvm::handleAllErrors(std::move(error), [&](const llvm::ErrorInfoBase& info) {
+    code = 1;
+    if (const auto message = info.message(); !message.empty()) {
+      llvm::errs() << message << '\n';
+    }
+  });
+  return code;
 }
 
 /// Configure the QDMI registry before initializing its singleton.
-[[nodiscard]] static LogicalResult configureQDMIRegistry(const StringRef path) {
+[[nodiscard]] static llvm::Error configureQDMIRegistry(const StringRef path) {
 #ifdef _WIN32
   const auto status =
       _putenv_s("MQT_CORE_QDMI_CONFIG_FILE", path.str().c_str());
@@ -132,80 +139,78 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
   const auto status =
       setenv("MQT_CORE_QDMI_CONFIG_FILE", path.str().c_str(), 1);
 #endif
-  return reportQDMIErrorIf(
-      status != 0,
-      Twine("Failed to configure the QDMI registry from '") + path + "'.");
+  if (status != 0) {
+    return llvm::createStringError(
+        Twine("Failed to configure the QDMI registry from '") + path + "'.");
+  }
+  return llvm::Error::success();
 }
 
 /// Add the main source buffer to the diagnostic source manager.
-static LogicalResult loadSourceFile(const StringRef filename,
-                                    llvm::SourceMgr& sourceMgr) {
+static llvm::Error loadSourceFile(const StringRef filename,
+                                  llvm::SourceMgr& sourceMgr) {
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
   if (!file) {
-    llvm::errs() << "Failed to load file '" << filename << "': '"
-                 << errorMessage << "'\n";
-    return failure();
+    return llvm::createStringError(Twine("Failed to load file '") + filename +
+                                   "': '" + errorMessage + "'");
   }
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
-  return success();
+  return llvm::Error::success();
 }
 
 /// Write serialized `jeff` bytes to an output file.
-static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
+static llvm::Error writeJeffOutput(ModuleOp mod, const StringRef filename) {
   if (failed(serializeToFile(mod, filename))) {
-    llvm::errs() << "Failed to write jeff file '" << filename << "'.\n";
-    return failure();
+    return llvm::createStringError(Twine("Failed to write jeff file '") +
+                                   filename + "'.");
   }
-  return success();
+  return llvm::Error::success();
+}
+
+/// Flush and keep a written output file.
+static llvm::Error keepOutput(llvm::ToolOutputFile& output,
+                              const StringRef filename) {
+  output.os().flush();
+  if (output.os().has_error()) {
+    return llvm::createStringError(
+        Twine("I/O error while writing output file: ") + filename);
+  }
+  output.keep();
+  return llvm::Error::success();
 }
 
 /// Write MLIR assembly to stdout or bytecode to a file.
-static LogicalResult writeOutput(ModuleOp mod, StringRef filename) {
+static llvm::Error writeOutput(ModuleOp mod, StringRef filename) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
-    llvm::errs() << errorMessage << "\n";
-    return failure();
+    return llvm::createStringError(errorMessage);
   }
   if (filename == "-") {
     mod.print(output->os());
   } else if (failed(writeBytecodeToFile(mod, output->os()))) {
-    return failure();
+    return reportedError();
   }
-  output->os().flush();
-  if (output->os().has_error()) {
-    llvm::errs() << "I/O error while writing output file: " << filename << "\n";
-    return failure();
-  }
-  output->keep();
-  return success();
+  return keepOutput(*output, filename);
 }
 
 /// Write a completed payload without truncating the destination on export
 /// failure.
-static LogicalResult writePayload(StringRef payload, StringRef filename,
-                                  bool binary = false) {
+static llvm::Error writePayload(StringRef payload, StringRef filename,
+                                bool binary = false) {
   if (binary && filename == "-") {
     if (auto error = llvm::sys::ChangeStdoutToBinary()) {
-      llvm::errs() << error.message() << '\n';
-      return failure();
+      return llvm::createStringError(error.message());
     }
   }
   std::string errorMessage;
   auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
-    llvm::errs() << errorMessage << '\n';
-    return failure();
+    return llvm::createStringError(errorMessage);
   }
   output->os() << payload;
-  output->os().flush();
-  if (output->os().has_error()) {
-    llvm::errs() << "I/O error while writing output file: " << filename << '\n';
-    return failure();
-  }
-  output->keep();
-  return success();
+  return keepOutput(*output, filename);
 }
 
 int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
@@ -321,404 +326,405 @@ int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter) {
   // Parse command-line options; exit on error and print to stderr
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
-
-  const bool emitQPY = outputFormat == "qpy" ||
-                       (outputFormat.getNumOccurrences() == 0 &&
-                        llvm::sys::path::extension(outputFilename) == ".qpy");
-  const bool hasExplicitTarget = explicitTarget.getNumOccurrences() != 0;
-  const bool hasTarget = !qdmiDevice.empty() || hasExplicitTarget;
-  if ((mappingTrials.getNumOccurrences() != 0 ||
-       mappingIterations.getNumOccurrences() != 0 ||
-       mappingLookahead.getNumOccurrences() != 0 ||
-       mappingSearchMemoryLimit.getNumOccurrences() != 0) &&
-      !hasTarget) {
-    llvm::errs() << "Mapping controls require --qdmi-device or --target.\n";
-    return 1;
-  }
-  if (mappingTrials.getNumOccurrences() != 0 && mappingTrials == 0) {
-    llvm::errs() << "--mapping-trials must be greater than zero.\n";
-    return 1;
-  }
-  const CompilationOptions options{
-      .seed = compilationSeedOption.getNumOccurrences() == 0
-                  ? std::nullopt
-                  : std::optional<uint64_t>{compilationSeedOption.getValue()},
-      .mapping =
-          {
-              .trials = mappingTrials.getNumOccurrences() == 0
-                            ? std::nullopt
-                            : std::optional<size_t>{mappingTrials.getValue()},
-              .iterations = mappingIterations,
-              .lookahead = mappingLookahead,
-              .searchMemoryLimit = mappingSearchMemoryLimit,
-          },
-  };
-
-  const bool isolated = runIsolatedPipeline || runReproducer;
-  if (isolated &&
-      ((runIsolatedPipeline && runReproducer) ||
-       (runIsolatedPipeline && passPipeline.getNumOccurrences() == 0) ||
-       (runReproducer && passPipeline.getNumOccurrences() != 0) ||
-       outputFormat.getNumOccurrences() != 0 || !qdmiDevice.empty() ||
-       hasExplicitTarget || qdmiListDevices ||
-       enableDecomposeMultiControlled)) {
-    llvm::errs() << "Use either --run-pipeline with --pass-pipeline or "
-                    "--run-reproducer, without --emit, target compilation, "
-                    "or --decompose-multi-controlled.\n";
-    return 1;
-  }
-
-  if ((!qdmiConfig.empty() && configureQDMIRegistry(qdmiConfig).failed()) ||
-      reportQDMIErrorIf(!qdmiDevice.empty() && hasExplicitTarget,
-                        "--qdmi-device and --target are mutually exclusive.")
-          .failed() ||
-      reportQDMIErrorIf(
-          qdmiListDevices && hasTarget,
-          "--qdmi-list-devices cannot be combined with target compilation.")
-          .failed() ||
-      reportQDMIErrorIf((hasExplicitTarget && payloadSpecification.empty()) ||
-                            (!hasTarget && !payloadSpecification.empty()),
-                        "--qdmi-device or --target and --payload-spec must be "
-                        "provided together.")
-          .failed() ||
-      reportQDMIErrorIf(hasTarget && outputFormat.getNumOccurrences() != 0 &&
-                            outputFormat != "qco-optimized" && !emitQPY,
-                        "Only --emit=qco-optimized or qpy can be combined with "
-                        "target compilation; "
-                        "--payload-spec selects the executable output.")
-          .failed() ||
-      reportQDMIErrorIf(
-          !qdmiConfig.empty() && !qdmiListDevices && qdmiDevice.empty(),
-          "--qdmi-config requires --qdmi-device or --qdmi-list-devices.")
-          .failed()) {
-    return 1;
-  }
-  if (qdmiListDevices) {
-    auto deviceIds = qdmi::builtin_driver::registeredDeviceIds();
-    if (!deviceIds) {
-      llvm::errs() << "Failed to list configured QDMI devices: "
-                   << llvm::toString(deviceIds.takeError()) << '\n';
-      return 1;
+  return exitCode([&]() -> llvm::Error {
+    const bool emitQPY = outputFormat == "qpy" ||
+                         (outputFormat.getNumOccurrences() == 0 &&
+                          llvm::sys::path::extension(outputFilename) == ".qpy");
+    const bool hasExplicitTarget = explicitTarget.getNumOccurrences() != 0;
+    const bool hasTarget = !qdmiDevice.empty() || hasExplicitTarget;
+    if ((mappingTrials.getNumOccurrences() != 0 ||
+         mappingIterations.getNumOccurrences() != 0 ||
+         mappingLookahead.getNumOccurrences() != 0 ||
+         mappingSearchMemoryLimit.getNumOccurrences() != 0) &&
+        !hasTarget) {
+      return llvm::createStringError(
+          "Mapping controls require --qdmi-device or --target.");
     }
-    for (const auto& id : *deviceIds) {
-      llvm::outs() << id << "\n";
+    if (mappingTrials.getNumOccurrences() != 0 && mappingTrials == 0) {
+      return llvm::createStringError(
+          "--mapping-trials must be greater than zero.");
     }
-    return 0;
-  }
+    const CompilationOptions options{
+        .seed = compilationSeedOption.getNumOccurrences() == 0
+                    ? std::nullopt
+                    : std::optional<uint64_t>{compilationSeedOption.getValue()},
+        .mapping =
+            {
+                .trials = mappingTrials.getNumOccurrences() == 0
+                              ? std::nullopt
+                              : std::optional<size_t>{mappingTrials.getValue()},
+                .iterations = mappingIterations,
+                .lookahead = mappingLookahead,
+                .searchMemoryLimit = mappingSearchMemoryLimit,
+            },
+    };
 
-  const auto parsedInputFormat = parseInputFormat(inputFormat, inputFilename);
-  if (!parsedInputFormat) {
-    llvm::errs() << "Could not determine the input format for '"
-                 << inputFilename << "'. Use --input-format.\n";
-    return 1;
-  }
-  if (isolated && *parsedInputFormat != InputFormat::MLIR) {
-    llvm::errs() << "Isolated pipeline execution requires MLIR input.\n";
-    return 1;
-  }
-  if (emitQPY && qpyWriter == nullptr) {
-    llvm::errs() << "QPY output requires Qiskit: install mqt-core[qiskit].\n";
-    return 1;
-  }
-  const auto extension = llvm::sys::path::extension(outputFilename);
-  const auto inferredOutput =
-      llvm::StringSwitch<std::optional<ProgramFormat>>(extension)
-          .Case(".jeff", ProgramFormat::Jeff)
-          .Case(".qasm", ProgramFormat::OpenQASM3)
-          .Cases({".bc", ".ll"}, ProgramFormat::QIRAdaptive)
-          .Case(".json", ProgramFormat::IQMJSON)
-          .Default(std::nullopt);
-  auto parsedOutputFormat =
-      emitQPY ? std::optional{ProgramFormat::QC}
-      : outputFormat.getNumOccurrences() == 0 && inferredOutput
-          ? inferredOutput
-          : parseOutputFormat(outputFormat);
-  if (!parsedOutputFormat) {
-    llvm::errs() << "Unknown output format '" << outputFormat << "'.\n";
-    return 1;
-  }
-
-  std::optional<CompilerTarget> compilerTarget;
-  std::optional<PayloadSpecification> selectedPayload;
-  if (hasTarget) {
-    if (reportQDMIErrorIf(
-            passPipeline.getNumOccurrences() != 0,
-            "Target compilation cannot be combined with --pass-pipeline.")
-            .failed() ||
-        reportQDMIErrorIf(
-            enableDecomposeMultiControlled,
-            "Target compilation cannot be combined with "
-            "--decompose-multi-controlled; target compilation already "
-            "performs the required decomposition.")
-            .failed()) {
-      return 1;
+    const bool isolated = runIsolatedPipeline || runReproducer;
+    if (isolated &&
+        ((runIsolatedPipeline && runReproducer) ||
+         (runIsolatedPipeline && passPipeline.getNumOccurrences() == 0) ||
+         (runReproducer && passPipeline.getNumOccurrences() != 0) ||
+         outputFormat.getNumOccurrences() != 0 || !qdmiDevice.empty() ||
+         hasExplicitTarget || qdmiListDevices ||
+         enableDecomposeMultiControlled)) {
+      return llvm::createStringError(
+          "Use either --run-pipeline with --pass-pipeline or "
+          "--run-reproducer, without --emit, target compilation, "
+          "or --decompose-multi-controlled.");
     }
-  }
-  if (!qdmiDevice.empty()) {
-    auto target = [&]() -> llvm::Expected<CompilerTarget> {
-      auto device = qdmi::builtin_driver::openDevice(qdmiDevice.getValue());
-      if (!device) {
-        return device.takeError();
+
+    if (!qdmiConfig.empty()) {
+      if (auto error = configureQDMIRegistry(qdmiConfig)) {
+        return error;
       }
-      if (!payloadSpecification.empty()) {
-        return compilerTargetFromDevice(*device);
+    }
+    if (!qdmiDevice.empty() && hasExplicitTarget) {
+      return llvm::createStringError(
+          "--qdmi-device and --target are mutually exclusive.");
+    }
+    if (qdmiListDevices && hasTarget) {
+      return llvm::createStringError(
+          "--qdmi-list-devices cannot be combined with target compilation.");
+    }
+    if ((hasExplicitTarget && payloadSpecification.empty()) ||
+        (!hasTarget && !payloadSpecification.empty())) {
+      return llvm::createStringError(
+          "--qdmi-device or --target and --payload-spec must be provided "
+          "together.");
+    }
+    if (hasTarget && outputFormat.getNumOccurrences() != 0 &&
+        outputFormat != "qco-optimized" && !emitQPY) {
+      return llvm::createStringError(
+          "Only --emit=qco-optimized or qpy can be combined with target "
+          "compilation; --payload-spec selects the executable output.");
+    }
+    if (!qdmiConfig.empty() && !qdmiListDevices && qdmiDevice.empty()) {
+      return llvm::createStringError(
+          "--qdmi-config requires --qdmi-device or --qdmi-list-devices.");
+    }
+    if (qdmiListDevices) {
+      auto deviceIds = qdmi::builtin_driver::registeredDeviceIds();
+      if (!deviceIds) {
+        return llvm::createStringError(
+            "Failed to list configured QDMI devices: " +
+            llvm::toString(deviceIds.takeError()));
       }
-      std::optional<QDMI_Program_Format> format;
-      if (outputFormat.getNumOccurrences() == 0 && inferredOutput) {
-        switch (*inferredOutput) {
-        case ProgramFormat::QIRAdaptive: {
-          auto supported = device->getSupportedProgramFormats();
-          if (!supported) {
-            return supported.takeError();
-          }
-          const auto adaptive = extension == ".bc"
-                                    ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
-                                    : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
-          const auto base = extension == ".bc"
-                                ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
-                                : QDMI_PROGRAM_FORMAT_QIRBASESTRING;
-          format = llvm::is_contained(*supported, adaptive) ? adaptive : base;
-          break;
+      for (const auto& id : *deviceIds) {
+        llvm::outs() << id << "\n";
+      }
+      return llvm::Error::success();
+    }
+
+    const auto parsedInputFormat = parseInputFormat(inputFormat, inputFilename);
+    if (!parsedInputFormat) {
+      return llvm::createStringError(
+          "Could not determine the input format for '" + inputFilename +
+          "'. Use --input-format.");
+    }
+    if (isolated && *parsedInputFormat != InputFormat::MLIR) {
+      return llvm::createStringError(
+          "Isolated pipeline execution requires MLIR input.");
+    }
+    if (emitQPY && qpyWriter == nullptr) {
+      return llvm::createStringError(
+          "QPY output requires Qiskit: install mqt-core[qiskit].");
+    }
+    const auto extension = llvm::sys::path::extension(outputFilename);
+    const auto inferredOutput =
+        llvm::StringSwitch<std::optional<ProgramFormat>>(extension)
+            .Case(".jeff", ProgramFormat::Jeff)
+            .Case(".qasm", ProgramFormat::OpenQASM3)
+            .Cases({".bc", ".ll"}, ProgramFormat::QIRAdaptive)
+            .Case(".json", ProgramFormat::IQMJSON)
+            .Default(std::nullopt);
+    auto parsedOutputFormat =
+        emitQPY ? std::optional{ProgramFormat::QC}
+        : outputFormat.getNumOccurrences() == 0 && inferredOutput
+            ? inferredOutput
+            : parseOutputFormat(outputFormat);
+    if (!parsedOutputFormat) {
+      return llvm::createStringError("Unknown output format '" + outputFormat +
+                                     "'.");
+    }
+
+    std::optional<CompilerTarget> compilerTarget;
+    std::optional<PayloadSpecification> selectedPayload;
+    if (hasTarget && passPipeline.getNumOccurrences() != 0) {
+      return llvm::createStringError(
+          "Target compilation cannot be combined with --pass-pipeline.");
+    }
+    if (hasTarget && enableDecomposeMultiControlled) {
+      return llvm::createStringError(
+          "Target compilation cannot be combined with "
+          "--decompose-multi-controlled; target compilation already "
+          "performs the required decomposition.");
+    }
+    if (!qdmiDevice.empty()) {
+      auto target = [&]() -> llvm::Expected<CompilerTarget> {
+        auto device = qdmi::builtin_driver::openDevice(qdmiDevice.getValue());
+        if (!device) {
+          return device.takeError();
         }
-        case ProgramFormat::OpenQASM3:
-          format = QDMI_PROGRAM_FORMAT_QASM3;
-          break;
-        case ProgramFormat::IQMJSON:
-          format = QDMI_PROGRAM_FORMAT_IQMJSON;
-          break;
-        case ProgramFormat::Jeff:
-          return llvm::createStringError(
-              "jeff export cannot be combined with a QDMI device target");
-        default:
-          llvm_unreachable("Unexpected inferred output format");
+        if (!payloadSpecification.empty()) {
+          return compilerTargetFromDevice(*device);
         }
-      }
-      auto environment = outputFormat == "qco-optimized"
-                             ? inspectTargetEnvironment(*device, format)
-                             : targetEnvironmentFromDevice(*device, format);
-      if (!environment) {
-        return environment.takeError();
-      }
-      selectedPayload = environment->payloadSpecification();
-      return environment->target();
-    }();
-    if (!target) {
-      llvm::errs() << "Failed to create compiler target from QDMI device '"
-                   << qdmiDevice << "': " << llvm::toString(target.takeError())
-                   << '\n';
-      return 1;
-    }
-    compilerTarget.emplace(std::move(*target));
-  }
-
-  llvm::SourceMgr sourceMgr;
-  auto context = createCompilerContext();
-  SourceMgrDiagnosticHandler diagnosticHandler(sourceMgr, context.get());
-  // The handler installs nothing when all action-tracing options are disabled.
-  // It reports setup failures, such as unwritable files, as diagnostics.
-  std::optional<tracing::InstallDebugHandler> debugHandler;
-  bool debugSetupFailed = false;
-  {
-    ScopedDiagnosticHandler setupDiagnosticHandler(
-        context.get(), [&](Diagnostic& diagnostic) {
-          if (diagnostic.getSeverity() == DiagnosticSeverity::Error) {
-            debugSetupFailed = true;
+        std::optional<QDMI_Program_Format> format;
+        if (outputFormat.getNumOccurrences() == 0 && inferredOutput) {
+          switch (*inferredOutput) {
+          case ProgramFormat::QIRAdaptive: {
+            auto supported = device->getSupportedProgramFormats();
+            if (!supported) {
+              return supported.takeError();
+            }
+            const auto adaptive = extension == ".bc"
+                                      ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
+                                      : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+            const auto base = extension == ".bc"
+                                  ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
+                                  : QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+            format = llvm::is_contained(*supported, adaptive) ? adaptive : base;
+            break;
           }
-          return failure();
-        });
-    debugHandler.emplace(*context, tracing::DebugConfig::createFromCLOptions());
-  }
-  if (debugSetupFailed) {
-    return 1;
-  }
-  PassReproducerOptions reproducerOptions;
-  ParserConfig parserConfig(context.get(), /*verifyAfterParse=*/!runReproducer);
-  if (runReproducer) {
-    reproducerOptions.attachResourceParser(parserConfig);
-  }
-
-  if (hasExplicitTarget) {
-    const auto targetText = StringRef(explicitTarget).trim();
-    const auto attribute = targetText.empty()
-                               ? Attribute{}
-                               : parseAttribute(targetText, context.get());
-    const auto targetAttr =
-        dyn_cast_if_present<mlir::mqt::CompilationTargetAttr>(attribute);
-    if (!targetAttr) {
-      llvm::errs()
-          << "--target must be a valid #mqt.compilation_target attribute.\n";
-      return 1;
-    }
-    auto target = CompilerTarget::create(targetAttr);
-    if (!target) {
-      llvm::errs() << "Invalid --target: " << llvm::toString(target.takeError())
-                   << '\n';
-      return 1;
-    }
-    compilerTarget.emplace(std::move(*target));
-  }
-
-  if (!payloadSpecification.empty()) {
-    const auto attribute = parseAttribute(payloadSpecification, context.get());
-    const auto payloadAttr =
-        dyn_cast_if_present<mlir::mqt::PayloadSpecAttr>(attribute);
-    if (!payloadAttr) {
-      llvm::errs()
-          << "--payload-spec must be a valid #mqt.payload_spec attribute.\n";
-      return 1;
-    }
-    auto payload = PayloadSpecification::create(payloadAttr);
-    if (!payload) {
-      llvm::errs() << "Invalid --payload-spec: "
-                   << llvm::toString(payload.takeError()) << '\n';
-      return 1;
-    }
-    selectedPayload.emplace(std::move(*payload));
-  }
-
-  std::optional<TargetEnvironment> targetEnvironment;
-  if (compilerTarget) {
-    if (outputFormat.getNumOccurrences() == 0 && !emitQPY) {
-      auto compilerOutput = selectedPayload->compilerOutput();
-      if (!compilerOutput) {
-        llvm::errs() << llvm::toString(compilerOutput.takeError()) << '\n';
-        return 1;
+          case ProgramFormat::OpenQASM3:
+            format = QDMI_PROGRAM_FORMAT_QASM3;
+            break;
+          case ProgramFormat::IQMJSON:
+            format = QDMI_PROGRAM_FORMAT_IQMJSON;
+            break;
+          case ProgramFormat::Jeff:
+            return llvm::createStringError(
+                "jeff export cannot be combined with a QDMI device target");
+          default:
+            llvm_unreachable("Unexpected inferred output format");
+          }
+        }
+        auto environment = outputFormat == "qco-optimized"
+                               ? inspectTargetEnvironment(*device, format)
+                               : targetEnvironmentFromDevice(*device, format);
+        if (!environment) {
+          return environment.takeError();
+        }
+        selectedPayload = environment->payloadSpecification();
+        return environment->target();
+      }();
+      if (!target) {
+        return llvm::createStringError(
+            "Failed to create compiler target from QDMI device '" + qdmiDevice +
+            "': " + llvm::toString(target.takeError()));
       }
-      parsedOutputFormat = *compilerOutput;
+      compilerTarget.emplace(std::move(*target));
     }
-    targetEnvironment.emplace(std::move(*compilerTarget),
-                              std::move(*selectedPayload));
-  }
 
-  if (failed(loadSourceFile(inputFilename, sourceMgr))) {
-    return 1;
-  }
-  const auto parseCustomPipeline = [&](OpPassManager& pm) {
-    auto [anchor, pipeline] = StringRef(passPipeline).trim().split('(');
-    if (anchor.rtrim() != ModuleOp::getOperationName() ||
-        !pipeline.consume_back(")")) {
-      llvm::errs() << "--pass-pipeline must be anchored on builtin.module.\n";
-      return failure();
+    llvm::SourceMgr sourceMgr;
+    auto context = createCompilerContext();
+    SourceMgrDiagnosticHandler diagnosticHandler(sourceMgr, context.get());
+    // The handler installs nothing when all action-tracing options are
+    // disabled. It reports setup failures, such as unwritable files, as
+    // diagnostics.
+    std::optional<tracing::InstallDebugHandler> debugHandler;
+    bool debugSetupFailed = false;
+    {
+      ScopedDiagnosticHandler setupDiagnosticHandler(
+          context.get(), [&](Diagnostic& diagnostic) {
+            if (diagnostic.getSeverity() == DiagnosticSeverity::Error) {
+              debugSetupFailed = true;
+            }
+            return failure();
+          });
+      debugHandler.emplace(*context,
+                           tracing::DebugConfig::createFromCLOptions());
     }
-    return parsePassPipeline(pipeline, pm);
-  };
-
-  if (isolated) {
-    auto mod = parseSourceFile<ModuleOp>(sourceMgr, parserConfig);
-    if (!mod) {
-      return 1;
+    if (debugSetupFailed) {
+      return reportedError();
     }
-    PassManager pm(context.get());
+    PassReproducerOptions reproducerOptions;
+    ParserConfig parserConfig(context.get(),
+                              /*verifyAfterParse=*/!runReproducer);
     if (runReproducer) {
-      if (failed(reproducerOptions.apply(pm))) {
-        return 1;
-      }
-      if (pm.empty() || pm.getOpAnchorName() != ModuleOp::getOperationName()) {
-        llvm::errs() << "--run-reproducer requires a recorded, non-empty "
-                        "builtin.module pipeline.\n";
-        return 1;
-      }
-    } else if (failed(parseCustomPipeline(pm)) ||
-               failed(qco::verifyLinearity(*mod))) {
-      return 1;
+      reproducerOptions.attachResourceParser(parserConfig);
     }
-    if (failed(runWithCompilationOptions(pm, *mod, options))) {
-      return 1;
-    }
-    if (!runReproducer && failed(qco::verifyLinearity(*mod))) {
-      return 1;
-    }
-    return failed(writeOutput(*mod, outputFilename)) ? 1 : 0;
-  }
 
-  if (passPipeline.getNumOccurrences() != 0) {
-    PassManager validation(context.get());
-    if (failed(parseCustomPipeline(validation))) {
-      return 1;
-    }
-  }
-
-  auto input = parseCompilerInput(sourceMgr, context, *parsedInputFormat);
-  if (failed(input)) {
-    return 1;
-  }
-  if (enableDecomposeMultiControlled &&
-      *parsedOutputFormat != ProgramFormat::QCImport &&
-      *parsedOutputFormat != ProgramFormat::QCO &&
-      passPipeline.getNumOccurrences() == 0) {
-    if (!std::holds_alternative<QCOProgram>(*input)) {
-      auto qco = std::holds_alternative<QCProgram>(*input)
-                     ? std::move(std::get<QCProgram>(*input)).intoQCO()
-                     : std::move(std::get<JeffProgram>(*input)).intoQCO();
-      if (failed(qco)) {
-        return 1;
+    if (hasExplicitTarget) {
+      const auto targetText = StringRef(explicitTarget).trim();
+      const auto attribute = targetText.empty()
+                                 ? Attribute{}
+                                 : parseAttribute(targetText, context.get());
+      const auto targetAttr =
+          dyn_cast_if_present<mlir::mqt::CompilationTargetAttr>(attribute);
+      if (!targetAttr) {
+        return llvm::createStringError(
+            "--target must be a valid #mqt.compilation_target attribute.");
       }
-      *input = std::move(*qco);
+      auto target = CompilerTarget::create(targetAttr);
+      if (!target) {
+        return llvm::createStringError("Invalid --target: " +
+                                       llvm::toString(target.takeError()));
+      }
+      compilerTarget.emplace(std::move(*target));
     }
-    if (failed(std::get<QCOProgram>(*input).decomposeMultiControlled(
-            decomposeMultiControlledMinQubits))) {
-      return 1;
-    }
-  }
-  auto compiled =
-      targetEnvironment
-          ? runDefaultPipeline(std::move(*input), *parsedOutputFormat,
-                               *targetEnvironment, options)
-          : runDefaultPipeline(std::move(*input), *parsedOutputFormat,
-                               passPipeline.getNumOccurrences() != 0
-                                   ? std::string_view(passPipeline.getValue())
-                                   : "mqt-qco-default",
-                               options);
-  if (!compiled) {
-    llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
-    return 1;
-  }
 
-  if (emitQPY) {
-    auto payload = qpyWriter(std::move(std::get<QCProgram>(*compiled)),
-                             targetEnvironment ? &*targetEnvironment : nullptr);
-    if (!payload) {
-      llvm::errs() << "QPY export failed: "
-                   << llvm::toString(payload.takeError()) << '\n';
-      return 1;
+    if (!payloadSpecification.empty()) {
+      const auto attribute =
+          parseAttribute(payloadSpecification, context.get());
+      const auto payloadAttr =
+          dyn_cast_if_present<mlir::mqt::PayloadSpecAttr>(attribute);
+      if (!payloadAttr) {
+        return llvm::createStringError(
+            "--payload-spec must be a valid #mqt.payload_spec attribute.");
+      }
+      auto payload = PayloadSpecification::create(payloadAttr);
+      if (!payload) {
+        return llvm::createStringError("Invalid --payload-spec: " +
+                                       llvm::toString(payload.takeError()));
+      }
+      selectedPayload.emplace(std::move(*payload));
     }
-    return failed(writePayload(*payload, outputFilename, true)) ? 1 : 0;
-  }
-  if (auto* jeff = std::get_if<JeffProgram>(&*compiled)) {
-    return failed(writeJeffOutput(jeff->module(), outputFilename)) ? 1 : 0;
-  }
-  if (auto* qasm = std::get_if<OpenQASMProgram>(&*compiled)) {
-    return failed(writePayload(qasm->source(), outputFilename)) ? 1 : 0;
-  }
-  if (auto* iqm = std::get_if<IQMJSONProgram>(&*compiled)) {
-    return failed(writePayload(iqm->source(), outputFilename)) ? 1 : 0;
-  }
-  if (auto* qir = std::get_if<QIRProgram>(&*compiled)) {
-    const auto encoding =
+
+    std::optional<TargetEnvironment> targetEnvironment;
+    if (compilerTarget) {
+      if (outputFormat.getNumOccurrences() == 0 && !emitQPY) {
+        auto compilerOutput = selectedPayload->compilerOutput();
+        if (!compilerOutput) {
+          return compilerOutput.takeError();
+        }
+        parsedOutputFormat = *compilerOutput;
+      }
+      targetEnvironment.emplace(std::move(*compilerTarget),
+                                std::move(*selectedPayload));
+    }
+
+    if (auto error = loadSourceFile(inputFilename, sourceMgr)) {
+      return error;
+    }
+    const auto parseCustomPipeline = [&](OpPassManager& pm) -> llvm::Error {
+      auto [anchor, pipeline] = StringRef(passPipeline).trim().split('(');
+      if (anchor.rtrim() != ModuleOp::getOperationName() ||
+          !pipeline.consume_back(")")) {
+        return llvm::createStringError(
+            "--pass-pipeline must be anchored on builtin.module.");
+      }
+      return failed(parsePassPipeline(pipeline, pm)) ? reportedError()
+                                                     : llvm::Error::success();
+    };
+
+    if (isolated) {
+      auto mod = parseSourceFile<ModuleOp>(sourceMgr, parserConfig);
+      if (!mod) {
+        return reportedError();
+      }
+      PassManager pm(context.get());
+      if (runReproducer) {
+        if (failed(reproducerOptions.apply(pm))) {
+          return reportedError();
+        }
+        if (pm.empty() ||
+            pm.getOpAnchorName() != ModuleOp::getOperationName()) {
+          return llvm::createStringError(
+              "--run-reproducer requires a recorded, non-empty "
+              "builtin.module pipeline.");
+        }
+      } else {
+        if (auto error = parseCustomPipeline(pm)) {
+          return error;
+        }
+        if (failed(qco::verifyLinearity(*mod))) {
+          return reportedError();
+        }
+      }
+      if (failed(runWithCompilationOptions(pm, *mod, options)) ||
+          (!runReproducer && failed(qco::verifyLinearity(*mod)))) {
+        return reportedError();
+      }
+      return writeOutput(*mod, outputFilename);
+    }
+
+    if (passPipeline.getNumOccurrences() != 0) {
+      PassManager validation(context.get());
+      if (auto error = parseCustomPipeline(validation)) {
+        return error;
+      }
+    }
+
+    auto input = parseCompilerInput(sourceMgr, context, *parsedInputFormat);
+    if (failed(input)) {
+      return reportedError();
+    }
+    if (enableDecomposeMultiControlled &&
+        *parsedOutputFormat != ProgramFormat::QCImport &&
+        *parsedOutputFormat != ProgramFormat::QCO &&
+        passPipeline.getNumOccurrences() == 0) {
+      if (!std::holds_alternative<QCOProgram>(*input)) {
+        auto qco = std::holds_alternative<QCProgram>(*input)
+                       ? std::move(std::get<QCProgram>(*input)).intoQCO()
+                       : std::move(std::get<JeffProgram>(*input)).intoQCO();
+        if (failed(qco)) {
+          return reportedError();
+        }
+        *input = std::move(*qco);
+      }
+      if (failed(std::get<QCOProgram>(*input).decomposeMultiControlled(
+              decomposeMultiControlledMinQubits))) {
+        return reportedError();
+      }
+    }
+    auto compiled =
         targetEnvironment
-            ? targetEnvironment->payloadSpecification().format().encoding
-        : outputFilename == "-" ||
-                llvm::sys::path::extension(outputFilename) == ".ll"
-            ? PayloadEncoding::Text
-            : PayloadEncoding::Binary;
-    if (encoding == PayloadEncoding::Text) {
-      auto source = std::move(*qir).intoLLVMIR();
-      return failed(source) || failed(writePayload(*source, outputFilename))
-                 ? 1
-                 : 0;
+            ? runDefaultPipeline(std::move(*input), *parsedOutputFormat,
+                                 *targetEnvironment, options)
+            : runDefaultPipeline(std::move(*input), *parsedOutputFormat,
+                                 passPipeline.getNumOccurrences() != 0
+                                     ? std::string_view(passPipeline.getValue())
+                                     : "mqt-qco-default",
+                                 options);
+    if (!compiled) {
+      return compiled.takeError();
     }
-    std::string bytes;
-    llvm::raw_string_ostream stream(bytes);
-    return failed(std::move(*qir).intoBitcode(stream)) ||
-                   failed(writePayload(bytes, outputFilename, true))
-               ? 1
-               : 0;
-  }
-  if (auto* qc = std::get_if<QCProgram>(&*compiled)) {
-    return failed(writeOutput(qc->module(), outputFilename)) ? 1 : 0;
-  }
-  return failed(writeOutput(std::get<QCOProgram>(*compiled).module(),
-                            outputFilename))
-             ? 1
-             : 0;
+
+    if (emitQPY) {
+      auto payload =
+          qpyWriter(std::move(std::get<QCProgram>(*compiled)),
+                    targetEnvironment ? &*targetEnvironment : nullptr);
+      if (!payload) {
+        return llvm::createStringError("QPY export failed: " +
+                                       llvm::toString(payload.takeError()));
+      }
+      return writePayload(*payload, outputFilename, true);
+    }
+    if (auto* jeff = std::get_if<JeffProgram>(&*compiled)) {
+      return writeJeffOutput(jeff->module(), outputFilename);
+    }
+    if (auto* qasm = std::get_if<OpenQASMProgram>(&*compiled)) {
+      return writePayload(qasm->source(), outputFilename);
+    }
+    if (auto* iqm = std::get_if<IQMJSONProgram>(&*compiled)) {
+      return writePayload(iqm->source(), outputFilename);
+    }
+    if (auto* qir = std::get_if<QIRProgram>(&*compiled)) {
+      const auto encoding =
+          targetEnvironment
+              ? targetEnvironment->payloadSpecification().format().encoding
+          : outputFilename == "-" ||
+                  llvm::sys::path::extension(outputFilename) == ".ll"
+              ? PayloadEncoding::Text
+              : PayloadEncoding::Binary;
+      if (encoding == PayloadEncoding::Text) {
+        auto source = std::move(*qir).intoLLVMIR();
+        if (failed(source)) {
+          return reportedError();
+        }
+        return writePayload(*source, outputFilename);
+      }
+      std::string bytes;
+      llvm::raw_string_ostream stream(bytes);
+      if (failed(std::move(*qir).intoBitcode(stream))) {
+        return reportedError();
+      }
+      return writePayload(bytes, outputFilename, true);
+    }
+    if (auto* qc = std::get_if<QCProgram>(&*compiled)) {
+      return writeOutput(qc->module(), outputFilename);
+    }
+    return writeOutput(std::get<QCOProgram>(*compiled).module(),
+                       outputFilename);
+  }());
 }

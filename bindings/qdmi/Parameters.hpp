@@ -14,6 +14,7 @@
 
 #include "nanobind/nanobind.h"
 
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <string>
@@ -39,6 +40,27 @@ toCustomJobParameter(const std::optional<PythonCustomJobParameter>& parameter) {
         }
       },
       *parameter);
+}
+
+/// Collect Python job keywords; byte values borrow the Python objects.
+[[nodiscard]] inline qdmi::JobParameters
+toJobParameters(const std::optional<size_t> shots,
+                const std::optional<PythonCustomJobParameter>& custom1,
+                const std::optional<PythonCustomJobParameter>& custom2,
+                const std::optional<PythonCustomJobParameter>& custom3,
+                const std::optional<PythonCustomJobParameter>& custom4,
+                const std::optional<PythonCustomJobParameter>& custom5) {
+  return {
+      .shots = shots,
+      .custom =
+          {
+              toCustomJobParameter(custom1),
+              toCustomJobParameter(custom2),
+              toCustomJobParameter(custom3),
+              toCustomJobParameter(custom4),
+              toCustomJobParameter(custom5),
+          },
+  };
 }
 
 } // namespace mqt::bindings

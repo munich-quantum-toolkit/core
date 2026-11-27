@@ -63,31 +63,22 @@ Context::borrow(const BorrowedJobParameters* parameters) const {
 
 llvm::Expected<std::optional<qdmi::Job>>
 Context::trySubmit(llvm::ArrayRef<const mlir::CompiledProgram*> programs,
-                   int64_t shots, const BorrowedJobParameters* parameters,
+                   size_t shots, const BorrowedJobParameters* parameters,
                    const mlir::TargetEnvironment* destination) const {
-  const auto borrowed = borrow(parameters);
   return mlir::trySubmitPrograms(
-      device_, programs, shots, borrowed[0], borrowed[1], borrowed[2],
-      borrowed[3], borrowed[4],
+      device_, programs, {.shots = shots, .custom = borrow(parameters)},
       destination == nullptr ? &environment_ : destination);
 }
 
 llvm::Expected<bool>
-Context::supports(QDMI_Program_Format format, size_t count, int64_t shots,
+Context::supports(QDMI_Program_Format format, size_t count, size_t shots,
                   const BorrowedJobParameters* parameters) const {
-  if (shots < 0) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "num_shots must be nonnegative");
-  }
-  const auto borrowed = borrow(parameters);
-  return device_.supportsJob(format, count, static_cast<size_t>(shots),
-                             borrowed[0], borrowed[1], borrowed[2], borrowed[3],
-                             borrowed[4]);
+  return device_.supportsJob(format, count,
+                             {.shots = shots, .custom = borrow(parameters)});
 }
 
 llvm::Expected<qdmi::Job> Context::submit(const mlir::CompiledProgram& program,
-                                          int64_t shots) const {
+                                          size_t shots) const {
   auto job = trySubmit({&program}, shots);
   if (!job) {
     return job.takeError();

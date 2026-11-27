@@ -875,9 +875,6 @@ TEST(CompilerQDMIAdapterTest,
   const auto compiled = llvm::cantFail(
       mlir::compileProgram(mlir::OpenQASMProgram(source), device));
   EXPECT_EQ(creations, 0);
-  EXPECT_TRUE(
-      llvm::errorToBool(mlir::submitProgram(device, compiled, -1).takeError()));
-  EXPECT_EQ(creations, 0);
   EXPECT_EQ(compiled.programFormat(), QDMI_PROGRAM_FORMAT_QASM3);
   ASSERT_GE(compiled.payload().size(), 4);
   EXPECT_TRUE(compiled.payload().starts_with("OPENQASM 3;"));
@@ -886,13 +883,14 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_EQ(creations, 0);
   EXPECT_FALSE(llvm::errorToBool(
       mlir::validateTargetCompatibility(compiled.environment(), destination)));
-  auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 32));
+  auto job =
+      llvm::cantFail(mlir::submitProgram(device, compiled, {.shots = 32}));
   EXPECT_EQ(creations, 1);
   EXPECT_TRUE(llvm::cantFail(job.wait()));
   EXPECT_EQ(llvm::cantFail(job.getShots()).size(), 32);
   const auto otherSession = openTwoQubitDdsimDevice();
-  auto otherJob =
-      llvm::cantFail(mlir::submitProgram(otherSession, compiled, 16));
+  auto otherJob = llvm::cantFail(
+      mlir::submitProgram(otherSession, compiled, {.shots = 16}));
   EXPECT_TRUE(llvm::cantFail(otherJob.wait()));
   EXPECT_EQ(llvm::cantFail(otherJob.getShots()).size(), 16);
 
@@ -1019,7 +1017,8 @@ TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {
       "c = measure q; while (c) { x q; c = measure q; }";
   auto compiled = llvm::cantFail(
       mlir::compileProgram(mlir::OpenQASMProgram(source), device));
-  auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 8));
+  auto job =
+      llvm::cantFail(mlir::submitProgram(device, compiled, {.shots = 8}));
   ASSERT_TRUE(llvm::cantFail(job.wait()));
   EXPECT_EQ(llvm::cantFail(job.getCounts()).at("0"), 8);
 }
@@ -1065,8 +1064,8 @@ TEST(CompilerQDMIAdapterTest, ExecutesStableRegisterHelpers) {
   auto ir = std::get<mlir::QIRProgram>(std::move(*compiled)).intoLLVMIR();
   ASSERT_TRUE(mlir::succeeded(ir));
   const auto device = openTwoQubitDdsimDevice();
-  auto job = llvm::cantFail(
-      device.submitJob(*ir, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, 8));
+  auto job = llvm::cantFail(device.submitJob(
+      *ir, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, {.shots = 8}));
   ASSERT_TRUE(llvm::cantFail(job.wait()));
   EXPECT_EQ(llvm::cantFail(job.getCounts()).at("10"), 8);
 }
@@ -1143,8 +1142,8 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
   EXPECT_EQ(siteLists, 1);
   EXPECT_EQ(calibrationQueries, 0);
   siteLists = calibrationQueries = 0;
-  auto prepared = llvm::cantFail(mlir::trySubmitPrograms(
-      device, {&compiled}, 4, {}, {}, {}, {}, {}, &destination));
+  auto prepared = llvm::cantFail(
+      mlir::trySubmitPrograms(device, {&compiled}, {.shots = 4}, &destination));
   EXPECT_EQ(siteLists, 0);
   EXPECT_EQ(calibrationQueries, 0);
   ASSERT_TRUE(prepared);
@@ -1152,7 +1151,8 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
   EXPECT_EQ(llvm::cantFail(prepared->getCounts()).at("0"), 4);
 
   siteLists = calibrationQueries = 0;
-  auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 4));
+  auto job =
+      llvm::cantFail(mlir::submitProgram(device, compiled, {.shots = 4}));
   EXPECT_EQ(siteLists, 1);
   EXPECT_EQ(calibrationQueries, 0);
   ASSERT_TRUE(llvm::cantFail(job.wait()));
@@ -1160,7 +1160,7 @@ TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
 
   siteLists = calibrationQueries = 0;
   auto sourceJob = llvm::cantFail(
-      mlir::submitProgram(device, mlir::OpenQASMProgram(source), 4));
+      mlir::submitProgram(device, mlir::OpenQASMProgram(source), {.shots = 4}));
   EXPECT_EQ(siteLists, 1);
   EXPECT_GT(calibrationQueries, 0);
   ASSERT_TRUE(llvm::cantFail(sourceJob.wait()));
@@ -1387,7 +1387,8 @@ TEST(CompilerQDMIAdapterTest, ExecutesNativeAliasPayloadsOnDDSIM) {
       const auto& payload = compiled->payload();
       EXPECT_NE(payload.find("gpi"), std::string::npos);
       EXPECT_NE(payload.find(entangler), std::string::npos);
-      auto job = llvm::cantFail(device.submitJob(payload, format, 8));
+      auto job =
+          llvm::cantFail(device.submitJob(payload, format, {.shots = 8}));
       ASSERT_TRUE(llvm::cantFail(job.wait()));
       EXPECT_EQ(llvm::cantFail(job.getShots()),
                 std::vector<std::string>(8, "11"));
@@ -1668,8 +1669,8 @@ TEST(CompilerQDMIAdapterTest, ReconstructsTerminalReceiverReadout) {
   EXPECT_NE(compiled->payload().find("x $2;"), std::string::npos);
   const auto device =
       llvm::cantFail(qdmi::Session::openDevice("mqt.ddsim.default"));
-  auto job = llvm::cantFail(
-      device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
+  auto job = llvm::cantFail(device.submitJob(
+      compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, {.shots = 8}));
   ASSERT_TRUE(llvm::cantFail(job.wait()));
   for (const auto& shot : llvm::cantFail(job.getShots())) {
     EXPECT_EQ(llvm::cantFail(layout.decodeBits(shot)), "10101");
@@ -1695,7 +1696,8 @@ TEST(CompilerQDMIAdapterTest, PreservesKnownZeroOutputsWithoutMeasurements) {
     MQT_ASSERT_SUCCESS(compiled);
     EXPECT_EQ(compiled->resultWidth(), 2);
     EXPECT_FALSE(compiled->resultLayout());
-    auto job = llvm::cantFail(device.submitJob(compiled->payload(), format, 3));
+    auto job = llvm::cantFail(
+        device.submitJob(compiled->payload(), format, {.shots = 3}));
     ASSERT_TRUE(llvm::cantFail(job.wait()));
     const auto shots = llvm::cantFail(job.getShots());
     EXPECT_EQ(shots, std::vector<std::string>(3, "00"));
@@ -1713,8 +1715,8 @@ TEST(CompilerQDMIAdapterTest, DefaultSerializationPreservesDynamicReadout) {
   MQT_ASSERT_SUCCESS(compiled);
   EXPECT_FALSE(compiled->resultLayout());
   EXPECT_EQ(compiled->payload().find("if (true)"), std::string::npos);
-  auto job = llvm::cantFail(
-      device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
+  auto job = llvm::cantFail(device.submitJob(
+      compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, {.shots = 8}));
   ASSERT_TRUE(llvm::cantFail(job.wait()));
   EXPECT_EQ(llvm::cantFail(job.getShots()), std::vector<std::string>(8, "1"));
 }
@@ -1871,8 +1873,8 @@ TEST(CompilerQDMIAdapterTest, TerminalReadoutAllowsIndependentGates) {
         EXPECT_EQ(measurement < barrier, site == 0);
         continue;
       }
-      auto job = llvm::cantFail(
-          device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
+      auto job = llvm::cantFail(device.submitJob(
+          compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, {.shots = 8}));
       ASSERT_TRUE(llvm::cantFail(job.wait()));
       EXPECT_EQ(llvm::cantFail(job.getShots()),
                 std::vector<std::string>(8, site == 0 ? "11" : "01"));
@@ -1937,8 +1939,8 @@ TEST(CompilerQDMIAdapterTest, PreservesGeneralCallsAfterMeasurement) {
   auto compiled = mlir::CompiledProgram::serialize(std::move(*program), device,
                                                    QDMI_PROGRAM_FORMAT_QASM3);
   MQT_ASSERT_SUCCESS(compiled);
-  auto job = llvm::cantFail(
-      device.submitJob(compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, 8));
+  auto job = llvm::cantFail(device.submitJob(
+      compiled->payload(), QDMI_PROGRAM_FORMAT_QASM3, {.shots = 8}));
   ASSERT_TRUE(llvm::cantFail(job.wait()));
   EXPECT_EQ(llvm::cantFail(job.getShots()), std::vector<std::string>(8, "0"));
 }
@@ -2291,8 +2293,8 @@ TEST(CompilerQDMIAdapterTest, SubmitsCompatibleProgramsTogether) {
         mlir::OpenQASMProgram("OPENQASM 3.0; include \"stdgates.inc\"; "
                               "qubit[2] q; bit[2] c; x q[1]; c = measure q;"),
         device, program->programFormat()));
-    auto job =
-        llvm::cantFail(mlir::trySubmitPrograms(device, {program, &other}, 3));
+    auto job = llvm::cantFail(
+        mlir::trySubmitPrograms(device, {program, &other}, {.shots = 3}));
     ASSERT_TRUE(job);
     ASSERT_TRUE(llvm::cantFail(job->wait()));
     EXPECT_EQ(llvm::cantFail(job->getShots(0)),

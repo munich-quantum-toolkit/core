@@ -38,7 +38,6 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
-#include "mqt/Dialect/QIR/QIRDefinitions.h"
 #include "mqt/bench/Generate.h"
 #include "qdmi/Parameters.hpp"
 #include "qdmi/QDMI.hpp"
@@ -74,15 +73,9 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/IR/Function.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/IRReader/IRReader.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/LogicalResult.h"
-#include "llvm/Support/MemoryBuffer.h"
-#include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -116,7 +109,7 @@ using namespace nb::literals;
 
 using bindings::bindResult;
 using bindings::PythonCustomJobParameter;
-using bindings::toCustomJobParameter;
+using bindings::toJobParameters;
 using bindings::unwrap;
 
 using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
@@ -985,11 +978,9 @@ submitProgram(PythonInputTypes& types, const nb::handle program,
     throw nb::value_error("num_shots must be nonnegative");
   }
   const auto device = resolveDevice(target);
-  const auto params = std::array{
-      toCustomJobParameter(custom1), toCustomJobParameter(custom2),
-      toCustomJobParameter(custom3), toCustomJobParameter(custom4),
-      toCustomJobParameter(custom5),
-  };
+  const auto parameters =
+      toJobParameters(static_cast<size_t>(numShots), custom1, custom2, custom3,
+                      custom4, custom5);
   if (nb::isinstance<mlir::CompiledProgram>(program)) {
     if (options) {
       throw nb::value_error(
@@ -1001,15 +992,12 @@ submitProgram(PythonInputTypes& types, const nb::handle program,
           "program_format conflicts with the compiled payload");
     }
     const nb::gil_scoped_release release;
-    return unwrap(mlir::submitProgram(device, compiled, numShots, params[0],
-                                      params[1], params[2], params[3],
-                                      params[4]));
+    return unwrap(mlir::submitProgram(device, compiled, parameters));
   }
   auto input = programFromInput(types, program, true).program;
   const nb::gil_scoped_release release;
   return unwrap(
-      mlir::submitProgram(device, std::move(input), numShots, programFormat,
-                          params[0], params[1], params[2], params[3], params[4],
+      mlir::submitProgram(device, std::move(input), parameters, programFormat,
                           options.value_or(mlir::CompilationOptions{})));
 }
 
@@ -1138,62 +1126,17 @@ template <class Payload>
   }
   const nb::gil_scoped_release release;
   auto device = unwrap(qdmi::builtin_driver::openDevice("mqt.ddsim.default"));
-  std::optional<qdmi::CustomJobParameter> randomSeed;
+  qdmi::JobParameters parameters{.shots = shots};
   if (seed != 0) {
-    randomSeed = static_cast<int>(seed);
+    parameters.custom[0] = static_cast<int>(seed);
   }
-  auto job = unwrap(device.submitJob(payload, format, shots, randomSeed));
+  auto job = unwrap(device.submitJob(payload, format, parameters));
   unwrap(job.wait());
   if (unwrap(job.check()) != QDMI_JOB_STATUS_DONE) {
     throw std::runtime_error(
         "QIR execution failed; check the profile and supported operations");
   }
   return job;
-}
-
-/// Read routing metadata without JIT compilation or bitcode body
-/// materialization.
-[[nodiscard]] static std::optional<QDMI_Program_Format>
-qirFormat(llvm::StringRef payload, bool binary) {
-  const nb::gil_scoped_release release;
-  llvm::LLVMContext context;
-  llvm::SMDiagnostic diagnostic;
-  auto module = llvm::getLazyIRModule(
-      llvm::MemoryBuffer::getMemBuffer(payload, "<qir>", false), diagnostic,
-      context);
-  if (!module) {
-    if (!binary) {
-      return std::nullopt;
-    }
-    throw nb::value_error("Invalid QIR bitcode");
-  }
-  std::optional<QDMI_Program_Format> format;
-  for (const auto& function : *module) {
-    if (!function.hasFnAttribute(qir::ENTRY_POINT_ATTR)) {
-      continue;
-    }
-    if (format) {
-      throw nb::value_error("QIR requires exactly one entry point");
-    }
-    const auto attribute = function.getFnAttribute(qir::QIR_PROFILES_ATTR);
-    const auto profile = attribute.isStringAttribute()
-                             ? attribute.getValueAsString()
-                             : llvm::StringRef{};
-    if (profile.compare(qir::BASE_PROFILE) == 0) {
-      format = binary ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
-                      : QDMI_PROGRAM_FORMAT_QIRBASESTRING;
-    } else if (profile.compare(qir::ADAPTIVE_PROFILE) == 0) {
-      format = binary ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
-                      : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
-    } else {
-      throw nb::value_error(
-          "QIR entry point requires a Base or Adaptive profile");
-    }
-  }
-  if (!format) {
-    throw nb::value_error("QIR requires exactly one entry point");
-  }
-  return format;
 }
 
 [[nodiscard]] static qdmi::Job
@@ -1220,12 +1163,20 @@ executeQIRInput(nb::handle program, size_t shots, uint64_t seed) {
     const auto bytes = nb::borrow<nb::bytes>(program);
     const llvm::StringRef payload(static_cast<const char*>(bytes.data()),
                                   bytes.size());
+    const auto format = [&] {
+      const nb::gil_scoped_release release;
+      return unwrap(mlir::detectQIRFormat(payload));
+    }();
     return executeQIR(std::as_bytes(std::span(payload.data(), payload.size())),
-                      *qirFormat(payload, true), shots, seed);
+                      *format, shots, seed);
   }
   if (nb::isinstance<nb::str>(program)) {
     const auto payload = nb::cast<std::string_view>(program);
-    if (auto format = qirFormat(payload, false)) {
+    const auto format = [&] {
+      const nb::gil_scoped_release release;
+      return unwrap(mlir::detectQIRFormat(payload, true));
+    }();
+    if (format) {
       // Python's UTF-8 storage includes the QDMI text terminator.
       return executeQIR(
           std::as_bytes(std::span(payload.data(), payload.size() + 1)), *format,
@@ -1258,6 +1209,8 @@ executeQIRInput(nb::handle program, size_t shots, uint64_t seed) {
 [[nodiscard]] static std::map<std::string, size_t>
 sample(PythonInputTypes& types, const nb::handle program, size_t shots,
        uint64_t seed) {
+  // DDSIM runs zero-shot jobs as statevector simulations; zero samples need
+  // no run.
   if (shots == 0) {
     return {};
   }
@@ -2756,6 +2709,7 @@ LLVM bitcode.)pb");
           "sample",
           [](const mlir::QIRProgram& self, size_t shots,
              uint64_t seed) -> std::map<std::string, size_t> {
+            // Zero shots would run a statevector simulation instead.
             if (shots == 0) {
               return {};
             }

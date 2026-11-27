@@ -20,6 +20,7 @@
 #include "llvm/Support/ErrorHandling.h"
 
 #include <algorithm>
+#include <array>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -43,6 +44,15 @@ namespace qdmi {
 /// submission call returns.
 using CustomJobParameter =
     std::variant<std::string, bool, int, double, std::span<const std::byte>>;
+
+/// Parameters of a QDMI job.
+struct JobParameters {
+  /// The number of shots, or the device default if empty.
+  std::optional<size_t> shots;
+  /// The values of the custom job parameters `CUSTOM1` to `CUSTOM5`.
+  std::array<std::optional<CustomJobParameter>, 5> custom{};
+};
+
 /// Preserve a provider status in an owned LLVM error.
 [[nodiscard]] llvm::Error makeError(int status, const llvm::Twine& message);
 

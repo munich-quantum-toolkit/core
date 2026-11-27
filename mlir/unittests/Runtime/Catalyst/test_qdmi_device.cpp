@@ -142,7 +142,7 @@ TEST(CatalystQDMI, ValidatesProviderResultsAndRetainsBinaryParameters) {
   importer.namedOperation("PauliX", {}, {0});
   const auto program =
       llvm::cantFail(mlir::compileProgram(importer.takeProgram(), device));
-  auto job = llvm::cantFail(mlir::submitProgram(device, program, 2));
+  auto job = llvm::cantFail(mlir::submitProgram(device, program, {.shots = 2}));
   ASSERT_TRUE(llvm::cantFail(job.wait()));
   EXPECT_EQ(decodeSamples(job, 3, 2, 0, program.resultLayout()),
             (std::vector<int8_t>{1, 0, 0, 1, 0, 0}));
