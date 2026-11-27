@@ -385,9 +385,11 @@ links.
 
 Between releases, `CHANGELOG.md` and `UPGRADING.md` contain only published
 releases. Create their next sections during release preparation and finalize the
-version and release date before publishing. Set the release version in the
-`[project]` table in `pyproject.toml`. Both Python and native builds read it
-from there.
+version and release date before publishing. Set the release version in both
+`pyproject.toml` and the top-level CMake `project()` declaration. For a
+development version, use the same suffix (such as `.dev0`) in `pyproject.toml`
+and CMake's `PROJECT_VERSION_PRERELEASE`. Clear the suffix in both for a
+release.
 
 ## Testing priorities
 

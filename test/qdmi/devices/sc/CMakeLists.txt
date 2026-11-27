@@ -28,7 +28,7 @@ if(TARGET MQT::CoreQDMIScDeviceConfig AND TARGET MQT::CoreQDMIScDevice)
   target_compile_definitions(
     ${TARGET_NAME}
     PRIVATE
-      MQT_CORE_VERSION="${MQT_CORE_VERSION}"
+      MQT_CORE_VERSION="${PROJECT_VERSION_FULL}"
       SC_DEVICE_JSON="${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json"
       IQM_GARNET_JSON="${PROJECT_SOURCE_DIR}/json/sc/iqm-garnet.json"
       IQM_EMERALD_JSON="${PROJECT_SOURCE_DIR}/json/sc/iqm-emerald.json")

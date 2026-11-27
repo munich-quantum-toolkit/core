@@ -65,7 +65,7 @@ file(RELATIVE_PATH cmake_relative "${CMAKE_INSTALL_FULL_BINDIR}"
 target_compile_definitions(
   mqt-core
   PRIVATE
-    MQT_CORE_VERSION_STRING="${MQT_CORE_VERSION_STRING}"
+    MQT_CORE_VERSION_STRING="${PROJECT_VERSION_FULL}"
     MQT_CORE_INCLUDE_RELATIVE="${include_relative}" MQT_CORE_CMAKE_RELATIVE="${cmake_relative}")
 mlir_check_all_link_libraries(mqt-core)
 set_target_properties(

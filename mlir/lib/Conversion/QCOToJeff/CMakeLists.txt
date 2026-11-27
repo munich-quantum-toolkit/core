@@ -33,9 +33,9 @@ add_mlir_conversion_library(
   MLIRTransforms)
 
 if(TARGET MLIRQCOToJeff)
-  target_compile_definitions(MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+  target_compile_definitions(MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${PROJECT_VERSION_FULL}")
 endif()
 
 if(TARGET obj.MLIRQCOToJeff)
-  target_compile_definitions(obj.MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")
+  target_compile_definitions(obj.MLIRQCOToJeff PRIVATE MQT_CORE_VERSION="${PROJECT_VERSION_FULL}")
 endif()

@@ -55,7 +55,7 @@ def test_cli_version(script_runner: ScriptRunner) -> None:
     """Test running the CLI with the --version argument."""
     ret = script_runner.run(["mqt-core", "--version"])
     assert ret.success
-    assert mqt_core_version in ret.stdout
+    assert ret.stdout.strip() == mqt_core_version == distribution("mqt-core").version
 
 
 @pytest.mark.parametrize(

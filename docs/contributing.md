@@ -649,7 +649,8 @@ details, and apply the relevant labels for Release Drafter.
 When it is time to release a new version of MQT Core, create a PR that prepares
 the release. This PR should:
 
-- set `project.version` in `pyproject.toml` to the stable release version,
+- set the stable release version in `pyproject.toml` and the top-level CMake
+  `project()` declaration, and clear `PROJECT_VERSION_PRERELEASE`,
 - prepare the changelog and upgrade guide from the Git history, merged PR
   descriptions, the Release Drafter draft, and any existing Unreleased notes.
   Use the commits included in the release, accounting for backports and changes
