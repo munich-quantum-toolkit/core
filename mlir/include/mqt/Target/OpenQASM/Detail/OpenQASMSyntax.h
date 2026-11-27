@@ -362,8 +362,7 @@ struct SyntaxDiagnostic {
 
 class SyntaxBuilder {
 public:
-  [[nodiscard]] SyntaxExpressionId
-  addExpression(const SyntaxExpression& expression);
+  [[nodiscard]] SyntaxExpressionId addExpression(SyntaxExpression expression);
   [[nodiscard]] LogicalResult error(SMLoc location, const Twine& message);
   [[nodiscard]] LogicalResult version(SMLoc location, Version value);
   [[nodiscard]] LogicalResult include(SMLoc location, StringRef filename);
@@ -423,6 +422,8 @@ public:
     return program.version && program.version->major == 2;
   }
 
+  /// Size the arenas for `source` so parsing does not regrow them.
+  void reserveFor(StringRef source);
   [[nodiscard]] SyntaxProgram takeProgram() { return std::move(program); }
   [[nodiscard]] const std::vector<SyntaxDiagnostic>& getDiagnostics() const {
     return diagnostics;
