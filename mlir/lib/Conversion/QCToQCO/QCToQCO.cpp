@@ -13,6 +13,7 @@
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
@@ -32,24 +33,25 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Region.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Interfaces/FunctionInterfaces.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Rewrite/PatternApplicator.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Support/WalkResult.h"
-#include "mlir/Transforms/CSE.h"
-#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include <cassert>
 #include <cstddef>
@@ -80,7 +82,7 @@ struct RegisterAccess {
 /// Indices already used for one register by a quantum operation.
 struct SeenRegisterIndices {
   DenseSet<int64_t> constants;
-  llvm::SmallDenseSet<Value, 4> dynamicValues;
+  SmallVector<Value, 4> dynamicValues;
 };
 
 /// Qubit allocation mode
@@ -403,46 +405,41 @@ static void commitQubits(LoweringState& state, Operation* anchor,
   return qcoTargets;
 }
 
-/// Checks whether static references already satisfy the lowering normal form.
-[[nodiscard]] static bool staticsAlreadyNormalized(ModuleOp moduleOp) {
-  DenseMap<Operation*, DenseSet<uint64_t>> seen;
-  auto result = moduleOp.walk([&](qc::StaticOp op) {
-    auto func = op->getParentOfType<func::FuncOp>();
-    if (!func || op->getBlock() != &func.getBody().front() ||
-        !seen[func].insert(op.getIndex()).second) {
-      return WalkResult::interrupt();
+/// Hoist static qubit references into their function's entry block and keep
+/// one reference per index, so each physical qubit has a single QC value.
+static void normalizeStaticQubits(ArrayRef<qc::StaticOp> statics) {
+  DenseMap<std::pair<Operation*, uint64_t>, qc::StaticOp> canonical;
+  for (auto op : statics) {
+    auto function = op->getParentOfType<func::FuncOp>();
+    if (!function ||
+        op->getParentWithTrait<OpTrait::IsIsolatedFromAbove>() != function) {
+      continue;
     }
-    return WalkResult::advance();
-  });
-  return !result.wasInterrupted();
-}
-
-/// Hoist static qubit references and let CSE coalesce them.
-[[nodiscard]] static LogicalResult normalizeStaticQubits(ModuleOp moduleOp,
-                                                         bool& changed) {
-  RewritePatternSet patterns(moduleOp.getContext());
-  qc::StaticOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
-  // Normalization needs folding and static-qubit hoisting, not CFG cleanup.
-  GreedyRewriteConfig config;
-  config.setRegionSimplificationLevel(GreedySimplifyRegionLevel::Disabled);
-  // Full CSE must report constant replacements before reusing register
-  // analysis.
-  config.enableConstantCSE(false);
-  if (failed(applyPatternsGreedily(moduleOp, std::move(patterns), config,
-                                   &changed))) {
-    return failure();
+    // Pre-order collection visits a dominating reference first.
+    const auto [kept, inserted] =
+        canonical.try_emplace({function, op.getIndex()}, op);
+    if (!inserted) {
+      op.getQubit().replaceAllUsesWith(kept->second.getQubit());
+      op.erase();
+      continue;
+    }
+    auto& entry = function.getBody().front();
+    if (op->getBlock() != &entry) {
+      op->moveBefore(&entry, entry.begin());
+    }
   }
-  IRRewriter rewriter(moduleOp.getContext());
-  DominanceInfo dominance(moduleOp);
-  bool cseChanged = false;
-  eliminateCommonSubExpressions(rewriter, dominance, moduleOp, &cseChanged);
-  changed |= cseChanged;
-  return success();
 }
 
 /// Rejects input unsupported by the lowering state.
-[[nodiscard]] static LogicalResult validateSupportedInput(Operation* root) {
-  const auto result = root->walk([&](Operation* operation) {
+[[nodiscard]] static LogicalResult
+validateSupportedInput(Operation* root,
+                       SmallVectorImpl<qc::StaticOp>& statics) {
+  const auto result = root->walk<WalkOrder::PreOrder>([&](Operation*
+                                                              operation) {
+    if (auto ref = dyn_cast<qc::StaticOp>(operation)) {
+      statics.push_back(ref);
+      return WalkResult::advance();
+    }
     if (operation->getNumSuccessors() != 0) {
       operation->emitOpError(
           "QC-to-QCO does not support unstructured control flow; use SCF "
@@ -583,142 +580,316 @@ static bool isOwnedBufferElement(Value qubit) {
   return isa_and_nonnull<qc::AllocOp>(qubit.getDefiningOp());
 }
 
-/// Collects stable register identifiers and load provenance.
+/// Returns a register index as a constant, folding constant index arithmetic.
+[[nodiscard]] static std::optional<int64_t> constantIndex(Value index) {
+  if (const auto constant = getConstantIntValue(index)) {
+    return constant;
+  }
+  if (auto attr =
+          dyn_cast_if_present<IntegerAttr>(mqt::valueToConstantAttr(index))) {
+    return attr.getInt();
+  }
+  return std::nullopt;
+}
+
+/// Returns whether two index values compute the same value, as CSE would find.
+[[nodiscard]] static bool sameIndexComputation(Value lhs, Value rhs) {
+  if (lhs == rhs) {
+    return true;
+  }
+  auto* lhsOp = lhs.getDefiningOp();
+  auto* rhsOp = rhs.getDefiningOp();
+  return lhsOp != nullptr && rhsOp != nullptr &&
+         cast<OpResult>(lhs).getResultNumber() ==
+             cast<OpResult>(rhs).getResultNumber() &&
+         isMemoryEffectFree(lhsOp) && isMemoryEffectFree(rhsOp) &&
+         OperationEquivalence::isEquivalentTo(
+             lhsOp, rhsOp,
+             [](Value a, Value b) {
+               return success(sameIndexComputation(a, b));
+             },
+             nullptr, OperationEquivalence::IgnoreLocations);
+}
+
+/// Validates a static reference buffer and records its slots.
 [[nodiscard]] static LogicalResult
-collectRegisterAccesses(Operation* root, LoweringState& state) {
-  root->walk([&](func::FuncOp function) {
-    for (auto argument : function.getArguments()) {
-      if (isQubitMemrefType(argument.getType())) {
-        const auto reg = state.registerIds.size();
-        state.registerIds.try_emplace(argument, reg);
+collectReferenceBuffer(memref::AllocaOp allocation, LoweringState& state,
+                       DominanceInfo& dominance) {
+  auto type = allocation.getType();
+  auto function = allocation->getParentOfType<func::FuncOp>();
+  if (!function || allocation->getBlock() != &function.getBody().front() ||
+      !type.hasStaticShape() || type.getDimSize(0) <= 0 ||
+      !type.getLayout().isIdentity() || type.getMemorySpace()) {
+    return allocation.emitOpError(
+        "requires an entry-block, non-empty static "
+        "qubit reference buffer with identity layout");
+  }
+  // A slot can have later identity stores. Find its first initializer among
+  // this buffer's own uses, which MLIR does not keep in program order.
+  SmallVector<memref::StoreOp> initializers(
+      static_cast<size_t>(type.getDimSize(0)));
+  for (auto* user : allocation->getUsers()) {
+    auto store = dyn_cast<memref::StoreOp>(user);
+    if (!store || store->getBlock() != allocation->getBlock() ||
+        (!store.getValue().getDefiningOp<qc::StaticOp>() &&
+         !isOwnedBufferElement(store.getValue()))) {
+      continue;
+    }
+    const auto index = getConstantIntValue(store.getIndices().front());
+    if (index && *index >= 0 && *index < type.getDimSize(0)) {
+      auto& first = initializers[*index];
+      if (!first || store->isBeforeInBlock(first)) {
+        first = store;
       }
     }
-  });
-  root->walk([&](memref::AllocOp op) {
-    if (isa<qc::QubitType>(op.getType().getElementType())) {
-      const auto reg = state.registerIds.size();
-      state.registerIds.try_emplace(op.getResult(), reg);
-    }
-  });
-
-  const auto buffers = root->walk([&](memref::AllocaOp allocation) {
-    auto type = allocation.getType();
-    if (!isa<qc::QubitType>(type.getElementType())) {
-      return WalkResult::advance();
-    }
-    auto function = allocation->getParentOfType<func::FuncOp>();
-    if (!function || allocation->getBlock() != &function.getBody().front() ||
-        !type.hasStaticShape() || type.getDimSize(0) <= 0 ||
-        !type.getLayout().isIdentity() || type.getMemorySpace()) {
-      allocation.emitOpError("requires an entry-block, non-empty static "
-                             "qubit reference buffer with identity layout");
-      return WalkResult::interrupt();
-    }
-    // A slot can have later identity stores. Find its first initializer among
-    // this buffer's own uses, which MLIR does not keep in program order.
-    SmallVector<memref::StoreOp> initializers(
-        static_cast<size_t>(type.getDimSize(0)));
-    for (auto* user : allocation->getUsers()) {
-      auto store = dyn_cast<memref::StoreOp>(user);
-      if (!store || store->getBlock() != allocation->getBlock() ||
-          (!store.getValue().getDefiningOp<qc::StaticOp>() &&
-           !isOwnedBufferElement(store.getValue()))) {
-        continue;
-      }
-      const auto index = getConstantIntValue(store.getIndices().front());
-      if (index && *index >= 0 && *index < type.getDimSize(0)) {
-        auto& first = initializers[*index];
-        if (!first || store->isBeforeInBlock(first)) {
-          first = store;
-        }
-      }
-    }
-
-    const auto reg = state.registerIds.size();
-    state.registerIds.try_emplace(allocation, reg);
-    auto& elements = state.referenceBuffers[allocation];
-    elements.reserve(initializers.size());
-    Operation* finalInitialization = nullptr;
-    for (auto store : initializers) {
-      if (!store) {
-        allocation.emitOpError("reference buffers must be fully initialized");
-        return WalkResult::interrupt();
-      }
-      auto qubit = store.getValue();
-      if (!state.registerAccesses
-               .try_emplace(qubit,
-                            RegisterAccess{
-                                .reg = reg,
-                                .index = store.getIndices().front(),
-                            })
-               .second) {
-        store.emitOpError("reference buffers require distinct qubits "
-                          "initialized once per slot");
-        return WalkResult::interrupt();
-      }
-      elements.push_back(qubit);
-      if (!finalInitialization || finalInitialization->isBeforeInBlock(store)) {
-        finalInitialization = store;
-      }
-    }
-    DominanceInfo dominance(function);
-    for (auto reference : elements) {
-      const bool owned = !reference.getDefiningOp<qc::StaticOp>();
-      if (owned && !dominance.properlyDominates(reference.getDefiningOp(),
-                                                allocation.getOperation())) {
-        allocation.emitOpError(
-            "owned reference buffers require their qubits before storage");
-        return WalkResult::interrupt();
-      }
-      for (auto* user : reference.getUsers()) {
-        if ((!owned || isa<qc::DeallocOp>(user)) &&
-            !dominance.properlyDominates(allocation.getOperation(), user)) {
-          user->emitOpError("reference buffers must precede physical qubit "
-                            "uses and owned qubit releases");
-          return WalkResult::interrupt();
-        }
-      }
-    }
-    for (auto* user : allocation->getUsers()) {
-      if (isa<memref::StoreOp>(user)) {
-        continue;
-      }
-      if (!isa<memref::LoadOp, func::CallOp>(user) ||
-          !dominance.properlyDominates(finalInitialization, user)) {
-        user->emitOpError("reference initialization must precede "
-                          "all register loads and helper calls");
-        return WalkResult::interrupt();
-      }
-    }
-    return WalkResult::advance();
-  });
-  if (buffers.wasInterrupted()) {
-    return failure();
   }
 
-  const auto result = root->walk([&](memref::LoadOp op) {
-    if (!isa<qc::QubitType>(op.getMemRefType().getElementType())) {
-      return WalkResult::advance();
+  const auto reg = state.registerIds.size();
+  state.registerIds.try_emplace(allocation, reg);
+  auto& elements = state.referenceBuffers[allocation];
+  elements.reserve(initializers.size());
+  Operation* finalInitialization = nullptr;
+  for (auto store : initializers) {
+    if (!store) {
+      return allocation.emitOpError(
+          "reference buffers must be fully initialized");
     }
-
-    if (op.getMemRefType().getRank() != 1 || op.getIndices().size() != 1) {
-      op.emitOpError("requires one-dimensional qubit register storage");
-      return WalkResult::interrupt();
+    auto qubit = store.getValue();
+    if (!state.registerAccesses
+             .try_emplace(qubit,
+                          RegisterAccess{
+                              .reg = reg,
+                              .index = store.getIndices().front(),
+                          })
+             .second) {
+      return store.emitOpError("reference buffers require distinct qubits "
+                               "initialized once per slot");
     }
-
-    const auto regIt = state.registerIds.find(op.getMemref());
-    if (regIt == state.registerIds.end()) {
-      op.emitOpError("requires a directly allocated qubit register");
-      return WalkResult::interrupt();
+    elements.push_back(qubit);
+    if (finalInitialization == nullptr ||
+        finalInitialization->isBeforeInBlock(store)) {
+      finalInitialization = store;
     }
+  }
+  for (auto reference : elements) {
+    const bool owned = !reference.getDefiningOp<qc::StaticOp>();
+    if (owned && !dominance.properlyDominates(reference.getDefiningOp(),
+                                              allocation.getOperation())) {
+      return allocation.emitOpError(
+          "owned reference buffers require their qubits before storage");
+    }
+    for (auto* user : reference.getUsers()) {
+      if ((!owned || isa<qc::DeallocOp>(user)) &&
+          !dominance.properlyDominates(allocation.getOperation(), user)) {
+        return user->emitOpError(
+            "reference buffers must precede physical qubit uses and owned "
+            "qubit releases");
+      }
+    }
+  }
+  for (auto* user : allocation->getUsers()) {
+    if (isa<memref::StoreOp>(user)) {
+      continue;
+    }
+    if (!isa<memref::LoadOp, func::CallOp>(user) ||
+        !dominance.properlyDominates(finalInitialization, user)) {
+      return user->emitOpError("reference initialization must precede "
+                               "all register loads and helper calls");
+    }
+  }
+  return success();
+}
 
-    state.registerAccesses.try_emplace(
-        op.getResult(),
-        RegisterAccess{.reg = regIt->second, .index = op.getIndices().front()});
+/// Selects a local register whose constant slots stay in one block until free.
+static void collectScalarRegister(memref::AllocOp allocation,
+                                  LoweringState& state) {
+  auto type = allocation.getType();
+  if (!type.hasStaticShape() || type.getDimSize(0) <= 0 ||
+      !type.getLayout().isIdentity() || type.getMemorySpace()) {
+    return;
+  }
+  auto* block = allocation->getBlock();
+  memref::DeallocOp deallocation;
+  for (auto* user : allocation->getUsers()) {
+    if (auto dealloc = dyn_cast<memref::DeallocOp>(user)) {
+      if (deallocation || user->getBlock() != block) {
+        return;
+      }
+      deallocation = dealloc;
+    } else if (auto store = dyn_cast<memref::StoreOp>(user)) {
+      // The store check rejects unequal constants.
+      if (!getConstantIntValue(store.getIndices().front())) {
+        return;
+      }
+    } else if (!isa<memref::LoadOp>(user)) {
+      return;
+    }
+  }
+  if (!deallocation) {
+    return;
+  }
+  for (auto* user : allocation->getUsers()) {
+    auto load = dyn_cast<memref::LoadOp>(user);
+    if (!load) {
+      continue;
+    }
+    auto index = getConstantIntValue(load.getIndices().front());
+    if (!index || *index < 0 || *index >= type.getDimSize(0) ||
+        load->getBlock() != block || !load->isBeforeInBlock(deallocation)) {
+      return;
+    }
+    for (auto* consumer : load->getUsers()) {
+      if (consumer->getBlock() != block ||
+          !consumer->isBeforeInBlock(deallocation) ||
+          !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, qc::DelayOp,
+               memref::StoreOp>(consumer)) {
+        return;
+      }
+    }
+  }
+  state.scalarRegisterQubits.try_emplace(
+      lookupRegisterId(state, allocation.getResult()));
+}
 
-    return WalkResult::advance();
-  });
+/// Rejects register-backed operands that alias within one operation.
+[[nodiscard]] static LogicalResult
+checkDistinctOperands(Operation* operation, const LoweringState& state) {
+  ValueRange operands;
+  DenseSet<RegisterId> borrowedRegisters;
+  if (auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation)) {
+    operands = unitary.getQubits();
+  } else if (auto call = dyn_cast<func::CallOp>(operation)) {
+    operands = call.getOperands();
+    for (auto operand : call.getOperands()) {
+      if (isQubitMemrefType(operand.getType()) &&
+          !borrowedRegisters.insert(lookupRegisterId(state, operand)).second) {
+        return call.emitOpError("requires distinct borrowed register operands");
+      }
+    }
+  }
+  if (operands.size() < 2 && borrowedRegisters.empty()) {
+    return success();
+  }
+  if (failed(qc::verifyDistinctQubitOperands(operation, operands))) {
+    return failure();
+  }
+  DenseMap<RegisterId, SeenRegisterIndices> registerIndices;
+  for (auto qubit : operands) {
+    if (!isa<qc::QubitType>(qubit.getType())) {
+      continue;
+    }
+    const auto access = state.registerAccesses.find(qubit);
+    if (access == state.registerAccesses.end()) {
+      continue;
+    }
+    if (borrowedRegisters.contains(access->second.reg)) {
+      return operation->emitOpError(
+          "cannot borrow a register together with one of its qubits");
+    }
+    auto& seen = registerIndices[access->second.reg];
+    if (const auto constant = constantIndex(access->second.index)) {
+      if (!seen.constants.insert(*constant).second) {
+        return operation->emitOpError(
+            "requires distinct qubit operands; register-backed operands "
+            "have the same constant index");
+      }
+      continue;
+    }
+    if (llvm::any_of(seen.dynamicValues, [&](Value index) {
+          return sameIndexComputation(index, access->second.index);
+        })) {
+      return operation->emitOpError(
+          "requires distinct qubit operands; register-backed operands use "
+          "the same dynamic index");
+    }
+    seen.dynamicValues.push_back(access->second.index);
+  }
+  return success();
+}
 
+/// Rejects stores that move a qubit to another register slot.
+[[nodiscard]] static LogicalResult checkRegisterStore(memref::StoreOp store,
+                                                      LoweringState& state) {
+  if (!isa<qc::QubitType>(store.getValue().getType())) {
+    return success();
+  }
+  const auto access = state.registerAccesses.find(store.getValue());
+  if (access == state.registerAccesses.end() ||
+      access->second.reg != lookupRegisterId(state, store.getMemref())) {
+    return store.emitOpError(
+        "cannot replace a qubit in a stable register slot");
+  }
+  const auto source = constantIndex(access->second.index);
+  const auto dest = constantIndex(store.getIndices().front());
+  if (source && dest && *source != *dest) {
+    return store.emitOpError(
+        "cannot replace a qubit in a stable register slot");
+  }
+  return success();
+}
+
+/// Collects stable register identifiers and load provenance, and validates
+/// register use, in one pre-order walk: registers and loads dominate their
+/// uses, so each check sees the accesses it needs.
+[[nodiscard]] static LogicalResult
+collectRegisterAccesses(ModuleOp moduleOp, LoweringState& state) {
+  DominanceInfo dominance(moduleOp);
+  const auto result = moduleOp.walk<WalkOrder::PreOrder>(
+      [&](Operation* operation) -> WalkResult {
+        const auto status =
+            llvm::TypeSwitch<Operation*, LogicalResult>(operation)
+                .Case([&](func::FuncOp function) {
+                  for (auto argument : function.getArguments()) {
+                    if (isQubitMemrefType(argument.getType())) {
+                      const auto reg = state.registerIds.size();
+                      state.registerIds.try_emplace(argument, reg);
+                    }
+                  }
+                  return success();
+                })
+                .Case([&](memref::AllocOp op) {
+                  if (isa<qc::QubitType>(op.getType().getElementType())) {
+                    const auto reg = state.registerIds.size();
+                    state.registerIds.try_emplace(op.getResult(), reg);
+                    collectScalarRegister(op, state);
+                  }
+                  return success();
+                })
+                .Case([&](memref::AllocaOp op) {
+                  return isa<qc::QubitType>(op.getType().getElementType())
+                             ? collectReferenceBuffer(op, state, dominance)
+                             : success();
+                })
+                .Case([&](memref::LoadOp op) -> LogicalResult {
+                  if (!isa<qc::QubitType>(
+                          op.getMemRefType().getElementType())) {
+                    return success();
+                  }
+                  if (op.getMemRefType().getRank() != 1 ||
+                      op.getIndices().size() != 1) {
+                    return op.emitOpError(
+                        "requires one-dimensional qubit register storage");
+                  }
+                  const auto regIt = state.registerIds.find(op.getMemref());
+                  if (regIt == state.registerIds.end()) {
+                    return op.emitOpError(
+                        "requires a directly allocated qubit register");
+                  }
+                  state.registerAccesses.try_emplace(
+                      op.getResult(), RegisterAccess{
+                                          .reg = regIt->second,
+                                          .index = op.getIndices().front(),
+                                      });
+                  return success();
+                })
+                .Case([&](memref::StoreOp store) {
+                  return checkRegisterStore(store, state);
+                })
+                .Default([&](Operation* op) {
+                  return checkDistinctOperands(op, state);
+                });
+        return failed(status) ? WalkResult::interrupt() : WalkResult::advance();
+      });
   if (result.wasInterrupted()) {
     return failure();
   }
@@ -738,142 +909,7 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       }
     }
   }
-
-  const auto distinctResult = root->walk([&](Operation* operation) {
-    ValueRange operands;
-    DenseSet<RegisterId> borrowedRegisters;
-    if (auto unitary = dyn_cast<qc::UnitaryOpInterface>(operation)) {
-      operands = unitary.getQubits();
-    } else if (auto call = dyn_cast<func::CallOp>(operation)) {
-      operands = call.getOperands();
-      for (auto operand : call.getOperands()) {
-        if (isQubitMemrefType(operand.getType()) &&
-            !borrowedRegisters.insert(lookupRegisterId(state, operand))
-                 .second) {
-          call.emitOpError("requires distinct borrowed register operands");
-          return WalkResult::interrupt();
-        }
-      }
-    }
-
-    if (operands.size() < 2 && borrowedRegisters.empty()) {
-      return WalkResult::advance();
-    }
-
-    if (failed(qc::verifyDistinctQubitOperands(operation, operands))) {
-      return WalkResult::interrupt();
-    }
-    DenseMap<RegisterId, SeenRegisterIndices> registerIndices;
-    for (auto qubit : operands) {
-      if (!isa<qc::QubitType>(qubit.getType())) {
-        continue;
-      }
-      const auto access = state.registerAccesses.find(qubit);
-      if (access == state.registerAccesses.end()) {
-        continue;
-      }
-
-      if (borrowedRegisters.contains(access->second.reg)) {
-        operation->emitOpError(
-            "cannot borrow a register together with one of its qubits");
-        return WalkResult::interrupt();
-      }
-      auto& seen = registerIndices[access->second.reg];
-      if (const auto constant = getConstantIntValue(access->second.index)) {
-        if (!seen.constants.insert(*constant).second) {
-          operation->emitOpError(
-              "requires distinct qubit operands; register-backed operands "
-              "have the same constant index");
-          return WalkResult::interrupt();
-        }
-        continue;
-      }
-
-      if (!seen.dynamicValues.insert(access->second.index).second) {
-        operation->emitOpError(
-            "requires distinct qubit operands; register-backed operands use "
-            "the same dynamic index");
-        return WalkResult::interrupt();
-      }
-    }
-    return WalkResult::advance();
-  });
-
-  if (distinctResult.wasInterrupted()) {
-    return failure();
-  }
-  const auto stores = root->walk([&](memref::StoreOp store) {
-    if (!isa<qc::QubitType>(store.getValue().getType())) {
-      return WalkResult::advance();
-    }
-    const auto access = state.registerAccesses.find(store.getValue());
-    if (access == state.registerAccesses.end() ||
-        access->second.reg != lookupRegisterId(state, store.getMemref())) {
-      store.emitOpError("cannot replace a qubit in a stable register slot");
-      return WalkResult::interrupt();
-    }
-    const auto source = getConstantIntValue(access->second.index);
-    const auto dest = getConstantIntValue(store.getIndices().front());
-    if (source && dest && *source != *dest) {
-      store.emitOpError("cannot replace a qubit in a stable register slot");
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
-  });
-  return success(!stores.wasInterrupted());
-}
-
-/// Selects local registers whose constant slots stay in one block until free.
-static void collectScalarRegisters(ModuleOp moduleOp, LoweringState& state) {
-  moduleOp.walk([&](memref::AllocOp allocation) {
-    auto type = allocation.getType();
-    if (!isa<qc::QubitType>(type.getElementType()) || !type.hasStaticShape() ||
-        type.getDimSize(0) <= 0 || !type.getLayout().isIdentity() ||
-        type.getMemorySpace()) {
-      return;
-    }
-    auto* block = allocation->getBlock();
-    memref::DeallocOp deallocation;
-    for (auto* user : allocation->getUsers()) {
-      if (auto dealloc = dyn_cast<memref::DeallocOp>(user)) {
-        if (deallocation || user->getBlock() != block) {
-          return;
-        }
-        deallocation = dealloc;
-      } else if (auto store = dyn_cast<memref::StoreOp>(user)) {
-        // Preflight checked the source register and rejected unequal constants.
-        if (!getConstantIntValue(store.getIndices().front())) {
-          return;
-        }
-      } else if (!isa<memref::LoadOp>(user)) {
-        return;
-      }
-    }
-    if (!deallocation) {
-      return;
-    }
-    for (auto* user : allocation->getUsers()) {
-      auto load = dyn_cast<memref::LoadOp>(user);
-      if (!load) {
-        continue;
-      }
-      auto index = getConstantIntValue(load.getIndices().front());
-      if (!index || *index < 0 || *index >= type.getDimSize(0) ||
-          load->getBlock() != block || !load->isBeforeInBlock(deallocation)) {
-        return;
-      }
-      for (auto* consumer : load->getUsers()) {
-        if (consumer->getBlock() != block ||
-            !consumer->isBeforeInBlock(deallocation) ||
-            !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp,
-                 qc::DelayOp, memref::StoreOp>(consumer)) {
-          return;
-        }
-      }
-    }
-    state.scalarRegisterQubits.try_emplace(
-        lookupRegisterId(state, allocation.getResult()));
-  });
+  return success();
 }
 
 /// Classify captures using the register bindings live at this operation.
@@ -1877,24 +1913,13 @@ struct ConvertSCFConditionOp final : LoweringPattern<scf::ConditionOp> {
 /// values.
 static LogicalResult lowerToQCO(ModuleOp moduleOp) {
   LoweringState state;
-  if (failed(validateSupportedInput(moduleOp)) ||
-      failed(collectRegisterAccesses(moduleOp, state))) {
+  SmallVector<qc::StaticOp> statics;
+  if (failed(validateSupportedInput(moduleOp, statics))) {
     return failure();
   }
-  // Register indices still need normalization for alias validation.
-  const bool needsNormalization =
-      !state.registerIds.empty() || !staticsAlreadyNormalized(moduleOp);
-  if (needsNormalization) {
-    bool changed = false;
-    if (failed(normalizeStaticQubits(moduleOp, changed))) {
-      return failure();
-    }
-    if (changed) {
-      state = LoweringState();
-      if (failed(collectRegisterAccesses(moduleOp, state))) {
-        return failure();
-      }
-    }
+  normalizeStaticQubits(statics);
+  if (failed(collectRegisterAccesses(moduleOp, state))) {
+    return failure();
   }
   // Preflight needs every alias. During lowering an owned qubit stays scalar
   // until its reference buffer is assembled.
@@ -1905,7 +1930,6 @@ static LogicalResult lowerToQCO(ModuleOp moduleOp) {
       }
     }
   }
-  collectScalarRegisters(moduleOp, state);
   auto* ctx = moduleOp.getContext();
   auto* qcDialect = ctx->getLoadedDialect<qc::QCDialect>();
   auto* memrefDialect = ctx->getLoadedDialect<memref::MemRefDialect>();
