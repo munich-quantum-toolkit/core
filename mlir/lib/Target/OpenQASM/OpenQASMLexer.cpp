@@ -287,12 +287,20 @@ Token Lexer::lexIdentifierOrKeyword(const char* start) {
 /// Convert decimal floating-point digits without separators, correctly
 /// rounded. Return false if `digits` is not a complete decimal literal.
 static bool parseDecimalFloat(const StringRef digits, double& value) {
+// libc++ never defines __cpp_lib_to_chars and ships floating-point from_chars
+// in its dylib only from LLVM 20 (macOS 26), as its availability macro reports.
+#if (defined(_LIBCPP_VERSION) &&                                               \
+     defined(_LIBCPP_AVAILABILITY_HAS_FROM_CHARS_FLOATING_POINT) &&            \
+     _LIBCPP_AVAILABILITY_HAS_FROM_CHARS_FLOATING_POINT) ||                    \
+    (!defined(_LIBCPP_VERSION) && defined(__cpp_lib_to_chars))
   const auto [end, error] =
       std::from_chars(digits.begin(), digits.end(), value);
   if (error != std::errc::result_out_of_range) {
     return error == std::errc{} && end == digits.end();
   }
-  // APFloat keeps the previous underflow and overflow results.
+#endif
+  // APFloat keeps the previous underflow and overflow results and serves
+  // older macOS deployment targets.
   return !digits.getAsDouble(value);
 }
 
