@@ -867,13 +867,17 @@ The CoreIR API cleanup requires the following migrations:
 
 - Replace `getNmeasuredQubits()` and `num_measured_qubits` with
   `getNoutputQubits()` and `num_output_qubits`, respectively.
+
 - Replace permutation-aware `Operation::equals()` and `getUsedQubitsPermuted()`
   calls by applying the permutation to cloned operations before comparing them.
+
 - Replace `getHighestLogicalQubitIndex()`, `printStatistics()`, and
   `printPermutation()` with `initialLayout.maxValue()`, the individual count
   accessors, and direct `Permutation` iteration, respectively.
+
 - Construct output-permutation measurements explicitly instead of calling
   `appendMeasurementsAccordingToOutputPermutation()`.
+
 - Replace direct `Operation::dumpOpenQASM2()`, `dumpOpenQASM3()`, or
   `dumpOpenQASM()` calls with `qasm3::Serializer`. The register-map aliases
   moved from `ir/Register.hpp` to `qasm3/Serializer.hpp`:
