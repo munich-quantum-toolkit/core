@@ -35,6 +35,9 @@ def JeffToQCO : Pass<"jeff-to-qco", "mlir::ModuleOp"> {
     Function definitions, results, and calls are preserved. Only the designated
     entry point remains public; helper functions become private. Calls remain generic
     `func.call` operations because jeff does not specify function unitarity.
+
+    Fixed-size registers marked with `mqt.static_qubits` restore static site
+    IDs from constant-index accesses in the entry block.
   }];
 
   let dependentDialects = ["mlir::arith::ArithDialect",

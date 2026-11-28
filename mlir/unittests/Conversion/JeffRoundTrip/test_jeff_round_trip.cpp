@@ -32,6 +32,7 @@
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
 #include "jeff/Translation/Deserialize.hpp"
+#include "jeff/Translation/Metadata.hpp"
 #include "jeff/Translation/Serialize.hpp"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -355,6 +356,104 @@ static LogicalResult convertJeffToQCO(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createJeffToQCO());
   return pm.run(moduleOp);
+}
+
+TEST_F(JeffRoundTripTest, PreservesStaticSitesAcrossRepeatedExchange) {
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    module attributes {
+      jeff.entrypoint = 0 : ui16, jeff.strings = ["main"],
+      jeff.tool = "mqt-core", jeff.toolVersion = "test",
+      jeff.version = 0 : ui16, jeff.versionMinor = 3 : ui16,
+      jeff.versionPatch = 0 : ui16
+    } {
+      func.func @main() -> i1 {
+        %size = jeff.int_const32(6) : i32
+        %index = jeff.int_const32(5) : i32
+        %zero = jeff.int_const32(0) : i32
+        %reg = jeff.qureg_alloc(%size) : !jeff.qureg<6>
+        %r0, %a = jeff.qureg_extract_index(%index) %reg : (!jeff.qureg<6>, i32) -> (!jeff.qureg<6>, !jeff.qubit)
+        %r1, %b = jeff.qureg_extract_index(%zero) %r0 : (!jeff.qureg<6>, i32) -> (!jeff.qureg<6>, !jeff.qubit)
+        %x = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %a : !jeff.qubit
+        %r2 = jeff.qureg_insert_index(%index) %r1 %x : (!jeff.qureg<6>, i32, !jeff.qubit) -> !jeff.qureg<6>
+        %r3, %a1 = jeff.qureg_extract_index(%index) %r2 : (!jeff.qureg<6>, i32) -> (!jeff.qureg<6>, !jeff.qubit)
+        %s0, %s1 = jeff.swap {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %a1 %b : !jeff.qubit !jeff.qubit
+        %out, %result = jeff.qubit_measure_nd %s1 : !jeff.qubit, i1
+        %reset = jeff.qubit_reset %out : !jeff.qubit
+        %r4 = jeff.qureg_insert_index(%zero) %r3 %reset : (!jeff.qureg<6>, i32, !jeff.qubit) -> !jeff.qureg<6>
+        jeff.qubit_free_zero %s0 : !jeff.qubit
+        jeff.qureg_free_zero %r4 : !jeff.qureg<6>
+        return %result : i1
+      }
+    })mlir",
+                                             context.get());
+  ASSERT_TRUE(program);
+  OpBuilder builder(context.get());
+  auto payload = mlir::jeff::serializeTextMetadata(program->getLoc(), "");
+  ASSERT_TRUE(succeeded(payload));
+  auto allocation = *program->lookupSymbol<func::FuncOp>("main")
+                         .getOps<mlir::jeff::QuregAllocOp>()
+                         .begin();
+  ASSERT_TRUE(succeeded(mlir::jeff::setMetadata(
+      allocation.getOperation(),
+      builder.getArrayAttr({builder.getDictionaryAttr({
+          builder.getNamedAttr("name",
+                               builder.getStringAttr("mqt.static_qubits")),
+          builder.getNamedAttr("value", *payload),
+      })}))));
+  for (int32_t index : {-1, 6}) {
+    auto invalid = OwningOpRef<ModuleOp>(program->clone());
+    invalid->walk([&](mlir::jeff::IntConst32Op op) {
+      if (op.getVal() == 5) {
+        op.setVal(index);
+      }
+    });
+    bool sawBoundsError = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawBoundsError |= diagnostic.str().find("in-bounds constant indices") !=
+                        std::string::npos;
+      return success();
+    });
+    EXPECT_TRUE(failed(convertJeffToQCO(*invalid)));
+    EXPECT_TRUE(sawBoundsError);
+  }
+  for (int round = 0; round < 2; ++round) {
+    SCOPED_TRACE(round);
+    auto data = serialize(*program);
+    program = deserialize(context.get(), data);
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+    ASSERT_TRUE(succeeded(verify(*program)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+    SmallVector<uint64_t> sites;
+    program->walk([&](qco::StaticOp op) { sites.push_back(op.getIndex()); });
+    llvm::sort(sites);
+    EXPECT_EQ(sites, (SmallVector<uint64_t>{0, 5}));
+    auto counts =
+        qco::sample(program->lookupSymbol<func::FuncOp>("main"), 1, 1);
+    ASSERT_TRUE(succeeded(counts));
+    EXPECT_EQ(counts->at("1"), 1);
+    ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+    SmallVector<mlir::jeff::QuregAllocOp> registers;
+    program->walk(
+        [&](mlir::jeff::QuregAllocOp op) { registers.push_back(op); });
+    ASSERT_EQ(registers.size(), 1U);
+    EXPECT_EQ(registers.front().getType().getLength(), 6);
+    ASSERT_TRUE(succeeded(runJeffCleanupPipeline(*program)));
+  }
+}
+
+TEST_F(JeffRoundTripTest, RejectsOversizedStaticRegister) {
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qco.static 2147483647 : !qco.qubit
+        qco.sink %q : !qco.qubit
+        return
+      }
+    })mlir",
+                                             context.get());
+  ASSERT_TRUE(program);
+  EXPECT_TRUE(failed(convertQCOToJeff(*program)));
 }
 
 TEST(JeffRoundTripRegressionTest, PreservesOpenQASMArrayStorage) {

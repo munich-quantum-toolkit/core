@@ -16,6 +16,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/LinearityUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -52,6 +53,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <utility>
 
 namespace mlir {
@@ -60,6 +62,77 @@ using namespace qco;
 
 #define GEN_PASS_DEF_JEFFTOQCO
 #include "mqt/Conversion/JeffToQCO/JeffToQCO.h.inc"
+
+/// Restore scalar static sites from the marked register's constant accesses.
+static LogicalResult restoreStaticQubits(ModuleOp moduleOp) {
+  SmallVector<qtensor::AllocOp> allocations;
+  moduleOp.walk([&](qtensor::AllocOp op) {
+    if (op->hasAttr("mqt.static_qubits")) {
+      allocations.push_back(op);
+    }
+  });
+  if (!allocations.empty() && failed(qco::verifyLinearity(moduleOp))) {
+    return failure();
+  }
+  for (auto allocation : allocations) {
+    auto entryPoint = mqt::getEntryPoint(moduleOp);
+    if (!entryPoint ||
+        allocation->getBlock() != &entryPoint.getBody().front()) {
+      return allocation.emitError(
+          "static qubit register requires the program entry block");
+    }
+    OpBuilder builder(allocation);
+    std::map<int64_t, Value> slots;
+    auto tensor = allocation.getResult();
+    while (true) {
+      auto* user = *tensor.user_begin();
+      if (user->getBlock() != allocation->getBlock()) {
+        return user->emitError(
+            "static qubit register accesses require the program entry block");
+      }
+      if (isa<qtensor::DeallocOp>(user)) {
+        builder.setInsertionPoint(user);
+        for (auto& slot : slots) {
+          if (slot.second) {
+            SinkOp::create(builder, user->getLoc(), slot.second);
+          }
+        }
+        user->erase();
+        break;
+      }
+      Value index;
+      if (auto extract = dyn_cast<qtensor::ExtractOp>(user)) {
+        index = extract.getIndex();
+      } else if (auto insert = dyn_cast<qtensor::InsertOp>(user)) {
+        index = insert.getIndex();
+      } else {
+        return user->emitError("static qubit register requires constant-index "
+                               "extraction, reinsertion, and deallocation");
+      }
+      auto offset = getConstantIntValue(index);
+      if (!offset || *offset < 0 ||
+          *offset >= allocation.getType().getDimSize(0)) {
+        return user->emitError(
+            "static qubit register requires in-bounds constant indices");
+      }
+      if (auto extract = dyn_cast<qtensor::ExtractOp>(user)) {
+        auto [slot, firstAccess] = slots.try_emplace(*offset);
+        if (firstAccess) {
+          slot->second = StaticOp::create(builder, extract.getLoc(), *offset);
+        }
+        extract.getResult().replaceAllUsesWith(slot->second);
+        slot->second = {};
+        extract.getOutTensor().replaceAllUsesWith(extract.getTensor());
+      } else if (auto insert = dyn_cast<qtensor::InsertOp>(user)) {
+        slots[*offset] = insert.getScalar();
+        insert.getResult().replaceAllUsesWith(insert.getDest());
+      }
+      user->erase();
+    }
+    allocation.erase();
+  }
+  return success();
+}
 
 /// Restore input names from jeff text metadata.
 static LogicalResult deserializeInputNames(func::FuncOp function) {
@@ -674,6 +747,22 @@ struct ConvertJeffQuregAllocOpToQCO final
     auto sizeValue = getConstantIntValue(adaptor.getNumQubits());
     auto tensorType =
         cast<RankedTensorType>(getTypeConverter()->convertType(op.getType()));
+    auto metadata = jeff::getMetadata(op.getOperation());
+    if (failed(metadata)) {
+      return failure();
+    }
+    const bool isStatic =
+        *metadata && llvm::any_of(*metadata, [](Attribute entry) {
+          return cast<DictionaryAttr>(entry)
+                     .getAs<StringAttr>("name")
+                     .getValue() == "mqt.static_qubits";
+        });
+    if (isStatic &&
+        (!tensorType.hasStaticShape() || tensorType.getDimSize(0) <= 0 ||
+         !sizeValue || *sizeValue != tensorType.getDimSize(0))) {
+      return op.emitError("mqt.static_qubits requires a fixed-size register "
+                          "with matching constant size");
+    }
     Value size;
     if (sizeValue.has_value()) {
       size = arith::ConstantOp::create(rewriter, op.getLoc(),
@@ -682,7 +771,12 @@ struct ConvertJeffQuregAllocOpToQCO final
     } else {
       size = toIndex(op.getLoc(), adaptor.getNumQubits(), rewriter);
     }
-    rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, tensorType, size);
+    auto allocation =
+        qtensor::AllocOp::create(rewriter, op.getLoc(), tensorType, size);
+    if (isStatic) {
+      allocation->setAttr("mqt.static_qubits", rewriter.getUnitAttr());
+    }
+    rewriter.replaceOp(op, allocation.getResult());
     return success();
   }
 };
@@ -1587,6 +1681,10 @@ protected:
     moduleOp->removeAttr("jeff.version");
     moduleOp->removeAttr("jeff.versionMinor");
     moduleOp->removeAttr("jeff.versionPatch");
+    if (failed(restoreStaticQubits(moduleOp)) ||
+        failed(qco::verifyLinearity(moduleOp))) {
+      signalPassFailure();
+    }
   }
 };
 
