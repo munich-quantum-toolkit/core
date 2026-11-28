@@ -88,6 +88,8 @@ struct QuantumProgramInfo {
   std::map<std::string, size_t> controlFlowCounts;
   /// All operations in the module, as in Program::operationCounts().
   std::map<std::string, size_t> operationCounts;
+  /// Circuit depth, as in QCProgram::depth().
+  std::optional<size_t> depth;
 };
 
 /// Cached resource and gate inspection for QC and QCO module passes.
@@ -380,6 +382,21 @@ public:
   /// Uses the rules of numGates().
   [[nodiscard]] size_t numTwoQubitGates() const;
 
+  /// Compute the circuit depth of the entry point.
+  ///
+  /// Gates, measurements, and resets add one layer. Measurements include the
+  /// bit they are stored to. Barriers align their qubits without adding a
+  /// layer. A gate modifier or an ``if`` adds exactly one layer over every
+  /// qubit and bit it uses, regardless of the depth of its body. Operations
+  /// also wait for the bits that their classical operands and conditions read.
+  /// A bit copy and a classical ``if`` that only computes a condition, such as
+  /// a lowered ``&&``, add no layer.
+  ///
+  /// Returns `std::nullopt` for loops, calls, other control flow, qubits
+  /// without a known wire, qubit stores at unknown slots, conditions that read
+  /// no known bit, and an ``if`` nested in a modifier or ``if`` body.
+  [[nodiscard]] std::optional<size_t> depth() const;
+
   /// Count entry-point gates by name.
   ///
   /// Uses the rules of numGates(). Controls on a single primitive gate add a
@@ -541,6 +558,11 @@ public:
   ///
   /// Uses the rules of QCProgram::numTwoQubitGates().
   [[nodiscard]] size_t numTwoQubitGates() const;
+
+  /// Compute the circuit depth of the entry point.
+  ///
+  /// Uses the rules of QCProgram::depth().
+  [[nodiscard]] std::optional<size_t> depth() const;
 
   /// Count entry-point gates by name.
   ///
