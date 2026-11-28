@@ -1080,8 +1080,8 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#370)._
 - ♻️ Improve implementation and usability of FoMaC classes ([#1849])
   ([**@MatthiasReumann**])
 - ⬆️ Update `nanobind` to version 2.13.0 ([#1817])
-- ⬆️ Update [munich-quantum-toolkit/workflows] to version `v2.0.1` ([#1660],
-  [#1737]) ([**@denialhaag**])
+- ⬆️ Update [munich-quantum-toolkit/workflows] to `v2.0.1` ([#1660], [#1737])
+  ([**@denialhaag**])
 
 ### Removed
 
@@ -1254,7 +1254,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#340)._
 - 👷 Stop testing with `clang-19` and start testing with `clang-21` ([#1359])
   ([**@denialhaag**], [**@burgholzer**])
 - 👷 Fix macOS tests with Homebrew Clang via new
-  `munich-quantum-toolkit/workflows` version ([#1359]) ([**@denialhaag**],
+  [munich-quantum-toolkit/workflows] version ([#1359]) ([**@denialhaag**],
   [**@burgholzer**])
 - 👷 Re-enable macOS tests with GCC by disabling module scanning ([#1359])
   ([**@denialhaag**], [**@burgholzer**])
