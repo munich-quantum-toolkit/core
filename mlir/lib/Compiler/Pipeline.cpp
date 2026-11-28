@@ -428,6 +428,7 @@ static void populateExportPipeline(OpPassManager& pm, ProgramFormat output,
                                    MLIRContext& context) {
   switch (output) {
   case ProgramFormat::OpenQASM3:
+    // The emitter omits global phase for targets that drop it.
     populateQCStructuralCleanupPipeline(pm);
     pm.addPass(mqt::createPromoteClassicalMemory());
     return;
@@ -475,8 +476,7 @@ finishExport(ProgramAccess::Storage storage, ProgramFormat output,
   case ProgramFormat::OpenQASM3: {
     auto source = output == ProgramFormat::OpenQASM2
                       ? qc::translateQCToOpenQASM2(std::move(storage.mod))
-                      : qc::translateQCToOpenQASM3(std::move(storage.mod),
-                                                   /*forExecution=*/true);
+                      : qc::translateQCToOpenQASM3(std::move(storage.mod));
     if (failed(source)) {
       return failure();
     }

@@ -27,6 +27,8 @@ namespace qc {
 /// Consume a verified QC module and translate it to portable OpenQASM.
 ///
 /// An attached `mqt.target_env` selects native gate names and payload limits.
+/// If its target drops global phases, entry-point `gphase` operations and the
+/// phase corrections of native aliases are omitted.
 ///
 /// Only builds with assertions verify the module again; programs and pass
 /// pipelines already guarantee valid IR.
@@ -40,10 +42,7 @@ LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
                                      llvm::raw_ostream& output);
 
 /// Consume a QC module and translate it to an owned OpenQASM source string.
-/// Executable output omits entry-point global phase when the target requires
-/// it.
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                              bool forExecution = false);
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp);
 
 /// Consume a verified QC module and emit OpenQASM 2 with bound parameters.
 ///
@@ -55,7 +54,7 @@ FailureOr<std::string> translateQCToOpenQASM2(ModuleOp) = delete;
 
 // OwningOpRef implicitly accepts borrowed handles; reject accidental ownership.
 LogicalResult translateQCToOpenQASM3(ModuleOp, llvm::raw_ostream&) = delete;
-FailureOr<std::string> translateQCToOpenQASM3(ModuleOp, bool = false) = delete;
+FailureOr<std::string> translateQCToOpenQASM3(ModuleOp) = delete;
 
 } // namespace qc
 } // namespace mlir

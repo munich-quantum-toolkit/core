@@ -6538,8 +6538,20 @@ TEST_F(CompilerPipelineTest, NativePulseOpenQASMPreservesArityAndPhase) {
   const auto& payload = std::get<OpenQASMProgram>(*executable).source();
   EXPECT_NE(payload.find("gpi("), std::string::npos);
   EXPECT_EQ(payload.find("gphase("), std::string::npos);
+  // A target that supports gphase keeps the alias phase corrections.
+  const TargetEnvironment phased(
+      llvm::cantFail(CompilerTarget::create(
+          1, CompilerTarget::Connectivity::allToAll(),
+          CompilerTarget::NativeOperations::fromOperations({
+              llvm::cantFail(Capability::create("gpi", 1, 1)),
+              llvm::cantFail(Capability::create("gpi2", 1, 1)),
+              llvm::cantFail(Capability::create("gphase", 0, 1)),
+              llvm::cantFail(Capability::create("measure", 1, 0)),
+          }))),
+      llvm::cantFail(
+          PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM3)));
   auto native = original->copy();
-  ASSERT_TRUE(succeeded(native.compileForTarget(environment)));
+  ASSERT_TRUE(succeeded(native.compileForTarget(phased)));
   auto lowered = std::move(native).intoQC();
   ASSERT_TRUE(succeeded(lowered));
   auto emitted = std::move(*lowered).intoOpenQASM3();

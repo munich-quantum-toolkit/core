@@ -207,10 +207,9 @@ public:
                 .wasInterrupted();
   }
 
-  [[nodiscard]] LogicalResult emit(llvm::raw_ostream& sourceStream,
-                                   bool forExecution = false) {
+  [[nodiscard]] LogicalResult emit(llvm::raw_ostream& sourceStream) {
     assert(succeeded(verify(moduleOp)) && "OpenQASM export requires valid IR");
-    if (failed(preflight(forExecution))) {
+    if (failed(preflight())) {
       return failure();
     }
     if (version2_) {
@@ -323,7 +322,8 @@ private:
   std::optional<mqt::PayloadControlSupport> controlSupport_;
   uint64_t controlDepth_ = 0;
   bool version2_ = false;
-  bool dropEntryPhase_ = false;
+  /// Omit entry-point global phase for targets that drop it.
+  bool dropGlobalPhases_ = false;
 
   bool hasNonOutputGlobals_ = false;
   std::string deviceRegister_;
@@ -841,14 +841,13 @@ private:
     return success();
   }
 
-  [[nodiscard]] LogicalResult preflight(bool forExecution) {
+  [[nodiscard]] LogicalResult preflight() {
     if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
       const TargetEnvironmentAnalysis environment(moduleOp);
       if (!environment) {
         return fail(moduleOp, environment.error());
       }
-      dropEntryPhase_ =
-          forExecution && environment.environment().dropsGlobalPhases();
+      dropGlobalPhases_ = environment.environment().dropsGlobalPhases();
       if (environment.environment().target().nativeOperationsKind() ==
           CompilerTarget::NativeOperations::Kind::Explicit) {
         nativeTarget_ = environment.environment().target();
@@ -1430,7 +1429,7 @@ private:
 
     llvm::SaveAndRestore outputGuard(output, &definitionOutput);
     llvm::SaveAndRestore functionGuard(function, gate);
-    llvm::SaveAndRestore phaseGuard(dropEntryPhase_, false);
+    llvm::SaveAndRestore phaseGuard(dropGlobalPhases_, false);
     if (failed(emitBlock(gate.getBody().front()))) {
       return failure();
     }
@@ -1729,7 +1728,7 @@ private:
       return emitGateStatement(*emitted, call, *output);
     }
     if (auto unitary = dyn_cast<UnitaryOpInterface>(&operation)) {
-      if (dropEntryPhase_ && isa<GPhaseOp>(unitary.getOperation())) {
+      if (dropGlobalPhases_ && isa<GPhaseOp>(unitary.getOperation())) {
         return success();
       }
       if (auto barrier = dyn_cast<BarrierOp>(&operation)) {
@@ -3375,7 +3374,7 @@ private:
         }
         call.parameters.erase(call.parameters.begin() + index);
       }
-      if (alias->globalPhase != 0. && !dropEntryPhase_) {
+      if (alias->globalPhase != 0. && !dropGlobalPhases_) {
         auto phase =
             emitConstant(FloatAttr::get(Float64Type::get(unitary.getContext()),
                                         -alias->globalPhase),
@@ -3903,11 +3902,10 @@ LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
   return OpenQASMEmitter(*moduleOp).emit(output);
 }
 
-FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                              bool forExecution) {
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(OpenQASMEmitter(*moduleOp).emit(stream, forExecution))) {
+  if (failed(OpenQASMEmitter(*moduleOp).emit(stream))) {
     return failure();
   }
   return source;

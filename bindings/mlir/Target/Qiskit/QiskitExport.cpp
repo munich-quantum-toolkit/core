@@ -889,9 +889,19 @@ collectUnitaryInstruction(mlir::Operation& operation,
   return result;
 }
 
+namespace {
+/// How the exporter received its target.
+enum class TargetSource : uint8_t {
+  /// Passed as `target=`; every qubit must be a static target site.
+  Explicit,
+  /// Attached by compilation; unplaced programs export target-independently.
+  Attached,
+};
+} // namespace
+
 [[nodiscard]] static const mlir::CompilerTarget*
 collectResources(mlir::func::FuncOp function, ExportState& state,
-                 const mlir::CompilerTarget* target, bool requirePlacement) {
+                 const mlir::CompilerTarget* target, TargetSource source) {
   bool deviceTarget = target != nullptr && target->hasDeviceConstraints();
   llvm::StringSet<> usedNames;
   for (const auto& parameter : state.parameterNames) {
@@ -909,7 +919,7 @@ collectResources(mlir::func::FuncOp function, ExportState& state,
       if (llvm::isa<mlir::qc::AllocOp>(operation) ||
           (alloc &&
            llvm::isa<mlir::qc::QubitType>(alloc.getType().getElementType()))) {
-        if (requirePlacement) {
+        if (source == TargetSource::Explicit) {
           throw std::runtime_error(
               "target-aware Qiskit export requires statically mapped qubits");
         }
@@ -1067,7 +1077,8 @@ collectResources(mlir::func::FuncOp function, ExportState& state,
           "QC to Qiskit export does not support duplicate result registers");
     }
   }
-  if (deviceTarget && (requirePlacement || state.quantumRegisters.empty())) {
+  if (deviceTarget &&
+      (source == TargetSource::Explicit || state.quantumRegisters.empty())) {
     state.quantumRegisters.push_back(
         {.name = "q", .start = 0U, .size = state.numQubits});
   }
@@ -3056,7 +3067,8 @@ collectGateDefinition(mlir::func::FuncOp function,
 
 [[nodiscard]] static nb::object
 exportCircuitImpl(mlir::QCProgram program, const mlir::CompilerTarget* target,
-                  const mlir::PayloadSpecification* const payload) {
+                  const mlir::PayloadSpecification* const payload,
+                  const TargetSource source) {
   auto moduleOp = program.module();
   auto function = mlir::mqt::getEntryPoint(moduleOp);
   if (!function) {
@@ -3113,8 +3125,7 @@ exportCircuitImpl(mlir::QCProgram program, const mlir::CompilerTarget* target,
   collectParameters(function, state);
   materializeBooleanResults(function);
   prepareMeasurementStores(function);
-  target = collectResources(function, state, target,
-                            /*requirePlacement=*/payload == nullptr);
+  target = collectResources(function, state, target, source);
   indexWrites(function.getBody().front(), state.writes);
   auto circuit = collectBlock(function.getBody().front(), state, 0U);
   llvm::StringSet<> usedNames;
@@ -3233,7 +3244,8 @@ nb::object exportCircuit(mlir::QCProgram program,
                          const mlir::CompilerTarget* target) {
   if (target != nullptr ||
       !program.module()->hasAttr(mlir::mqt::TargetEnvAttr::name)) {
-    return exportCircuitImpl(std::move(program), target, nullptr);
+    return exportCircuitImpl(std::move(program), target, nullptr,
+                             TargetSource::Explicit);
   }
   const mlir::TargetEnvironmentAnalysis attached(program.module());
   if (!attached) {
@@ -3241,7 +3253,8 @@ nb::object exportCircuit(mlir::QCProgram program,
   }
   const auto& environment = attached.environment();
   return exportCircuitImpl(std::move(program), &environment.target(),
-                           &environment.payloadSpecification());
+                           &environment.payloadSpecification(),
+                           TargetSource::Attached);
 }
 
 } // namespace mqt::bindings::qiskit
