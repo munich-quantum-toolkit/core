@@ -1427,19 +1427,15 @@ Value ctrlPowSx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a simple if operation with one qubit.
 SmallVector<Value> simpleIf(QCOProgramBuilder& b);
-SmallVector<Value> simpleIfCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation with an else branch.
 SmallVector<Value> ifElse(QCOProgramBuilder& b);
-SmallVector<Value> ifElseCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation with two qubits.
 SmallVector<Value> ifTwoQubits(QCOProgramBuilder& b);
-SmallVector<Value> ifTwoQubitsCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit that measures a qubit inside an if operation.
 SmallVector<Value> ifWithMeasurement(QCOProgramBuilder& b);
-SmallVector<Value> ifWithMeasurementCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with an if operation conditioned on a bit loaded from a
 /// classical bit register.
@@ -1475,11 +1471,9 @@ Value nestedIfOpForLoop(QCOProgramBuilder& b);
 
 /// Creates a circuit with an index switch operation with one qubit.
 SmallVector<Value> simpleIndexSwitch(QCOProgramBuilder& b);
-SmallVector<Value> simpleIndexSwitchCompleteTensorState(QCOProgramBuilder& b);
 
 /// Creates a circuit with an index switch operation with multiple cases.
 Value indexSwitchMultiCase(QCOProgramBuilder& b);
-Value indexSwitchMultiCaseCompleteTensorState(QCOProgramBuilder& b);
 
 // --- WhileOp -------------------------------------------------------------- //
 

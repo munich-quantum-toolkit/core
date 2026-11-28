@@ -56,6 +56,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <tuple>
 #include <utility>
@@ -141,6 +142,15 @@ struct LoweringState {
 
   /// Original QC capture order for source and converted structured operations.
   DenseMap<Operation*, StructuredValues> structuredValues;
+
+  /// Register slots a structured operation captures as single qubits because
+  /// its regions only access them through constant indices.
+  struct SlotCapture {
+    RegisterId reg;
+    int64_t position;
+    Value index;
+  };
+  DenseMap<Operation*, SmallVector<SlotCapture>> structuredSlots;
 
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
@@ -443,16 +453,53 @@ resolveAllValues(LoweringState& state, Operation* anchor, OpBuilder& builder) {
   auto* owner = structuredValueOwner(anchor);
   const auto& [qcQubits, registers] =
       state.structuredValues.find(owner)->second;
+  if (auto it = state.structuredSlots.find(owner);
+      it != state.structuredSlots.end() && owner == anchor) {
+    // Slots found only inside the regions need an index valid outside them.
+    for (auto& slot : it->second) {
+      if (!slot.index) {
+        slot.index = arith::ConstantIndexOp::create(builder, anchor->getLoc(),
+                                                    slot.position);
+      }
+    }
+  }
+  const auto slots = state.structuredSlots.lookup(owner);
 
   SmallVector<Value> qcoTargets;
-  qcoTargets.reserve(registers.size() + qcQubits.size());
+  qcoTargets.reserve(registers.size() + slots.size() + qcQubits.size());
   for (auto reg : registers) {
     qcoTargets.push_back(flushTensor(state, anchor, reg, builder));
+  }
+  // The structured operation consumes the slot; its results reopen it.
+  for (const auto& slot : slots) {
+    auto& open = state.openSlots[{tensorRegion(state, anchor), slot.reg}];
+    if (auto* entry = open.find(slot.position); entry != open.end()) {
+      qcoTargets.push_back(entry->second.qubit);
+      open.erase(entry);
+      continue;
+    }
+    auto extract = qtensor::ExtractOp::create(
+        builder, anchor->getLoc(), lookupMappedTensor(state, anchor, slot.reg),
+        slot.index);
+    assignMappedTensor(state, anchor, slot.reg, extract.getOutTensor());
+    qcoTargets.push_back(extract.getResult());
   }
   for (auto qubit : qcQubits) {
     qcoTargets.push_back(lookupMappedQubit(state, anchor, qubit));
   }
   return qcoTargets;
+}
+
+/// Reopens captured slots with the values a structured operation produced.
+static void openSlotValues(LoweringState& state, Region* region,
+                           ArrayRef<LoweringState::SlotCapture> slots,
+                           ValueRange values) {
+  for (auto [slot, value] : llvm::zip_equal(slots, values)) {
+    state.openSlots[{region, slot.reg}][slot.position] = {
+        .index = slot.index,
+        .qubit = value,
+    };
+  }
 }
 
 /// Hoist static qubit references into their function's entry block and keep
@@ -932,11 +979,67 @@ static bool collectStructuredCaptures(Operation* operation,
       registers.insert(lookupRegisterId(state, value));
     }
   }
-  if (!qubits.empty() || !registers.empty()) {
+  // Registers accessed only at constant positions pass single slots.
+  SmallVector<LoweringState::SlotCapture> slots;
+  if (!registers.empty()) {
+    // Constant positions per captured register; nullopt marks other uses.
+    DenseMap<RegisterId, std::optional<std::map<int64_t, Value>>> positions;
+    for (auto reg : registers) {
+      positions[reg].emplace();
+    }
+    const auto record = [&](RegisterId reg, Value index, Value outside) {
+      auto& entry = positions[reg];
+      if (!entry) {
+        return;
+      }
+      if (const auto position = getConstantIntValue(index)) {
+        entry->try_emplace(*position, outside);
+      } else {
+        entry.reset();
+      }
+    };
+    for (auto value : captures) {
+      if (const auto access = state.registerAccesses.find(value);
+          access != state.registerAccesses.end()) {
+        record(access->second.reg, access->second.index, access->second.index);
+      }
+    }
+    // Walk only this operation's body: register uses elsewhere don't matter.
+    operation->walk([&](Operation* nested) {
+      for (auto operand : nested->getOperands()) {
+        const auto reg = state.registerIds.find(operand);
+        if (reg == state.registerIds.end() ||
+            !positions.contains(reg->second)) {
+          continue;
+        }
+        if (auto load = dyn_cast<memref::LoadOp>(nested)) {
+          record(reg->second, load.getIndices().front(), Value{});
+        } else {
+          positions[reg->second].reset();
+        }
+      }
+    });
+    SmallVector<RegisterId> kept;
+    for (auto reg : registers) {
+      const auto& entry = positions[reg];
+      if (!entry || entry->empty()) {
+        kept.push_back(reg);
+        continue;
+      }
+      for (const auto& [position, index] : *entry) {
+        slots.push_back({.reg = reg, .position = position, .index = index});
+      }
+    }
+    registers = SetVector<RegisterId>(kept.begin(), kept.end());
+  }
+  if (!qubits.empty() || !registers.empty() || !slots.empty()) {
     state.structuredValues[operation] = {
         .qubits = std::move(qubits),
         .registers = registers.takeVector(),
     };
+    if (!slots.empty()) {
+      state.structuredSlots[operation] = std::move(slots);
+    }
     return true;
   }
   return false;
@@ -1628,6 +1731,12 @@ struct ConvertSCFForOp final : LoweringPattern<scf::ForOp> {
                             .take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubits,
                        newForOp->getResults().take_back(numQubits));
+    const auto slots = state.structuredSlots.lookup(op);
+    const auto numSlots = slots.size();
+    openSlotValues(state, tensorRegion(state, op), slots,
+                   newForOp.getResults()
+                       .drop_front(numOriginalResults)
+                       .slice(numRegisters, numSlots));
 
     // Move the contents from the old block into the new block
     auto& srcBlock = op.getRegion().front();
@@ -1644,10 +1753,18 @@ struct ConvertSCFForOp final : LoweringPattern<scf::ForOp> {
                        dstBlock.getArguments()
                            .drop_front(1 + numOriginalResults)
                            .take_front(numRegisters));
+    openSlotValues(state, &newForOp.getRegion(), slots,
+                   dstBlock.getArguments()
+                       .drop_front(1 + numOriginalResults)
+                       .slice(numRegisters, numSlots));
 
     auto values = std::move(state.structuredValues.find(op)->second);
     state.structuredValues.erase(op);
     state.structuredValues.try_emplace(newForOp, std::move(values));
+    if (!slots.empty()) {
+      state.structuredSlots.erase(op);
+      state.structuredSlots.try_emplace(newForOp, slots);
+    }
     rewriter.replaceOp(op,
                        newForOp.getResults().take_front(numOriginalResults));
 
@@ -1685,6 +1802,12 @@ struct ConvertSCFWhileOp final : LoweringPattern<scf::WhileOp> {
                             .take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubits,
                        newWhileOp->getResults().take_back(numQubits));
+    const auto slots = state.structuredSlots.lookup(op);
+    const auto numSlots = slots.size();
+    openSlotValues(state, tensorRegion(state, op), slots,
+                   newWhileOp.getResults()
+                       .drop_front(numOriginalResults)
+                       .slice(numRegisters, numSlots));
 
     auto& newBeforeRegion = newWhileOp.getBefore();
     auto& newAfterRegion = newWhileOp.getAfter();
@@ -1727,10 +1850,22 @@ struct ConvertSCFWhileOp final : LoweringPattern<scf::WhileOp> {
                        newAfterBlock->getArguments()
                            .drop_front(numOriginalResults)
                            .take_front(numRegisters));
+    openSlotValues(state, &newWhileOp.getBefore(), slots,
+                   newBeforeBlock->getArguments()
+                       .drop_front(numOriginalInits)
+                       .slice(numRegisters, numSlots));
+    openSlotValues(state, &newWhileOp.getAfter(), slots,
+                   newAfterBlock->getArguments()
+                       .drop_front(numOriginalResults)
+                       .slice(numRegisters, numSlots));
 
     auto values = std::move(state.structuredValues.find(op)->second);
     state.structuredValues.erase(op);
     state.structuredValues.try_emplace(newWhileOp, std::move(values));
+    if (!slots.empty()) {
+      state.structuredSlots.erase(op);
+      state.structuredSlots.try_emplace(newWhileOp, slots);
+    }
     rewriter.replaceOp(op,
                        newWhileOp.getResults().take_front(numOriginalResults));
     return success();
@@ -1757,6 +1892,10 @@ struct ConvertSCFIfOp final : LoweringPattern<scf::IfOp> {
                         newIfOp.getLinearResults().take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubits,
                        newIfOp.getLinearResults().take_back(numQubits));
+    const auto slots = state.structuredSlots.lookup(op);
+    const auto numSlots = slots.size();
+    openSlotValues(state, tensorRegion(state, op), slots,
+                   newIfOp.getLinearResults().slice(numRegisters, numSlots));
 
     auto& thenRegion = newIfOp.getThenRegion();
     auto& elseRegion = newIfOp.getElseRegion();
@@ -1780,6 +1919,8 @@ struct ConvertSCFIfOp final : LoweringPattern<scf::IfOp> {
       seedRegionMappings(state, newIfOp.getElseRegion(), qubits, registers,
                          elseBlock->getArguments().take_back(numQubits),
                          elseBlock->getArguments().take_front(numRegisters));
+      openSlotValues(state, &newIfOp.getElseRegion(), slots,
+                     elseBlock->getArguments().slice(numRegisters, numSlots));
 
     } else {
       // If the else block is empty, just create the new qco::YieldOp
@@ -1790,10 +1931,16 @@ struct ConvertSCFIfOp final : LoweringPattern<scf::IfOp> {
     seedRegionMappings(state, newIfOp.getThenRegion(), qubits, registers,
                        thenBlock->getArguments().take_back(numQubits),
                        thenBlock->getArguments().take_front(numRegisters));
+    openSlotValues(state, &newIfOp.getThenRegion(), slots,
+                   thenBlock->getArguments().slice(numRegisters, numSlots));
 
     auto values = std::move(state.structuredValues.find(op)->second);
     state.structuredValues.erase(op);
     state.structuredValues.try_emplace(newIfOp, std::move(values));
+    if (!slots.empty()) {
+      state.structuredSlots.erase(op);
+      state.structuredSlots.try_emplace(newIfOp, slots);
+    }
     rewriter.replaceOp(op, newIfOp.getClassicalResults());
     return success();
   }
@@ -1822,6 +1969,10 @@ struct ConvertSCFIndexSwitchOp final : LoweringPattern<scf::IndexSwitchOp> {
                         newOp.getLinearResults().take_front(numRegisters));
     assignMappedQubits(state, op.getOperation(), qubits,
                        newOp.getLinearResults().take_back(numQubits));
+    const auto slots = state.structuredSlots.lookup(op);
+    const auto numSlots = slots.size();
+    openSlotValues(state, tensorRegion(state, op), slots,
+                   newOp.getLinearResults().slice(numRegisters, numSlots));
 
     const auto newCaseRegions = newOp.getCaseRegions();
     const auto oldCaseRegions = op.getCaseRegions();
@@ -1835,6 +1986,8 @@ struct ConvertSCFIndexSwitchOp final : LoweringPattern<scf::IndexSwitchOp> {
       seedRegionMappings(state, newRegion, qubits, registers,
                          newBlock->getArguments().take_back(numQubits),
                          newBlock->getArguments().take_front(numRegisters));
+      openSlotValues(state, &newRegion, slots,
+                     newBlock->getArguments().slice(numRegisters, numSlots));
     };
 
     for (auto [oldRegion, newRegion] :
@@ -1846,6 +1999,10 @@ struct ConvertSCFIndexSwitchOp final : LoweringPattern<scf::IndexSwitchOp> {
     auto values = std::move(state.structuredValues.find(op)->second);
     state.structuredValues.erase(op);
     state.structuredValues.try_emplace(newOp, std::move(values));
+    if (!slots.empty()) {
+      state.structuredSlots.erase(op);
+      state.structuredSlots.try_emplace(newOp, slots);
+    }
     rewriter.replaceOp(op, newOp.getClassicalResults());
     return success();
   }
