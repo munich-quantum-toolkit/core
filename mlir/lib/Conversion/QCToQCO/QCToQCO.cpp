@@ -57,6 +57,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <tuple>
 #include <utility>
 
 namespace mlir {
@@ -126,10 +127,12 @@ struct LoweringState {
     Value index;
     Value qubit;
   };
-  /// Constant slots kept in SSA form until their local register is deallocated.
-  /// First-use order makes reinsertion deterministic.
-  DenseMap<RegisterId, llvm::MapVector<int64_t, RegisterQubit>>
-      scalarRegisterQubits;
+  /// Constant-index register qubits kept in SSA form until the tensor itself
+  /// is needed, keyed by the region owning the tensor mapping. First-use order
+  /// makes reinsertion deterministic.
+  DenseMap<std::pair<Region*, RegisterId>,
+           llvm::MapVector<int64_t, RegisterQubit>>
+      openSlots;
 
   /// Immutable qubit reference buffers, in slot order.
   DenseMap<Value, SmallVector<Value>> referenceBuffers;
@@ -261,6 +264,39 @@ static void assignMappedTensor(LoweringState& state, Operation* anchor,
   state.tensorMap[anchor->getParentRegion()][reg] = tensor;
 }
 
+/// Returns the region whose tensor map holds the register visible at anchor.
+[[nodiscard]] static Region* tensorRegion(LoweringState& state,
+                                          Operation* anchor) {
+  for (auto* region = anchor->getParentRegion(); region != nullptr;
+       region = region->getParentRegion()) {
+    if (state.tensorMap.contains(region)) {
+      return region;
+    }
+  }
+  return nullptr;
+}
+
+/// Reinserts open slots and returns the complete QTensor of a register.
+[[nodiscard]] static Value flushTensor(LoweringState& state, Operation* anchor,
+                                       const RegisterId reg,
+                                       OpBuilder& builder) {
+  auto tensor = lookupMappedTensor(state, anchor, reg);
+  const auto slots = state.openSlots.find({tensorRegion(state, anchor), reg});
+  if (slots == state.openSlots.end()) {
+    return tensor;
+  }
+  for (auto& slot : llvm::make_second_range(slots->second)) {
+    assert(slot.qubit && "open slot without qubit");
+    assert(slot.index && "open slot without index");
+    tensor = qtensor::InsertOp::create(builder, anchor->getLoc(), slot.qubit,
+                                       tensor, slot.index)
+                 .getResult();
+  }
+  state.openSlots.erase(slots);
+  assignMappedTensor(state, anchor, reg, tensor);
+  return tensor;
+}
+
 /// Resolves a range of QC qubits to their latest QCO values.
 template <typename Range>
 [[nodiscard]] static SmallVector<Value>
@@ -328,6 +364,16 @@ materializeQubits(LoweringState& state, Operation* anchor, ValueRange qcQubits,
   materialized.values.reserve(qcQubits.size());
   materialized.accesses.reserve(qcQubits.size());
 
+  // A dynamic index may alias any open slot, so close those registers before
+  // this operation claims constant slots of the same register.
+  for (auto qcQubit : qcQubits) {
+    if (const auto access = state.registerAccesses.find(qcQubit);
+        access != state.registerAccesses.end() &&
+        !getConstantIntValue(access->second.index)) {
+      std::ignore = flushTensor(state, anchor, access->second.reg, rewriter);
+    }
+  }
+
   for (auto qcQubit : qcQubits) {
     const auto accessIt = state.registerAccesses.find(qcQubit);
     if (accessIt == state.registerAccesses.end()) {
@@ -337,20 +383,25 @@ materializeQubits(LoweringState& state, Operation* anchor, ValueRange qcQubits,
     }
 
     const auto access = accessIt->second;
-    if (auto reg = state.scalarRegisterQubits.find(access.reg);
-        reg != state.scalarRegisterQubits.end()) {
-      auto& slot = reg->second[*getConstantIntValue(access.index)];
-      if (slot.qubit) {
-        materialized.values.push_back(slot.qubit);
+    const auto constant = getConstantIntValue(access.index);
+    if (constant) {
+      auto& slots = state.openSlots[{tensorRegion(state, anchor), access.reg}];
+      if (const auto* slot = slots.find(*constant); slot != slots.end()) {
+        materialized.values.push_back(slot->second.qubit);
         materialized.accesses.emplace_back(access);
         continue;
       }
-      slot.index = access.index;
     }
     auto tensor = lookupMappedTensor(state, anchor, access.reg);
     auto extract = qtensor::ExtractOp::create(rewriter, anchor->getLoc(),
                                               tensor, access.index);
     assignMappedTensor(state, anchor, access.reg, extract.getOutTensor());
+    if (constant) {
+      state.openSlots[{tensorRegion(state, anchor), access.reg}][*constant] = {
+          .index = access.index,
+          .qubit = extract.getResult(),
+      };
+    }
     materialized.values.push_back(extract.getResult());
     materialized.accesses.emplace_back(access);
   }
@@ -374,10 +425,9 @@ static void commitQubits(LoweringState& state, Operation* anchor,
       continue;
     }
 
-    if (auto reg = state.scalarRegisterQubits.find(access->reg);
-        reg != state.scalarRegisterQubits.end()) {
-      reg->second[*getConstantIntValue(access->index)].qubit =
-          qcoQubits[position];
+    if (const auto constant = getConstantIntValue(access->index)) {
+      state.openSlots[{tensorRegion(state, anchor), access->reg}][*constant]
+          .qubit = qcoQubits[position];
       continue;
     }
     auto tensor = lookupMappedTensor(state, anchor, access->reg);
@@ -388,8 +438,8 @@ static void commitQubits(LoweringState& state, Operation* anchor,
 }
 
 /// Resolves all structured QC state to QCO and QTensor values.
-[[nodiscard]] static SmallVector<Value> resolveAllValues(LoweringState& state,
-                                                         Operation* anchor) {
+[[nodiscard]] static SmallVector<Value>
+resolveAllValues(LoweringState& state, Operation* anchor, OpBuilder& builder) {
   auto* owner = structuredValueOwner(anchor);
   const auto& [qcQubits, registers] =
       state.structuredValues.find(owner)->second;
@@ -397,7 +447,7 @@ static void commitQubits(LoweringState& state, Operation* anchor,
   SmallVector<Value> qcoTargets;
   qcoTargets.reserve(registers.size() + qcQubits.size());
   for (auto reg : registers) {
-    qcoTargets.push_back(lookupMappedTensor(state, anchor, reg));
+    qcoTargets.push_back(flushTensor(state, anchor, reg, builder));
   }
   for (auto qubit : qcQubits) {
     qcoTargets.push_back(lookupMappedQubit(state, anchor, qubit));
@@ -700,57 +750,6 @@ collectReferenceBuffer(memref::AllocaOp allocation, LoweringState& state,
   return success();
 }
 
-/// Selects a local register whose constant slots stay in one block until free.
-static void collectScalarRegister(memref::AllocOp allocation,
-                                  LoweringState& state) {
-  auto type = allocation.getType();
-  if (!type.hasStaticShape() || type.getDimSize(0) <= 0 ||
-      !type.getLayout().isIdentity() || type.getMemorySpace()) {
-    return;
-  }
-  auto* block = allocation->getBlock();
-  memref::DeallocOp deallocation;
-  for (auto* user : allocation->getUsers()) {
-    if (auto dealloc = dyn_cast<memref::DeallocOp>(user)) {
-      if (deallocation || user->getBlock() != block) {
-        return;
-      }
-      deallocation = dealloc;
-    } else if (auto store = dyn_cast<memref::StoreOp>(user)) {
-      // The store check rejects unequal constants.
-      if (!getConstantIntValue(store.getIndices().front())) {
-        return;
-      }
-    } else if (!isa<memref::LoadOp>(user)) {
-      return;
-    }
-  }
-  if (!deallocation) {
-    return;
-  }
-  for (auto* user : allocation->getUsers()) {
-    auto load = dyn_cast<memref::LoadOp>(user);
-    if (!load) {
-      continue;
-    }
-    auto index = getConstantIntValue(load.getIndices().front());
-    if (!index || *index < 0 || *index >= type.getDimSize(0) ||
-        load->getBlock() != block || !load->isBeforeInBlock(deallocation)) {
-      return;
-    }
-    for (auto* consumer : load->getUsers()) {
-      if (consumer->getBlock() != block ||
-          !consumer->isBeforeInBlock(deallocation) ||
-          !isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, qc::DelayOp,
-               memref::StoreOp>(consumer)) {
-        return;
-      }
-    }
-  }
-  state.scalarRegisterQubits.try_emplace(
-      lookupRegisterId(state, allocation.getResult()));
-}
-
 /// Rejects register-backed operands that alias within one operation.
 [[nodiscard]] static LogicalResult
 checkDistinctOperands(Operation* operation, const LoweringState& state) {
@@ -851,7 +850,6 @@ collectRegisterAccesses(ModuleOp moduleOp, LoweringState& state) {
                   if (isa<qc::QubitType>(op.getType().getElementType())) {
                     const auto reg = state.registerIds.size();
                     state.registerIds.try_emplace(op.getResult(), reg);
-                    collectScalarRegister(op, state);
                   }
                   return success();
                 })
@@ -1018,7 +1016,8 @@ struct ConvertFuncReturnOp final : LoweringPattern<func::ReturnOp> {
     for (Value argument : state.functionQubitArguments[function]) {
       if (auto reg = state.registerIds.find(argument);
           reg != state.registerIds.end()) {
-        returnValues.emplace_back(lookupMappedTensor(state, op, reg->second));
+        returnValues.emplace_back(
+            flushTensor(state, op, reg->second, rewriter));
         continue;
       }
       auto* const current = map.find(argument);
@@ -1038,7 +1037,7 @@ struct ConvertFuncReturnOp final : LoweringPattern<func::ReturnOp> {
     }
     for (auto reg : state.localReferenceRegisters[funcRegion]) {
       qtensor::DeallocOp::create(rewriter, op.getLoc(),
-                                 lookupMappedTensor(state, op, reg));
+                                 flushTensor(state, op, reg, rewriter));
     }
     state.localReferenceRegisters.erase(funcRegion);
     state.qubitMap.erase(funcRegion);
@@ -1133,7 +1132,7 @@ struct ConvertFuncCallOp final : LoweringPattern<func::CallOp> {
     for (auto [index, source] : llvm::enumerate(op.getOperands())) {
       if (auto reg = state.registerIds.find(source);
           reg != state.registerIds.end()) {
-        operands[index] = lookupMappedTensor(state, op, reg->second);
+        operands[index] = flushTensor(state, op, reg->second, rewriter);
       } else if (isa<qc::QubitType, qco::QubitType>(source.getType())) {
         operands[index] = materialized.values[qubitIndex++];
       } else {
@@ -1314,19 +1313,9 @@ struct ConvertMemRefDeallocOp final : LoweringPattern<memref::DeallocOp> {
     }
 
     auto& state = getState();
-    auto& tensorMap = state.tensorMap[op->getParentRegion()];
     const auto reg = lookupRegisterId(state, memref);
-    auto qtensor = lookupMappedTensor(state, op.getOperation(), reg);
-    if (auto cached = state.scalarRegisterQubits.find(reg);
-        cached != state.scalarRegisterQubits.end()) {
-      for (auto& slot : llvm::make_second_range(cached->second)) {
-        qtensor = qtensor::InsertOp::create(rewriter, op.getLoc(), slot.qubit,
-                                            qtensor, slot.index)
-                      .getResult();
-      }
-      state.scalarRegisterQubits.erase(cached);
-    }
-    tensorMap.erase(reg);
+    auto qtensor = flushTensor(state, op.getOperation(), reg, rewriter);
+    state.tensorMap[op->getParentRegion()].erase(reg);
 
     rewriter.replaceOpWithNewOp<qtensor::DeallocOp>(op, qtensor);
     return success();
@@ -1623,7 +1612,7 @@ struct ConvertSCFForOp final : LoweringPattern<scf::ForOp> {
     const auto numRegisters = registers.size();
     const auto numQubits = qubits.size();
 
-    auto qcoTargets = resolveAllValues(state, operation);
+    auto qcoTargets = resolveAllValues(state, operation, rewriter);
     const auto numOriginalResults = op.getNumResults();
     SmallVector<Value> initArgs(op.getInitArgs());
     llvm::append_range(initArgs, qcoTargets);
@@ -1677,7 +1666,7 @@ struct ConvertSCFWhileOp final : LoweringPattern<scf::WhileOp> {
     const auto numRegisters = registers.size();
     const auto numQubits = qubits.size();
 
-    auto qcoTargets = resolveAllValues(state, operation);
+    auto qcoTargets = resolveAllValues(state, operation, rewriter);
     const auto numOriginalInits = op.getInits().size();
     const auto numOriginalResults = op.getNumResults();
     SmallVector<Value> initArgs(op.getInits());
@@ -1759,7 +1748,7 @@ struct ConvertSCFIfOp final : LoweringPattern<scf::IfOp> {
     const auto numRegisters = registers.size();
     const auto numQubits = qubits.size();
 
-    auto qcoTargets = resolveAllValues(state, operation);
+    auto qcoTargets = resolveAllValues(state, operation, rewriter);
 
     auto newIfOp = IfOp::create(rewriter, op.getLoc(), op.getResultTypes(),
                                 ValueRange(qcoTargets).getTypes(),
@@ -1821,7 +1810,7 @@ struct ConvertSCFIndexSwitchOp final : LoweringPattern<scf::IndexSwitchOp> {
     const auto numRegisters = registers.size();
     const auto numQubits = qubits.size();
 
-    const auto targets = resolveAllValues(state, operation);
+    const auto targets = resolveAllValues(state, operation, rewriter);
     const auto linearResultTypes = ValueRange(targets).getTypes();
     const SmallVector locs(targets.size(), op.getLoc());
 
@@ -1871,7 +1860,7 @@ struct ConvertSCFYieldOp final : LoweringPattern<scf::YieldOp> {
     auto* operation = op.getOperation();
 
     SmallVector<Value> targets(op.getResults());
-    llvm::append_range(targets, resolveAllValues(state, operation));
+    llvm::append_range(targets, resolveAllValues(state, operation, rewriter));
     state.qubitMap.erase(op->getParentRegion());
     state.tensorMap.erase(op->getParentRegion());
 
@@ -1894,7 +1883,7 @@ struct ConvertSCFConditionOp final : LoweringPattern<scf::ConditionOp> {
     auto* operation = op.getOperation();
 
     SmallVector<Value> targets(op.getArgs());
-    llvm::append_range(targets, resolveAllValues(state, operation));
+    llvm::append_range(targets, resolveAllValues(state, operation, rewriter));
     state.qubitMap.erase(op->getParentRegion());
     state.tensorMap.erase(op->getParentRegion());
 
