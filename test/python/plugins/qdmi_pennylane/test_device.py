@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import warnings
+from functools import partial
 from importlib.util import find_spec
 from typing import TYPE_CHECKING, cast
 
@@ -39,6 +40,10 @@ if TYPE_CHECKING:
     from mqt.core.typing import QDMISessionParameters
 
 
+# Keep idle DDSIM sites beyond the largest eight-wire PennyLane circuit.
+_ddsim_device = partial(QDMIDevice, "mqt.ddsim.default", session_parameters={"custom1": "16"})
+
+
 @pytest.mark.parametrize("installed", ["0.14.1", "0.15.0rc1", "1.0.0rc1", "1.0.0"])
 def test_rejects_incompatible_catalyst_abi(monkeypatch: pytest.MonkeyPatch, installed: str) -> None:
     """Reject unsupported runtimes before they can call an incompatible C++ vtable."""
@@ -49,7 +54,7 @@ def test_rejects_incompatible_catalyst_abi(monkeypatch: pytest.MonkeyPatch, inst
 
 def test_validates_configuration_and_width() -> None:
     """Reject invalid configuration before executing a circuit."""
-    provider = open_device("mqt.ddsim.default")
+    provider = open_device("mqt.ddsim.default", custom1="16")
     with pytest.raises(PennyLaneConfigurationError, match="unknown"):
         QDMIDevice(
             "mqt.ddsim.default",
@@ -75,7 +80,7 @@ def test_invalid_retry_configuration(value: object) -> None:
 @pytest.mark.parametrize("all_wires", [False, True])
 def test_compiles_only_requested_wires(*, all_wires: bool) -> None:
     """A small tape does not turn idle device wires into readout obligations."""
-    device = QDMIDevice("mqt.ddsim.default", wires=8)
+    device = _ddsim_device(wires=8)
     tape = qp.tape.QuantumScript([qp.X(7)], [qp.sample() if all_wires else qp.sample(wires=[7])], shots=2)
     result = device.execute(tape)
     expected = [0] * 7 + [1] if all_wires else [1]
@@ -89,13 +94,13 @@ def test_compiles_only_requested_wires(*, all_wires: bool) -> None:
 def test_forwards_job_parameters() -> None:
     """The DDSIM seed reaches the provider through native submission."""
     tape = qp.tape.QuantumScript([qp.Hadamard(0)], [qp.sample(wires=[0, 1])], shots=64)
-    results = [QDMIDevice("mqt.ddsim.default", wires=2, job_parameters={"custom1": 42}).execute(tape) for _ in range(2)]
+    results = [_ddsim_device(wires=2, job_parameters={"custom1": 42}).execute(tape) for _ in range(2)]
     np.testing.assert_array_equal(results[0], results[1])
 
 
 def test_native_groups_preserve_heterogeneous_shot_partitions() -> None:
     """Real multi-program jobs preserve tape order, wire order, and shot copies."""
-    provider = open_device("mqt.ddsim.default")
+    provider = open_device("mqt.ddsim.default", custom1="16")
     device = QDMIDevice(device=provider, wires=2)
     assert device.qdmi_device is provider
     tapes = (
@@ -115,7 +120,7 @@ def test_native_groups_preserve_heterogeneous_shot_partitions() -> None:
 
 def test_submit_exposes_native_jobs_before_collection() -> None:
     """Retain real provider handles without waiting or decoding the batch."""
-    device = QDMIDevice("mqt.ddsim.default", wires=2)
+    device = _ddsim_device(wires=2)
     tapes = (
         qp.tape.QuantumScript([qp.X(0)], [qp.sample(wires=[1, 0])], shots=[2, 3]),
         qp.tape.QuantumScript([qp.X(1)], [qp.sample(wires=[1, 0])], shots=3),
@@ -138,7 +143,7 @@ def test_submit_exposes_native_jobs_before_collection() -> None:
 
 def test_empty_batch_keeps_execution_state() -> None:
     """Empty execution does not compile, submit, or record a batch."""
-    device = QDMIDevice("mqt.ddsim.default", wires=2)
+    device = _ddsim_device(wires=2)
     with qp.Tracker(device) as tracker:
         assert device.execute(()) == ()
     assert device.last_job is None
@@ -152,7 +157,7 @@ def test_execution_time_accumulates_batch_wall_time(monkeypatch: pytest.MonkeyPa
     """Count overlapping execution once per submit/collect phase."""
     readings = iter([0.0, 0.5, 0.5, 1.5, 10.0, 11.0, 11.0, 12.25])
     monkeypatch.setattr("mqt.core.plugins.pennylane.job.monotonic", lambda: next(readings))
-    device = QDMIDevice("mqt.ddsim.default", wires=2)
+    device = _ddsim_device(wires=2)
     tape = qp.tape.QuantumScript([qp.X(0)], [qp.sample(wires=[0, 1])], shots=[(5, 2), 7])
     device.execute(tape)
     device.execute(tape)
@@ -176,8 +181,7 @@ def test_retry_shot_copies_preserves_order_and_tracking(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(QDMIJobHandle, "check", check)
     wires = ["left", "idle", "right"]
-    device = QDMIDevice(
-        "mqt.ddsim.default",
+    device = _ddsim_device(
         wires=wires,
         max_retries=max_retries,
         program_format=ProgramFormat.QASM3,
@@ -221,8 +225,7 @@ def test_openqasm2_execution(capfd: pytest.CaptureFixture[str], *, compiled: boo
     """The shared compiler applies the format and compile options in both PennyLane paths."""
     if compiled and find_spec("catalyst") is None:
         pytest.skip("Install Catalyst to run compiled device tests.")
-    device = QDMIDevice(
-        "mqt.ddsim.default",
+    device = _ddsim_device(
         wires=2,
         program_format=ProgramFormat.QASM2,
         compile_options=CompilationOptions(enable_timing=True),
@@ -250,7 +253,7 @@ def test_subclass_observes_each_compiled_program() -> None:
             self.programs.append(program)
             return program
 
-    device = RecordingDevice("mqt.ddsim.default", wires=2)
+    device = RecordingDevice("mqt.ddsim.default", wires=2, session_parameters={"custom1": "16"})
     device.programs = []
     tapes = (
         qp.tape.QuantumScript([qp.X(1)], [qp.sample(wires=[1, 0])], shots=2),
@@ -291,7 +294,7 @@ def test_warns_once_for_new_catalyst_abi(monkeypatch: pytest.MonkeyPatch, instal
 
 def test_local_results_need_no_provider_job() -> None:
     """Empty readout and untouched measured wires are completed locally."""
-    device = QDMIDevice("mqt.ddsim.default", wires=2)
+    device = _ddsim_device(wires=2)
     empty = qp.tape.QuantumScript([], [], shots=[2, 3])
     measured = qp.tape.QuantumScript(
         [],
@@ -312,7 +315,7 @@ def test_local_results_need_no_provider_job() -> None:
 def test_aggregate_readout_preserves_wires_and_shot_partitions() -> None:
     """Histograms retain all-wire measurements, subset ordering, and cached results."""
     wires = ["left", "idle", "right"]
-    device = QDMIDevice("mqt.ddsim.default", wires=wires)
+    device = _ddsim_device(wires=wires)
     tape = qp.tape.QuantumScript(
         [qp.X("right")],
         [
@@ -349,4 +352,4 @@ def test_custom_measurement_keeps_sample_processing() -> None:
             return 2 * super().process_samples(samples, wire_order, shot_range, bin_size)
 
     tape = qp.tape.QuantumScript([qp.X(0)], [TwiceExpectation(qp.Z(0))], shots=2)
-    assert QDMIDevice("mqt.ddsim.default", wires=1).execute(tape) == -2
+    assert _ddsim_device(wires=1).execute(tape) == -2

@@ -2383,7 +2383,7 @@ def gil_probe() -> tuple[str, QCOProgram]:
         Invalid OpenQASM for the parsing checks and a typed program for compilation.
     """
     source = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q;\n' + (
-        "rx(0.1) q[0]; cx q[0],q[1]; rz(0.2) q[1];\n" * 2000
+        "rx(0.1) q[0]; cx q[0],q[1]; rz(0.2) q[1];\n" * 256
     )
     return source + "unknown_gate q[0];", compile_program(source, output=OutputFormat.QCO)
 
@@ -2397,8 +2397,11 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str, gil_probe: t
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
+    # Resolving a device inside the probe could release the GIL before compilation.
+    environment = _test_target_environment(target)
     path = tmp_path / "invalid.qasm"
-    path.write_text(invalid_source, encoding="utf-8")
+    if mode == "path":
+        path.write_text(invalid_source, encoding="utf-8")
     start = Event()
     progress = Event()
 
@@ -2420,7 +2423,7 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str, gil_probe: t
             elif mode == "target_output":
                 compile_program(program, target=target, output=OutputFormat.OPENQASM3, copy=True)
             elif mode == "target_payload":
-                compile_program(program, target="mqt.ddsim.default", copy=True)
+                compile_program(program, target=environment, copy=True)
             else:
                 # Parsing fails before the compilation release scope can be reached.
                 with pytest.raises(RuntimeError, match="No OpenQASM definition found for gate 'unknown_gate'"):

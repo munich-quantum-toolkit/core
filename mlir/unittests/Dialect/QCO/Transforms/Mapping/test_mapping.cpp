@@ -40,6 +40,7 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Types.h"
@@ -1505,11 +1506,12 @@ TEST_F(MappingPassFixture, RejectIndexCapacityBeforeMutation) {
       return success();
     });
 
-    const auto before = printModule(*moduleOp);
+    OwningOpRef<ModuleOp> before = moduleOp->clone();
     EXPECT_TRUE(failed(placement
                            ? runPlacement(*moduleOp)
                            : runMapping(*moduleOp, MappingPassOptions{})));
-    EXPECT_EQ(printModule(*moduleOp), before);
+    EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+        *moduleOp, *before, OperationEquivalence::Flags::None));
     EXPECT_TRUE(StringRef(diagnostics).contains("mapping index capacity"));
   }
 }

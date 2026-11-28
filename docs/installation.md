@@ -268,8 +268,9 @@ pass `-DENABLE_IPO=OFF` to disable LTO. GCC can use mold 3 or newer with
 plugin; LLD includes the required support. MSVC IPO applies to static libraries
 and DLLs with explicit exports; CMake cannot extract automatic exports from MSVC
 IPO objects. MSVC builds with native tests default IPO off because each test
-link otherwise repeats code generation from the libraries. Use `-DENABLE_IPO=ON`
-to test IPO explicitly. The Windows Clang preset and release wheels enable IPO.
+link otherwise repeats code generation from the libraries. Windows native CI
+also disables IPO to shorten test links. Use `-DENABLE_IPO=ON` to test IPO
+explicitly. Local Windows Clang Release builds and release wheels enable IPO.
 
 On Linux, Clang caches ThinLTO results when using LLD or mold from the SDK.
 Windows and macOS also cache ThinLTO with their linkers. The linkers prune the
