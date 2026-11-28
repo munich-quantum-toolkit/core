@@ -21,7 +21,6 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QIR/Execution/JIT/Session.h"
-#include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
@@ -41,7 +40,6 @@
 #include <string>
 #include <utility>
 #include <variant>
-#include <vector>
 
 using mqt::test::value;
 
@@ -99,15 +97,16 @@ static void expectQIRSampling(const Benchmark& benchmark, QIRProgram qirProgram,
       llvm::StringRef(reinterpret_cast<const char*>(bitcode->data()),
                       bitcode->size()),
       "benchmark-bitcode", qir::Execution::Sampling, 17));
-  session->runtime().disableOutput();
-  std::vector<std::string> outcomes;
-  ASSERT_EQ(value(session->sample(shots, outcomes)), 0);
-  ASSERT_EQ(outcomes.size(), shots);
+  Counts recordedCounts;
+  ASSERT_EQ(value(session->sampleCounts(shots, recordedCounts)), 0);
   Counts qirCounts;
-  for (const auto& outcome : outcomes) {
+  size_t recordedShots = 0;
+  for (const auto& [outcome, count] : recordedCounts) {
     // QIR records bit zero first; benchmark evaluators use big-endian strings.
-    ++qirCounts[std::string(outcome.rbegin(), outcome.rend())];
+    qirCounts.emplace(std::string(outcome.rbegin(), outcome.rend()), count);
+    recordedShots += count;
   }
+  ASSERT_EQ(recordedShots, shots);
   expectReference(benchmark, qirCounts);
 }
 
