@@ -16,13 +16,11 @@
 
 namespace mlir {
 class QCProgram;
-class TargetEnvironment;
 } // namespace mlir
 
 /// Optional file serializer; receives compiled QC without execution
-/// preparation.
-using MQTQPYWriter = llvm::Expected<std::string> (*)(
-    mlir::QCProgram, const mlir::TargetEnvironment*);
+/// preparation, with any target environment attached.
+using MQTQPYWriter = llvm::Expected<std::string> (*)(mlir::QCProgram);
 
 int mqtCoreRunCompiler(int argc, char** argv, MQTQPYWriter qpyWriter = nullptr);
 int mqtCoreRunBench(int argc, char** argv);

@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mqt/Compiler/ProgramFormat.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 
@@ -29,7 +30,6 @@
 namespace mlir {
 
 class MLIRContext;
-enum class ProgramFormat : uint8_t;
 
 namespace mqt {
 class PayloadSpecAttr;
@@ -113,7 +113,9 @@ public:
   ///
   /// Versions accept numeric ceilings or comma-conjoined >=, <, <= bounds.
   /// Bare versions retain a same-major ceiling; omitted components are zero.
-  /// An empty version identifies an unversioned format.
+  /// An empty version identifies an unversioned format. OpenQASM, QIR and
+  /// IQM JSON specifications must select a version, profile and encoding the
+  /// compiler emits.
   [[nodiscard]] static llvm::Expected<PayloadSpecification>
   create(PayloadFormat format, std::vector<ProgramCapability> capabilities = {},
          bool optionalCapabilitiesKnown = false);
@@ -131,7 +133,10 @@ public:
   versionRange() const noexcept;
 
   /// Return the compiler output selected by the program format.
-  [[nodiscard]] llvm::Expected<ProgramFormat> compilerOutput() const;
+  ///
+  /// Specifications of OpenQASM, QIR and IQM JSON always name an output the
+  /// compiler emits. Other formats, such as QPY, have none.
+  [[nodiscard]] std::optional<ProgramFormat> compilerOutput() const noexcept;
 
   /// Return the supported program features in reported order.
   [[nodiscard]] llvm::ArrayRef<ProgramCapability> capabilities() const noexcept;
@@ -158,12 +163,14 @@ private:
   PayloadSpecification(PayloadFormat format,
                        std::optional<mqt::PayloadVersionRange> versions,
                        std::vector<ProgramCapability> capabilities,
-                       bool optionalCapabilitiesKnown);
+                       bool optionalCapabilitiesKnown,
+                       std::optional<ProgramFormat> output);
 
   PayloadFormat format_;
   std::optional<mqt::PayloadVersionRange> versionRange_;
   std::vector<ProgramCapability> capabilities_;
   bool optionalCapabilitiesKnown_;
+  std::optional<ProgramFormat> output_;
 };
 
 /// Hardware target and execution format, independent of an MLIR context.
@@ -190,6 +197,11 @@ public:
   /// execution format's other control-flow limits still apply.
   [[nodiscard]] bool supportsIndexedQubits() const noexcept;
 
+  /// Whether payloads must not contain global phases.
+  ///
+  /// IQM JSON cannot express them, and targets may not support `gphase`.
+  [[nodiscard]] bool dropsGlobalPhases() const;
+
   /// Materialize the pair as a typed MLIR attribute.
   [[nodiscard]] mqt::TargetEnvAttr materialize(MLIRContext& context) const;
 
@@ -207,9 +219,8 @@ void attachTargetEnvironment(ModuleOp moduleOp,
 /// Cached, validated view of a module's canonical target environment.
 class TargetEnvironmentAnalysis {
 public:
-  /// Prefer the prepared environment; otherwise decode the module attribute.
-  explicit TargetEnvironmentAnalysis(
-      Operation* operation, const TargetEnvironment* environment = nullptr);
+  /// Decode the module attribute on first use.
+  explicit TargetEnvironmentAnalysis(Operation* operation);
 
   /// Attach and cache a prepared environment without rebuilding its target.
   void initialize(const TargetEnvironment& environment);
@@ -230,7 +241,7 @@ public:
   isInvalidated(const AnalysisManager::PreservedAnalyses& analyses) const;
 
 private:
-  /// Decode IR only when no prepared environment was supplied.
+  /// Decode the attribute unless an environment was initialized.
   void resolve() const;
 
   ModuleOp moduleOp_;

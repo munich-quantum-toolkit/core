@@ -2018,7 +2018,9 @@ TEST_F(CompilerPipelineTest, QIRChecksLoopBoundsBeforeLowering) {
     auto output = [&] {
       ScopedDiagnosticHandler handler(input->module().getContext(),
                                       [](Diagnostic&) { return success(); });
-      return input->copy().intoQIR(QIRProfile::Adaptive, &environment);
+      auto copy = input->copy();
+      attachTargetEnvironment(copy.module(), environment);
+      return std::move(copy).intoQIR(QIRProfile::Adaptive);
     }();
     ASSERT_EQ(succeeded(output), branchFlag != 0);
     if (branchFlag == 0) {
@@ -2092,20 +2094,18 @@ TEST_F(CompilerPipelineTest, QIRReceiverRangePromotesMinimumVersion) {
   for (const auto* version : {">=2,<3", ">=2.1,<3", ">=2.2,<3", "2.99"}) {
     auto input = QCProgram::fromOpenQASMString("OPENQASM 3; qubit q; h q;");
     MQT_ASSERT_SUCCESS(input);
-    const auto payload = llvm::cantFail(PayloadSpecification::create(
-        {.id = "qir", .version = version, .profile = "base"}));
-    attachTargetEnvironment(
-        input->module(),
-        TargetEnvironment(
-            makeUnrestrictedTarget(),
-            llvm::cantFail(PayloadSpecification::create(
-                {.id = "qir", .version = ">=2.2,<3", .profile = "base"}))));
-    const TargetEnvironment environment(makeUnrestrictedTarget(), payload);
-    auto result = std::move(*input).intoQIR(QIRProfile::Base, &environment);
+    auto payload = PayloadSpecification::create(
+        {.id = "qir", .version = version, .profile = "base"});
+    // No known QIR version satisfies this receiver range.
     if (StringRef(version) == ">=2.2,<3") {
-      EXPECT_TRUE(failed(result));
+      EXPECT_FALSE(static_cast<bool>(payload));
+      llvm::consumeError(payload.takeError());
       continue;
     }
+    attachTargetEnvironment(
+        input->module(), TargetEnvironment(makeUnrestrictedTarget(),
+                                           llvm::cantFail(std::move(payload))));
+    auto result = std::move(*input).intoQIR(QIRProfile::Base);
     MQT_ASSERT_SUCCESS(result);
     ASSERT_TRUE(succeeded(result->cleanup()));
     auto ir = std::move(*result).intoLLVMIR();
@@ -2125,7 +2125,8 @@ TEST_F(CompilerPipelineTest, ValidatesCapabilitiesAfterMemoryPromotion) {
         makeUnrestrictedTarget(),
         llvm::cantFail(PayloadSpecification::create(
             {.id = "qir", .version = version, .profile = "adaptive"})));
-    auto program = std::move(*qc).intoQIR(QIRProfile::Adaptive, &environment);
+    attachTargetEnvironment(qc->module(), environment);
+    auto program = std::move(*qc).intoQIR(QIRProfile::Adaptive);
     MQT_ASSERT_SUCCESS(program);
     auto ir = std::move(*program).intoLLVMIR();
     MQT_ASSERT_SUCCESS(ir);
@@ -5667,7 +5668,9 @@ TEST_F(CompilerPipelineTest, TableSwitchCountsExplicitLabelsAgainstPayload) {
                     .constraints = {{.id = "max-case-count", .value = limit}},
                 },
             })));
-    auto source = program->copy().intoOpenQASM3(&environment);
+    auto copy = program->copy();
+    attachTargetEnvironment(copy.module(), environment);
+    auto source = std::move(copy).intoOpenQASM3();
     ASSERT_EQ(succeeded(source), limit == 2);
     if (succeeded(source)) {
       EXPECT_TRUE(StringRef(source->source()).contains("case 1, 3"));
@@ -6520,15 +6523,35 @@ TEST_F(CompilerPipelineTest, NativePulseOpenQASMPreservesArityAndPhase) {
           llvm::cantFail(Capability::create("gpi2", 1, 1)),
           llvm::cantFail(Capability::create("measure", 1, 0)),
       })));
-  const TargetEnvironment environment(target, makePayloadSpecification());
+  const TargetEnvironment environment(
+      target, llvm::cantFail(PayloadSpecification::forProgramFormat(
+                  ProgramFormat::OpenQASM3)));
   auto qc = QCProgram::fromOpenQASMString(
       "OPENQASM 3; include \"stdgates.inc\"; qubit q; "
       "ry(0.73) q; rz(0.37) q; rx(-1.2) q;");
   MQT_ASSERT_SUCCESS(qc);
   auto original = std::move(*qc).intoQCO();
   ASSERT_TRUE(succeeded(original));
+  auto executable = runDefaultPipeline(original->copy(),
+                                       ProgramFormat::OpenQASM3, environment);
+  MQT_ASSERT_SUCCESS(executable);
+  const auto& payload = std::get<OpenQASMProgram>(*executable).source();
+  EXPECT_NE(payload.find("gpi("), std::string::npos);
+  EXPECT_EQ(payload.find("gphase("), std::string::npos);
+  // A target that supports gphase keeps the alias phase corrections.
+  const TargetEnvironment phased(
+      llvm::cantFail(CompilerTarget::create(
+          1, CompilerTarget::Connectivity::allToAll(),
+          CompilerTarget::NativeOperations::fromOperations({
+              llvm::cantFail(Capability::create("gpi", 1, 1)),
+              llvm::cantFail(Capability::create("gpi2", 1, 1)),
+              llvm::cantFail(Capability::create("gphase", 0, 1)),
+              llvm::cantFail(Capability::create("measure", 1, 0)),
+          }))),
+      llvm::cantFail(
+          PayloadSpecification::forProgramFormat(ProgramFormat::OpenQASM3)));
   auto native = original->copy();
-  ASSERT_TRUE(succeeded(native.compileForTarget(environment)));
+  ASSERT_TRUE(succeeded(native.compileForTarget(phased)));
   auto lowered = std::move(native).intoQC();
   ASSERT_TRUE(succeeded(lowered));
   auto emitted = std::move(*lowered).intoOpenQASM3();
@@ -7518,7 +7541,8 @@ TEST_F(CompilerPipelineTest,
   EXPECT_LE(count, 4U);
   auto qc = std::move(*program).intoQC();
   MQT_ASSERT_SUCCESS(qc);
-  auto output = std::move(*qc).intoOpenQASM3(&environment);
+  attachTargetEnvironment(qc->module(), environment);
+  auto output = std::move(*qc).intoOpenQASM3();
   MQT_ASSERT_SUCCESS(output);
   EXPECT_EQ(StringRef(output->source()).count("sqrt_iswap "), count);
 }

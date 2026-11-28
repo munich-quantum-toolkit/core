@@ -13,6 +13,7 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/Target.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Target/QIR/Capabilities.h"
 
 #include "mlir/IR/BuiltinOps.h"
@@ -56,13 +57,51 @@ bool isControlFlowCapability(const llvm::StringRef id) {
          id == ProgramCapability::CLASSICAL_ASSIGNMENT;
 }
 
+/// Return the compiler output for a format, if the compiler can emit it.
+static std::optional<ProgramFormat>
+resolveCompilerOutput(const PayloadFormat& format,
+                      const std::optional<mqt::PayloadVersionRange>& versions) {
+  const bool text = format.encoding == PayloadEncoding::Text;
+  if (format.id == mqt::IQM_JSON_FORMAT_ID && format.version.empty() &&
+      format.profile.empty() && text) {
+    return ProgramFormat::IQMJSON;
+  }
+  if (format.id == mqt::OPENQASM_FORMAT_ID && versions &&
+      format.profile.empty() && text) {
+    if (versions->withinMajor(2) &&
+        versions->contains(llvm::VersionTuple(2, 0))) {
+      return ProgramFormat::OpenQASM2;
+    }
+    if (versions->withinMajor(3) &&
+        versions->select({llvm::VersionTuple(3, 0), llvm::VersionTuple(3, 1)},
+                         llvm::VersionTuple(3))) {
+      return ProgramFormat::OpenQASM3;
+    }
+  }
+  if (format.id == mqt::QIR_FORMAT_ID && versions && versions->withinMajor(2) &&
+      versions->select({llvm::VersionTuple(2, 0), llvm::VersionTuple(2, 1)},
+                       llvm::VersionTuple(2))) {
+    if (format.profile == mqt::QIR_BASE_PROFILE) {
+      return ProgramFormat::QIRBase;
+    }
+    if (format.profile == mqt::QIR_ADAPTIVE_PROFILE) {
+      return ProgramFormat::QIRAdaptive;
+    }
+  }
+  return std::nullopt;
+}
+
 llvm::Expected<PayloadSpecification>
 PayloadSpecification::forProgramFormat(ProgramFormat format,
                                        PayloadEncoding encoding) {
   switch (format) {
   case ProgramFormat::OpenQASM2:
     return PayloadSpecification::create(
-        {.id = "openqasm", .version = ">=2,<3", .encoding = encoding},
+        {
+            .id = mqt::OPENQASM_FORMAT_ID.str(),
+            .version = ">=2,<3",
+            .encoding = encoding,
+        },
         {
             {
                 .id = ProgramCapability::FORWARD_BRANCHING.str(),
@@ -78,7 +117,7 @@ PayloadSpecification::forProgramFormat(ProgramFormat format,
   case ProgramFormat::OpenQASM3:
     return PayloadSpecification::create(
         {
-            .id = "openqasm",
+            .id = mqt::OPENQASM_FORMAT_ID.str(),
             .version = ">=3,<4",
             .profile = "",
             .encoding = encoding,
@@ -91,12 +130,12 @@ PayloadSpecification::forProgramFormat(ProgramFormat format,
             {.id = ProgramCapability::CLASSICAL_ASSIGNMENT.str()},
         });
   case ProgramFormat::IQMJSON:
-    return create({.id = "iqm-json", .encoding = encoding});
+    return create({.id = mqt::IQM_JSON_FORMAT_ID.str(), .encoding = encoding});
   case ProgramFormat::QIRBase:
     return PayloadSpecification::create({
-        .id = "qir",
+        .id = mqt::QIR_FORMAT_ID.str(),
         .version = ">=2,<3",
-        .profile = "base",
+        .profile = mqt::QIR_BASE_PROFILE.str(),
         .encoding = encoding,
     });
   case ProgramFormat::QIRAdaptive: {
@@ -111,9 +150,9 @@ PayloadSpecification::forProgramFormat(ProgramFormat format,
     }
     return PayloadSpecification::create(
         {
-            .id = "qir",
+            .id = mqt::QIR_FORMAT_ID.str(),
             .version = ">=2,<3",
-            .profile = "adaptive",
+            .profile = mqt::QIR_ADAPTIVE_PROFILE.str(),
             .encoding = encoding,
         },
         std::move(capabilities));
@@ -169,7 +208,7 @@ PayloadSpecification::create(PayloadFormat format,
       return invalidPayload(
           "Program capability ID must not contain a null character");
     }
-    if (format.id == "openqasm" && !format.version.empty() &&
+    if (format.id == mqt::OPENQASM_FORMAT_ID && !format.version.empty() &&
         versions->withinMajor(3) &&
         !versions->contains(llvm::VersionTuple(3, 1)) &&
         capability.id == ProgramCapability::MULTIWAY_BRANCHING) {
@@ -199,9 +238,18 @@ PayloadSpecification::create(PayloadFormat format,
     }
   }
 
+  // The compiler's own formats must name an output it can emit.
+  const auto output = resolveCompilerOutput(format, versions);
+  if ((format.id == mqt::OPENQASM_FORMAT_ID ||
+       format.id == mqt::QIR_FORMAT_ID ||
+       format.id == mqt::IQM_JSON_FORMAT_ID) &&
+      !output) {
+    return invalidPayload(
+        "MQT Compiler cannot emit the selected payload format");
+  }
   return PayloadSpecification(std::move(format), versions,
                               std::move(capabilities),
-                              optionalCapabilitiesKnown);
+                              optionalCapabilitiesKnown, output);
 }
 
 llvm::Expected<PayloadSpecification>
@@ -252,10 +300,10 @@ PayloadSpecification::create(const mqt::PayloadSpecAttr attribute) {
 PayloadSpecification::PayloadSpecification(
     PayloadFormat format, std::optional<mqt::PayloadVersionRange> versions,
     std::vector<ProgramCapability> capabilities,
-    const bool optionalCapabilitiesKnown)
+    const bool optionalCapabilitiesKnown, std::optional<ProgramFormat> output)
     : format_(std::move(format)), versionRange_(versions),
       capabilities_(std::move(capabilities)),
-      optionalCapabilitiesKnown_(optionalCapabilitiesKnown) {}
+      optionalCapabilitiesKnown_(optionalCapabilitiesKnown), output_(output) {}
 
 const std::optional<mqt::PayloadVersionRange>&
 PayloadSpecification::versionRange() const noexcept {
@@ -266,37 +314,9 @@ const PayloadFormat& PayloadSpecification::format() const noexcept {
   return format_;
 }
 
-llvm::Expected<ProgramFormat> PayloadSpecification::compilerOutput() const {
-  if (format_.id == "iqm-json" && format_.version.empty() &&
-      format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
-    return ProgramFormat::IQMJSON;
-  }
-  if (format_.id == "openqasm" && versionRange_ &&
-      versionRange_->withinMajor(2) &&
-      versionRange_->contains(llvm::VersionTuple(2, 0)) &&
-      format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
-    return ProgramFormat::OpenQASM2;
-  }
-  if (format_.id == "openqasm" && versionRange_ &&
-      versionRange_->withinMajor(3) &&
-      versionRange_->select(
-          {llvm::VersionTuple(3, 0), llvm::VersionTuple(3, 1)},
-          llvm::VersionTuple(3)) &&
-      format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
-    return ProgramFormat::OpenQASM3;
-  }
-  if (format_.id == "qir" && versionRange_ && versionRange_->withinMajor(2) &&
-      versionRange_->select(
-          {llvm::VersionTuple(2, 0), llvm::VersionTuple(2, 1)},
-          llvm::VersionTuple(2))) {
-    if (format_.profile == "base") {
-      return ProgramFormat::QIRBase;
-    }
-    if (format_.profile == "adaptive") {
-      return ProgramFormat::QIRAdaptive;
-    }
-  }
-  return invalidPayload("MQT Compiler cannot emit the selected payload format");
+std::optional<ProgramFormat>
+PayloadSpecification::compilerOutput() const noexcept {
+  return output_;
 }
 
 llvm::ArrayRef<ProgramCapability>
@@ -341,7 +361,8 @@ PayloadSpecification PayloadSpecification::restrictCapabilities(
     capabilities.push_back(std::move(restricted));
   }
   return {format_, versionRange_, std::move(capabilities),
-          optionalCapabilitiesKnown_ && other.optionalCapabilitiesKnown_};
+          optionalCapabilitiesKnown_ && other.optionalCapabilitiesKnown_,
+          output_};
 }
 
 bool PayloadSpecification::supportsUnrestrictedMultiwayBranching()
@@ -412,10 +433,16 @@ TargetEnvironment::payloadSpecification() const noexcept {
 
 bool TargetEnvironment::supportsIndexedQubits() const noexcept {
   const auto& format = payloadSpecification_.format();
-  return format.id == "qir" && format.profile == "adaptive" &&
+  return format.id == mqt::QIR_FORMAT_ID &&
+         format.profile == mqt::QIR_ADAPTIVE_PROFILE &&
          target_.connectivityKind() ==
              CompilerTarget::Connectivity::Kind::AllToAll &&
          target_.supportsIndexedSynthesis();
+}
+
+bool TargetEnvironment::dropsGlobalPhases() const {
+  return payloadSpecification_.format().id == mqt::IQM_JSON_FORMAT_ID ||
+         !target_.supportsOperation("gphase", 0, 1);
 }
 
 mqt::TargetEnvAttr TargetEnvironment::materialize(MLIRContext& context) const {
@@ -430,13 +457,10 @@ void attachTargetEnvironment(ModuleOp moduleOp,
   moduleOp->setAttr(mqt::TargetEnvAttr::name, environment.materialize(context));
 }
 
-TargetEnvironmentAnalysis::TargetEnvironmentAnalysis(
-    Operation* operation, const TargetEnvironment* environment)
+TargetEnvironmentAnalysis::TargetEnvironmentAnalysis(Operation* operation)
     : moduleOp_(cast<ModuleOp>(operation)),
       attribute_(moduleOp_->getAttrOfType<mqt::TargetEnvAttr>(
-          mqt::TargetEnvAttr::name)),
-      environment_(environment != nullptr ? std::optional(*environment)
-                                          : std::nullopt) {}
+          mqt::TargetEnvAttr::name)) {}
 
 void TargetEnvironmentAnalysis::initialize(
     const TargetEnvironment& environment) {

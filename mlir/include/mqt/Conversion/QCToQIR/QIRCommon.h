@@ -111,7 +111,7 @@ struct LoweringState {
 [[nodiscard]] FailureOr<std::optional<PayloadSpecification>>
 prepareQIRTarget(ModuleOp moduleOp, QIRProfile profile, LoweringState& state,
                  function_ref<LogicalResult(OpPassManager&)> runPipeline,
-                 const TargetEnvironment* environment = nullptr);
+                 const TargetEnvironmentAnalysis& environment);
 
 /// Attach QIR metadata and validate emitted requirements for a matching target.
 [[nodiscard]] LogicalResult

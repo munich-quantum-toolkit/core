@@ -1026,10 +1026,10 @@ class QCProgram(Program):
         selected target.
 
         Args:
-            target: Map static site IDs to qubit indices in target site order. All
-                qubits must be static sites of the target. Select applicable standard
-                gate names without checking device execution support. None applies no
-                target site mapping.
+            target: Select gate names and use static site IDs as physical qubit
+                indices. An explicit device target requires statically mapped qubits.
+                None uses the attached environment's payload limits and applies its
+                device mapping to statically mapped qubits.
             copy: Preserve the source program by exporting a copy.
         """
 
@@ -1241,10 +1241,10 @@ class QCOProgram(Program):
         selected target.
 
         Args:
-            target: Map static site IDs to qubit indices in target site order. All
-                qubits must be static sites of the target. Select applicable standard
-                gate names without checking device execution support. None applies no
-                target site mapping.
+            target: Select gate names and use static site IDs as physical qubit
+                indices. An explicit device target requires statically mapped qubits.
+                None uses the attached environment's payload limits and applies its
+                device mapping to statically mapped qubits.
             copy: Preserve the source program by exporting a copy.
         """
 

@@ -13,6 +13,7 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/MQT/IR/QubitLayout.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/Transforms/Passes.h"
@@ -149,7 +150,7 @@ void populateQIRPreparationPipeline(OpPassManager& pm,
   pm.addPass(createInlinerPass({}, [](OpPassManager&) {}));
   pm.addPass(mqt::createNormalizeGlobalPhases());
   pm.addPass(mqt::createUnrollModifiers());
-  if (payload.getFormat().getProfile() == "base") {
+  if (payload.getFormat().getProfile() == mqt::QIR_BASE_PROFILE) {
     qco::UnrollLoopsForPayloadOptions options;
     llvm::raw_string_ostream stream(options.payloadSpec);
     stream << payload;

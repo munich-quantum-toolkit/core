@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
@@ -798,7 +799,7 @@ struct MergeSingleQubitRotationGatesPattern final
         if (environment && environment.getPayloadSpecification()
                                    .getFormat()
                                    .getId()
-                                   .getValue() == "openqasm") {
+                                   .getValue() == mqt::OPENQASM_FORMAT_ID) {
           return failure();
         }
       }

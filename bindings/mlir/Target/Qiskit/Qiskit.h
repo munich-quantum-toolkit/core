@@ -78,14 +78,13 @@ importTargetEnvironment(nb::handle target, std::optional<size_t> nativeWidth,
 /// Describe unconstrained Qiskit output capabilities.
 [[nodiscard]] mlir::PayloadSpecification payloadSpecification();
 
-/// Consume a QC program to build a Qiskit circuit for an optional target.
+/// Consume a QC program to build a Qiskit circuit.
+///
+/// An explicit target selects gate names and maps site IDs to qubits.
+/// Otherwise the attached `mqt.target_env` supplies payload limits and selects
+/// the device mapping for statically mapped qubits.
 [[nodiscard]] nb::object
 exportCircuit(mlir::QCProgram program,
               const mlir::CompilerTarget* target = nullptr);
-
-/// Export a compiled circuit, including layout and payload control-flow limits.
-[[nodiscard]] nb::object
-exportCircuit(mlir::QCProgram program,
-              const mlir::TargetEnvironment& environment);
 
 } // namespace mqt::bindings::qiskit

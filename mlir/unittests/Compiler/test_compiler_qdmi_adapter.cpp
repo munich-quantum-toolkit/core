@@ -548,8 +548,7 @@ TEST(CompilerQDMIAdapterTest,
     const auto resetExporter =
         llvm::scope_exit([] { mlir::setQPYExporter(nullptr); });
     mlir::setQPYExporter(
-        +[](mlir::QCProgram program,
-            const mlir::TargetEnvironment&) -> llvm::Expected<std::string> {
+        +[](mlir::QCProgram program) -> llvm::Expected<std::string> {
           const auto expectedLayout =
               mlir::mqt::QubitLayout{
                   .initial = {0},
@@ -1459,11 +1458,12 @@ TEST(CompilerQDMIAdapterTest, PreservesNativeGateNamesThroughExport) {
   const mlir::TargetEnvironment environment(
       target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
                   QDMI_PROGRAM_FORMAT_QIRBASESTRING)));
-  auto qasm = program->copy().intoOpenQASM3(&environment);
+  mlir::attachTargetEnvironment(program->module(), environment);
+  auto qasm = program->copy().intoOpenQASM3();
   ASSERT_TRUE(mlir::succeeded(qasm));
   EXPECT_NE(qasm->source().find("cnot $0, $1;"), std::string::npos);
   EXPECT_NE(qasm->source().find("cnot $1, $2;"), std::string::npos);
-  auto qir = std::move(*program).intoQIR(mlir::QIRProfile::Base, &environment);
+  auto qir = std::move(*program).intoQIR(mlir::QIRProfile::Base);
   ASSERT_TRUE(mlir::succeeded(qir));
   auto references =
       mlir::parseSourceString<mlir::ModuleOp>(R"mlir(module {

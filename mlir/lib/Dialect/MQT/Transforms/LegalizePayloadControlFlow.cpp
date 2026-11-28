@@ -152,14 +152,30 @@ bool PayloadControlSupport::coversBranch(Operation* operation,
 
 bool PayloadControlSupport::coversBranch(Operation* operation, Value condition,
                                          uint64_t depth) const {
+  return coversBranch(condition, depth, [&] {
+    return !operation
+                ->walk([](Operation* nested) {
+                  return isa<qc::MeasureOp, qc::ResetOp, qco::MeasureOp,
+                             qco::ResetOp, cbit::StoreOp, cbit::WriteOp>(nested)
+                             ? WalkResult::interrupt()
+                             : WalkResult::advance();
+                })
+                .wasInterrupted();
+  });
+}
+
+bool PayloadControlSupport::coversBranch(
+    Value condition, uint64_t depth,
+    function_ref<bool()> unitaryBranches) const {
   if (!coversDepth(PayloadControlFeature::ForwardBranching, depth)) {
     return false;
   }
   const auto& group = get(PayloadControlFeature::ForwardBranching);
-  if (group.requiresRegisterEquality && !isRegisterEquality(condition)) {
+  if (group.requiresRegisterEquality &&
+      (!condition || !isRegisterEquality(condition))) {
     return false;
   }
-  if (group.maxConditionWidth) {
+  if (condition && group.maxConditionWidth) {
     SmallVector<Value> pending{condition};
     llvm::DenseSet<Value> visited;
     while (!pending.empty()) {
@@ -177,18 +193,7 @@ bool PayloadControlSupport::coversBranch(Operation* operation, Value condition,
       }
     }
   }
-  if (group.unitaryOnlyBranches &&
-      operation
-          ->walk([](Operation* nested) {
-            return isa<qc::MeasureOp, qc::ResetOp, qco::MeasureOp, qco::ResetOp,
-                       cbit::StoreOp, cbit::WriteOp>(nested)
-                       ? WalkResult::interrupt()
-                       : WalkResult::advance();
-          })
-          .wasInterrupted()) {
-    return false;
-  }
-  return true;
+  return !group.unitaryOnlyBranches || unitaryBranches();
 }
 
 bool PayloadControlSupport::coversDepth(PayloadControlFeature feature,

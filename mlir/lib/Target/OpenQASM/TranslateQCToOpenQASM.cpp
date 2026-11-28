@@ -17,6 +17,7 @@
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
@@ -167,10 +168,8 @@ namespace {
 
 class OpenQASMEmitter {
 public:
-  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false,
-                           const TargetEnvironment* environment = nullptr)
-      : version2_(version2), moduleOp(moduleOp),
-        preparedEnvironment(environment) {}
+  explicit OpenQASMEmitter(ModuleOp moduleOp, bool version2 = false)
+      : version2_(version2), moduleOp(moduleOp) {}
 
   [[nodiscard]] static bool hasGateSignature(func::FuncOp function) {
     if (function.getNumResults() != 0) {
@@ -209,6 +208,7 @@ public:
   }
 
   [[nodiscard]] LogicalResult emit(llvm::raw_ostream& sourceStream) {
+    assert(succeeded(verify(moduleOp)) && "OpenQASM export requires valid IR");
     if (failed(preflight())) {
       return failure();
     }
@@ -322,13 +322,14 @@ private:
   std::optional<mqt::PayloadControlSupport> controlSupport_;
   uint64_t controlDepth_ = 0;
   bool version2_ = false;
+  /// Omit entry-point global phase for targets that drop it.
+  bool dropGlobalPhases_ = false;
 
   bool hasNonOutputGlobals_ = false;
   std::string deviceRegister_;
   uint64_t deviceWidth_ = 0;
   DenseMap<Operation*, cbit::StoreOp> measurementStores;
   ModuleOp moduleOp;
-  const TargetEnvironment* preparedEnvironment;
   func::FuncOp function;
   raw_indented_ostream* output = nullptr;
   DenseMap<Value, Resource> resources;
@@ -841,13 +842,12 @@ private:
   }
 
   [[nodiscard]] LogicalResult preflight() {
-    if (preparedEnvironment != nullptr ||
-        moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
-      const TargetEnvironmentAnalysis environment(moduleOp,
-                                                  preparedEnvironment);
+    if (moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+      const TargetEnvironmentAnalysis environment(moduleOp);
       if (!environment) {
         return fail(moduleOp, environment.error());
       }
+      dropGlobalPhases_ = environment.environment().dropsGlobalPhases();
       if (environment.environment().target().nativeOperationsKind() ==
           CompilerTarget::NativeOperations::Kind::Explicit) {
         nativeTarget_ = environment.environment().target();
@@ -857,7 +857,7 @@ private:
       }
       const auto& format =
           environment.environment().payloadSpecification().format();
-      if (format.id == "openqasm") {
+      if (format.id == mqt::OPENQASM_FORMAT_ID) {
         acceptedVersions_ =
             environment.environment().payloadSpecification().versionRange();
         controlSupport_ =
@@ -1429,6 +1429,7 @@ private:
 
     llvm::SaveAndRestore outputGuard(output, &definitionOutput);
     llvm::SaveAndRestore functionGuard(function, gate);
+    llvm::SaveAndRestore phaseGuard(dropGlobalPhases_, false);
     if (failed(emitBlock(gate.getBody().front()))) {
       return failure();
     }
@@ -1727,6 +1728,9 @@ private:
       return emitGateStatement(*emitted, call, *output);
     }
     if (auto unitary = dyn_cast<UnitaryOpInterface>(&operation)) {
+      if (dropGlobalPhases_ && isa<GPhaseOp>(unitary.getOperation())) {
+        return success();
+      }
       if (auto barrier = dyn_cast<BarrierOp>(&operation)) {
         llvm::StringSet<> seen;
         *output << "barrier ";
@@ -3302,7 +3306,16 @@ private:
       return constantGateParameter(parameters[i]);
     };
     const auto symbol = body.getBaseSymbol();
-    const auto compatibleSpelling = [this, symbol](const auto& operation) {
+    const auto compatibleSpelling = [this, symbol,
+                                     controlCount](const auto& operation) {
+      if (controlCount != 0) {
+        // A controlled alias turns its phase correction into a relative phase.
+        const auto alias = nativeGateAlias(operation.name());
+        if (alias && operation.canonicalName() == alias->canonicalName &&
+            alias->globalPhase != 0.) {
+          return false;
+        }
+      }
       // Standard U-family spellings differ from QC by a phase.
       return operation.name() != "U" && operation.name() != "u2" &&
              operation.name() != "u3" && operation.name() != "cu3" &&
@@ -3361,7 +3374,7 @@ private:
         }
         call.parameters.erase(call.parameters.begin() + index);
       }
-      if (alias->globalPhase != 0.) {
+      if (alias->globalPhase != 0. && !dropGlobalPhases_) {
         auto phase =
             emitConstant(FloatAttr::get(Float64Type::get(unitary.getContext()),
                                         -alias->globalPhase),
@@ -3885,31 +3898,23 @@ private:
 } // namespace
 
 LogicalResult translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                                     llvm::raw_ostream& output,
-                                     const TargetEnvironment* environment) {
-  assert(succeeded(verify(*moduleOp)) && "OpenQASM export requires valid IR");
-  return OpenQASMEmitter(*moduleOp, false, environment).emit(output);
+                                     llvm::raw_ostream& output) {
+  return OpenQASMEmitter(*moduleOp).emit(output);
 }
 
-FailureOr<std::string>
-translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp,
-                       const TargetEnvironment* environment) {
+FailureOr<std::string> translateQCToOpenQASM3(OwningOpRef<ModuleOp> moduleOp) {
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(
-          translateQCToOpenQASM3(std::move(moduleOp), stream, environment))) {
+  if (failed(OpenQASMEmitter(*moduleOp).emit(stream))) {
     return failure();
   }
   return source;
 }
 
-FailureOr<std::string>
-translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp,
-                       const TargetEnvironment* environment) {
-  assert(succeeded(verify(*moduleOp)) && "OpenQASM export requires valid IR");
+FailureOr<std::string> translateQCToOpenQASM2(OwningOpRef<ModuleOp> moduleOp) {
   std::string source;
   llvm::raw_string_ostream stream(source);
-  if (failed(OpenQASMEmitter(*moduleOp, true, environment).emit(stream))) {
+  if (failed(OpenQASMEmitter(*moduleOp, true).emit(stream))) {
     return failure();
   }
   return source;

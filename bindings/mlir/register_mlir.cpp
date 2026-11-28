@@ -664,24 +664,6 @@ payloadForOutput(OutputFormat output) {
   return buffer.attr("getvalue")();
 }
 
-/// Export using the target environment retained by native compilation.
-[[nodiscard]] static nb::object
-qpyCircuit(mlir::QCProgram program,
-           const mlir::TargetEnvironment* environment = nullptr) {
-  if (environment != nullptr) {
-    return bindings::qiskit::exportCircuit(std::move(program), *environment);
-  }
-  if (program.module()->hasAttr(mlir::mqt::TargetEnvAttr::name)) {
-    const mlir::TargetEnvironmentAnalysis attached(program.module());
-    if (!attached) {
-      throw nb::value_error(attached.error().str().c_str());
-    }
-    return bindings::qiskit::exportCircuit(std::move(program),
-                                           attached.environment());
-  }
-  return bindings::qiskit::exportCircuit(std::move(program), nullptr);
-}
-
 [[nodiscard]] static nb::object compiledResult(mlir::CompiledProgram compiled,
                                                nb::handle program,
                                                nb::handle target) {
@@ -761,18 +743,14 @@ qpyCircuit(mlir::QCProgram program,
     auto payload = payloadForOutput(selected);
     if (targetEnvironment) {
       const auto& requested = targetEnvironment->payloadSpecification();
-      auto targetOutput = requested.compilerOutput();
+      const auto targetOutput = requested.compilerOutput();
       if (selected == OutputFormat::QC ||
           selected == OutputFormat::QCOOptimized ||
           selected == OutputFormat::Jeff ||
-          (targetOutput && selected != OutputFormat::Qiskit &&
-           *targetOutput == static_cast<mlir::ProgramFormat>(selected))) {
-        if (!targetOutput) {
-          llvm::consumeError(targetOutput.takeError());
-        }
+          (selected != OutputFormat::Qiskit &&
+           targetOutput == static_cast<mlir::ProgramFormat>(selected))) {
         payload = requested;
       } else {
-        llvm::consumeError(targetOutput.takeError());
         payload = payload.restrictCapabilities(requested);
       }
       outputEnvironment.emplace(targetEnvironment->target(),
@@ -824,16 +802,7 @@ qpyCircuit(mlir::QCProgram program,
     if (!includeOutputLayout) {
       qc.module()->removeAttr(mlir::mqt::kLayoutAttr);
     }
-    auto result = [&] {
-      if (selected == OutputFormat::QPY) {
-        return qpyCircuit(std::move(qc),
-                          outputEnvironment ? &*outputEnvironment : nullptr);
-      }
-      return outputEnvironment
-                 ? bindings::qiskit::exportCircuit(std::move(qc),
-                                                   *outputEnvironment)
-                 : bindings::qiskit::exportCircuit(std::move(qc), nullptr);
-    }();
+    auto result = bindings::qiskit::exportCircuit(std::move(qc));
     if (input.format == OutputFormat::Qiskit) {
       result.attr("name") = program.attr("name");
       result.attr("metadata") = nb::module_::import_("copy").attr("deepcopy")(
@@ -1243,22 +1212,16 @@ generateBenchmark(const Benchmark& benchmark) {
 }
 
 [[nodiscard]] static llvm::Expected<std::string>
-exportQPYFile(mlir::QCProgram program,
-              const mlir::TargetEnvironment* environment) {
+exportQPY(mlir::QCProgram program) {
   const nb::gil_scoped_acquire acquire;
   try {
-    auto circuit = qpyCircuit(std::move(program), environment);
+    auto circuit = bindings::qiskit::exportCircuit(std::move(program));
     auto data = nb::cast<nb::bytes>(writeQPY(circuit));
     return std::string(data.c_str(), data.size());
   } catch (const std::exception& error) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument), error.what());
   }
-}
-
-[[nodiscard]] static llvm::Expected<std::string>
-exportQPY(mlir::QCProgram program, const mlir::TargetEnvironment& environment) {
-  return exportQPYFile(std::move(program), &environment);
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage): module entry point.
@@ -2303,10 +2266,10 @@ The exporter restores attached layout metadata when it is compatible with the
 selected target.
 
 Args:
-    target: Map static site IDs to qubit indices in target site order. All
-        qubits must be static sites of the target. Select applicable standard
-        gate names without checking device execution support. None applies no
-        target site mapping.
+    target: Select gate names and use static site IDs as physical qubit
+        indices. An explicit device target requires statically mapped qubits.
+        None uses the attached environment's payload limits and applies its
+        device mapping to statically mapped qubits.
     copy: Preserve the source program by exporting a copy.)pb")
       .def(
           "to_qco",
@@ -2501,10 +2464,10 @@ The exporter restores attached layout metadata when it is compatible with the
 selected target.
 
 Args:
-    target: Map static site IDs to qubit indices in target site order. All
-        qubits must be static sites of the target. Select applicable standard
-        gate names without checking device execution support. None applies no
-        target site mapping.
+    target: Select gate names and use static site IDs as physical qubit
+        indices. An explicit device target requires statically mapped qubits.
+        None uses the attached environment's payload limits and applies its
+        device mapping to statically mapped qubits.
     copy: Preserve the source program by exporting a copy.)pb")
       .def(
           "to_qc",
@@ -3157,7 +3120,7 @@ compile it explicitly and keep the resulting :class:`CompiledProgram`.)pb");
         argv.push_back(nullptr);
         return mqtCoreRunCompiler(static_cast<int>(arguments.size()),
                                   argv.data(),
-                                  qpyAvailable ? &exportQPYFile : nullptr);
+                                  qpyAvailable ? &exportQPY : nullptr);
       },
       "arguments"_a, nb::call_guard<nb::gil_scoped_release>(),
       "Run the compiler command once. LLVM options can terminate the process.");

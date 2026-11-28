@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mqt/Compiler/CompilationOptions.h"
+#include "mqt/Compiler/ProgramFormat.h"
 #include "mqt/Dialect/QIR/Utils/QIRProfile.h"
 
 #include "capnp/message.h"
@@ -105,30 +106,6 @@ public:
 
 private:
   QuantumProgramInfo info_;
-};
-
-/// Formats accepted and produced by the default compiler pipeline.
-enum class ProgramFormat : uint8_t {
-  /// QC directly after frontend import, without any compiler pass.
-  QCImport,
-  /// QCO immediately after conversion, before cleanup and optimization.
-  QCO,
-  /// QCO after the default or user-supplied optimization pipeline.
-  QCOOptimized,
-  /// QC after the optimized QCO round trip.
-  QC,
-  /// Portable OpenQASM after the optimized QCO round trip.
-  OpenQASM3,
-  /// Serializable `jeff` MLIR.
-  Jeff,
-  /// QIR for the Base Profile.
-  QIRBase,
-  /// QIR for the Adaptive Profile.
-  QIRAdaptive,
-  /// An IQM circuit with physical PRX/CZ gates and terminal readout.
-  IQMJSON,
-  /// OpenQASM 2 with bound parameters.
-  OpenQASM2,
 };
 
 /// A move-aware MLIR program with a shared dialect context.
@@ -326,17 +303,16 @@ public:
   /// Consume this program and translate it to portable OpenQASM 3.
   ///
   /// Promote eligible classical storage to SSA values before translation.
+  /// An attached `mqt.target_env` selects native names and payload limits.
   /// Export consumes the program even on failure. Call copy() first to preserve
   /// it.
-  [[nodiscard]] FailureOr<OpenQASMProgram>
-  intoOpenQASM3(const TargetEnvironment* environment = nullptr) &&;
+  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM3() &&;
 
   /// Consume this program and emit OpenQASM 2.
   ///
   /// Normalize and discard program-wide phase. Keep device indices and gate
   /// calls; reject unsupported control flow, assignments, and modifiers.
-  [[nodiscard]] FailureOr<OpenQASMProgram>
-  intoOpenQASM2(const TargetEnvironment* environment = nullptr) &&;
+  [[nodiscard]] FailureOr<OpenQASMProgram> intoOpenQASM2() &&;
 
   /// Consume this program and convert it to QCO.
   [[nodiscard]] FailureOr<QCOProgram> intoQCO() &&;
@@ -349,10 +325,9 @@ public:
   /// Base conversion requires straight-line quantum operations;
   /// Adaptive conversion retains loops. Calls with quantum-register arguments
   /// must be inlined.
+  /// An attached `mqt.target_env` selects native names and payload checks.
   /// Use runDefaultPipeline for compilation before export.
-  [[nodiscard]] FailureOr<QIRProgram>
-  intoQIR(QIRProfile profile,
-          const TargetEnvironment* environment = nullptr) &&;
+  [[nodiscard]] FailureOr<QIRProgram> intoQIR(QIRProfile profile) &&;
 
   /// Consume this program and serialize PRX/CZ gates and readout as IQM JSON.
   ///

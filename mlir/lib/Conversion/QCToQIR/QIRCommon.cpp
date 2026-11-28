@@ -15,6 +15,7 @@
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/PayloadVersion.h"
 #include "mqt/Dialect/MQT/Transforms/LegalizePayloadControlFlow.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
@@ -144,13 +145,10 @@ void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
 FailureOr<std::optional<PayloadSpecification>>
 prepareQIRTarget(ModuleOp moduleOp, QIRProfile profile, LoweringState& state,
                  function_ref<LogicalResult(OpPassManager&)> runPipeline,
-                 const TargetEnvironment* preparedEnvironment) {
-  if (preparedEnvironment != nullptr) {
-    attachTargetEnvironment(moduleOp, *preparedEnvironment);
-  } else if (!moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
+                 const TargetEnvironmentAnalysis& environment) {
+  if (!moduleOp->hasAttr(mqt::TargetEnvAttr::name)) {
     return std::optional<PayloadSpecification>{};
   }
-  const TargetEnvironmentAnalysis environment(moduleOp, preparedEnvironment);
   if (!environment) {
     moduleOp.emitError(environment.error());
     return failure();
@@ -163,8 +161,9 @@ prepareQIRTarget(ModuleOp moduleOp, QIRProfile profile, LoweringState& state,
   auto payload = environment.environment().payloadSpecification();
   const auto& format = payload.format();
   const bool adaptive = profile == QIRProfile::Adaptive;
-  if (format.id != "qir" ||
-      format.profile != (adaptive ? "adaptive" : "base")) {
+  if (format.id != mqt::QIR_FORMAT_ID ||
+      format.profile !=
+          (adaptive ? mqt::QIR_ADAPTIVE_PROFILE : mqt::QIR_BASE_PROFILE)) {
     return std::optional<PayloadSpecification>{};
   }
   if (adaptive &&
