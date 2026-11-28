@@ -10,17 +10,15 @@
 
 #pragma once
 
+#include "mlir/IR/Value.h"
+
 #include "llvm/ADT/ArrayRef.h"
 
 #include <string_view>
 
-namespace mlir {
-class Value;
-
-namespace qc {
+namespace mlir::qc {
 class QCProgramBuilder;
-} // namespace qc
-} // namespace mlir
+} // namespace mlir::qc
 
 namespace mqt::bench::detail {
 
@@ -28,8 +26,9 @@ void maskMarkedState(mlir::qc::QCProgramBuilder& builder,
                      llvm::ArrayRef<mlir::Value> search,
                      std::string_view markedBitstring);
 
+/// Negate the marked state, optionally conditioned on a phase-estimation qubit.
 void markPhase(mlir::qc::QCProgramBuilder& builder,
                llvm::ArrayRef<mlir::Value> search,
-               std::string_view markedBitstring);
+               std::string_view markedBitstring, mlir::Value control = {});
 
 } // namespace mqt::bench::detail

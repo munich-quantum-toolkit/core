@@ -67,6 +67,7 @@ const std::array CATALOG{
     GateCatalogEntry{"cu3", qc::StandardGate::U3, 1, QE_LIB1},
     GateCatalogEntry{"CX", qc::StandardGate::X, 1, STD},
     GateCatalogEntry{"cnot", qc::StandardGate::X, 1, COMPAT},
+    GateCatalogEntry{"ccz", qc::StandardGate::Z, 2, COMPAT},
     GateCatalogEntry{"c3x", qc::StandardGate::X, 3, COMPAT},
     GateCatalogEntry{"c4x", qc::StandardGate::X, 4, COMPAT},
     GateCatalogEntry{"csx", qc::StandardGate::SX, 1, COMPAT},

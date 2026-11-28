@@ -22,15 +22,9 @@
 #include "nanobind/stl/string.h"      // NOLINT(misc-include-cleaner)
 #include "nanobind/stl/string_view.h" // NOLINT(misc-include-cleaner)
 
-#include "llvm/Support/Error.h"
-#include "llvm/Support/raw_ostream.h"
-
 #include <cstddef>
 #include <cstdint>
-#include <exception>
 #include <functional>
-#include <system_error>
-#include <utility>
 
 namespace mqt {
 namespace nb = nanobind;
@@ -90,24 +84,10 @@ its phase measurements. Modular-arithmetic registers remain allocated.)pb");
       [](uint64_t number,
          const std::function<bench::Counts(const bench::Shor&)>& run,
          size_t maxAttempts, uint64_t seed) {
-        std::exception_ptr callbackError;
-        auto result = bench::factor(
-            number,
-            [&](const bench::Shor& benchmark) -> llvm::Expected<bench::Counts> {
-              try {
-                return run(benchmark);
-              } catch (...) {
-                callbackError = std::current_exception();
-                return llvm::createStringError(std::errc::operation_canceled,
-                                               "benchmark callback failed");
-              }
-            },
-            {.maxAttempts = maxAttempts, .seed = seed});
-        if (callbackError) {
-          llvm::logAllUnhandledErrors(result.takeError(), llvm::nulls());
-          std::rethrow_exception(callbackError);
-        }
-        return unwrapBenchmark(std::move(result));
+        return runBenchmarkWorkflow(run, [&](const auto& callback) {
+          return bench::factor(number, callback,
+                               {.maxAttempts = maxAttempts, .seed = seed});
+        });
       },
       "number"_a, "run"_a, nb::kw_only(), "max_attempts"_a = 16, "seed"_a = 0,
       R"pb(Find one nontrivial factor pair with a bounded number of attempted bases.

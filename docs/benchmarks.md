@@ -479,6 +479,73 @@ These scores check the arithmetic relation in the measured basis. They cannot
 detect arbitrary relative-phase errors or certify the circuit's action on every
 possible input.
 
+### Quantum amplitude estimation
+
+The `qae` family estimates the probability $a$ that a prepared state belongs to
+a specified set of good computational-basis states. Supply the good states as
+distinct, equal-width bitstrings and set `amplitude` to $a$ in $[0,1]$. The
+preparation distributes probability $a$ uniformly over the good states and $1-a$
+uniformly over the remaining states. At least one state of each kind is
+required. The bitstrings determine the data width (1–63 qubits). For example,
+`good_states=["01", "10"]` and `amplitude=0.6` prepare each good state with
+probability 0.3 and each bad state with probability 0.2.
+
+Three workflows estimate $a$ from measured counts. Each takes a callback that
+receives a typed `QAE` benchmark and returns big-endian counts. The callback
+selects the execution backend and number of shots.
+
+- [Phase-estimation QAE](https://arxiv.org/abs/quant-ph/0005055) uses a
+  `precision`-qubit query register, controlled Grover powers, and the shared
+  inverse QFT. A measured integer $y$ estimates $a$ as
+  $\sin^2(\pi y/2^{\mathrm{precision}})$. The estimator combines counts for the
+  two phases that give the same probability, then selects the most frequent bin.
+  Precision ranges from 1 to 31 bits.
+- [Maximum-likelihood QAE](https://arxiv.org/abs/1904.10246) samples the
+  prepared state after $k=1,2,4,\ldots,2^{r-1}$ Grover iterations for `rounds`
+  $r$ from 1 to 31. For $\theta=\arcsin\sqrt a$, the probability of a good
+  outcome is $\sin^2((2k+1)\theta)$. The estimator fits one $a$ to all good and
+  bad counts using their joint binomial likelihood. Both the deepest circuit and
+  the classical search grow exponentially with $r$.
+- [Iterative QAE](https://arxiv.org/abs/1912.05559) starts at $k=0$ and chooses
+  each subsequent power from a confidence interval for $\theta$. It pools
+  measurements at the current power until it can increase the power without
+  ambiguity or return probability bounds at most $2\epsilon$ apart. Use fresh,
+  independent batches of equal size. The Hoeffding bounds account for every look
+  allowed by `max_batches`. Inconsistent intervals and an exhausted budget raise
+  an error.
+
+```{code-cell} ipython3
+from itertools import count
+
+from mqt.core.bench import qae
+from mqt.core.mlir import sample
+
+problem = qae.Problem(good_states=["01", "10"], amplitude=0.6)
+seeds = count(17)
+
+
+def run_qae(benchmark: qae.QAE) -> dict[str, int]:
+    return sample(benchmark.generate(), shots=512, seed=next(seeds))
+
+
+print("Phase estimate:", qae.phase_estimation(problem, run_qae, precision=3))
+print("Likelihood estimate:", qae.maximum_likelihood(problem, run_qae, rounds=3))
+print("Iterative interval:", qae.iterative(problem, run_qae, epsilon=0.03))
+```
+
+To generate, export, or evaluate a single experiment through the usual benchmark
+interfaces, supply exactly one of `precision` and `iterations`. The first
+returns phase bits. The second returns data bits after the specified Grover
+power (0 through $2^{31}-1$). Both likelihood-based and iterative estimation use
+this same amplification circuit. Each circuit has its own manifest and ideal
+distribution. For example, the following instance describes the single-iteration
+experiment for both workflows.
+
+```{code-cell} ipython3
+experiment = qae.QAE(qae.Options(problem=problem, iterations=1))
+print(experiment.instance_specification_json)
+```
+
 ### QAOA
 
 The `qaoa` family implements the

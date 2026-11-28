@@ -23,6 +23,7 @@ from mqt.core.bench import (
     magic_state_distillation,
     modular_multiplier,
     multiplexer,
+    qae,
     qft,
     qft_adder,
     qpe,
@@ -41,6 +42,7 @@ ReferenceBenchmark = (
     | magic_state_distillation.MagicStateDistillation
     | modular_multiplier.ModularMultiplier
     | multiplexer.Multiplexer
+    | qae.QAE
     | qft.QFT
     | qft_adder.QFTAdder
     | qpe.QPE
@@ -69,6 +71,13 @@ ReferenceBenchmark = (
             id="multiplier",
         ),
         pytest.param(multiplexer.Multiplexer(multiplexer.Options(qubits=3)), id="multiplexer"),
+        pytest.param(
+            qae.QAE(qae.Options(problem=qae.Problem(good_states=["01"], amplitude=0.25), precision=3)), id="qae-phase"
+        ),
+        pytest.param(
+            qae.QAE(qae.Options(problem=qae.Problem(good_states=["0"], amplitude=0.25), iterations=1)),
+            id="qae-amplification",
+        ),
         pytest.param(qft.QFT(qft.Options(qubits=3, period_exponent=1, method=qft.Method.SEMICLASSICAL)), id="qft"),
         pytest.param(
             qft_adder.QFTAdder(qft_adder.Options(addend="11", accumulator="01", overflow=qft_adder.Overflow.CARRY)),

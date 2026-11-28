@@ -19,6 +19,7 @@
 #include "bench/MagicStateDistillation.hpp"
 #include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
+#include "bench/QAE.hpp"
 #include "bench/QAOA.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"
@@ -388,6 +389,35 @@ parseMultiplexerParameters(const Json& parameters, std::string_view source) {
   return withParameterSource(source, Multiplexer::create(options));
 }
 
+[[nodiscard]] llvm::Expected<QAE> parseQAEParameters(const Json& parameters,
+                                                     std::string_view source) {
+  QAEOptions options{};
+  const auto diagnosticSource = std::string(source) + ":$/parameters";
+  llvm::json::Path::Root diagnostic(diagnosticSource);
+  const llvm::json::Path path(diagnostic);
+  llvm::json::ObjectMapper object(parameters, path);
+  if (!object ||
+      !keys(parameters, {"good_states", "amplitude", "precision", "iterations"},
+            path) ||
+      !object.map("good_states", options.problem.goodStates) ||
+      !object.map("amplitude", options.problem.amplitude)) {
+    return diagnostic.getError();
+  }
+  for (auto [name, option] : {
+           std::pair{"precision", &options.precision},
+           std::pair{"iterations", &options.iterations},
+       }) {
+    if (parameters.getAsObject()->get(name) != nullptr) {
+      size_t value = 0;
+      if (!sizeValue(parameters, name, value, path)) {
+        return diagnostic.getError();
+      }
+      *option = value;
+    }
+  }
+  return withParameterSource(source, QAE::create(std::move(options)));
+}
+
 [[nodiscard]] llvm::Expected<QAOA>
 parseQAOAParameters(const Json& parameters, std::string_view source) {
   QAOAOptions options{};
@@ -625,6 +655,20 @@ parseTeleportationParameters(const Json& parameters, std::string_view source) {
   return llvm::json::Object{{"qubits", benchmark.options().qubits}};
 }
 
+[[nodiscard]] Json parametersJSON(const QAE& benchmark) {
+  const auto& options = benchmark.options();
+  llvm::json::Object parameters{
+      {"amplitude", options.problem.amplitude},
+      {"good_states", llvm::json::Array(options.problem.goodStates)},
+  };
+  if (options.precision) {
+    parameters["precision"] = *options.precision;
+  } else {
+    parameters["iterations"] = *options.iterations;
+  }
+  return parameters;
+}
+
 [[nodiscard]] Json parametersJSON(const QAOA& benchmark) {
   const auto& options = benchmark.options();
   return llvm::json::Object{
@@ -699,6 +743,12 @@ parseTeleportationParameters(const Json& parameters, std::string_view source) {
     reference["success_outcome"] = std::string(*successOutcome);
   }
   return reference;
+}
+
+[[nodiscard]] Json referenceJSON(const QAE& benchmark) {
+  return analyticReferenceJSON(benchmark.output(), benchmark.options().precision
+                                                       ? "qae_phase_estimation"
+                                                       : "qae_amplification");
 }
 
 [[nodiscard]] Json referenceJSON(const QAOA& benchmark) {
@@ -1152,6 +1202,68 @@ baseInstanceSpecificationSchema(llvm::json::Object parameters) {
           },
       },
       {"required", llvm::json::Array{"qubits"}},
+  });
+}
+
+[[nodiscard]] Json qaeInstanceSpecificationSchema() {
+  llvm::json::Object properties{
+      {
+          "good_states",
+          llvm::json::Object{
+              {"type", "array"},
+              {"minItems", 1},
+              {"uniqueItems", true},
+              {
+                  "items",
+                  llvm::json::Object{
+                      {"type", "string"},
+                      {"pattern", "^[01]+$"},
+                      {"minLength", 1},
+                      {"maxLength", QAEOptions::MAX_QUBITS},
+                  },
+              },
+              {
+                  "description",
+                  "Distinct, equal-width bitstrings leaving at least "
+                  "one bad state.",
+              },
+          },
+      },
+      {
+          "amplitude",
+          llvm::json::Object{
+              {"type", "number"},
+              {"minimum", 0},
+              {"maximum", 1},
+          },
+      },
+      {
+          "precision",
+          llvm::json::Object{
+              {"type", "integer"},
+              {"minimum", 1},
+              {"maximum", QAEOptions::MAX_PRECISION},
+          },
+      },
+      {
+          "iterations",
+          llvm::json::Object{
+              {"type", "integer"},
+              {"minimum", 0},
+              {"maximum", QAEOptions::MAX_ITERATIONS},
+          },
+      },
+  };
+  return baseInstanceSpecificationSchema<QAE>(llvm::json::Object{
+      {"properties", std::move(properties)},
+      {"required", llvm::json::Array{"amplitude", "good_states"}},
+      {
+          "oneOf",
+          llvm::json::Array{
+              llvm::json::Object{{"required", llvm::json::Array{"precision"}}},
+              llvm::json::Object{{"required", llvm::json::Array{"iterations"}}},
+          },
+      },
   });
 }
 

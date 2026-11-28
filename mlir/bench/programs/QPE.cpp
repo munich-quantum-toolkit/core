@@ -14,6 +14,7 @@
 
 #include "Programs.h"
 #include "QFTUtils.h"
+#include "QPEUtils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -154,43 +155,51 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   return {result};
 }
 
-[[nodiscard]] static SmallVector<Value>
-standardQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
-  const auto precision = static_cast<int64_t>(benchmark.options().precision);
+void detail::measureEigenphase(
+    qc::QCProgramBuilder& builder, int64_t precision, Value result,
+    Value initialPower, const function_ref<Value(Value, Value)>& applyPower) {
   auto query = builder.allocQubitRegisterStorage(precision, "query");
-  auto ancilla = builder.allocQubit();
-  auto result =
-      builder.allocClassicalBitRegister(precision, benchmark.output().name);
   builder.scfFor(0, precision, 1, [&](Value index) {
     builder.h(builder.loadQubit(query, index));
   });
-  builder.x(ancilla);
-
   auto zero = builder.indexConstant(0);
   auto one = builder.indexConstant(1);
   auto upper = builder.indexConstant(precision);
   auto last = builder.indexConstant(precision - 1);
+  auto loop =
+      scf::ForOp::create(builder, zero, upper, one, ValueRange{initialPower});
+  {
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointToStart(loop.getBody());
+    auto index = arith::SubIOp::create(builder, last, loop.getInductionVar());
+    auto control = builder.loadQubit(query, index);
+    auto next = applyPower(control, loop.getRegionIterArg(0));
+    scf::YieldOp::create(builder, ValueRange{next});
+  }
+  qft(builder, query, precision, true);
+  builder.measureQubitRegister(query, result, precision);
+}
+
+[[nodiscard]] static SmallVector<Value>
+standardQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
+  const auto precision = static_cast<int64_t>(benchmark.options().precision);
+  auto ancilla = builder.allocQubit();
+  auto result =
+      builder.allocClassicalBitRegister(precision, benchmark.output().name);
+  builder.x(ancilla);
   const auto& phase = benchmark.options().phase;
   auto denominator =
       builder.intConstant(static_cast<int64_t>(phase.denominator()));
   auto initialResidue =
       builder.intConstant(static_cast<int64_t>(phase.numerator()));
-  auto loop =
-      scf::ForOp::create(builder, zero, upper, one, ValueRange{initialResidue});
-  {
-    OpBuilder::InsertionGuard guard(builder);
-    builder.setInsertionPointToStart(loop.getBody());
-    auto index = loop.getInductionVar();
-    auto residue = loop.getRegionIterArg(0);
-    auto angle = controlledPhaseAngle(builder, residue, phase.denominator());
-    auto control = arith::SubIOp::create(builder, last, index);
-    builder.cp(angle, builder.loadQubit(query, control), ancilla);
-    auto next = doubleResidue(builder, residue, denominator);
-    scf::YieldOp::create(builder, ValueRange{next});
-  }
-
-  detail::qft(builder, query, precision, true);
-  builder.measureQubitRegister(query, result, precision);
+  detail::measureEigenphase(
+      builder, precision, result, initialResidue,
+      [&](Value control, Value residue) {
+        auto angle =
+            controlledPhaseAngle(builder, residue, phase.denominator());
+        builder.cp(angle, control, ancilla);
+        return doubleResidue(builder, residue, denominator);
+      });
   return {result};
 }
 

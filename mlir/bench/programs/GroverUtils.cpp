@@ -33,9 +33,15 @@ void maskMarkedState(mlir::qc::QCProgramBuilder& builder,
 
 void markPhase(mlir::qc::QCProgramBuilder& builder,
                llvm::ArrayRef<mlir::Value> search,
-               std::string_view markedBitstring) {
+               std::string_view markedBitstring, mlir::Value control) {
   maskMarkedState(builder, search, markedBitstring);
-  builder.mcz(search.drop_back(), search.back());
+  if (control) {
+    builder.mcz(search, control);
+  } else if (search.size() == 1) {
+    builder.z(search.front());
+  } else {
+    builder.mcz(search.drop_back(), search.back());
+  }
   maskMarkedState(builder, search, markedBitstring);
 }
 
