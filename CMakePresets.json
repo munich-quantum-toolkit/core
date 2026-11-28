@@ -30,7 +30,7 @@
     {
       "name": "windows-clang",
       "inherits": "release",
-      "displayName": "Windows Release with Clang and ThinLTO",
+      "displayName": "Windows Release with Clang",
       "condition": {
         "type": "equals",
         "lhs": "${hostSystemName}",
@@ -39,8 +39,7 @@
       "environment": {
         "CC": "$penv{VSINSTALLDIR}/VC/Tools/Llvm/$penv{VSCMD_ARG_TGT_ARCH}/bin/clang-cl.exe",
         "CXX": "$env{CC}"
-      },
-      "cacheVariables": { "ENABLE_IPO": "ON" }
+      }
     },
     {
       "name": "coverage",

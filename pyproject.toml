@@ -290,7 +290,7 @@ test-sources = [
 ]
 
 [tool.cibuildwheel.windows]
-config-settings = { "cmake.args" = "--preset=windows-clang" }
+config-settings = { "cmake.args" = "--preset=windows-clang", "cmake.define.ENABLE_IPO" = "ON" }
 # Preserve bundled DLL names and locations for CMake imports and standalone tools.
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 
