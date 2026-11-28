@@ -131,10 +131,13 @@ protected:
   }
 
 public:
-  static void expectOperationLocalRegisterAccesses(ModuleOp moduleOp) {
+  /// Returns the number of register qubits taken out of a tensor and checks
+  /// that each returns exactly once, after a chain of quantum operations in
+  /// the same block.
+  static std::size_t expectRegisterSlotsReturnToTensor(ModuleOp moduleOp) {
     std::size_t extracts = 0;
     std::size_t inserts = 0;
-    llvm::DenseSet<Operation*> committedExtracts;
+    llvm::DenseSet<Operation*> returnedExtracts;
     moduleOp.walk([&](qtensor::ExtractOp extract) {
       ++extracts;
       ASSERT_TRUE(extract.getResult().hasOneUse());
@@ -144,40 +147,37 @@ public:
     });
     moduleOp.walk([&](qtensor::InsertOp insert) {
       ++inserts;
-      auto* producer = insert.getScalar().getDefiningOp();
-      ASSERT_NE(producer, nullptr);
-      EXPECT_EQ(producer->getDialect(),
-                moduleOp.getContext()->getOrLoadDialect<qco::QCODialect>());
-
-      Value input;
-      if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(producer)) {
-        input = unitary.getInputForOutput(insert.getScalar());
-      } else if (auto measure = dyn_cast<qco::MeasureOp>(producer)) {
-        EXPECT_EQ(insert.getScalar(), measure.getQubitOut());
-        input = measure.getQubitIn();
-      } else if (auto reset = dyn_cast<qco::ResetOp>(producer)) {
-        EXPECT_EQ(insert.getScalar(), reset.getQubitOut());
-        input = reset.getQubitIn();
+      Value value = insert.getScalar();
+      auto extract = value.getDefiningOp<qtensor::ExtractOp>();
+      while (!extract) {
+        auto* producer = value.getDefiningOp();
+        ASSERT_NE(producer, nullptr);
+        ASSERT_EQ(producer->getBlock(), insert->getBlock());
+        if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(producer)) {
+          value = unitary.getInputForOutput(value);
+        } else if (auto measure = dyn_cast<qco::MeasureOp>(producer)) {
+          value = measure.getQubitIn();
+        } else if (auto reset = dyn_cast<qco::ResetOp>(producer)) {
+          value = reset.getQubitIn();
+        } else {
+          FAIL() << "unexpected producer of a register qubit";
+        }
+        extract = value.getDefiningOp<qtensor::ExtractOp>();
       }
-      ASSERT_TRUE(input);
-
-      auto extract = input.getDefiningOp<qtensor::ExtractOp>();
-      ASSERT_TRUE(extract);
       EXPECT_TRUE(
           isEqualConstantIntOrValue(extract.getIndex(), insert.getIndex()));
-      EXPECT_EQ(extract->getBlock(), producer->getBlock());
-      EXPECT_EQ(producer->getBlock(), insert->getBlock());
-      EXPECT_TRUE(extract->isBeforeInBlock(producer));
-      EXPECT_TRUE(producer->isBeforeInBlock(insert));
-      committedExtracts.insert(extract);
+      EXPECT_EQ(extract->getBlock(), insert->getBlock());
+      EXPECT_TRUE(extract->isBeforeInBlock(insert));
+      EXPECT_TRUE(returnedExtracts.insert(extract).second);
     });
     EXPECT_GT(extracts, 0U);
     EXPECT_EQ(extracts, inserts);
-    EXPECT_EQ(committedExtracts.size(), extracts);
+    EXPECT_EQ(returnedExtracts.size(), extracts);
 
     moduleOp.walk([&](memref::LoadOp load) {
       EXPECT_FALSE(isa<qc::QubitType>(load.getMemRefType().getElementType()));
     });
+    return extracts;
   }
 
   static void expectStructuredStateUsesCompleteTensors(ModuleOp moduleOp) {
@@ -686,8 +686,7 @@ module {
       *moduleOp, switchOp.getClassicalResults().front());
 }
 
-TEST_F(QCToQCORegressionTest,
-       MaterializesSequentialPotentialAliasesAtEachOperation) {
+TEST_F(QCToQCORegressionTest, ClosesOpenSlotsBeforePotentialAliases) {
   constexpr llvm::StringLiteral source = R"mlir(
 module {
   func.func @main(%i: index) attributes {mqt.entry_point} {
@@ -722,7 +721,8 @@ module {
   ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  expectOperationLocalRegisterAccesses(*moduleOp);
+  // %c0 stays open across h and x; each dynamic access closes the register.
+  EXPECT_EQ(expectRegisterSlotsReturnToTensor(*moduleOp), 6U);
   expectNoQCOperations(*moduleOp);
 
   std::size_t allocations = 0;
@@ -865,8 +865,39 @@ module {
   EXPECT_EQ(calls.back().getOperand(0), call.getResult(0));
   EXPECT_TRUE(isa<qco::QubitType>(call.getResult(1).getType()));
   EXPECT_TRUE(call.getOperand(1).getDefiningOp<qtensor::ExtractOp>());
-  ASSERT_TRUE(call.getResult(1).hasOneUse());
-  EXPECT_TRUE(isa<qtensor::InsertOp>(*call.getResult(1).getUsers().begin()));
+  // The slot stays open between the calls and returns at deallocation.
+  EXPECT_EQ(calls.back().getOperand(1), call.getResult(1));
+  ASSERT_TRUE(calls.back().getResult(1).hasOneUse());
+  EXPECT_TRUE(
+      isa<qtensor::InsertOp>(*calls.back().getResult(1).getUsers().begin()));
+}
+
+TEST_F(QCToQCORegressionTest, ClosesRegisterBeforeMixedConstantDynamicAccess) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%i: index) attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<2x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %q0 = memref.load %reg[%c0] : memref<2x!qc.qubit>
+    qc.h %q0 : !qc.qubit
+    %q1 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  // h opens %c0; the swap's dynamic operand closes it before either operand
+  // is taken out again.
+  EXPECT_EQ(expectRegisterSlotsReturnToTensor(*moduleOp), 3U);
+  expectNoQCOperations(*moduleOp);
 }
 
 TEST_F(QCToQCORegressionTest, RejectsUnstructuredControlFlow) {
@@ -1744,7 +1775,8 @@ TEST_P(QCToQCOTest, ProgramConversions) {
   printer.record(program.get(), "Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
   if (expectsCompleteTensorState) {
-    QCToQCORegressionTest::expectOperationLocalRegisterAccesses(program.get());
+    std::ignore =
+        QCToQCORegressionTest::expectRegisterSlotsReturnToTensor(program.get());
     QCToQCORegressionTest::expectStructuredStateUsesCompleteTensors(
         program.get());
   }
